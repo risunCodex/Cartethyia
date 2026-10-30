@@ -191,15 +191,12 @@ function subscribeInFlightSnapshot(
   store: { inFlightSnapshot(): InFlightSnapshot },
   listener: (snapshot: InFlightSnapshot) => void,
 ): () => void {
-  const timers = new Set<ReturnType<typeof setTimeout>>();
   const push = (): void => listener(store.inFlightSnapshot());
   push();
   const handle = setInterval(push, 1_000);
   (handle as unknown as { unref?: () => void })?.unref?.();
   return () => {
     clearInterval(handle);
-    for (const t of timers) clearTimeout(t);
-    timers.clear();
   };
 }
 
