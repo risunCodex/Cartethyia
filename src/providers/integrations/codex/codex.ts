@@ -22,7 +22,7 @@
  * OpenAI-compatible factory's reach — stays bespoke, never re-audit.
  */
 import type { CanonicalEvent, CanonicalRequest } from "../../../protocol/canonical-model";
-import { GatewayError, capabilityUnsupported } from "../../../protocol/gateway-error";
+import { GatewayError } from "../../../protocol/gateway-error";
 import { getCodexVersion } from "../../operations/client-versions";
 import { buildCodexUserAgent } from "../../operations/cli-platform";
 import { randomUUID } from "node:crypto";
@@ -54,6 +54,7 @@ export function _setCodexRateLimitSleepForTesting(
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return rateLimitSleep(ms, signal);
 }
+import { assertWireFamily } from "../../provider-contracts";
 import type { ImageGenerationOutcome, ProviderDispatchTarget, ProviderAdapter, ProviderDispatchContext, ResolvedCredential, WebSearchOutcome, WebSearchResult } from "../../provider-contracts";
 import type { FetchLike } from "../../quota/quota-contracts";
 import { boundedUpstreamArray, boundedUpstreamNumber, sanitizeUpstreamLabel } from "../../provider-sanitize";
@@ -907,9 +908,7 @@ export function createCodexAdapter(
         );
       }
       if (candidate.wire_family !== "responses") {
-        throw capabilityUnsupported("responses", {
-          wire_family: candidate.wire_family,
-        });
+        assertWireFamily(candidate, "responses", "codex");
       }
       if (request.model.includes("?")) {
         throw new GatewayError(

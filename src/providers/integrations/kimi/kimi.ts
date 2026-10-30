@@ -26,7 +26,7 @@ import {
 } from "../../../protocol/request/messages";
 import { sendClaudeMessagesRequest } from "../../../protocol/upstream/send-claude-messages";
 import { endpointUrl } from "../../../protocol/codecs";
-import { assertCredentialKind } from "../../provider-contracts";
+import { assertCredentialKind, assertWireFamily } from "../../provider-contracts";
 import type { ProviderDispatchTarget, ProviderAdapter, ProviderDispatchContext } from "../../provider-contracts";
 import {
   getKimiCommonHeaders,
@@ -142,11 +142,7 @@ class KimiCodeAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (candidate.wire_family !== "messages") {
-      throw new GatewayError(
-        "capability_unsupported",
-        400,
-        `kimi supports messages only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
-      );
+      assertWireFamily(candidate, "messages", "kimi");
     }
     if (context.credential.credential_kind !== "oauth") {
       assertCredentialKind(context.credential, "oauth", "kimi");

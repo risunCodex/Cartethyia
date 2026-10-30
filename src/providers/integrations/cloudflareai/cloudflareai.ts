@@ -16,6 +16,7 @@
  *    protocol at the `/anthropic` path suffix, including `thinking_delta`
  *    blocks, so the Messages leg is built directly.
  */
+import { assertWireFamily } from "../../provider-contracts";
 import type {
   ProviderAdapter,
   ProviderDispatchContext,
@@ -93,11 +94,7 @@ class CloudflareAiGatewayAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (candidate.wire_family !== "messages") {
-      throw new GatewayError(
-        "capability_unsupported",
-        400,
-        `cloudflareai supports messages only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
-      );
+      assertWireFamily(candidate, "messages", "cloudflareai");
     }
     const { token, baseUrl } = cloudflareEnvelope(context);
     const outbound = buildClaudeMessagesRequest({

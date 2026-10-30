@@ -46,7 +46,7 @@ import {
   loadAntigravityProject,
   normalizeAntigravityToolSchemas,
 } from "./antigravity-protocol";
-import { assertCredentialKind } from "../../provider-contracts";
+import { assertCredentialKind, assertWireFamily } from "../../provider-contracts";
 import type { ImageGenerationOutcome, ProviderDispatchTarget, ProviderAdapter, ProviderDispatchContext, WebSearchOutcome, WebSearchResult } from "../../provider-contracts";
 import { providerBaseUrl } from "../../provider-metadata";
 import { abortGatewayError, createUpstreamDeadlineLifecycle } from "../../operations/upstream-deadline";
@@ -189,11 +189,7 @@ class AntigravityAdapter implements ProviderAdapter {
       candidate.wire_family !== "responses" &&
       candidate.wire_family !== "messages"
     ) {
-      throw new GatewayError(
-        "capability_unsupported",
-        400,
-        `antigravity supports chat/responses/messages, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
-      );
+      assertWireFamily(candidate, ["chat", "responses", "messages"], "antigravity");
     }
     if (context.credential.credential_kind !== "oauth") {
       assertCredentialKind(context.credential, "oauth", "antigravity");

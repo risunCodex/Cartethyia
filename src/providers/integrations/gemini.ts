@@ -6,7 +6,7 @@ import { mapUpstreamHttpError } from "../../transport/failure-policy";
 import type { CanonicalEvent, CanonicalRequest, CanonicalStopReason } from "../../protocol/canonical-model";
 import { decodeSseEvents } from "../../protocol/sse-decoder";
 import { usageFromProvider } from "../provider-usage";
-import { readCredentialSecret, type ImageGenerationOutcome, type ProviderDispatchTarget, type ProviderAdapter, type ProviderDispatchContext, type WebSearchOutcome, type WebSearchResult } from "../provider-contracts";
+import { readCredentialSecret, assertWireFamily, type ImageGenerationOutcome, type ProviderDispatchTarget, type ProviderAdapter, type ProviderDispatchContext, type WebSearchOutcome, type WebSearchResult } from "../provider-contracts";
 import type { ModelDefinition } from "../provider-model-definition";
 import { fetchOpenAICompatibleModels } from "../discovery/openai-model-discovery";
 import { isRecord } from "../../protocol/codecs";
@@ -181,7 +181,7 @@ class GeminiAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (candidate.wire_family !== "chat" && candidate.wire_family !== "responses" && candidate.wire_family !== "messages") {
-      throw new GatewayError("capability_unsupported", 400, `gemini supports chat/responses/messages, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`);
+      assertWireFamily(candidate, ["chat", "responses", "messages"], "gemini");
     }
     const apiKey = readCredentialSecret(context.credential, "Gemini API key is required");
 

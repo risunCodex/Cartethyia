@@ -23,7 +23,7 @@ import type {
 import { toolResultParts, toolCallParts } from "../../../protocol/canonical-model";
 import { decodeSseEvents } from "../../../protocol/sse-decoder";
 import { usageFromProvider, readReasoningText } from "../../provider-usage";
-import { readCredentialSecret, type ProviderDispatchTarget, type ProviderAdapter, type ProviderDispatchContext, type ProviderId } from "../../provider-contracts";
+import { readCredentialSecret, assertWireFamily, type ProviderDispatchTarget, type ProviderAdapter, type ProviderDispatchContext, type ProviderId } from "../../provider-contracts";
 import type { ModelDefinition } from "../../provider-model-definition";
 import { parseQoderOAuthState } from "./qoder-oauth";
 import { getQoderVersion } from "../../operations/client-versions";
@@ -1236,7 +1236,7 @@ class QoderAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (candidate.wire_family !== "chat") {
-      throw new GatewayError("capability_unsupported", 400, `qoder supports chat only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`);
+      assertWireFamily(candidate, "chat", "qoder");
     }
     const secret = readCredentialSecret(context.credential, "Qoder credential is required");
 

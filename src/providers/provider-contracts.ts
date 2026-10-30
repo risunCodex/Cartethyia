@@ -71,6 +71,27 @@ export function assertCredentialKind(
   );
 }
 
+/**
+ * Asserts a candidate's wire family is one of the ones the provider serves,
+ * throwing `capability_unsupported` otherwise. Every provider hand-rolled this
+ * guard with the same shape; this centralizes the pattern so a mis-routed
+ * candidate reads the same everywhere.
+ */
+export function assertWireFamily(
+  candidate: ProviderDispatchTarget,
+  allowed: WireFamily | readonly WireFamily[],
+  providerLabel: string,
+): void {
+  const allowedFamilies = Array.isArray(allowed) ? allowed : [allowed];
+  if (allowedFamilies.includes(candidate.wire_family)) return;
+  throw new GatewayError(
+    "capability_unsupported",
+    400,
+    `${providerLabel} supports ${allowedFamilies.join("/")} only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
+    { expected_wire_families: allowedFamilies, got_wire_family: candidate.wire_family },
+  );
+}
+
 /** Fetch capability that validates DNS answers and redirects before each request. */
 export type ValidatedOutboundFetch = (
   input: RequestInfo | URL,

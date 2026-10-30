@@ -18,7 +18,7 @@ import { GatewayError } from "../../protocol/gateway-error";
 import { buildClaudeMessagesRequest, filterClaudeCustomHeaders } from "./shared/claude-messages";
 import { sendClaudeMessagesRequest } from "../../protocol/upstream/send-claude-messages";
 import { applyParamQuirks } from "../../protocol/translation/quirks";
-import { assertCredentialKind } from "../provider-contracts";
+import { assertCredentialKind, assertWireFamily } from "../provider-contracts";
 import type { ProviderDispatchTarget, ProviderAdapter, ProviderDispatchContext, ProviderId } from "../provider-contracts";
 import { providerBaseUrl } from "../provider-metadata";
 
@@ -59,11 +59,7 @@ export class AnthropicApiKeyAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (candidate.wire_family !== "messages") {
-      throw new GatewayError(
-        "capability_unsupported",
-        400,
-        `${this.provider_id} supports messages only (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
-      );
+      assertWireFamily(candidate, "messages", this.provider_id);
     }
     if (context.credential.credential_kind !== "api_key") {
       assertCredentialKind(context.credential, "api_key", this.provider_id);

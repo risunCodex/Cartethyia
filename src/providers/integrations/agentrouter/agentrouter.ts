@@ -11,9 +11,8 @@
 // `x-stainless-*` family, `x-claude-code-session-id`, and `anthropic-version`
 // for operator-supplied headers, so they are layered onto the built headers
 // at this call site instead.
-import { GatewayError } from "../../../protocol/gateway-error";
 import type { CanonicalEvent, CanonicalRequest } from "../../../protocol/canonical-model";
-import { readCredentialSecret, type ProviderDispatchTarget, type ProviderAdapter, type ProviderDispatchContext } from "../../provider-contracts";
+import { readCredentialSecret, assertWireFamily, type ProviderDispatchTarget, type ProviderAdapter, type ProviderDispatchContext } from "../../provider-contracts";
 import { providerBaseUrl } from "../../provider-metadata";
 import { buildClaudeMessagesRequest } from "../shared/claude-messages";
 import { sendClaudeMessagesRequest } from "../../../protocol/upstream/send-claude-messages";
@@ -87,7 +86,7 @@ class AgentRouterAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (candidate.wire_family !== "messages") {
-      throw new GatewayError("capability_unsupported", 400, `agentrouter supports messages only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`);
+      assertWireFamily(candidate, "messages", "agentrouter");
     }
     const apiKey = readCredentialSecret(context.credential, "AgentRouter API key is required");
 

@@ -1,7 +1,7 @@
 // Hybrid: the Messages-wire leg (`InferhubMessagesAdapter`, Claude Messages
 // envelope + Bearer auth + breakpoint cache stamping) is a non-OpenAI wire and
 // stays bespoke; the chat leg is a declarative spec row.
-import { assertCredentialKind } from "../provider-contracts";
+import { assertCredentialKind, assertWireFamily } from "../provider-contracts";
 import type { ProviderDispatchTarget, ProviderAdapter, ProviderDispatchContext } from "../provider-contracts";
 import type { ModelDefinition } from "../provider-model-definition";
 import type { ProviderModelDiscovery } from "../discovery/discovery-types";
@@ -327,11 +327,7 @@ export class InferhubMessagesAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (candidate.wire_family !== "messages") {
-      throw new GatewayError(
-        "capability_unsupported",
-        400,
-        `inferhub messages leg supports messages only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
-      );
+      assertWireFamily(candidate, "messages", "inferhub messages leg");
     }
     if (context.credential.credential_kind !== "api_key") {
       assertCredentialKind(context.credential, "api_key", "inferhub");

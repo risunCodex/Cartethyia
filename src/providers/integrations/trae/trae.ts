@@ -10,6 +10,7 @@ import type { UsageRecord } from "../../../protocol/canonical-model";
 import { usageFromProvider } from "../../provider-usage";
 import {
   readCredentialSecret,
+  assertWireFamily,
   type ProviderAdapter,
   type ProviderDispatchContext,
   type ProviderDispatchTarget,
@@ -152,11 +153,7 @@ class TraeAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (candidate.wire_family !== "chat") {
-      throw new GatewayError(
-        "capability_unsupported",
-        400,
-        `trae supports chat only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
-      );
+      assertWireFamily(candidate, "chat", "trae");
     }
     const secret = readCredentialSecret(context.credential, "Trae credential is required");
     const modelId = candidate.model_id || request.model;
