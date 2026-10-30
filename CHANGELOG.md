@@ -127,15 +127,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   stylesheets. (This is the build-blur fix, formerly diagnosed as a cache
   issue.)
 
-- **Qoder native machine identity, bound per account.** The daily 100-credit
-  campaign grant is only revealed to a *native device identity* (UMID), so
-  pooled accounts now own one: `provider_accounts.native_identity` (migrations
+- **Qoder native machine identity, persisted per account.** The original
+  campaign investigation attributed grant visibility to a native UMID, so
+  pooled accounts gained `provider_accounts.native_identity` (migrations
   `0026_add_qoder_native_identity` for both Postgres and SQLite, DB-enforced
   one-slot-per-env uniqueness), a Drizzle-backed identity store with
   in-process allocation (`qoder-native-identity-store.ts`), and check-in
-  behavior that probes the account's bound identity first before enumerating,
-  persisting the identity that actually wins the claim. `0027` marks the
-  genuine-seed carrier (`locale_cfg`) as persisted alongside the identity.
+  behavior that persists the selected identity. Later same-account controls
+  corrected that conclusion: machine headers do not gate daily CREDITS grants.
+  The seed remains useful for deterministic identity replay on other surfaces;
+  see `archive/research/12-Qoder-30-10-2026-umid-and-identity-findings.md`.
 - **Qoder identity mint pipeline.** `qoder-umid.ts` mints genuine device
   identities by replaying the vendor bridge (`vendor/qoder-umid/umidpack/` —
   Linux ELF ×86-64/aarch64, macOS Mach-O ×86-64/arm64, Windows PE + sgsdk.dll,
@@ -149,13 +150,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   accounts, tenant scope otherwise), and backup export/restore round-trips
   `native_identity` verbatim.
 - **Qoder research record.** The reverse-engineering evidence now lives in-tree:
-  the daily-credit campaign recipe (`research/qoder-daily-credit-campaign.md`),
-  the UMID bridge internals (`research/qoder-umid-reverse.md`), the identity
-  gate post-mortem, the Pro-trial activity-claim endpoints found by unpacking
-  the shipped client (`research/qoder-trial-activity-endpoints.md` — including
+  the daily-credit campaign recipe (`archive/research/08-Qoder-29-10-2026-daily-credit-campaign.md`),
+  the UMID bridge and corrected identity findings
+  (`archive/research/12-Qoder-30-10-2026-umid-and-identity-findings.md`), the Pro-trial
+  activity-claim endpoints found by unpacking the shipped client
+  (`archive/research/11-Qoder-30-10-2026-trial-activity-claims.md` — including
   the content-length-string signature scheme, the claim-API family, and the
-  provision matrix that settles provisioning as server-side cohorting), and the
-  relocated Buddy device-binding research (`research/buddy-device-binding.md`).
+  provision matrix whose cause remains unknown), and the
+  relocated Buddy device-binding research
+  (`archive/research/09-Buddy-30-10-2026-device-binding.md`).
   Skills updated so future sessions inherit the proven method: provider catalog
   gains `references/qoder-identity-and-claims.md` (mint/replay/exchange rules,
   claim-safety order, the DEAD `pro-upgrade` surface), and reverse-engineering
@@ -185,10 +188,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   device login that cannot resolve the account's user id fails loudly instead
   of storing an identity-less credential every request would 401.
 - **Scratch/handoff documentation is now in-tree as research, not feature
-  guides.** `documentation/features/09-buddy-device-binding.md` moved to
-  `documentation/research/buddy-device-binding.md` (unverified-historical
-  status); `handoff.md` records the check-in working state, the hard-won facts,
-  and the parked macOS-binary item.
+  guides.** The earlier Buddy device-binding note moved to
+  `documentation/archive/research/09-Buddy-30-10-2026-device-binding.md`
+  (unverified-historical status); `handoff.md` records the check-in working
+  state, the hard-won facts, and the parked macOS-binary item.
 
 ### Fixed
 

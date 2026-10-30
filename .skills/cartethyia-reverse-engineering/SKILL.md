@@ -103,7 +103,7 @@ appending host/method/path/headers to a scratch file. Check the client's own
 afterward — a reverse session is not entitled to change the installed build.
 Qoder's gateway signature turned out to hash the *content-length string*, a
 shape no amount of guessing would have yielded (method and findings in
-[`documentation/research/qoder-trial-activity-endpoints.md`](../../documentation/research/qoder-trial-activity-endpoints.md)).
+[`documentation/archive/research/11-Qoder-30-10-2026-trial-activity-claims.md`](../../documentation/archive/research/11-Qoder-30-10-2026-trial-activity-claims.md)).
 
 Keep an evidence ledger: question, source and version, observed result, and
 what is still unknown. Turn only the verified rows into a Cartethyia change,

@@ -3,20 +3,17 @@
 Durable knowledge for Qoder (intl realm) account work: where identity comes
 from, which claim surfaces exist, what has been proven dead, and the
 verification order for a new claim path. The full evidence trail lives in
-[`documentation/research/qoder-trial-activity-endpoints.md`](../../documentation/research/qoder-trial-activity-endpoints.md)
-and [`documentation/research/qoder-umid-reverse.md`](../../documentation/research/qoder-umid-reverse.md).
+[`documentation/archive/research/11-Qoder-30-10-2026-trial-activity-claims.md`](../../../documentation/archive/research/11-Qoder-30-10-2026-trial-activity-claims.md)
+and [`documentation/archive/research/12-Qoder-30-10-2026-umid-and-identity-findings.md`](../../../documentation/archive/research/12-Qoder-30-10-2026-umid-and-identity-findings.md).
 
 ## Identity
 
-- **Genuine identity** (`P1gA…` machineToken, hex `machineType`/`machineOs`) is
-  minted by the vendor ELF bridge. Own it in
+- **Native identity** (`P1gA…` machineToken, hex `machineType`/`machineOs`) is
+  minted by the vendor bridge. Keep it in
   `src/providers/integrations/qoder/qoder-umid.ts` (`umidpack` binaries in
-  `vendor/qoder-umid/umidpack/`, seeds replayed there). Generated identities do
-  not carry the campaign grant surface.
-- The **daily-credit campaign visibility gate is at first visibility only**:
-  once an account has claimed (or is in a claiming cohort), empty and random
-  machine headers still read `CLAIMED`/`NOT VISIBLE` the same way. Do not treat
-  a header-shape test after a claim as evidence about the mint.
+  `vendor/qoder-umid/umidpack/`, seeds replayed there). Same-account controls
+  found that generated, random, empty, and omitted machine headers all expose
+  an existing daily CREDITS grant. Identity does not create a missing grant.
 - Device-login `dt-…`/`drt-…` tokens carry neither user id nor machine id;
   both travel in `auth_state` and every COSY-signed dispatch needs both.
 - A PAT (`pt-…`) is exchanged for a job token (`jt-…`) before COSY signing:
@@ -54,20 +51,16 @@ and [`documentation/research/qoder-umid-reverse.md`](../../documentation/researc
 
 ## Provisioning — proven server-side
 
-Provisioning (daily grant, welcome trial/300) is **not** determined by
-credential kind, machine-identity shape, or a completed interaction. A fresh
-registration driven through PAT+real chat turn, native device login with a
-random `machine_id`, and native device login with a genuine ELF-minted
-`machine_id` still answered empty activity/eligibility and a grantless campaign
-list, while accounts provisioned elsewhere keep exposing the campaign. Do not
-re-test these three paths — the matrix is in the research doc. Treat a missing
-provision as a cohort problem, keep the account file (tokens + seed), and
-re-check sash campaigns later; several accounts have gained grants hours after
-registration.
+Missing grants and trial activities remain server-provisioned. The tested
+fresh-account matrix did not establish why an account is provisioned, and the
+desktop IDE's full bootstrap stream remains untested. For daily CREDITS, check
+grant presence and daily-window timing separately from device identity; the
+same-account header controls are recorded in the research note.
 
 ## Order of verification for a claim question
 
-1. `GET /sash/api/v1/me/campaigns` (bearer `dt-…` + machine headers) — is the
+1. `GET /sash/api/v1/me/campaigns` (bearer `dt-…`, machine headers optional
+   for the tested CREDITS surface) — is the
    CREDITS campaign visible, and what is `claimStatus`? Probe-style safety
    applies: never claim without an explicit `CLAIMABLE`.
 2. Only shapes with `CLAIM_BENEFIT`/`CREDITS` proceed to `POST …/claim`.
