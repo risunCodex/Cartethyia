@@ -1,4 +1,4 @@
-> # ARCHIVED — UNTRUSTED
+﻿> # ARCHIVED â€” UNTRUSTED
 >
 > This file was archived on 2026-10-23. It is a **point-in-time record**, not a
 > description of current behavior: every `file:line`, symbol, path, and
@@ -67,16 +67,19 @@ spells it exactly that way.
 The `2026-01-09` present on one path of the Copilot Chat 0.70.0 bundle is rejected
 by `/auto`. `2026-08-01` is accepted.
 
-## Models that auto selects
+## Historical prompt limits (2026-10-16)
 
-| Tier | Model | Catalog context | Prompt limit enforced |
+The [newer Auto routing note](2026-10-30-copilot-auto-routing.md)
+records the current tier-to-model probe. This older measurement is retained
+for its prompt-limit data, not as evidence of current tier assignments.
+
+| Model | Catalog context | Historical prompt limit |
 |---|---|---|---|
-| efficiency | gpt-6-luna | 1,000,000 | 872,000 (untested, see below) |
-| balance | mai-code-1.1-flash | 256,000 | 128,000 |
-| intelligence | mai-code-1.1-flash | 256,000 | 128,000 |
+| gpt-6-luna | 1,000,000 | 872,000 (untested, see below) |
+| mai-code-1.1-flash | 256,000 | 128,000 |
 
 mai-flash output is 128,000, so context 256,000 = prompt 128,000 + output
-128,000. Luna output is 128,000, and 1,000,000 − 128,000 = 872,000, matching the
+128,000. Luna output is 128,000, and 1,000,000 âˆ’ 128,000 = 872,000, matching the
 `max_prompt_tokens` the catalog reports.
 
 ## mai-flash prompt limit, one session
@@ -108,12 +111,12 @@ is sharp, so this is not a busy model:
 | 35,000 | 5,843 | pass |
 | 36,000 | 6,010 | pass |
 | 36,500 | 6,093 | pass |
-| 37,000 | — | 503 `model_overloaded` |
-| 40,000 and up | — | 503, same |
+| 37,000 | â€” | 503 `model_overloaded` |
+| 40,000 and up | â€” | 503, same |
 
 That is the limit for a single request with repeating content. A growing
 conversation differs: each turn resends the entire history, `stream: true`,
-`store: false`. Tokens rise by 4,820 per turn (4,815, 9,635, 14,455, …) and the
+`store: false`. Tokens rise by 4,820 per turn (4,815, 9,635, 14,455, â€¦) and the
 server never requests compaction. One 200,000-word request passes at 800,010
 tokens. 218,000 words is rejected: `prompt token count of 872004 exceeds
 the limit of 872000`. The ceiling enforced is exactly the catalog's
@@ -137,7 +140,7 @@ Both are client decisions, not server responses.
 Compaction: before sending, VS Code counts the tokens of the entire history
 (`_getFinalElementTree`). The base budget is `modelMaxPromptTokens`, or
 `contextSize` when the session has a smaller one. Tools count too, and the final
-budget is `floor((budget - tool tokens) × 0.9)`. When the history exceeds it, the
+budget is `floor((budget - tool tokens) Ã— 0.9)`. When the history exceeds it, the
 lowest-priority node is dropped until it fits (`removeLowestPriorityChild`).
 There is no signal from the server. That is why switching to a session whose
 history is already full immediately requests compaction: VS Code computed it
@@ -148,7 +151,7 @@ still valid. The cache is considered valid only when all three hold: same tier,
 session token not past `expires_at`, and an image-bearing request is not routed
 to a model without vision (`_isCacheEntryCompatible`). The cache is force-invalidated
 after compaction (`invalidateRouterCache`). Outside that, every turn waits for
-`/auto` before inference — that is the pause at the start of every reply, and it
+`/auto` before inference â€” that is the pause at the start of every reply, and it
 is not because the server queues sessions.
 
 ## gpt-4o, for comparison
