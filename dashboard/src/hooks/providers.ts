@@ -1,7 +1,7 @@
 import { consoleRequest } from "../data/api";
 import type { ApiErrorShape } from "../data/api";
 // Console-owned device-poll DTO; token material remains provider-internal.
-import type { AccountHealthEventRecord, ByokConnectionTestRequest, ByokConnectionTestResult, CreateProviderAccountBatchResult, CreateProviderAccountRequest, CreateProviderRequest, NativeIdentityRecord, OAuthDevicePollResponse as OAuthDevicePollResult, ProbeAllAccountsResult, ProbeModelRequest, ProbeModelResult, ProviderAccountResponse, ProviderAccountsExportResponse, ProviderResponse, SetModelEnabledRequest, UpdateProviderAccountRequest, UpdateProviderRequest } from "../data/contracts";
+import type { AccountHealthEventRecord, ByokConnectionTestRequest, ByokConnectionTestResult, CreateProviderAccountBatchResult, CreateProviderAccountRequest, CreateProviderRequest, OAuthDevicePollResponse as OAuthDevicePollResult, ProbeAllAccountsResult, ProbeModelRequest, ProbeModelResult, ProviderAccountResponse, ProviderAccountsExportResponse, ProviderResponse, SetModelEnabledRequest, UpdateProviderAccountRequest, UpdateProviderRequest } from "../data/contracts";
 import { queryKeys } from "../data/query-keys";
 import { assertModels, assertProvider, assertProviders, querySignal } from "../data/assert";
 import { DASHBOARD_QUERY_OPTIONS, POLL } from "../data/query-policy";
@@ -827,75 +827,6 @@ export function useSyncProviderModels(options: { readonly silent?: boolean } = {
     },
     onError: (error) => {
       if (!options.silent) toast.error("Failed to fetch models", getErrorMessage(error));
-    },
-  });
-}
-
-/** Loads the Qoder native machine identity bound to one account. */
-export function useNativeIdentity(accountId: string | undefined) {
-  return useQuery({
-    queryKey: queryKeys.providers.nativeIdentity(accountId),
-    queryFn: (context) =>
-      consoleRequest<{ identity: NativeIdentityRecord | null }>(
-        `/accounts/${encodeURIComponent(accountId ?? "")}/native-identity`,
-        { signal: querySignal(context) },
-      ),
-    enabled: Boolean(accountId),
-    ...DASHBOARD_QUERY_OPTIONS,
-    staleTime: 60_000,
-  });
-}
-
-/** Imports (binds) a native identity from pasted JSON. */
-export function useImportNativeIdentity() {
-  const queryClient = useQueryClient();
-  return useMutation<
-    { identity: NativeIdentityRecord },
-    ApiErrorShape,
-    { accountId: string; identity: NativeIdentityRecord }
-  >({
-    mutationFn: ({ accountId, identity }) =>
-      consoleRequest<{ identity: NativeIdentityRecord }>(
-        `/accounts/${encodeURIComponent(accountId)}/native-identity`,
-        { method: "PUT", body: JSON.stringify(identity) },
-      ),
-    onSuccess: async (_result, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.providers.nativeIdentity(variables.accountId),
-      });
-      toast.success("Native identity bound", "Device identity saved");
-    },
-    onError: (error) => {
-      toast.error("Failed to bind identity", getErrorMessage(error));
-    },
-  });
-}
-
-/** Regenerates (re-mints) the account's native device identity. */
-export function useRegenerateNativeIdentity() {
-  const queryClient = useQueryClient();
-  return useMutation<
-    { identity: NativeIdentityRecord | null },
-    ApiErrorShape,
-    { accountId: string }
-  >({
-    mutationFn: ({ accountId }) =>
-      consoleRequest<{ identity: NativeIdentityRecord | null }>(
-        `/accounts/${encodeURIComponent(accountId)}/native-identity/regenerate`,
-        { method: "POST", body: "{}" },
-      ),
-    onSuccess: async (result, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.providers.nativeIdentity(variables.accountId),
-      });
-      if (result.identity) {
-        toast.success("Native identity regenerated", "New device identity minted");
-      } else {
-        toast.error("Regenerate failed", "The bridge could not mint a new identity");
-      }
-    },
-    onError: (error) => {
-      toast.error("Regenerate failed", getErrorMessage(error));
     },
   });
 }

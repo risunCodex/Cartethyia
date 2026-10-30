@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
-  Fingerprint,
   FlaskConical,
   KeyRound,
   Loader2,
@@ -26,7 +25,6 @@ import { formatResetDistance } from "../../../lib/format/quota";
 import { toast } from "../../../lib/toast";
 import type { ProviderAccountResponse } from "../../../data/contracts";
 import { AccountStatusBadge } from "./AccountStatusBadge";
-import { NativeIdentityDialog } from "./NativeIdentityDialog";
 
 const QODER_PROVIDER_IDS = new Set(["qoder", "qodercn"]);
 
@@ -213,7 +211,6 @@ export function AccountRow({
   const isRecoverable = account.status === "cooldown" || hasActiveCooldown;
   const [showHistory, setShowHistory] = useState(false);
   const [editKeyOpen, setEditKeyOpen] = useState(false);
-  const [nativeIdentityOpen, setNativeIdentityOpen] = useState(false);
   const [, setTick] = useState(0);
   const [renaming, setRenaming] = useState(false);
   const [draftLabel, setDraftLabel] = useState("");
@@ -410,17 +407,6 @@ export function AccountRow({
             onClick={() => setEditKeyOpen(true)}
             title="Replace API key"
           />
-          {QODER_PROVIDER_IDS.has(providerId) ? (
-            <Button
-              size="icon"
-              variant="secondary"
-              icon={<Fingerprint size={12} />}
-              label="Native identity"
-              aria-label={`Native machine identity for ${label}`}
-              onClick={() => setNativeIdentityOpen(true)}
-              title="Qoder native machine identity (daily check-in slot)"
-            />
-          ) : null}
           <Button
             size="icon"
             variant="secondary"
@@ -477,12 +463,6 @@ export function AccountRow({
           providerId={providerId}
           account={account}
           onClose={() => setEditKeyOpen(false)}
-        />
-      )}
-      {nativeIdentityOpen && (
-        <NativeIdentityDialog
-          accountId={account.id}
-          onClose={() => setNativeIdentityOpen(false)}
         />
       )}
     </>

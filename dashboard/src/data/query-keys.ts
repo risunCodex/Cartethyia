@@ -45,8 +45,6 @@ export const queryKeys = {
         accountId,
         "health-events",
       ] as const,
-    nativeIdentity: (accountId: string | undefined) =>
-      ["console", "accounts", accountId, "native-identity"] as const,
   },
   modelRouting: {
     all: ["console", "model-routing"] as const,
