@@ -76,7 +76,7 @@ export function createApiKeyAuthenticationMiddleware(deps: {
         scopes: authorization.scopes,
       });
       if (!decision.scopes.includes("routing:invoke"))
-        throw new GatewayError("invalid_request", 403, "This API key is not allowed to invoke routing. Grant it the routing:invoke scope, or use a key that has it.");
+        throw new GatewayError("policy_rejected", 403, "This API key is not allowed to invoke routing (request {requestId}). Grant it the routing:invoke scope, or use a key that has it. Not allowed by policy — no hard feelings 🫂");
       // Kill switch: refuse before any upstream is touched. Distinct from the
       // scope check above, which is a property of the key — this is the tenant
       // having stopped all traffic, and it applies to every key the tenant owns.
@@ -86,7 +86,8 @@ export function createApiKeyAuthenticationMiddleware(deps: {
         throw new GatewayError(
           "platform_unavailable",
           503,
-          "This gateway has invoke switched off. Nothing upstream is being dialed while the switch is off; turn it back on from the dashboard overview to resume routing.",
+          "This gateway has invoke switched off (request {requestId}). Nothing upstream is being dialed while the switch is off; turn it back on from the dashboard overview to resume routing. Flip the switch back on when ready 🔌",
+          { reason: "invoke_switched_off" },
         );
       // A key may refuse a downstream router it has been resold to. This is a
       // policy check on the resolved key, so it belongs with the other
@@ -100,7 +101,7 @@ export function createApiKeyAuthenticationMiddleware(deps: {
         throw new GatewayError(
           "client_router_denied",
           403,
-          "No API invocation access for this client.",
+          "No API invocation access for this client (request {requestId}). This router isn't on the guest list — denied, but politely 🤗",
           { reason: "client_router_denied", clientRouter: denied },
         );
       deps.stateStore.require(request).authorization = authorization;

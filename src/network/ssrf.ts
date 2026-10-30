@@ -227,7 +227,7 @@ export async function resolveAllAddresses(
     throw new GatewayError(
       "transport_unavailable",
       502,
-      "upstream DNS resolution failed",
+      "upstream DNS resolution failed (request {requestId}). The connection ghosted us — come back in a moment 👻",
       { cause: String(error) },
       "network",
     );
@@ -238,8 +238,8 @@ function abortErrorForSignal(signal: AbortSignal): GatewayError {
   const reason = signal.reason;
   if (reason instanceof GatewayError) return reason;
   if (reason instanceof DOMException && reason.name === "TimeoutError")
-    return new GatewayError("deadline_exceeded", 504, "request deadline exceeded", {}, "cartethyia");
-  return new GatewayError("transport_closed", 499, "request was cancelled");
+    return new GatewayError("deadline_exceeded", 504, "request deadline exceeded (request {requestId}). Some things just take longer 🐢", {}, "cartethyia");
+  return new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
 }
 
 export async function resolveAndValidateOnce(

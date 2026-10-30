@@ -399,7 +399,7 @@ export class IpAbuseProtectionService {
     readonly signal?: AbortSignal;
   }): Promise<void> {
     if (input.signal?.aborted) {
-      throw new GatewayError("admission_unavailable", 503, "The abuse check never ran because the request was already cancelled.", {
+      throw new GatewayError("admission_unavailable", 503, "The abuse check never ran because the request was already cancelled (request {requestId}). Send it again whenever ready 🙃", {
         reason: "admission-unavailable",
       });
     }
@@ -436,7 +436,7 @@ export class IpAbuseProtectionService {
 
       if (outcome.banned) {
         metrics.cartethyia_ip_abuse_refusals_total.inc(1, { reason: "ip-banned" });
-        throw new GatewayError("quota_exceeded", 429, "This address is temporarily banned for too many failed requests. Wait for the ban to lift, then slow down.", {
+        throw new GatewayError("quota_exceeded", 429, "This address is temporarily banned for too many failed requests (request {requestId}). Wait for the ban to lift, then slow down. You've maxed this window — pace yourself ⏳", {
           // Distinguishes this from the rate-limited 429 below and from an API
           // key's own budget. It used to be "admission-unavailable", which is
           // the label for an *unreachable* store — so every refusal from this
@@ -454,7 +454,7 @@ export class IpAbuseProtectionService {
 
       if (outcome.count > this.maxRequestsPerWindow) {
         metrics.cartethyia_ip_abuse_refusals_total.inc(1, { reason: "ip-rate-limited" });
-        throw new GatewayError("quota_exceeded", 429, "This address is sending requests faster than the abuse limit allows. Back off and retry after the window rolls over.", {
+        throw new GatewayError("quota_exceeded", 429, "This address is sending requests faster than the abuse limit allows (request {requestId}). Back off and retry after the window rolls over. You've maxed this window — pace yourself ⏳", {
           reason: "ip-rate-limited",
           ip,
           route: input.route,
@@ -464,7 +464,7 @@ export class IpAbuseProtectionService {
       }
     } catch (err) {
       if (err instanceof GatewayError) throw err;
-      throw new GatewayError("admission_unavailable", 503, "The abuse-tracking store is unreachable, so requests from this address cannot be checked. Retry shortly.", {
+      throw new GatewayError("admission_unavailable", 503, "The abuse-tracking store is unreachable, so requests from this address cannot be checked (request {requestId}). Retry shortly. The bouncer stepped out — come back shortly 🚪", {
         reason: "admission-unavailable",
         cause: (err as Error).message,
       });

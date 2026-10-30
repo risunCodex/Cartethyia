@@ -133,6 +133,7 @@ describe("error code consistency", () => {
     //    message contains; they are also not substrings of English words, so
     //    "banned" and "invalid" stay clean.
     const ALLOWED_PUNCTUATION = /[—–…·→←↔≤≥²³§│─┌┐└┘]/g;
+    const EMOJI = /[\p{Extended_Pictographic}\uFE0F\u200D]/gu;
     const NON_ENGLISH_STOPWORDS = /\b(kamu|anda|tidak|diblokir|dengan|untuk|karena|yang|ini|itu|silakan|hingga|terlalu|banyak|atau|dari|kepada|adalah|akan|sudah|bisa|jika|mohon|maaf|permintaan|kunci|waktu|menit|jam|hari)\b/i;
     const root = new URL("../../src/", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
     const offenders: string[] = [];
@@ -153,7 +154,13 @@ describe("error code consistency", () => {
           const message = chunk.match(/new GatewayError\([^)]*?,\s*\d+,\s*"([^"]*)"/);
           if (!message) continue;
           const text = message[1]!;
-          const notLatin = /[^\x20-\x7E]/.test(text.replace(ALLOWED_PUNCTUATION, ""));
+          // Emoji are a deliberate part of the house tone (one per message),
+          // so they are stripped before the script check — but non-Latin
+          // scripts (Cyrillic, CJK, Arabic, Greek) and Indonesian stopwords
+          // still fail, which is the point of the guard.
+          const notLatin = /[^\x20-\x7E]/.test(
+            text.replace(EMOJI, "").replace(ALLOWED_PUNCTUATION, ""),
+          );
           if (notLatin || NON_ENGLISH_STOPWORDS.test(text)) offenders.push(`${path}:${i + 1}`);
         }
       }
@@ -619,7 +626,7 @@ describe("the error code vocabulary", () => {
       "tool_call_loop_detected",
       "client_router_denied",
       "shutting_down",
-      "restart_for_update",
+      "upstream_overloaded",
     ];
     for (const code of codes) {
       expect(code).toMatch(/^[a-z][a-z0-9_]*$/);

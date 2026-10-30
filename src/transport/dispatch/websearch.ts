@@ -50,10 +50,10 @@ export function createWebsearchHandler(deps: WebsearchHandlerDeps) {
     const authorization = state.authorization;
     const body = state.ingressBody;
     if (!authorization || body === null || typeof body !== "object" || Array.isArray(body))
-      throw new GatewayError("invalid_request", 400, "The search body must be a JSON object. Send one with at least a model and a query.");
+      throw new GatewayError("invalid_request", 400, "The search body must be a JSON object (request {requestId}). Send one with at least a model and a query. Check the shape of what you sent — then resend 🪞");
     const search = body as Record<string, unknown>;
     if (typeof search.model !== "string" || search.model.trim().length === 0)
-      throw new GatewayError("invalid_request", 400, "A model is required: it names the search provider to use.");
+      throw new GatewayError("invalid_request", 400, "A model is required (request {requestId}): it names the search provider to use. Check the shape of what you sent — then resend 🪞");
     // The search "model" names the provider (or an alias/combo of one). A
     // thinking suffix is stripped for the same reason the canonical preparer
     // strips it: it is not part of any registered id.
@@ -61,12 +61,12 @@ export function createWebsearchHandler(deps: WebsearchHandlerDeps) {
     const searchBody: Record<string, unknown> =
       bareModel === search.model ? search : { ...search, model: bareModel };
     if (!authorization.snapshot.scopes?.includes("search:invoke" as never)) {
-      throw new GatewayError("invalid_request", 403, "search not allowed for this key — enable search:invoke on the API key");
+      throw new GatewayError("policy_rejected", 403, "search not allowed for this key (request {requestId}) — enable search:invoke on the API key. Not allowed by policy — no hard feelings 🫂");
     }
     // Trust boundary only: the query must be a non-empty string. The adapter
     // validates the remaining shape when it maps the body onto its provider.
     if (typeof search.query !== "string" || search.query.trim().length === 0)
-      throw new GatewayError("invalid_request", 400, "query is required");
+      throw new GatewayError("invalid_request", 400, "query is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
 
     const prepared = await deps.proxyPreparer.prepareNativeService({
       model: bareModel,
@@ -89,7 +89,7 @@ export function createWebsearchHandler(deps: WebsearchHandlerDeps) {
       candidates: prepared.candidates,
       tenantId: prepared.authorization.tenantId,
       strictPoolSelection: false,
-      exhaustedError: new GatewayError("admission_unavailable", 503, "no eligible search route"),
+      exhaustedError: new GatewayError("admission_unavailable", 503, "no eligible search route (request {requestId}). The bouncer stepped out — come back shortly 🚪"),
       prepare: async (candidate) => {
         const credential = candidate.provider_account_id
           ? await resolveCredentialForAccount(
@@ -109,7 +109,7 @@ export function createWebsearchHandler(deps: WebsearchHandlerDeps) {
           throw new GatewayError(
             "capability_unsupported",
             400,
-            "web search is unavailable for this provider",
+            "web search is unavailable for this provider (request {requestId}). Know your tools — this one just isn't in the box 🧰",
           );
         return { credential, adapter };
       },

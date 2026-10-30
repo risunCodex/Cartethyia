@@ -27,10 +27,10 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
     const authorization = state.authorization;
     const body = state.ingressBody;
     if (!authorization || body === null || typeof body !== "object" || Array.isArray(body))
-      throw new GatewayError("invalid_request", 400, "compact request body must be a JSON object");
+      throw new GatewayError("invalid_request", 400, "compact request body must be a JSON object (request {requestId}). Check the shape of what you sent — then resend 🪞");
     const compact = body as Record<string, unknown>;
     if (typeof compact.model !== "string" || compact.model.trim().length === 0)
-      throw new GatewayError("invalid_request", 400, "model is required");
+      throw new GatewayError("invalid_request", 400, "model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
     // A thinking suffix (`model(high)`) is stripped here for the same reason the
     // canonical preparer strips it: this route matches the model name against
     // the allowlist and the route plan, and `(high)` is not part of any
@@ -43,18 +43,18 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
     const compactBody: Record<string, unknown> =
       compactModel === compact.model ? compact : { ...compact, model: compactModel };
     if (!(typeof compact.input === "string" || Array.isArray(compact.input)))
-      throw new GatewayError("invalid_request", 400, "input must be a string or array");
+      throw new GatewayError("invalid_request", 400, "input must be a string or array (request {requestId}). Check the shape of what you sent — then resend 🪞");
     if ("instructions" in compact && typeof compact.instructions !== "string")
-      throw new GatewayError("invalid_request", 400, "instructions must be a string");
+      throw new GatewayError("invalid_request", 400, "instructions must be a string (request {requestId}). Check the shape of what you sent — then resend 🪞");
     if (compact.stream === true)
       throw new GatewayError(
         "capability_unsupported",
         400,
-        "Responses compact does not support streaming",
+        "Responses compact does not support streaming (request {requestId}). Know your tools — this one just isn't in the box 🧰",
       );
     const adapter = (await deps.resolveProviderAdapter?.("codex")) as CodexCompactAdapter | undefined;
     if (!adapter || typeof adapter.compact !== "function")
-      throw new GatewayError("admission_unavailable", 503, "Codex compact transport unavailable");
+      throw new GatewayError("admission_unavailable", 503, "Codex compact transport unavailable (request {requestId}). The bouncer stepped out — come back shortly 🚪");
     const prepared = await deps.proxyPreparer.prepareNativeCompact({
       model: compactModel,
       authorization,
@@ -79,14 +79,14 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
       exhaustedError: new GatewayError(
         "admission_unavailable",
         503,
-        "no eligible Codex route",
+        "no eligible Codex route (request {requestId}). The bouncer stepped out — come back shortly 🚪",
       ),
       prepare: async (candidate) => {
         if (!candidate.provider_account_id)
           throw new GatewayError(
             "admission_unavailable",
             503,
-            "Codex compact requires an OAuth account",
+            "Codex compact requires an OAuth account (request {requestId}). The bouncer stepped out — come back shortly 🚪",
           );
         const credential = await resolveCredentialForAccount(
           deps.db,

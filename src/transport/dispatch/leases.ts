@@ -141,7 +141,7 @@ async function acquirePoolSlot(
       throw new GatewayError(
         "proxy_pool_unhealthy",
         503,
-        "Every proxy pool this route requires is unhealthy or disabled. Repair a pool, or relax the route's pool requirement.",
+        "Every proxy pool this route requires is unhealthy or disabled (request {requestId}). Repair a pool, or relax the route's pool requirement. This bridge looks shaky — repair or reroute 🔧",
         { reason: "no_healthy_pool" },
         "network",
       );
@@ -172,7 +172,7 @@ async function acquirePoolSlot(
     throw new GatewayError(
       "proxy_pool_unavailable",
       503,
-      "No active proxy pool is available because coordination is unavailable.",
+      "No active proxy pool is available because coordination is unavailable (request {requestId}). The bouncer stepped out — come back shortly 🚪",
       { reason: "coordination_unavailable" },
       "network",
     );
@@ -219,14 +219,14 @@ async function acquirePoolSlot(
     failure.reason === "at_capacity" || failure.reason === "provider_at_capacity" ? 429 : 503;
   const message =
     failure.reason === "at_capacity"
-      ? "Every proxy pool for this provider is at its concurrency limit. Retry shortly, or add a pool or raise its capacity."
+      ? "Every proxy pool for this provider is at its concurrency limit (request {requestId}). Retry shortly, or add a pool or raise its capacity. The pools are full right now — chill 🌊"
       : failure.reason === "provider_at_capacity"
-        ? "Every proxy pool has reached this provider's per-proxy concurrency limit. Retry shortly, raise the limit in the provider's routing settings, or add a pool."
+        ? "Every proxy pool has reached this provider's per-proxy concurrency limit (request {requestId}). Retry shortly, raise the limit in the provider's routing settings, or add a pool. The proxies are working overtime — hang tight ⚡️"
         : failure.reason === "blocked"
-          ? "All proxy pools are saturated for this provider: the upstream refuses every egress configured for it. Replace a blocked proxy, or add one the upstream has not flagged."
+          ? "All proxy pools are saturated for this provider (request {requestId}): the upstream refuses every egress configured for it. Replace a blocked proxy, or add one the upstream has not flagged. All roads blocked — time to find a new route 🗺️"
           : failure.reason === "cooldown"
-            ? "Every proxy pool for this provider is cooling down after upstream failures. Retry once the cooldown resets."
-            : "No active proxy pool is configured for this tenant and provider. Add one, or route this provider through direct egress.";
+            ? "Every proxy pool for this provider is cooling down after upstream failures (request {requestId}). Retry once the cooldown resets. The proxies are catching their breath — zzz 💤"
+            : "No active proxy pool is configured for this tenant and provider (request {requestId}). Add one, or route this provider through direct egress. No bridge to cross — configure a pool first 🏗️";
   throw new GatewayError(code, status, message, {
     pools: failure.pools,
     // Only measured evidence: a cooldown's real reset instant. The

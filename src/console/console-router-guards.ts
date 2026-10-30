@@ -35,7 +35,7 @@ export function createConsoleCsrfMiddleware(): Elysia {
       // CSRF enforcement applies exactly when a session cookie is present.
       if (!token) return;
       if (!isCsrfValid(request))
-        throw new GatewayError("invalid_request", 403, "CSRF validation failed");
+        throw new GatewayError("policy_rejected", 403, "CSRF validation failed (request {requestId}). Not allowed by policy — no hard feelings 🫂");
     })
     .as("plugin");
 }
@@ -102,7 +102,7 @@ export function createConsoleMutationLimiterMiddleware(): Elysia {
             ? Math.ceil(CONSOLE_MUTATION_WINDOW_MS / 1000)
             : Math.max(1, Math.ceil((oldest + CONSOLE_MUTATION_WINDOW_MS - now) / 1000));
         set.headers["retry-after"] = String(retryAfterSeconds);
-        throw new GatewayError("quota_exceeded", 429, "Console mutation rate limit exceeded");
+        throw new GatewayError("quota_exceeded", 429, "Console mutation rate limit exceeded (request {requestId}). Retry shortly. You've maxed this window — pace yourself ⏳");
       }
       hits.push(now);
       consoleMutationHits.set(key, hits);

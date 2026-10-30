@@ -316,7 +316,7 @@ export async function runAttemptLoop<TResult, TAdapter>(
     };
     try {
       if (state.abortController.signal.aborted)
-        throw new GatewayError("transport_closed", 499, "request was cancelled");
+        throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
       const { credential, adapter } = await input.prepare(candidate);
       const host = input.resolveHost?.(candidate);
       // Single attempt-lease manager owns acquisition order (admission →

@@ -16,8 +16,9 @@
 import { GatewayError, type GatewayErrorCode } from "../protocol/gateway-error";
 
 export interface ShutdownNotice {
-  readonly code: Extract<GatewayErrorCode, "shutting_down" | "restart_for_update">;
+  readonly code: Extract<GatewayErrorCode, "shutting_down">;
   readonly message: string;
+  readonly reason?: string;
 }
 
 /**
@@ -30,9 +31,17 @@ export const UPDATE_SHUTDOWN_REASON = "update";
 
 export function shutdownNotice(reason: string | undefined): ShutdownNotice {
   if (reason === UPDATE_SHUTDOWN_REASON) {
-    return { code: "restart_for_update", message: "system will be back in a minute" };
+    return {
+      code: "shutting_down",
+      message:
+        "Service is shutting down for an update; it will be back in about a minute (request {requestId}). Maintenance mode — back in a minute 🧘",
+      reason: "restart_for_update",
+    };
   }
-  return { code: "shutting_down", message: "Service is shutting down" };
+  return {
+    code: "shutting_down",
+    message: "Service is shutting down (request {requestId}). Come back shortly 🧘",
+  };
 }
 
 /**
@@ -47,7 +56,12 @@ export function shutdownNotice(reason: string | undefined): ShutdownNotice {
  */
 export function shutdownError(reason: string | undefined): GatewayError {
   const notice = shutdownNotice(reason);
-  return new GatewayError(notice.code, 503, notice.message);
+  return new GatewayError(
+    notice.code,
+    503,
+    notice.message,
+    notice.reason === undefined ? {} : { reason: notice.reason },
+  );
 }
 
 /**
@@ -62,7 +76,5 @@ export function shutdownError(reason: string | undefined): GatewayError {
  */
 export function drainAbortReason(reason: unknown): GatewayError | undefined {
   if (!(reason instanceof GatewayError)) return undefined;
-  return reason.code === "shutting_down" || reason.code === "restart_for_update"
-    ? reason
-    : undefined;
+  return reason.code === "shutting_down" ? reason : undefined;
 }

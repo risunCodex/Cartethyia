@@ -379,7 +379,7 @@ export function parseCustomProviderId(value: string): CustomProviderId {
     throw new GatewayError(
       "slug_reserved",
       409,
-      "The provider ID is reserved for a builtin provider",
+      "The provider ID is reserved for a builtin provider (request {requestId}). This name's taken — pick another alias ✨",
       { provider_id: normalized },
     );
   }

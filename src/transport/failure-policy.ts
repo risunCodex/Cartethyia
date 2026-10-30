@@ -167,7 +167,7 @@ export function statusToGatewayErrorCode(status: number): GatewayErrorCode {
   if (status === 413) return "request_too_large";
   if (status === 415) return "unsupported_media_type";
   if (status === 422) return "upstream_unprocessable";
-  if (status === 529) return "capacity_exhausted";
+  if (status === 529) return "upstream_overloaded";
   if (status >= 500 && status <= 599) return "platform_unavailable";
   return "invalid_request";
 }
@@ -275,6 +275,7 @@ export function classifyUpstreamFailure(error: unknown): UpstreamFailurePolicy {
     error.code === "model_not_found" ||
     error.code === "admission_unavailable" ||
     error.code === "capacity_exhausted" ||
+    error.code === "upstream_overloaded" ||
     // A provider max-inflight rejection: the plan's next sibling account may
     // have a free slot, exactly as with an API-key concurrency rejection.
     error.code === "provider_capacity_exhausted" ||
@@ -427,6 +428,7 @@ const CATEGORY_HTTP_STATUS: Partial<Record<GatewayErrorCode | "unknown_error", n
   // in this process.
   transport_unavailable: 502,
   platform_unavailable: 502,
+  upstream_overloaded: 529,
   deadline_exceeded: 504,
   transport_closed: 499,
   shutting_down: 503,
@@ -624,7 +626,7 @@ export function upstreamQueuedError(
     503,
     detail.length > 0
       ? detail
-      : "The upstream has queued this request. Retry after the stated interval.",
+      : "The upstream has queued this request (request {requestId}); retry after the stated interval. You're in line — no cuts 💛",
     {
       providerId,
       reason: "upstream-queued",
@@ -816,7 +818,7 @@ export function classifyUpstreamError(
   }
   if (normalized !== undefined && CAPACITY_ERROR_IDENTIFIERS.has(normalized))
     return {
-      code: "capacity_exhausted",
+      code: "upstream_overloaded",
       status: status === 503 || status === 529 ? status : 529,
       origin: "upstream",
     };
@@ -969,7 +971,7 @@ export async function throwIfHtmlResponse(response: Response): Promise<void> {
   throw new GatewayError(
     "transport_unavailable",
     502,
-    `Upstream returned an HTML error page: ${summary}`.slice(0, 300),
+    `Upstream returned an HTML error page: ${summary} (request {requestId}). The provider's edge is having a moment — hang tight ☕️`.slice(0, 320),
     { upstreamStatus: response.status, contentType, accountScope: true },
     "upstream",
   );

@@ -33,10 +33,10 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
     const authorization = state.authorization;
     const body = state.ingressBody;
     if (!authorization || body === null || typeof body !== "object" || Array.isArray(body))
-      throw new GatewayError("invalid_request", 400, "systemone request body must be a JSON object");
+      throw new GatewayError("invalid_request", 400, "systemone request body must be a JSON object (request {requestId}). Check the shape of what you sent — then resend 🪞");
     const decision = body as Record<string, unknown>;
     if (typeof decision.model !== "string" || decision.model.trim().length === 0)
-      throw new GatewayError("invalid_request", 400, "model is required");
+      throw new GatewayError("invalid_request", 400, "model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
     // A thinking suffix (`model(high)`) is stripped for the same reason the
     // canonical preparer strips it: the route matches the model name against the
     // allowlist and the route plan, and `(high)` is not part of any registered
@@ -49,14 +49,14 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
     // upstream's to validate. `state` and a `questions` object are what make a
     // System One request a System One request at all.
     if (decision.state === undefined || decision.state === null)
-      throw new GatewayError("invalid_request", 400, "state is required");
+      throw new GatewayError("invalid_request", 400, "state is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
     if (
       decision.questions === undefined ||
       decision.questions === null ||
       typeof decision.questions !== "object" ||
       Array.isArray(decision.questions)
     )
-      throw new GatewayError("invalid_request", 400, "questions must be an object");
+      throw new GatewayError("invalid_request", 400, "questions must be an object (request {requestId}). Check the shape of what you sent — then resend 🪞");
     const prepared = await deps.proxyPreparer.prepareNativeService({
       model: bareModel,
       serviceKind: "systemone",
@@ -82,7 +82,7 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
       exhaustedError: new GatewayError(
         "admission_unavailable",
         503,
-        "no eligible System One route",
+        "no eligible System One route (request {requestId}). The bouncer stepped out — come back shortly 🚪",
       ),
       prepare: async (candidate) => {
         const credential = candidate.provider_account_id
@@ -103,7 +103,7 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
           throw new GatewayError(
             "capability_unsupported",
             400,
-            "System One transport unavailable for this provider",
+            "System One transport unavailable for this provider (request {requestId}). Know your tools — this one just isn't in the box 🧰",
           );
         return { credential, adapter };
       },
@@ -148,7 +148,7 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
           throw new GatewayError(
             response.status >= 500 ? "platform_unavailable" : "invalid_request",
             response.status,
-            `System One upstream error: ${detail.slice(0, 240)}`,
+            `System One upstream error (request {requestId}): ${detail.slice(0, 240)}`,
           );
         }
         // Prefer the usage the decision endpoint reported; fall back to the

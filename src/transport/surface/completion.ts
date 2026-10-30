@@ -166,7 +166,7 @@ export class CompletionAdapter implements SurfaceAdapter {
       throw new GatewayError(
         "invalid_request",
         400,
-        "completion requests require a non-empty prompt",
+        "completion requests require a non-empty prompt (request {requestId}). Check the shape of what you sent — then resend 🪞",
       );
     const controls: GenerationControls = {};
     for (const field of ["temperature", "top_p", "n", "seed"] as const)

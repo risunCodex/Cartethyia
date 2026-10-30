@@ -264,7 +264,7 @@ export function createValidatedFetch(options: ValidatedFetchOptions = {}): Valid
       if (isCrossOriginRedirect && (response.status === 307 || response.status === 308)) {
         const method = (requestInit.method ?? "GET").toUpperCase();
         if (method !== "GET" && method !== "HEAD" && requestInit.body !== undefined) {
-          throw new GatewayError("invalid_request", 400, "cross-origin redirect with body blocked");
+          throw new GatewayError("invalid_request", 400, "cross-origin redirect with body blocked (request {requestId}). Check the shape of what you sent — then resend 🪞");
         }
       }
       url = nextUrl;

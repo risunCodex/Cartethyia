@@ -862,7 +862,7 @@ describe("statusToGatewayErrorCode", () => {
       [413, "request_too_large"],
       [415, "unsupported_media_type"],
       [422, "upstream_unprocessable"],
-      [529, "capacity_exhausted"],
+      [529, "upstream_overloaded"],
     ];
     for (const [status, code] of expected) {
       expect(statusToGatewayErrorCode(status)).toBe(code);
@@ -933,6 +933,7 @@ describe("classifyUpstreamFailure", () => {
       "model_not_found",
       "admission_unavailable",
       "capacity_exhausted",
+      "upstream_overloaded",
       "accounts_unavailable",
       "accounts_rate_limited",
       "quota_exceeded",
@@ -1278,7 +1279,7 @@ describe("classifyUpstreamError", () => {
       rateLimitScope: "provider",
     });
     expect(classifyUpstreamError(529, undefined)).toEqual({
-      code: "capacity_exhausted",
+      code: "upstream_overloaded",
       status: 529,
       origin: "upstream",
       rateLimitScope: "provider",
@@ -1423,13 +1424,13 @@ describe("classifyUpstreamError", () => {
       "model_capacity",
     ]) {
       expect(classifyUpstreamError(400, identifier)).toEqual({
-        code: "capacity_exhausted",
+        code: "upstream_overloaded",
         status: 529,
         origin: "upstream",
       });
     }
     expect(classifyUpstreamError(503, "overloaded_error")).toEqual({
-      code: "capacity_exhausted",
+      code: "upstream_overloaded",
       status: 503,
       origin: "upstream",
     });
@@ -1749,9 +1750,9 @@ describe("classifyTerminalCategory", () => {
     expect(
       classifyTerminalCategory(
         new Error("bare"),
-        abortedSignal(new GatewayError("restart_for_update", 503, "m")),
+        abortedSignal(new GatewayError("shutting_down", 503, "m")),
       ),
-    ).toBe("restart_for_update");
+    ).toBe("shutting_down");
   });
 
   test("maps a TimeoutError abort to deadline_exceeded", () => {

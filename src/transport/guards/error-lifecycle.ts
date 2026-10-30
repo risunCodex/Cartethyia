@@ -50,6 +50,18 @@ function retryAfterSeconds(error: GatewayError | undefined): string | undefined 
 }
 
 /**
+ * Ensures a public message carries the request id. Builders write a
+ * `{requestId}` placeholder in the lead (the canonical convention); anything
+ * that predates the convention gets the id appended so every client-visible
+ * message is correlatable to the server log.
+ */
+function applyRequestId(message: string, requestId: string): string {
+  if (message.includes("{requestId}")) return message.replaceAll("{requestId}", requestId);
+  if (message.includes("(request ")) return message;
+  return `${message} (request ${requestId})`;
+}
+
+/**
  * Normalizes every thrown error (from any lifecycle hook or handler, on
  * `/v1/*` or `/console/api/*`) into the stable public `{ error: { code,
  * message, details? } }` JSON shape. Mounted at the composition root with
@@ -81,7 +93,8 @@ export function createErrorNormalizationMiddleware(deps: {
         gateway?.status ?? builtinStatus ?? (isBuiltinError || isInputError ? 400 : 500);
       const code =
         gateway?.code ?? builtinCode ?? (isBuiltinError || isInputError ? "invalid_request" : "internal_error");
-      const message =
+      const requestId = state?.requestId ?? crypto.randomUUID();
+      const rawMessage =
         gateway !== undefined
           ? explainGatewayError(gateway)
           : isInputError && error instanceof Error
@@ -90,8 +103,9 @@ export function createErrorNormalizationMiddleware(deps: {
                 code,
                 isBuiltinError
                   ? builtin?.message ?? "Unable to process the request as written."
-                  : "The gateway hit an internal error. Retry; if it persists, the server logs carry the request id.",
+                  : "The gateway hit an internal error. Retry; if it persists, quote the request id to support. Even we have bad days — retry, and quote the id if it persists 🐻",
               );
+      const message = applyRequestId(rawMessage, requestId);
       const origin = gateway?.origin ?? "cartethyia";
       // `afterResponse` telemetry hook can enqueue it even when the request
       // never reached canonical parse / auth / preparation.
@@ -108,7 +122,7 @@ export function createErrorNormalizationMiddleware(deps: {
       if (!state?.canonicalRequest && !state?.authorization)
         metrics.proxy_requests_total.inc(1, { status: "rejected" });
       set.headers["cache-control"] = "no-store";
-      set.headers["x-request-id"] = state?.requestId ?? crypto.randomUUID();
+      set.headers["x-request-id"] = requestId;
       Object.assign(set.headers, GATEWAY_SECURITY_HEADERS);
       if (deps.hsts) set.headers["strict-transport-security"] = "max-age=31536000";
       set.status = status;
@@ -128,6 +142,7 @@ export function createErrorNormalizationMiddleware(deps: {
         error: {
           origin,
           code,
+          requestId,
           message,
           ...(gateway
             ? { details: publicGatewayErrorDetails(gateway) }

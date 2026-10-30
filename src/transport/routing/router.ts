@@ -624,7 +624,7 @@ export class RoutingEngine {
       throw new GatewayError(
         "invalid_request",
         400,
-        "This tool result belongs to a Cursor account that is no longer routable. Reconnect the account, or resend the complete conversation.",
+        "This tool result belongs to a Cursor account that is no longer routable (request {requestId}). Reconnect the account, or resend the complete conversation. The session went cold — reconnect or resend 🔌",
         {
           providerId: affinity.providerId,
           accountId: affinity.providerAccountId,
@@ -652,7 +652,7 @@ export class RoutingEngine {
       throw new GatewayError(
         "invalid_request",
         400,
-        "This tool result belongs to an account that is no longer routable. Reconnect the account, or resend the complete conversation.",
+        "This tool result belongs to an account that is no longer routable (request {requestId}). Reconnect the account, or resend the complete conversation. The session went cold — reconnect or resend 🔌",
         {
           providerId: affinity.providerId,
           accountId: affinity.providerAccountId,

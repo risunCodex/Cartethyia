@@ -356,8 +356,8 @@ describe("readIngressBody — size limits", () => {
       request("/v1/chat/completions", "{}", { headers: { "content-length": "99999999" } }),
     );
     expect(failure.status).toBe(413);
-    expect(failure.code).toBe("invalid_request");
-    // The message must name the real limit, not a vague "too large" — the
+    expect(failure.code).toBe("request_too_large");
+    // The message must name the real limit, not a vague "too large" - the
     // client needs the number to size its requests.
     expect(failure.message).toContain("1048576");
   });

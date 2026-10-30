@@ -364,21 +364,21 @@ function connectValidatedWebSocket(
       if (settled) return;
       settled = true;
       socket.terminate();
-      reject(new GatewayError("transport_unavailable", 502, "WebSocket handshake timed out"));
+      reject(new GatewayError("transport_unavailable", 502, "WebSocket handshake timed out (request {requestId}). Some things just take longer 🐢"));
     }, 15_000);
     const abort = (): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
       socket.terminate();
-      reject(new GatewayError("transport_closed", 499, "WebSocket connection was cancelled"));
+      reject(new GatewayError("transport_closed", 499, "WebSocket connection was cancelled (request {requestId}). Send it again whenever ready 🙃"));
     };
     const onError = (): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
       signal.removeEventListener("abort", abort);
-      reject(new GatewayError("transport_unavailable", 502, "WebSocket connection failed"));
+      reject(new GatewayError("transport_unavailable", 502, "WebSocket connection failed (request {requestId}). The connection ghosted us — come back in a moment 👻"));
     };
     socket.once("open", () => {
       if (settled) return;
@@ -398,7 +398,7 @@ function connectValidatedWebSocket(
 function agentForWebSocket(agent: PoolAgent): import("http").Agent | import("https").Agent {
   if (isProxyAgentPair(agent)) return agent.https;
   if (agent instanceof HttpsAgent) return agent;
-  throw new GatewayError("proxy_pool_unhealthy", 503, "configured WebSocket proxy pool does not support WSS");
+  throw new GatewayError("proxy_pool_unhealthy", 503, "configured WebSocket proxy pool does not support WSS (request {requestId}). This bridge doesn't speak WSS — reconfigure the pool 🔧");
 }
 
 /**
@@ -411,20 +411,20 @@ function agentForWebSocket(agent: PoolAgent): import("http").Agent | import("htt
  */
 function assertBidiTarget(url: URL): void {
   if (url.protocol !== "https:") {
-    throw new GatewayError("invalid_request", 400, "validated HTTP/2 egress requires https");
+    throw new GatewayError("invalid_request", 400, "validated HTTP/2 egress requires https (request {requestId}). Check the shape of what you sent — then resend 🪞");
   }
   if (url.username || url.password || url.hash) {
-    throw new GatewayError("invalid_request", 400, "invalid validated HTTP/2 target");
+    throw new GatewayError("invalid_request", 400, "invalid validated HTTP/2 target (request {requestId}). Check the shape of what you sent — then resend 🪞");
   }
   if (url.port !== "" && url.port !== "443") {
-    throw new GatewayError("invalid_request", 400, "validated HTTP/2 egress runs on port 443");
+    throw new GatewayError("invalid_request", 400, "validated HTTP/2 egress runs on port 443 (request {requestId}). Check the shape of what you sent — then resend 🪞");
   }
   const hostname = url.hostname;
   if (hostname.length === 0) {
-    throw new GatewayError("invalid_request", 400, "HTTP/2 target hostname is required");
+    throw new GatewayError("invalid_request", 400, "HTTP/2 target hostname is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
   }
   if (isIP(hostname) !== 0) {
-    throw new GatewayError("invalid_request", 400, "HTTP/2 target must be a hostname, not an IP literal");
+    throw new GatewayError("invalid_request", 400, "HTTP/2 target must be a hostname, not an IP literal (request {requestId}). Check the shape of what you sent — then resend 🪞");
   }
 }
 
@@ -455,13 +455,13 @@ function dialDirect(
     const onAbort = (): void => {
       cleanup();
       socket.destroy(new Error("HTTP/2 connection aborted"));
-      reject(new GatewayError("transport_closed", 499, "HTTP/2 connection was cancelled"));
+      reject(new GatewayError("transport_closed", 499, "HTTP/2 connection was cancelled (request {requestId}). Send it again whenever ready 🙃"));
     };
     const timer = setTimeout(() => {
       cleanup();
       socket.destroy();
       reject(
-        new GatewayError("transport_unavailable", 502, "HTTP/2 connection timed out", {}, "network"),
+        new GatewayError("transport_unavailable", 502, "HTTP/2 connection timed out (request {requestId}). Some things just take longer 🐢", {}, "network"),
       );
     }, HTTP2_CONNECT_TIMEOUT_MS);
     socket.once("secureConnect", () => {
@@ -474,7 +474,7 @@ function dialDirect(
         new GatewayError(
           "transport_unavailable",
           502,
-          `HTTP/2 connection failed: ${error.message}`,
+          `HTTP/2 connection failed: ${error.message} (request {requestId}). The connection ghosted us — come back in a moment 👻`,
           {},
           "network",
         ),
@@ -506,7 +506,7 @@ function dialThroughPool(
     throw new GatewayError(
       "proxy_pool_unhealthy",
       503,
-      "configured proxy pool does not support HTTPS tunneling",
+      "configured proxy pool does not support HTTPS tunneling (request {requestId}). This bridge doesn't speak HTTPS tunnels — reconfigure the pool 🔧",
     );
   }
   return new Promise<tls.TLSSocket>((resolve, reject) => {
@@ -519,14 +519,14 @@ function dialThroughPool(
               ? new GatewayError(
                   "proxy_pool_unhealthy",
                   503,
-                  "Configured proxy pool could not be established.",
+                  "Configured proxy pool could not be established (request {requestId}). This bridge looks shaky — repair or reroute 🔧",
                   { reason: error.message.slice(0, 200) },
                   "network",
                 )
               : new GatewayError(
                   "transport_unavailable",
                   502,
-                  `HTTP/2 tunnel failed: ${error?.message ?? "no socket"}`,
+                  `HTTP/2 tunnel failed: ${error?.message ?? "no socket"} (request {requestId}). The connection ghosted us — come back in a moment 👻`,
                   {},
                   "network",
                 ),
@@ -546,7 +546,7 @@ function dialThroughPool(
         const onAbort = (): void => {
           cleanup();
           secured.destroy();
-          reject(new GatewayError("transport_closed", 499, "HTTP/2 connection was cancelled"));
+          reject(new GatewayError("transport_closed", 499, "HTTP/2 connection was cancelled (request {requestId}). Send it again whenever ready 🙃"));
         };
         const timer = setTimeout(() => {
           cleanup();
@@ -636,7 +636,7 @@ class Http2BidiSession implements ValidatedHttp2BidiStream {
           new GatewayError(
             "platform_unavailable",
             502,
-            "HTTP/2 response exceeded the buffer bound",
+            "HTTP/2 response exceeded the buffer bound (request {requestId}). The upstream sent more than we can hold — retry 🌙",
             {},
             "network",
           ),
@@ -646,7 +646,7 @@ class Http2BidiSession implements ValidatedHttp2BidiStream {
     stream.on("end", () => this.finishInbound());
     stream.on("error", (error) => this.fail(error));
     stream.on("aborted", () =>
-      this.fail(new GatewayError("transport_unavailable", 502, "HTTP/2 stream aborted by remote", {}, "network")),
+      this.fail(new GatewayError("transport_unavailable", 502, "HTTP/2 stream aborted by remote (request {requestId}). The connection ghosted us — come back in a moment 👻", {}, "network")),
     );
     stream.on("close", () => {
       this.finishInbound();
@@ -699,7 +699,7 @@ class Http2BidiSession implements ValidatedHttp2BidiStream {
         new GatewayError(
           "transport_unavailable",
           504,
-          `HTTP/2 stream read-idle timeout after ${this.readIdleMs}ms — connection presumed dead`,
+          `HTTP/2 stream read-idle timeout after ${this.readIdleMs}ms — connection presumed dead (request {requestId}). The connection ghosted us — come back in a moment 👻`,
           {},
           "network",
         ),
@@ -836,7 +836,7 @@ function openBidiStream(
         new GatewayError(
           "transport_unavailable",
           502,
-          `HTTP/2 session failed: ${error.message}`,
+          `HTTP/2 session failed: ${error.message} (request {requestId}). The connection ghosted us — come back in a moment 👻`,
           {},
           "network",
         ),
@@ -871,7 +871,7 @@ function openBidiStream(
         // Already destroying.
       }
       reject(
-        new GatewayError("transport_unavailable", 502, "HTTP/2 session timed out", {}, "network"),
+        new GatewayError("transport_unavailable", 502, "HTTP/2 session timed out (request {requestId}). Some things just take longer 🐢", {}, "network"),
       );
     }, HTTP2_CONNECT_TIMEOUT_MS);
     session.once("error", onError);
@@ -895,7 +895,7 @@ class WsSession implements ProviderWebSocketSession {
     this.#signal = signal;
     socket.on("message", (data: RawData, isBinary: boolean) => {
       if (isBinary) {
-        this.#fail(new GatewayError("transport_unavailable", 502, "unexpected binary WebSocket frame"));
+        this.#fail(new GatewayError("transport_unavailable", 502, "unexpected binary WebSocket frame (request {requestId}). The connection ghosted us — come back in a moment 👻"));
         return;
       }
       const message = data.toString();
@@ -907,14 +907,14 @@ class WsSession implements ProviderWebSocketSession {
         this.#messages.push(message);
       }
     });
-    socket.on("close", () => this.#fail(new GatewayError("transport_closed", 502, "WebSocket connection closed")));
-    socket.on("error", () => this.#fail(new GatewayError("transport_unavailable", 502, "WebSocket connection failed")));
+    socket.on("close", () => this.#fail(new GatewayError("transport_closed", 502, "WebSocket connection closed (request {requestId}). The connection ghosted us — come back in a moment 👻")));
+    socket.on("error", () => this.#fail(new GatewayError("transport_unavailable", 502, "WebSocket connection failed (request {requestId}). The connection ghosted us — come back in a moment 👻")));
   }
 
   send(message: string): void {
     if (this.#closed) throw this.#closed;
     if (this.#socket.readyState !== WebSocket.OPEN) {
-      throw new GatewayError("transport_closed", 499, "WebSocket connection is not open");
+      throw new GatewayError("transport_closed", 499, "WebSocket connection is not open (request {requestId}). Send it again whenever ready 🙃");
     }
     this.#socket.send(message, { binary: false });
   }
@@ -927,11 +927,11 @@ class WsSession implements ProviderWebSocketSession {
     return new Promise<string>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
-        reject(new GatewayError("transport_unavailable", 504, "WebSocket receive timed out"));
+        reject(new GatewayError("transport_unavailable", 504, "WebSocket receive timed out (request {requestId}). Some things just take longer 🐢"));
       }, 45_000);
       const onAbort = (): void => {
         cleanup();
-        reject(new GatewayError("transport_closed", 499, "WebSocket receive was cancelled"));
+        reject(new GatewayError("transport_closed", 499, "WebSocket receive was cancelled (request {requestId}). Send it again whenever ready 🙃"));
       };
       const cleanup = (): void => {
         clearTimeout(timeout);
@@ -997,7 +997,7 @@ export class ValidatedNetworkBindingFactory {
           throw new GatewayError(
             "proxy_pool_unhealthy",
             503,
-            "Configured proxy pool could not be established.",
+            "Configured proxy pool could not be established (request {requestId}). This bridge looks shaky — repair or reroute 🔧",
             { poolId: networkPoolId, reason: error.message.slice(0, 200) },
             "network",
           );
@@ -1009,27 +1009,27 @@ export class ValidatedNetworkBindingFactory {
   webSocket(networkPoolId?: string, tenantId?: string): ValidatedOutboundWebSocket {
     return async (url, headers, signal) => {
       if (url.protocol !== "wss:") {
-        throw new GatewayError("invalid_request", 400, "validated WebSocket egress requires wss");
+        throw new GatewayError("invalid_request", 400, "validated WebSocket egress requires wss (request {requestId}). Check the shape of what you sent — then resend 🪞");
       }
       if (url.username || url.password || url.hash || (url.port !== "" && url.port !== "443")) {
-        throw new GatewayError("invalid_request", 400, "invalid validated WebSocket target");
+        throw new GatewayError("invalid_request", 400, "invalid validated WebSocket target (request {requestId}). Check the shape of what you sent — then resend 🪞");
       }
       const hostname = url.hostname;
-      if (!hostname) throw new GatewayError("invalid_request", 400, "WebSocket target hostname is required");
+      if (!hostname) throw new GatewayError("invalid_request", 400, "WebSocket target hostname is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
       const destination = await this.resolve(hostname, signal, 443);
       if (!isAddressAllowed(destination.resolvedAddress, this.policy)) {
-        throw new GatewayError("invalid_request", 400, "unsafe upstream address rejected");
+        throw new GatewayError("invalid_request", 400, "unsafe upstream address rejected (request {requestId}). Check the shape of what you sent — then resend 🪞");
       }
       let agent: PoolAgent | undefined;
       if (networkPoolId || tenantId) {
         if (!networkPoolId || !tenantId || !this.poolResolver) {
-          throw new GatewayError("proxy_pool_unhealthy", 503, "configured WebSocket proxy pool could not be established");
+          throw new GatewayError("proxy_pool_unhealthy", 503, "configured WebSocket proxy pool could not be established (request {requestId}). This bridge looks shaky — repair or reroute 🔧");
         }
         try {
           agent = await this.poolResolver.resolveWebSocketAgent(networkPoolId, tenantId);
         } catch (error) {
           if (error instanceof PoolBindingError) {
-            throw new GatewayError("proxy_pool_unhealthy", 503, "configured WebSocket proxy pool could not be established");
+            throw new GatewayError("proxy_pool_unhealthy", 503, "configured WebSocket proxy pool could not be established (request {requestId}). This bridge looks shaky — repair or reroute 🔧");
           }
           throw error;
         }

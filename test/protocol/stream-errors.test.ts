@@ -194,9 +194,9 @@ describe("gatewayErrorFromStreamError: structured status", () => {
     expect(detailsWithoutRaw(error)).toEqual({ providerStatus: 407 });
   });
 
-  test("a 529 is capacity, not a generic 5xx, and is provider-scoped", () => {
+  test("a 529 is upstream overload, not a generic 5xx, and is provider-scoped", () => {
     const error = gatewayErrorFromStreamError({ status: 529 }, "label");
-    expect(classified(error)).toBe("capacity_exhausted/529/upstream");
+    expect(classified(error)).toBe("upstream_overloaded/529/upstream");
     expect(detailsWithoutRaw(error)).toEqual({ providerStatus: 529, rateLimitScope: "provider" });
   });
 
@@ -275,7 +275,7 @@ describe("gatewayErrorFromStreamError: structured identifiers", () => {
     expect(gatewayErrorFromStreamError({ type: "overloaded_error" }, "l")?.status).toBe(529);
     expect(gatewayErrorFromStreamError({ status: 503, type: "overloaded_error" }, "l")?.status).toBe(503);
     expect(gatewayErrorFromStreamError({ status: 503, type: "overloaded_error" }, "l")?.code).toBe(
-      "capacity_exhausted",
+      "upstream_overloaded",
     );
   });
 
@@ -348,7 +348,7 @@ describe("gatewayErrorFromStreamError: structured identifiers", () => {
     // first; `upstreamErrorIdentifier` reads `error.code`/`error.type` so the
     // classification survives either calling convention.
     const error = gatewayErrorFromStreamError({ error: { type: "overloaded_error" } }, "label");
-    expect(classified(error)).toBe("capacity_exhausted/529/upstream");
+    expect(classified(error)).toBe("upstream_overloaded/529/upstream");
     expect(detailsWithoutRaw(error)).toEqual({ providerCode: "overloaded_error" });
   });
 
@@ -559,7 +559,7 @@ describe("mapClaudeStreamError", () => {
     expect(mapClaudeStreamError({ status: 401, message: "x" }).code).toBe("authentication_failed");
     expect(mapClaudeStreamError({ status: 404, message: "x" }).code).toBe("upstream_not_found");
     expect(mapClaudeStreamError({ status: 429, message: "x" }).code).toBe("quota_exceeded");
-    expect(mapClaudeStreamError({ status: 529, message: "x" }).code).toBe("capacity_exhausted");
+    expect(mapClaudeStreamError({ status: 529, message: "x" }).code).toBe("upstream_overloaded");
     expect(mapClaudeStreamError({ status: 407, message: "x" }).code).toBe("proxy_auth_required");
   });
 

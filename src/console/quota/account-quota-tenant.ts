@@ -525,7 +525,7 @@ export function registerAccountQuotaTenantRoutes(
         throw new GatewayError(
           "proxy_pool_unavailable",
           503,
-          "Account test cannot select a proxy because proxy routing is not configured.",
+          "Account test cannot select a proxy because proxy routing is not configured (request {requestId}). No bridge to cross — configure a pool first 🏗️",
           { reason: "proxy_routing_unconfigured" },
           "network",
         );

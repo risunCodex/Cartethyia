@@ -221,7 +221,7 @@ export function createGatewayApp(deps: GatewayAppDeps) {
       (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
     );
     if (reserved) {
-      const notFound = new GatewayError("not_found", 404, "No endpoint exists at this path. Check the route against the API reference.");
+      const notFound = new GatewayError("not_found", 404, "No endpoint exists at this path (request {requestId}). Check the route against the API reference. Nothing here but dust — check the path 🌙");
       return new Response(JSON.stringify(publicGatewayErrorBody(notFound)), {
         status: notFound.status,
         headers: {
@@ -469,7 +469,7 @@ export function createGatewayApp(deps: GatewayAppDeps) {
         throw new GatewayError(
           "model_not_found",
           404,
-          `The model '${targetId}' does not exist or you do not have access to it.`,
+          `The model '${targetId}' does not exist or you do not have access to it (request {requestId}). Try another model — this one's off the menu 📚`,
         );
       return new Response(JSON.stringify(found), {
         headers: {
@@ -600,14 +600,14 @@ export function createGatewayApp(deps: GatewayAppDeps) {
         // for something only the local host may ask. `invalid_request` told an
         // operator to fix the body, when the body was never the problem.
         if (!isLoopbackPeer(peerAddresses.get(request) ?? null))
-          throw new GatewayError("policy_rejected", 403, "task trigger is only available from loopback");
+          throw new GatewayError("policy_rejected", 403, "task trigger is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂");
         if (!tokenMatches(request.headers.get("x-drain-token"), token))
-          throw new GatewayError("authentication_failed", 401, "invalid drain token");
+          throw new GatewayError("authentication_failed", 401, "invalid drain token (request {requestId}). Wrong key, right door — check the token 🔑");
         const name = params.name;
         if (!tasks.names().includes(name))
-          throw new GatewayError("invalid_request", 404, `no such task: ${name}`);
+          throw new GatewayError("not_found", 404, `no such task: ${name} (request {requestId}). Nothing here but dust — check the task name 🌙`);
         if (tasks.isRunning(name))
-          throw new GatewayError("invalid_request", 409, `${name} is already running`);
+          throw new GatewayError("invalid_request", 409, `${name} is already running (request {requestId}). One at a time — wait for it to finish ⏳`);
         void tasks.runNow(name);
         return new Response(JSON.stringify({ task: name, status: "started" }), {
           status: 202,

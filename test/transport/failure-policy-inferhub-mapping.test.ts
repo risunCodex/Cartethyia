@@ -87,9 +87,9 @@ describe("InferHub error classification", () => {
     expect(result.credentialEvidence).toBeUndefined();
   });
 
-  test("provider-busy codes classify as capacity", () => {
+  test("provider-busy codes classify as upstream overload", () => {
     for (const code of ["providers_busy", "providers_overloaded"]) {
-      expect(classifyUpstreamError(503, code).code).toBe("capacity_exhausted");
+      expect(classifyUpstreamError(503, code).code).toBe("upstream_overloaded");
     }
   });
 

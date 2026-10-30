@@ -76,14 +76,18 @@ describe("terminalFailure", () => {
 
     test("falls back to a generic message when stop_details carries none", () => {
       const error = terminalFailure({ state: "failed", stop_details: { code: "x" } });
-      expect(error?.message).toBe("upstream request failed");
+      expect(error?.message).toBe(
+        "upstream request failed (request {requestId}). The upstream came back empty-handed — retry 🌙",
+      );
     });
 
     test("ignores a non-string message in stop_details", () => {
       // `stop_details` is provider JSON, so `message` is not guaranteed to be
       // a string; a non-string must not become the public error text.
       const error = terminalFailure({ state: "failed", stop_details: { message: 42 } });
-      expect(error?.message).toBe("upstream request failed");
+      expect(error?.message).toBe(
+        "upstream request failed (request {requestId}). The upstream came back empty-handed — retry 🌙",
+      );
     });
 
     test("merges the whole stop_details into the error details", () => {

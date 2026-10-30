@@ -107,7 +107,7 @@ export async function fetchWithEmptyStreamRecovery(
   const sleep = deps.policy?.sleep ?? abortableSleep;
 
   if (endpoints.length === 0) {
-    throw new GatewayError("platform_unavailable", 502, "No endpoints available", {}, "upstream");
+    throw new GatewayError("platform_unavailable", 502, "No endpoints available (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
   }
 
   for (let endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex++) {
@@ -118,7 +118,7 @@ export async function fetchWithEmptyStreamRecovery(
     for (let replay = 0; replay <= replaysAllowed; replay++) {
       // Check abort before each fetch
       if (deps.signal.aborted) {
-        throw new GatewayError("transport_closed", 499, "Aborted");
+        throw new GatewayError("transport_closed", 499, "The request was aborted (request {requestId}). Send it again whenever ready 🙃");
       }
 
       // Check deadline floor
@@ -128,7 +128,7 @@ export async function fetchWithEmptyStreamRecovery(
         throw new GatewayError(
           "platform_unavailable",
           502,
-          "Deadline exhausted before empty-stream replay",
+          "Deadline exhausted before empty-stream replay (request {requestId}). Some things just take longer 🐢",
           {},
           "upstream",
         );
@@ -181,7 +181,7 @@ export async function fetchWithEmptyStreamRecovery(
   throw new GatewayError(
     "platform_unavailable",
     502,
-    "All endpoints returned empty streams",
+    "All endpoints returned empty streams (request {requestId}). The upstream came back empty-handed — retry 🌙",
     {},
     "upstream",
   );
@@ -204,11 +204,11 @@ async function fetchWithTimeout(
       // It must surface as a deadline failure, never as a `transport_closed`
       // 499 — that code is reserved for genuine client cancellations and would
       // otherwise hide a real upstream wait behind "cancelled by client".
-      reject(new GatewayError("deadline_exceeded", 504, "First event timeout", {}, "upstream"));
+      reject(new GatewayError("deadline_exceeded", 504, "First event timeout (request {requestId}). Some things just take longer 🐢", {}, "upstream"));
     }, timeoutMs);
     signal.addEventListener("abort", () => {
       clearTimeout(timer);
-      reject(new GatewayError("transport_closed", 499, "Aborted"));
+      reject(new GatewayError("transport_closed", 499, "The request was aborted (request {requestId}). Send it again whenever ready 🙃"));
     }, { once: true });
   });
 

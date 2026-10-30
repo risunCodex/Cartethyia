@@ -239,7 +239,7 @@ export interface ResolvedApiKey {
  * indistinguishable — distinguishing them would let a caller confirm that a
  * guessed token once existed — so there is no variant carrying a reason.
  */
-const INVALID_KEY_MESSAGE = "Invalid API key. Check the key you are sending, or create a new one in API Keys and send it as: Authorization: Bearer <key>.";
+const INVALID_KEY_MESSAGE = "Invalid API key (request {requestId}). Check the key you are sending, or create a new one in API Keys and send it as: Authorization: Bearer <key>. Wrong key, right door — double-check and come back 🔑";
 
 export function unknownApiKeyError(): GatewayError {
   return new GatewayError("authentication_failed", 401, INVALID_KEY_MESSAGE);
@@ -258,7 +258,7 @@ export function modelsListApiKeyError(): GatewayError {
   return new GatewayError(
     "authentication_failed",
     401,
-    "Invalid API key. Rotate the default Cartethyia API key in API Keys and send the new key as: Authorization: Bearer <key>.",
+    "Invalid API key (request {requestId}). Rotate the default Cartethyia API key in API Keys and send the new key as: Authorization: Bearer <key>. Wrong key, right door — rotate and try again 🔑",
   );
 }
 
@@ -279,12 +279,12 @@ export function requestToken(headers: Headers | Record<string, string>): string 
     // *different* credentials stay a conflict — accepting whichever came first
     // would silently decide the request's identity.
     if (bearerMatch?.[1] === apiKey) return apiKey;
-    throw new GatewayError("invalid_request", 400, "The request sends two different credentials. Send exactly one key, either as Authorization: Bearer <key> or as the api-key header.");
+    throw new GatewayError("invalid_request", 400, "The request sends two different credentials (request {requestId}). Send exactly one key, either as Authorization: Bearer <key> or as the api-key header. Pick one key and stick with it 🤝");
   }
   if (hasApiKey) return apiKey;
   const token = bearerMatch?.[1];
   if (token === undefined)
-    throw new GatewayError("invalid_request", 401, "The request carries no usable credential. Send the key as: Authorization: Bearer <key>.");
+    throw new GatewayError("authentication_failed", 401, "The request carries no usable credential (request {requestId}). Send the key as: Authorization: Bearer <key>. We need a key to let you in 🔑");
   return token;
 }
 

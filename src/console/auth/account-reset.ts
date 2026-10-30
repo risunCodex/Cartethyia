@@ -42,12 +42,12 @@ export function createConsoleAccountResetHandler(
   return async ({ request, body }) => {
     if (!isLoopbackPeer(deps.resolvePeerAddress(request)))
       throw new GatewayError(
-        "invalid_request",
+        "policy_rejected",
         403,
-        "console account reset is only available from loopback",
+        "console account reset is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂",
       );
     if (!tokenMatches(request.headers.get("x-drain-token"), deps.token))
-      throw new GatewayError("invalid_request", 401, "invalid reset token");
+      throw new GatewayError("authentication_failed", 401, "invalid reset token (request {requestId}). Wrong key, right door — check the token 🔑");
     const confirm =
       body !== null && typeof body === "object" && "confirm" in body
         ? body.confirm
@@ -56,7 +56,7 @@ export function createConsoleAccountResetHandler(
       throw new GatewayError(
         "invalid_request",
         400,
-        `send {"confirm":"${CONFIRMATION}"} to confirm; this deletes every console account`,
+        `send {"confirm":"${CONFIRMATION}"} to confirm (request {requestId}); this deletes every console account. Make sure you mean it — there's no undo 🫂`,
       );
 
     const removed = await deps.resetConsoleAccount();

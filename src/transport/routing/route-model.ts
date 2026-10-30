@@ -358,7 +358,7 @@ export function ambiguousModelError(bare: string, owners: string[]): GatewayErro
   return new GatewayError(
     "ambiguous_model",
     400,
-    `'${bare}' matches more than one provider (${owners.join(", ")}). Qualify it as '${owners[0]}/${bare}', or add an alias to pick one.`,
+    `'${bare}' matches more than one provider (${owners.join(", ")}). Qualify it as '${owners[0]}/${bare}', or add an alias to pick one. Too popular for its own good — qualify it 🧩`,
     {
       model: bare,
       owners,
@@ -380,7 +380,7 @@ export function modelNotFoundError(requested: string, resolved: readonly string[
     404,
     `'${requested}' is not routed${
       targets.length > 0 ? ` — it resolved to ${hint}, which no account serves` : ""
-    }. Enable the model on an account, or point the alias at one that exists.`,
+    } (request {requestId}). Enable the model on an account, or point the alias at one that exists. Try another model — this one's off the menu 📚`,
     {
       model: requested,
       ...(targets.length > 0 ? { resolved_models: targets } : {}),
@@ -392,7 +392,7 @@ export function capabilityUnsupportedError(capability: string): GatewayError {
   return new GatewayError(
     "capability_unsupported",
     400,
-    `No account serving this model supports ${capability}. Drop the ${capability} part of the request, or route to a model that accepts it.`,
+    `No account serving this model supports ${capability} (request {requestId}). Drop the ${capability} part of the request, or route to a model that accepts it. Know your tools — this one just isn't in the box 🧰`,
     { capability },
   );
 }
@@ -424,8 +424,8 @@ export function capacityExhaustedError(context?: {
     "provider_capacity_exhausted",
     429,
     onlyOne
-      ? "The only account routing this model is at its concurrency limit. Retry shortly; if it persists, raise the provider's max-inflight or add another account."
-      : "Every account is at its concurrency limit. Retry shortly; if it persists, raise the provider's max-inflight or add an account.",
+      ? "The only account routing this model is at its concurrency limit (request {requestId}). Retry shortly; if it persists, raise the provider's max-inflight or add another account. Even the machine needs a rest — chill 🦋"
+      : "Every account is at its concurrency limit (request {requestId}). Retry shortly; if it persists, raise the provider's max-inflight or add an account. Even the machine needs a rest — chill 🦋",
     {
       ...(context?.providerId !== undefined ? { providerId: context.providerId } : {}),
       ...(context?.model !== undefined ? { model: context.model } : {}),
@@ -456,7 +456,7 @@ export function accountsUnavailableError(
   return new GatewayError(
     "accounts_unavailable",
     503,
-    `No account in the pool can serve '${requested}' right now (${explainEligibilityReasons(distinct)}). Add an account, or wait for an operator to re-enable one.`,
+    `No account in the pool can serve '${requested}' right now (request {requestId}) (${explainEligibilityReasons(distinct)}). Add an account, or wait for an operator to re-enable one. Every account is on a coffee break — try later ☕️`,
     { model: requested, reasons: distinct, candidate_count: reasons.length, gateway_hint: "no_healthy_account" },
   );
 }
@@ -492,7 +492,7 @@ export function accountsRateLimitedError(
   return new GatewayError(
     "accounts_rate_limited",
     429,
-    `Every account serving '${requested}'${routeNote} is cooling down after hitting upstream limits. The request is fine — retry once the cooldown resets.`,
+    `Every account serving '${requested}'${routeNote} is cooling down after hitting upstream limits (request {requestId}). The request is fine — retry once the cooldown resets. They're resting up 🌸`,
     {
       model: requested,
       routed_model: routed,

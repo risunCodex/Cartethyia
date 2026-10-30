@@ -89,12 +89,12 @@ function json(body: unknown, status = 200): Response {
 function notFound(refusal: ShareLinkRefusal = "not_found"): Response {
   const message =
     refusal === "expired"
-      ? "This share link has expired"
+      ? "This share link has expired (request {requestId}). Time for a fresh one 🌷"
       : refusal === "revoked"
-        ? "This share link's key has been revoked"
+        ? "This share link's key has been revoked (request {requestId}). Ask for a new one 📩"
         : refusal === "disabled"
-          ? "This share link's key is paused"
-          : "Share link is unavailable";
+          ? "This share link's key is paused (request {requestId}). Re-enable it when ready 🌱"
+          : "Share link is unavailable (request {requestId}). This link leads nowhere — check it again 🔗";
   const error = new GatewayError(`link_${refusal}`, 404, message);
   return json(publicGatewayErrorBody(error), error.status);
 }

@@ -27,7 +27,7 @@ export function requireMessagesToolName(name: string | undefined, callId: string
   throw new GatewayError(
     "transport_unavailable",
     502,
-    "Upstream tool call is missing a tool name",
+    "Upstream tool call is missing a tool name (request {requestId}). The upstream came back empty-handed — retry 🌙",
     { callId, reason: "missing_tool_name" },
     "upstream",
   );

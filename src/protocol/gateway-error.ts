@@ -12,6 +12,7 @@ export type GatewayErrorCode =
   | "accounts_unavailable"
   | "accounts_rate_limited"
   | "capacity_exhausted"
+  | "upstream_overloaded"
   | "provider_capacity_exhausted"
   | "upstream_queued"
   | "proxy_pool_capacity_exceeded"
@@ -52,8 +53,7 @@ export type GatewayErrorCode =
   | "proxy_unreachable"
   | "tool_call_loop_detected"
   | "client_router_denied"
-  | "shutting_down"
-  | "restart_for_update";
+  | "shutting_down";
 
 /** Identifies which boundary produced a safe public error. */
 export type GatewayErrorOrigin = "cartethyia" | "upstream" | "network";
@@ -226,7 +226,7 @@ export function capabilityUnsupported(
   return new GatewayError(
     "capability_unsupported",
     400,
-    `The selected route does not support capability: ${capability}`,
+    `The selected route does not support capability: ${capability} (request {requestId}). Drop the ${capability} part of the request, or route to a model that accepts it. Know your tools — this one just isn't in the box 🧰`,
     { capability, ...details },
   );
 }

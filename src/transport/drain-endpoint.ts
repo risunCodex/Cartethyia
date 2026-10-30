@@ -55,9 +55,9 @@ export function createDrainHandler(
 ): (context: { request: Request }) => Promise<Response> {
   return async ({ request }) => {
     if (!isLoopbackPeer(deps.resolvePeerAddress(request)))
-      throw new GatewayError("invalid_request", 403, "drain is only available from loopback");
+      throw new GatewayError("policy_rejected", 403, "drain is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂");
     if (!tokenMatches(request.headers.get("x-drain-token"), deps.token))
-      throw new GatewayError("invalid_request", 401, "invalid drain token");
+      throw new GatewayError("authentication_failed", 401, "invalid drain token (request {requestId}). Wrong key, right door — check the token 🔑");
     // Acknowledge first, then drain: the response must be on the wire before the
     // shutdown path starts closing sockets, or the caller sees a dropped
     // connection instead of a 202.

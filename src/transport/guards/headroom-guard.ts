@@ -90,7 +90,7 @@ export function createHeadroomGuard(deps: HeadroomGuardDeps): Elysia {
       throw new GatewayError(
         "overloaded",
         503,
-        "The gateway is at capacity; retry shortly.",
+        "The gateway is at capacity (request {requestId}); retry shortly. It's not you, it's us — come back in a few minutes ☕️",
         {
           retryAfterMs: SHED_RETRY_MS,
           minFreeBytes: headroom,

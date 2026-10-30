@@ -66,16 +66,16 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
     // upstream's own required fields, so the gateway does not restate its own
     // narrower rule and risk rejecting a body the provider would accept.
     if (typeof countBody.model !== "string" || countBody.model.trim().length === 0) {
-      throw new GatewayError("invalid_request", 400, "A model is required: it names the provider to count with.");
+      throw new GatewayError("invalid_request", 400, "A model is required (request {requestId}): it names the provider to count with. Check the shape of what you sent — then resend 🪞");
     }
     if (!Array.isArray(countBody.messages)) {
-      throw new GatewayError("invalid_request", 400, "messages must be an array — there is nothing to count without it.");
+      throw new GatewayError("invalid_request", 400, "messages must be an array (request {requestId}) — there is nothing to count without it. Check the shape of what you sent — then resend 🪞");
     }
     if (!authorization.snapshot.scopes?.includes("routing:invoke" as never)) {
       throw new GatewayError(
-        "invalid_request",
+        "policy_rejected",
         403,
-        "token counting not allowed for this key — enable routing:invoke on the API key",
+        "token counting not allowed for this key (request {requestId}) — enable routing:invoke on the API key. Not allowed by policy — no hard feelings 🫂",
       );
     }
 
@@ -113,7 +113,7 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
       exhaustedError: new GatewayError(
         "admission_unavailable",
         503,
-        "no eligible route can count tokens for this model",
+        "no eligible route can count tokens for this model (request {requestId}). The bouncer stepped out — come back shortly 🚪",
       ),
       prepare: async (candidate) => {
         const credential = candidate.provider_account_id
@@ -131,7 +131,7 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
             };
         const adapter = await deps.resolveProviderAdapter?.(candidate.provider_id);
         if (!adapter) {
-          throw new GatewayError("capability_unsupported", 400, "token counting is unavailable for this provider");
+          throw new GatewayError("capability_unsupported", 400, "token counting is unavailable for this provider (request {requestId}). Know your tools — this one just isn't in the box 🧰");
         }
         return { credential, adapter };
       },
@@ -146,7 +146,7 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
 
         const adapter = context.adapter;
         if (typeof adapter.dispatchNativeService !== "function") {
-          throw new GatewayError("capability_unsupported", 400, "token counting is unavailable for this provider");
+          throw new GatewayError("capability_unsupported", 400, "token counting is unavailable for this provider (request {requestId}). Know your tools — this one just isn't in the box 🧰");
         }
 
         const target: ProviderDispatchTarget = {

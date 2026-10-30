@@ -77,11 +77,11 @@ export async function readIngressBody(
   const isJsonRoute = isJsonProxyRoute(p);
   const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
   if (!contentType) {
-    if (isJsonRoute) throw new GatewayError("unsupported_media_type", 415, "This endpoint reads JSON, so the request needs a content-type: application/json header.");
+    if (isJsonRoute) throw new GatewayError("unsupported_media_type", 415, "This endpoint reads JSON, so the request needs a content-type: application/json header (request {requestId}). We speak JSON here — send JSON 💬");
     return undefined;
   }
   if (contentType !== "application/json") {
-    if (isJsonRoute) throw new GatewayError("unsupported_media_type", 415, `This endpoint reads JSON and cannot parse '${contentType}'. Send content-type: application/json.`);
+    if (isJsonRoute) throw new GatewayError("unsupported_media_type", 415, `This endpoint reads JSON and cannot parse '${contentType}' (request {requestId}). Send content-type: application/json. We speak JSON here — send JSON 💬`);
     return undefined;
   }
   const maxBytes = options.maxBodyBytes ?? 1_048_576;
@@ -91,7 +91,7 @@ export async function readIngressBody(
     throw bodyTooLargeError(maxBytes);
 
   const reader = request.body?.getReader();
-  if (!reader) throw new GatewayError("invalid_request", 400, "The request body could not be read. Resend it with a JSON body.");
+  if (!reader) throw new GatewayError("invalid_request", 400, "The request body could not be read (request {requestId}). Resend it with a JSON body. Check the shape of what you sent — then resend 🪞");
   // Collect raw chunks then decode once. String `+=` on each chunk reallocates
   // the accumulating UTF-16 string (O(n²) for large Claude Code prompts);
   // Buffer.concat + one TextDecoder pass is linear and allocation-stable.
@@ -126,7 +126,7 @@ export async function readIngressBody(
     return body;
   } catch (error) {
     if (error instanceof GatewayError) throw error;
-    throw new GatewayError("invalid_request", 400, "The request body is not valid JSON. Check for a trailing comma or an unclosed brace.");
+    throw new GatewayError("invalid_request", 400, "The request body is not valid JSON (request {requestId}). Check for a trailing comma or an unclosed brace. Check the shape of what you sent — then resend 🪞");
   }
 }
 

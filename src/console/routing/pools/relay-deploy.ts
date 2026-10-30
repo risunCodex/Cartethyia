@@ -151,7 +151,7 @@ async function deployCloudflare(
   request: RelayDeployRequest,
 ): Promise<RelayDeployResult> {
   const accountId = request.accountId?.trim();
-  if (!accountId) throw new GatewayError("invalid_request", 400, "Cloudflare account id is required");
+  if (!accountId) throw new GatewayError("invalid_request", 400, "Cloudflare account id is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
   const projectName = request.projectName?.trim() || generateName("relay");
   const scriptUrl = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/workers/scripts/${encodeURIComponent(projectName)}`;
   const form = new FormData();
@@ -174,7 +174,7 @@ async function deployCloudflare(
     body: form,
   });
   if (!upload.ok)
-    throw new GatewayError("platform_unavailable", upload.status, `Cloudflare deploy failed: ${await readError(upload)}`);
+    throw new GatewayError("platform_unavailable", upload.status, `Cloudflare deploy failed (request {requestId}): ${await readError(upload)}. Flip the switch back on when ready 🔌`);
   // Enable the workers.dev route; a failure here is non-fatal because the
   // subdomain lookup below decides the final URL and reports its own error.
   await fetchImpl(`${scriptUrl}/subdomain`, {
@@ -190,7 +190,7 @@ async function deployCloudflare(
     throw new GatewayError(
       "platform_unavailable",
       subdomainRes.status,
-      `Worker uploaded but its workers.dev subdomain could not be read: ${await readError(subdomainRes)}`,
+      `Worker uploaded but its workers.dev subdomain could not be read (request {requestId}): ${await readError(subdomainRes)}. Flip the switch back on when ready 🔌`,
     );
   const subdomainData = (await subdomainRes.json().catch(() => ({}))) as {
     result?: { subdomain?: string };
@@ -200,7 +200,7 @@ async function deployCloudflare(
     throw new GatewayError(
       "platform_unavailable",
       502,
-      "Worker uploaded but no workers.dev subdomain is configured for this Cloudflare account.",
+      "Worker uploaded but no workers.dev subdomain is configured for this Cloudflare account (request {requestId}). Flip the switch back on when ready 🔌",
     );
   return { target: "cloudflare", projectName, relayUrl: `https://${projectName}.${subdomain}.workers.dev` };
 }
@@ -300,11 +300,11 @@ async function deployDeno(
     body: JSON.stringify({ project: projectName, entryPoint: "main.ts", files: { "main.ts": RELAY_DENO_SOURCE } }),
   });
   if (!deployRes.ok)
-    throw new GatewayError("platform_unavailable", deployRes.status, `Deno deploy failed: ${await readError(deployRes)}`);
+    throw new GatewayError("platform_unavailable", deployRes.status, `Deno deploy failed (request {requestId}): ${await readError(deployRes)}. Flip the switch back on when ready 🔌`);
   const deployment = (await deployRes.json().catch(() => ({}))) as { url?: string; domains?: string[] };
   const url = deployment.url ?? deployment.domains?.[0];
   if (!url)
-    throw new GatewayError("platform_unavailable", 502, "Deno deploy returned no URL");
+    throw new GatewayError("platform_unavailable", 502, "Deno deploy returned no URL (request {requestId}). Flip the switch back on when ready 🔌");
   return {
     target: "deno",
     projectName,

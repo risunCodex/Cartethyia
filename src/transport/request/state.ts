@@ -259,7 +259,7 @@ export class ProxyRequestStateStore {
       try {
         if (controller && !controller.signal.aborted) {
           controller.abort(
-            new GatewayError("deadline_exceeded", 504, "in-flight request exceeded its deadline"),
+            new GatewayError("deadline_exceeded", 504, "in-flight request exceeded its deadline (request {requestId}). Some things just take longer 🐢"),
           );
         }
       } catch {
@@ -330,7 +330,7 @@ export class ProxyRequestStateStore {
           new GatewayError(
             "deadline_exceeded",
             504,
-            "request deadline exceeded",
+            "request deadline exceeded (request {requestId}). Some things just take longer 🐢",
             {},
             "cartethyia",
           ),
@@ -418,7 +418,7 @@ export class ProxyRequestStateStore {
   require(request: Request): ProxyRequestState {
     const state = this.states.get(request);
     if (!state)
-      throw new GatewayError("admission_unavailable", 503, "The request was never registered, so it cannot be served. Resend the request.");
+      throw new GatewayError("admission_unavailable", 503, "The request was never registered, so it cannot be served (request {requestId}). Resend the request. The bouncer stepped out — resend shortly 🚪");
     return state;
   }
 

@@ -52,20 +52,20 @@ export function createBackupExportHandler(
     // came from, the second is the credential it carried — and `invalid_request`
     // told an operator to fix a body that was never the problem.
     if (!isLoopbackPeer(deps.resolvePeerAddress(request)))
-      throw new GatewayError("policy_rejected", 403, "backup export is only available from loopback");
+      throw new GatewayError("policy_rejected", 403, "backup export is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂");
     if (!tokenMatches(request.headers.get("x-drain-token"), deps.token))
-      throw new GatewayError("authentication_failed", 401, "invalid export token");
+      throw new GatewayError("authentication_failed", 401, "invalid export token (request {requestId}). Wrong key, right door — check the token 🔑");
 
     const directory =
       body !== null && typeof body === "object" && "directory" in body
         ? body.directory
         : undefined;
     if (directory !== undefined && typeof directory !== "string")
-      throw new GatewayError("invalid_request", 400, "directory must be a string");
+      throw new GatewayError("invalid_request", 400, "directory must be a string (request {requestId}). Check the shape of what you sent — then resend 🪞");
 
     const tenantId = await deps.resolveTenantId();
     if (tenantId === null)
-      throw new GatewayError("invalid_request", 409, "no tenant exists; run setup first");
+      throw new GatewayError("invalid_request", 409, "no tenant exists; run setup first (request {requestId}). Nothing here but dust — run setup first 🌙");
 
     // One gzip pass over the streamed document: a tenant with hundreds of
     // thousands of rows is read page by page and only the compressed bytes
@@ -83,9 +83,9 @@ export function createBackupExportHandler(
       writeFileSync(path, gzipped);
     } catch (error) {
       throw new GatewayError(
-        "invalid_request",
+        "internal_error",
         500,
-        `could not write ${path}: ${error instanceof Error ? error.message : "unknown error"}`,
+        `could not write ${path}: ${error instanceof Error ? error.message : "unknown error"} (request {requestId}). Even we have bad days — retry, and quote the request id if it persists 🐻`,
       );
     }
 
