@@ -516,20 +516,34 @@ async function latencyPercentiles(
   }
 
   // SQLite: nearest-rank percentile = the value at ceil(p * n) rows into the
-  // ordered latency column, via ORDER BY + OFFSET/LIMIT in SQL.
-  const rankAt = async (fraction: number): Promise<number | null> => {
-    const offset = Math.max(0, Math.ceil(fraction * sampled) - 1);
-    const [row] = await db
-      .select({ value: telemetryEvents.latencyMs })
-      .from(telemetryEvents)
-      .where(and(...base))
-      .orderBy(telemetryEvents.latencyMs)
-      .limit(1)
-      .offset(offset);
-    return row?.value ?? null;
+  // ordered latency column. One query computes all three ranks via a window
+  // function, instead of three separate OFFSET/LIMIT passes over the same
+  // ordered column (one per percentile).
+  const n = Math.max(1, sampled);
+  const ranks = [
+    Math.ceil(0.5 * n),
+    Math.ceil(0.95 * n),
+    Math.ceil(0.99 * n),
+  ];
+  const [row] = await db
+    .select({
+      p50: sql<number | null>`max(case when rn = ${ranks[0]} then value end)`,
+      p95: sql<number | null>`max(case when rn = ${ranks[1]} then value end)`,
+      p99: sql<number | null>`max(case when rn = ${ranks[2]} then value end)`,
+    })
+    .from(
+      sql`(
+        select ${telemetryEvents.latencyMs} as value,
+               row_number() over (order by ${telemetryEvents.latencyMs}) as rn
+        from ${telemetryEvents}
+        where ${and(...base)}
+      )`,
+    );
+  return {
+    p50: numericNullable(row?.p50 ?? null),
+    p95: numericNullable(row?.p95 ?? null),
+    p99: numericNullable(row?.p99 ?? null),
   };
-  const [p50, p95, p99] = await Promise.all([rankAt(0.5), rankAt(0.95), rankAt(0.99)]);
-  return { p50, p95, p99 };
 }
 
 /** The SQL column one breakdown dimension groups by. */
@@ -859,5 +873,103 @@ export async function summarizeUsagePerformanceSql(
     latencySampleCount: sampled,
     resolveSampleCount: resolveCount,
     avgTokensPerSec: numeric(row?.avgTokensPerSec ?? 0),
+  };
+}
+
+/**
+ * Combined usage totals + performance in ONE window scan.
+ *
+ * `summarizeTelemetry` and `summarizeUsagePerformanceSql` both scan the same
+ * tenant window and each additionally run the percentile path, so the Usage
+ * summary endpoint paid two scans plus two percentile passes for one response.
+ * This runs the combined SELECT once and one percentile pass, returning both
+ * shapes so the caller needs no second query.
+ */
+export async function summarizeUsageWithPerformance(
+  db: CartethyiaDatabase,
+  tenantId: string,
+  since: Date,
+): Promise<{ summary: UsageSummary; performance: UsagePerformanceTotals }> {
+  const condition = scoped(tenantId, since);
+  const [row] = await db
+    .select({
+      requests: sql<number>`count(*)`,
+      errors: sql<number>`sum(case when ${IS_GATEWAY_ERROR_SQL} then 1 else 0 end)`,
+      cancelled: sql<number>`sum(case when ${telemetryEvents.status} = 'cancelled' then 1 else 0 end)`,
+      truncated: sql<number>`sum(case when ${telemetryEvents.status} = 'truncated' then 1 else 0 end)`,
+      inputTokens: sql<number>`coalesce(sum(${telemetryEvents.inputTokens}), 0)`,
+      outputTokens: sql<number>`coalesce(sum(${telemetryEvents.outputTokens}), 0)`,
+      cachedInputTokens: sql<number>`coalesce(sum(${telemetryEvents.cachedInputTokens}), 0)`,
+      reasoningTokens: sql<number>`coalesce(sum(${telemetryEvents.reasoningTokens}), 0)`,
+      estimatedCostUsd: sql<number>`coalesce(sum(${telemetryEvents.estimatedCostUsd}), 0)`,
+      sampled: sql<number>`count(${telemetryEvents.latencyMs})`,
+      latencyAvg: sql<number>`avg(${telemetryEvents.latencyMs})`,
+      unpriced: sql<number>`sum(case when ${telemetryEvents.estimatedCostUsd} is null then 1 else 0 end)`,
+      resolveSum: sql<number>`coalesce(sum(${telemetryEvents.resolveMs}), 0)`,
+      resolveCount: sql<number>`count(${telemetryEvents.resolveMs})`,
+      avgTokensPerSec: sql<number>`coalesce(avg(${telemetryEvents.tokensPerSec}), 0)`,
+    })
+    .from(telemetryEvents)
+    .where(condition);
+
+  if (!row) {
+    const empty: UsageSummary = {
+      requests: 0,
+      errors: 0,
+      cancelled: 0,
+      truncated: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedInputTokens: 0,
+      reasoningTokens: 0,
+      estimatedCostUsd: 0,
+      sampled: 0,
+      latencyMs: { avg: null, p50: null, p95: null, p99: null },
+      unpriced: 0,
+    };
+    const emptyPerformance: UsagePerformanceTotals = {
+      avgResolveMs: 0,
+      avgDurationMs: 0,
+      latencyP50Ms: 0,
+      latencyP95Ms: 0,
+      latencyP99Ms: 0,
+      latencySampleCount: 0,
+      resolveSampleCount: 0,
+      avgTokensPerSec: 0,
+    };
+    return { summary: empty, performance: emptyPerformance };
+  }
+
+  const sampled = numeric(row.sampled);
+  const percentiles = await latencyPercentiles(db, tenantId, since, sampled);
+  const resolveCount = numeric(row.resolveCount);
+  return {
+    summary: {
+      requests: numeric(row.requests),
+      errors: numeric(row.errors),
+      cancelled: numeric(row.cancelled),
+      truncated: numeric(row.truncated),
+      inputTokens: numeric(row.inputTokens),
+      outputTokens: numeric(row.outputTokens),
+      cachedInputTokens: numeric(row.cachedInputTokens),
+      reasoningTokens: numeric(row.reasoningTokens),
+      estimatedCostUsd: numeric(row.estimatedCostUsd),
+      sampled,
+      latencyMs: {
+        avg: numericNullable(row.latencyAvg),
+        ...percentiles,
+      },
+      unpriced: numeric(row.unpriced),
+    },
+    performance: {
+      avgResolveMs: resolveCount > 0 ? numeric(row.resolveSum) / resolveCount : 0,
+      avgDurationMs: numericNullable(row.latencyAvg) ?? 0,
+      latencyP50Ms: percentiles.p50 ?? 0,
+      latencyP95Ms: percentiles.p95 ?? 0,
+      latencyP99Ms: percentiles.p99 ?? 0,
+      latencySampleCount: sampled,
+      resolveSampleCount: resolveCount,
+      avgTokensPerSec: numeric(row.avgTokensPerSec),
+    },
   };
 }

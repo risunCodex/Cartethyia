@@ -10,8 +10,8 @@ import {
   healthTelemetry,
   queryTelemetryEvents as queryTelemetryEventPage,
   summarizeHealthPerformance,
-  summarizeUsagePerformanceSql,
   summarizeTelemetry,
+  summarizeUsageWithPerformance,
 } from "../../observability/event-query";
 import { clientNameFromUserAgent } from "../../observability/client-name";
 
@@ -468,12 +468,11 @@ export class DrizzleObservabilityStore implements ObservabilityStore {
   private async computeSummary(tenantId: string, period: string): Promise<UsageSummaryResponse> {
     const since = this.periodSince(period);
     // Totals, status breakdown, and latency percentiles all computed in SQL.
-    // This used to parse the whole retained window into JavaScript to sum six
-    // counters and sort a latency array.
-    const [summary, statuses, performance] = await Promise.all([
-      summarizeTelemetry(this.db, tenantId, since),
+    // The summary totals and performance figures come from ONE combined window
+    // scan (one percentile pass), not two independent scans.
+    const [{ summary, performance }, statuses] = await Promise.all([
+      summarizeUsageWithPerformance(this.db, tenantId, since),
       breakdownTelemetry(this.db, tenantId, "status", since),
-      summarizeUsagePerformanceSql(this.db, tenantId, since),
     ]);
     const inputTokens = summary.inputTokens;
     const cachedTokens = summary.cachedInputTokens;
@@ -655,7 +654,7 @@ export class DrizzleObservabilityStore implements ObservabilityStore {
   }
 
   private async computeCache(tenantId: string, period: string): Promise<UsageCacheResponse> {
-    const summary = await summarizeTelemetry(this.db, tenantId, this.periodSince(period));
+    const { summary } = await summarizeUsageWithPerformance(this.db, tenantId, this.periodSince(period));
     const inputTokens = summary.inputTokens;
     const outputTokens = summary.outputTokens;
     const cachedTokens = summary.cachedInputTokens;
