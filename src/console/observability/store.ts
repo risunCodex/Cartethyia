@@ -7,10 +7,7 @@ import { type TelemetryEventRecord } from "../../observability/event-log";
 import {
   breakdownTelemetry,
   chartTelemetry,
-  healthTelemetry,
   queryTelemetryEvents as queryTelemetryEventPage,
-  summarizeHealthPerformance,
-  summarizeTelemetry,
   summarizeUsageWithPerformance,
 } from "../../observability/event-query";
 import { clientNameFromUserAgent } from "../../observability/client-name";
@@ -326,11 +323,10 @@ export class DrizzleObservabilityStore implements ObservabilityStore {
       // cost on the dashboard. `healthTelemetry` returns the totals and the
       // database computes the percentiles.
       const since = new Date(Date.now() - HEALTH_WINDOW_MS);
-      const totals = await healthTelemetry(this.db, tenantId, since);
-      const performance = await summarizeHealthPerformance(this.db, tenantId, since);
+      const { summary: totals, performance } = await summarizeUsageWithPerformance(this.db, tenantId, since);
       total = totals.requests;
       errors = totals.errors;
-      avg = performance.latencyAvgMs === null ? 0 : Math.round(performance.latencyAvgMs);
+      avg = Math.round(performance.avgDurationMs ?? 0);
       p95 = performance.latencyP95Ms ?? 0;
       p99 = performance.latencyP99Ms ?? 0;
       const inputTokens = totals.inputTokens;
@@ -417,8 +413,8 @@ export class DrizzleObservabilityStore implements ObservabilityStore {
     // Totals AND the top-model/top-provider counts come from SQL: the old
     // shape parsed the whole retained window into an array to count two
     // dimensions in JavaScript.
-    const [summary, models, providers] = await Promise.all([
-      summarizeTelemetry(this.db, tenantId, since),
+    const [{ summary }, models, providers] = await Promise.all([
+      summarizeUsageWithPerformance(this.db, tenantId, since),
       breakdownTelemetry(this.db, tenantId, "model", since),
       breakdownTelemetry(this.db, tenantId, "provider", since),
     ]);
