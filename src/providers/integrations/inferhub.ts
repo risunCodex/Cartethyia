@@ -1,6 +1,7 @@
 // Hybrid: the Messages-wire leg (`InferhubMessagesAdapter`, Claude Messages
 // envelope + Bearer auth + breakpoint cache stamping) is a non-OpenAI wire and
 // stays bespoke; the chat leg is a declarative spec row.
+import { assertCredentialKind } from "../provider-contracts";
 import type { ProviderDispatchTarget, ProviderAdapter, ProviderDispatchContext } from "../provider-contracts";
 import type { ModelDefinition } from "../provider-model-definition";
 import type { ProviderModelDiscovery } from "../discovery/discovery-types";
@@ -333,11 +334,7 @@ export class InferhubMessagesAdapter implements ProviderAdapter {
       );
     }
     if (context.credential.credential_kind !== "api_key") {
-      throw new GatewayError(
-        "invalid_request",
-        400,
-        `inferhub: api_key credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
-      );
+      assertCredentialKind(context.credential, "api_key", "inferhub");
     }
     if (context.credential.secret === undefined || context.credential.secret.length === 0) {
       throw new GatewayError("invalid_request", 400, "inferhub: API key is missing a secret value (request {requestId}). Wrong key, right door — check the key 🔑");

@@ -48,6 +48,29 @@ export function readCredentialSecret(credential: ResolvedCredential, errorMessag
   return raw;
 }
 
+/**
+ * Asserts a credential is of the required kind, throwing a typed rejection
+ * otherwise. Providers disagree on the kind they accept (`oauth` vs
+ * `api_key` vs `scoped_access_token`), and each hand-rolled its own check +
+ * message. This centralizes the common pattern so a mis-bound credential reads
+ * the same everywhere, preserving the existing `invalid_request`/400 wire
+ * contract.
+ */
+export function assertCredentialKind(
+  credential: ResolvedCredential,
+  expected: CredentialKind | readonly CredentialKind[],
+  providerLabel: string,
+): void {
+  const expectedKinds = Array.isArray(expected) ? expected : [expected];
+  if (expectedKinds.includes(credential.credential_kind)) return;
+  throw new GatewayError(
+    "invalid_request",
+    400,
+    `${providerLabel}: ${expectedKinds.join(" or ")} credential required (got credential_kind=${credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
+    { expected_credential_kind: expectedKinds },
+  );
+}
+
 /** Fetch capability that validates DNS answers and redirects before each request. */
 export type ValidatedOutboundFetch = (
   input: RequestInfo | URL,

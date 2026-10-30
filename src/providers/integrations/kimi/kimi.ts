@@ -26,6 +26,7 @@ import {
 } from "../../../protocol/request/messages";
 import { sendClaudeMessagesRequest } from "../../../protocol/upstream/send-claude-messages";
 import { endpointUrl } from "../../../protocol/codecs";
+import { assertCredentialKind } from "../../provider-contracts";
 import type { ProviderDispatchTarget, ProviderAdapter, ProviderDispatchContext } from "../../provider-contracts";
 import {
   getKimiCommonHeaders,
@@ -148,11 +149,7 @@ class KimiCodeAdapter implements ProviderAdapter {
       );
     }
     if (context.credential.credential_kind !== "oauth") {
-      throw new GatewayError(
-        "invalid_request",
-        400,
-        `kimi: OAuth credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
-      );
+      assertCredentialKind(context.credential, "oauth", "kimi");
     }
     if (!context.credential.secret) {
       throw new GatewayError(

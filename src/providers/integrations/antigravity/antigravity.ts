@@ -46,6 +46,7 @@ import {
   loadAntigravityProject,
   normalizeAntigravityToolSchemas,
 } from "./antigravity-protocol";
+import { assertCredentialKind } from "../../provider-contracts";
 import type { ImageGenerationOutcome, ProviderDispatchTarget, ProviderAdapter, ProviderDispatchContext, WebSearchOutcome, WebSearchResult } from "../../provider-contracts";
 import { providerBaseUrl } from "../../provider-metadata";
 import { abortGatewayError, createUpstreamDeadlineLifecycle } from "../../operations/upstream-deadline";
@@ -195,11 +196,7 @@ class AntigravityAdapter implements ProviderAdapter {
       );
     }
     if (context.credential.credential_kind !== "oauth") {
-      throw new GatewayError(
-        "invalid_request",
-        400,
-        `antigravity: Google OAuth credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
-      );
+      assertCredentialKind(context.credential, "oauth", "antigravity");
     }
     const accessToken = context.credential.secret
       ? new TextDecoder().decode(context.credential.secret).trim()
@@ -541,11 +538,7 @@ class AntigravityAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): Promise<ImageGenerationOutcome> {
     if (context.credential.credential_kind !== "oauth") {
-      throw new GatewayError(
-        "invalid_request",
-        400,
-        `antigravity: Google OAuth credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
-      );
+      assertCredentialKind(context.credential, "oauth", "antigravity");
     }
     const accessToken = context.credential.secret
       ? new TextDecoder().decode(context.credential.secret).trim()

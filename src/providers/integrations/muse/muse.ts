@@ -22,6 +22,7 @@ import type { CanonicalRequest } from "../../../protocol/canonical-model";
 import { GatewayError } from "../../../protocol/gateway-error";
 import { decodeMuseCredential } from "../../../security/credential-codec";
 import { OpenAICompatibleAdapter, withBearerAuthentication } from "../../adapters/compatible-adapter";
+import { assertCredentialKind } from "../../provider-contracts";
 import type { ProviderDispatchTarget, ProviderDispatchContext, ResolvedCredential } from "../../provider-contracts";
 import { providerBaseUrl } from "../../provider-metadata";
 
@@ -137,11 +138,7 @@ class MuseCodeAdapter extends OpenAICompatibleAdapter {
     candidate: ProviderDispatchTarget,
   ): Promise<Record<string, string>> {
     if (context.credential.credential_kind !== "oauth") {
-      throw new GatewayError(
-        "invalid_request",
-        400,
-        `muse: OAuth credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
-      );
+      assertCredentialKind(context.credential, "oauth", "muse");
     }
     if (!context.credential.secret) {
       throw new GatewayError(

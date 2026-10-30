@@ -9,12 +9,12 @@
  * OpenAI-compatible adapter.
  */
 import { randomBytes, randomUUID } from "node:crypto";
-import { GatewayError } from "../../../protocol/gateway-error";
 import type { CanonicalEvent, CanonicalRequest } from "../../../protocol/canonical-model";
 import {
   OpenAICompatibleAdapter,
   withBearerAuthentication,
 } from "../../adapters/compatible-adapter";
+import { assertCredentialKind } from "../../provider-contracts";
 import type { ProviderAdapter, ProviderDispatchTarget, ProviderDispatchContext } from "../../provider-contracts";
 import { providerBaseUrl } from "../../provider-metadata";
 import { boundedUpstreamArray, boundedUpstreamNumber, sanitizeUpstreamLabel } from "../../provider-sanitize";
@@ -526,11 +526,7 @@ class GrokAdapter extends OpenAICompatibleAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (context.credential.credential_kind !== "oauth") {
-      throw new GatewayError(
-        "invalid_request",
-        400,
-        "grok requires an xAI OAuth device credential (request {requestId}). Wrong key, right door — check the credential 🔑",
-      );
+      assertCredentialKind(context.credential, "oauth", "grok");
     }
     yield* super.dispatch(request, candidate, context);
   }

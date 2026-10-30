@@ -18,6 +18,7 @@ import { GatewayError } from "../../protocol/gateway-error";
 import { buildClaudeMessagesRequest, filterClaudeCustomHeaders } from "./shared/claude-messages";
 import { sendClaudeMessagesRequest } from "../../protocol/upstream/send-claude-messages";
 import { applyParamQuirks } from "../../protocol/translation/quirks";
+import { assertCredentialKind } from "../provider-contracts";
 import type { ProviderDispatchTarget, ProviderAdapter, ProviderDispatchContext, ProviderId } from "../provider-contracts";
 import { providerBaseUrl } from "../provider-metadata";
 
@@ -65,11 +66,7 @@ export class AnthropicApiKeyAdapter implements ProviderAdapter {
       );
     }
     if (context.credential.credential_kind !== "api_key") {
-      throw new GatewayError(
-        "invalid_request",
-        400,
-        `${this.provider_id}: x-api-key credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
-      );
+      assertCredentialKind(context.credential, "api_key", this.provider_id);
     }
     if (
       context.credential.secret === undefined ||
