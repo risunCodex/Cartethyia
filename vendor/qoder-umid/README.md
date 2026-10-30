@@ -20,14 +20,15 @@ npm bundle — no recompilation, no patches.
   `provider_accounts.native_identity.seed` and are replayed under a lock.
 - The Windows exe ignores seed files — it is hardware-bound (one identity per
   machine). Still a genuine SG identity.
-- `vmInfo` (isVm/brand) is local-only output; only the six `cosy-machine*`
-  headers travel upstream, and the campaign gate keys on the token being
-  SG-produced — not on the VM flag.
+- `vmInfo` (isVm/brand) is local-only output. Same-account campaign controls
+  found that the daily CREDITS surface accepts genuine, generated, random,
+  empty, or omitted machine headers; identity is not a grant prerequisite.
 
 ## Historical note
 
 The generated-mint path (deterministic SHA-256 tokens shaped like the bridge
-output) was retired on 2026-10-30: a live control proved it does not surface
-the daily CREDITS grant on fresh accounts, while the genuine bridge does.
-See `documentation/research/qoder-umid-reverse.md` and
-`qoder-identity-gate-postmortem.md` for the full record.
+output) is not excluded from daily CREDITS claims: same-account controls
+showed that machine headers do not gate an existing grant. The bridge remains
+useful when another surface needs a stable native identity. See
+[`12-Qoder-30-10-2026-umid-and-identity-findings.md`](../../documentation/archive/research/12-Qoder-30-10-2026-umid-and-identity-findings.md)
+for the full record.

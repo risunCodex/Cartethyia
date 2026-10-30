@@ -1,11 +1,10 @@
 /**
  * Qoder native machine identity (UMID) — the genuine SG bridge via umidpack.
  *
- * Research record (2026-10-30): the daily-credit campaign gates its CREDITS
- * grant on a *genuine* Alibaba SG-produced identity. Deterministic/generated
- * tokens do not reveal the grant on a fresh account; the `runtime-info`
- * bridge does. Primary path therefore runs the real bridge binary from
- * `vendor/qoder-umid/umidpack/`, auto-picked per host OS.
+ * Research record (2026-10-30): same-account controls found that the daily
+ * CREDITS campaign does not gate grants on machine identity. This module
+ * prefers the vendor bridge for stable native identity and seed replay, with
+ * a deterministic generated fallback when no bridge is available.
  *
  * Seed semantics (verified live): the Linux ELF resolves the user home via
  * the passwd entry — it ignores `$HOME`/`XDG_CONFIG_HOME`, so the seed file
@@ -18,15 +17,14 @@
  *
  * Platform behavior:
  *   win32  — the exe is hardware-bound: one identity per machine, no seed.
- *            Still a genuine SG identity (accepted by the campaign surface).
  *   linux  — direct spawn of the umidpack ELF, serialized seed file.
  *   darwin — the Mach-O runs directly; seed path is the macOS user home.
  *   win32 + WSL (this repo's primary deployment) — the ELF runs via WSL with
  *            flock serialization; the bridge binary is staged into /tmp once.
  *
- * The generated path remains a fallback for hosts with no usable bridge: it
- * produces well-shaped but *not* SG-signed tokens — fine for non-campaign
- * endpoints, will not surface the daily grant.
+ * The generated path remains a fallback for hosts with no usable bridge. It
+ * produces deterministic, well-shaped tokens but is not an SG identity. Live
+ * controls showed that machine identity does not gate daily CREDITS grants.
  *
  * Bridge CLI (donor-verified):
  *   linux : runtime-info <env>
@@ -155,15 +153,16 @@ function seedPath(): string {
 }
 
 /**
- * Mints a fresh genuine identity: wipe the seed (under the lock), run the
+ * Mints a fresh native identity: wipe the seed (under the lock), run the
  * bridge, capture the identity AND the seed it wrote. The seed is required
- * for later replay of this same identity. Returns `null` when the bridge
- * fails; falls back to the generated identity only when no bridge exists.
+ * for later replay of this same native identity. Returns `null` when the
+ * bridge fails; falls back to the generated identity only when no bridge
+ * exists.
  */
 export function mintQoderNativeIdentity(accountId: string): { identity: QoderNativeIdentity; seed: string } | null {
   const bridge = pickBridge();
   if (!bridge) {
-    log.warn("[qoder] no genuine bridge for this host — generated fallback (campaign grant will not surface)");
+    log.warn("[qoder] no native bridge for this host — using generated identity fallback");
     return { identity: mintQoderGeneratedIdentity(accountId), seed: "" };
   }
 

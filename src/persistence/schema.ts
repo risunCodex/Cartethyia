@@ -188,15 +188,16 @@ export const providers = pgTable(
  *
  * The device identity is a deterministic function of a seed file
  * (`~/.config/.locale_cfg`): the `runtime-info` bridge reads that seed and
- * derives `machineToken`/`machineType`/`machineCode`. The server gates the
- * daily 100-credit campaign on a *genuine, non-VM* device identity, so each
- * account gets its own minted seed (a distinct "device").
+ * derives `machineToken`/`machineType`/`machineCode`. The daily 100-credit
+ * campaign does not gate grants on this identity. A persisted seed allows the
+ * vendor bridge to replay the same native identity where another Qoder surface
+ * requires it.
  *
  * `seed` is the exact seed-file content the identity was minted from, stored
  * so the same device identity can be replayed (restore seed → bridge → same
- * token). It is not a credential, but it is the per-account device material
- * and must never be shared between accounts. `machineToken` is the unique
- * device key: two accounts sharing a token are the same device to the server.
+ * token). It is not a credential, but it is per-account device material and
+ * should not be shared between accounts. Campaign grant eligibility is
+ * independent of `machineToken`.
  */
 export interface NativeIdentityRecord {
   readonly machineToken: string;

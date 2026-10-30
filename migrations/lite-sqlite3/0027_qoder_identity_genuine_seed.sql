@@ -1,21 +1,20 @@
 -- Qoder native identity: genuine SG identity + per-account seed replay.
 --
--- Research (2026-10-30, see documentation/research/qoder-identity-gate-
--- postmortem.md and qoder-umid-reverse.md) established that the daily-credit
--- campaign gates its CREDITS grant on a *genuine* Alibaba SG-produced
--- identity: generated/deterministic tokens do not reveal the grant on a
--- fresh account, while the `runtime-info` bridge (SG-signed) does.
+-- Research (2026-10-30, see
+-- documentation/archive/research/Qoder-03-umid-and-identity-findings.md)
+-- established that machine identity does not gate the daily-credit campaign.
+-- The seed is retained for deterministic replay of a native identity on
+-- surfaces that may require one; it is not required for campaign eligibility.
 --
 -- Migration 0026 already added `native_identity` (the token triple + optional
 -- seed) with a partial unique index on the extracted machineToken — the
 -- "one device per account" invariant. This migration does not change that
 -- schema; it only documents the contract change on the same column:
 --
---   `seed` is now REQUIRED for a claim-capable identity (the seed is the
---   device material; the token can be re-derived from it, never the reverse).
---   Rows minted by the retired generated path carry `seed = ""` — they stay
---   valid records but must be re-minted through the bridge before the next
---   claim; the store treats a missing/empty seed as "not replay-capable".
+--   `seed` makes a native identity replay-capable (the token can be
+--   re-derived from the seed, never the reverse). Rows minted by the
+--   generated path may have `seed = ""`; that affects native replay only,
+--   not the daily campaign claim.
 --
 -- No DDL is needed: the JSON shape already carries everything. Kept as an
 -- empty migration so the migration numbering records the policy change.

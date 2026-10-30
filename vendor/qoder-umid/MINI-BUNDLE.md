@@ -8,11 +8,12 @@ tar.
 
 ## Why this exists
 
-The daily-credit campaign surface gates the CREDITS grant on a genuine
-SG-produced machine identity. A live probe (2026-10-30, account `jdm
-fullkeknya`, 21:34 UTC) settled it: on one fresh account, generated,
-Windows-exe, and random tokens all got `NOT VISIBLE` while the WSL-ELF token
-got `CLAIMABLE`. For claims, the identity must come from this bridge.
+The mini bundle provides the vendor's Linux UMID bridge for research and
+surfaces that need a stable native identity. Later same-account controls found
+that daily CREDITS claims do not require a genuine identity: generated, random,
+empty, and omitted machine headers all exposed an existing grant. The bridge
+does not create a missing grant. See
+[`12-Qoder-30-10-2026-umid-and-identity-findings.md`](../../documentation/archive/research/12-Qoder-30-10-2026-umid-and-identity-findings.md).
 
 ## Contents of `qoder-umid-mini.tar.gz`
 

@@ -2,15 +2,16 @@
  * Persistence for the Qoder native machine identity (UMID) bound to an
  * account.
  *
- * The daily 100-credit check-in grant is device-scoped upstream, and the
- * server accepts only genuine, non-VM device identities. A device identity is
- * a deterministic function of a seed file (`~/.config/.locale_cfg`), so each
- * account gets its own minted seed — its own "device". The bound record lives
- * in `provider_accounts.native_identity` (plain JSON, not a secret).
+ * Same-account probes found that daily 100-credit grant visibility does not
+ * depend on machine headers. This store preserves native identities and seeds
+ * for deterministic replay and other surfaces that may use device identity.
+ * A native identity is a deterministic function of a seed file
+ * (`~/.config/.locale_cfg`). The bound record lives in
+ * `provider_accounts.native_identity` (plain JSON, not a secret).
  *
  * Uniqueness of the device is enforced by the partial unique index on the
- * extracted `machineToken`; this store keeps the JS side of that invariant
- * and surfaces the DB constraint as the backstop.
+ * extracted `machineToken`; this store keeps the JS side of that internal
+ * identity-allocation invariant and surfaces the DB constraint as the backstop.
  */
 import { and, eq, isNotNull, ne } from "drizzle-orm";
 import type { CartethyiaDatabase } from "../../../persistence/db-handle";
@@ -30,7 +31,7 @@ export interface QoderNativeIdentityStore {
   get(providerId: string, accountId: string): Promise<NativeIdentityRecord | undefined>;
   /**
    * Machine tokens already bound to **other** accounts, so a caller can mint
-   * a fresh device without colliding. A bound token is a physical device, and
+   * a fresh identity without colliding. A bound token represents a device identity, and
    * the unique index that backs this spans all `provider_accounts` rows. The
    * account's own bound token is not "occupied" — reusing one's own device is
    * the point.
