@@ -80,7 +80,7 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
       // Lenient pool semantics: a missing slot tolerates direct egress.
       strictPoolSelection: false,
       exhaustedError: new GatewayError(
-        "admission_unavailable",
+        "route_unavailable",
         503,
         "no eligible System One route (request {requestId}). The bouncer stepped out — come back shortly 🚪",
       ),

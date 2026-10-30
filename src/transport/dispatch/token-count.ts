@@ -111,7 +111,7 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
       tenantId: prepared.authorization.tenantId,
       strictPoolSelection: false,
       exhaustedError: new GatewayError(
-        "admission_unavailable",
+        "route_unavailable",
         503,
         "no eligible route can count tokens for this model (request {requestId}). The bouncer stepped out — come back shortly 🚪",
       ),

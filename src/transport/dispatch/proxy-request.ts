@@ -116,7 +116,7 @@ export async function handleProviderProxyRequest(
   const state = deps.stateStore.require(request);
   const prepared = state.preparedRequest;
   if (!prepared)
-    throw new GatewayError("admission_unavailable", 503, "The request was not prepared, so no route can be dialed (request {requestId}). Resend the request. The bouncer stepped out — resend shortly 🚪");
+    throw new GatewayError("route_unavailable", 503, "The request was not prepared, so no route can be dialed (request {requestId}). Resend the request. The bouncer stepped out — resend shortly 🚪");
   const canonicalRequest = await applyTenantPreferences(prepared, deps.db);
   // Tenant system-prompt injection, resolved once per request. For providers
   // whose upstream validates the fixed system prompt as a channel identity
@@ -188,13 +188,13 @@ export async function handleProviderProxyRequest(
     tenantId: prepared.authorization.tenantId,
     strictPoolSelection: true,
     resolveHost: (candidate) => deps.byokUpstreamHosts?.get(candidate.provider_id),
-    exhaustedError: new GatewayError("admission_unavailable", 503, "No account could be leased for this request (request {requestId}). Retry shortly; if it persists, add an account or check that one is healthy. The bouncer stepped out — come back shortly 🚪"),
+    exhaustedError: new GatewayError("route_unavailable", 503, "No account could be leased for this request (request {requestId}). Retry shortly; if it persists, add an account or check that one is healthy. The bouncer stepped out — come back shortly 🚪"),
     prepare: async (candidate) => {
       if (!candidate.provider_account_id && candidate.requires_account !== false)
         throw new GatewayError(
-          "admission_unavailable",
+          "route_unavailable",
           503,
-          "This route has no usable credential. Save one on the account, or route to a provider whose account is configured.",
+          "This route has no usable credential (request {requestId}). Save one on the account, or route to a provider whose account is configured. Wrong key, right door — check the credential 🔑",
         );
       const credential = candidate.provider_account_id
         ? await resolveCredentialForAccount(
@@ -211,11 +211,11 @@ export async function handleProviderProxyRequest(
           };
       const adapter = await deps.resolveProviderAdapter?.(candidate.provider_id);
       if (!adapter)
-        throw new GatewayError("admission_unavailable", 503, "provider adapter not registered (request {requestId}). Even we have bad days — check the registry wiring 🐻");
+        throw new GatewayError("route_unavailable", 503, "provider adapter not registered (request {requestId}). Even we have bad days — check the registry wiring 🐻");
       if (!isBundledProviderId(candidate.provider_id)) {
         if (!deps.byokUpstreamHosts?.get(candidate.provider_id) || !deps.networkBindingFactory)
           throw new GatewayError(
-            "admission_unavailable",
+            "route_unavailable",
             503,
             "validated network binding is required for configurable upstreams (request {requestId}). No bridge to cross — configure a pool first 🏗️",
           );

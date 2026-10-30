@@ -436,7 +436,7 @@ export class IpAbuseProtectionService {
 
       if (outcome.banned) {
         metrics.cartethyia_ip_abuse_refusals_total.inc(1, { reason: "ip-banned" });
-        throw new GatewayError("quota_exceeded", 429, "This address is temporarily banned for too many failed requests (request {requestId}). Wait for the ban to lift, then slow down. You've maxed this window — pace yourself ⏳", {
+        throw new GatewayError("rate_limited", 429, "This address is temporarily banned for too many failed requests (request {requestId}). Wait for the ban to lift, then slow down. You've maxed this window — pace yourself ⏳", {
           // Distinguishes this from the rate-limited 429 below and from an API
           // key's own budget. It used to be "admission-unavailable", which is
           // the label for an *unreachable* store — so every refusal from this
@@ -454,7 +454,7 @@ export class IpAbuseProtectionService {
 
       if (outcome.count > this.maxRequestsPerWindow) {
         metrics.cartethyia_ip_abuse_refusals_total.inc(1, { reason: "ip-rate-limited" });
-        throw new GatewayError("quota_exceeded", 429, "This address is sending requests faster than the abuse limit allows (request {requestId}). Back off and retry after the window rolls over. You've maxed this window — pace yourself ⏳", {
+        throw new GatewayError("rate_limited", 429, "This address is sending requests faster than the abuse limit allows (request {requestId}). Back off and retry after the window rolls over. You've maxed this window — pace yourself ⏳", {
           reason: "ip-rate-limited",
           ip,
           route: input.route,

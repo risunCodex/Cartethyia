@@ -170,8 +170,8 @@ redisDescribe("RedisAdmissionCounterStore", () => {
         .catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(GatewayError);
       expect(reasonOf(error)).toBe("daily-token-limit");
-      // Every token budget is a 429 `quota_exceeded` on the wire.
-      expect((error as GatewayError).code).toBe("quota_exceeded");
+      // Every token budget is a 429 `rate_limited` on the wire.
+      expect((error as GatewayError).code).toBe("rate_limited");
       expect((error as GatewayError).status).toBe(429);
     });
 

@@ -188,7 +188,7 @@ export function validateTransportConfig(
     case "http":
     case "https":
       if (cfg.timeout !== undefined && typeof cfg.timeout !== "number")
-        throw new ConsoleDomainError("invalid_config", 400, "HTTP timeout must be a number");
+        throw new ConsoleDomainError("invalid_pool", 400, "HTTP timeout must be a number", { field: "timeout" });
       return;
     case "socks5":
       return;
@@ -196,9 +196,10 @@ export function validateTransportConfig(
       // Compile-time exhaustiveness: new TransportKind variants must add a case.
       kind satisfies never;
       throw new ConsoleDomainError(
-        "invalid_config",
+        "invalid_pool",
         400,
         `Unsupported transport kind: ${String(kind)}`,
+        { field: "kind" },
       );
   }
 }
@@ -494,10 +495,10 @@ export function validateEndpoint(
     try {
       u = new URL(candidate);
     } catch {
-      throw new ConsoleDomainError("invalid_endpoint", 400, "Endpoint must be host:port");
+      throw new ConsoleDomainError("invalid_pool", 400, "Endpoint must be host:port", { field: "endpoint" });
     }
     if (!u.hostname || !u.port)
-      throw new ConsoleDomainError("invalid_endpoint", 400, "Endpoint must be host:port");
+      throw new ConsoleDomainError("invalid_pool", 400, "Endpoint must be host:port", { field: "endpoint" });
     if (u.hostname === "localhost" || u.hostname.endsWith(".internal"))
       throw new ConsoleDomainError("ssrf_rejected", 400, "Private endpoint rejected");
     if (isIP(u.hostname) !== 0 && !isAddressAllowed(u.hostname, policy))
@@ -508,10 +509,10 @@ export function validateEndpoint(
   try {
     u = new URL(endpoint);
   } catch {
-    throw new ConsoleDomainError("invalid_endpoint", 400, "Endpoint must be a valid http(s) URL");
+    throw new ConsoleDomainError("invalid_pool", 400, "Endpoint must be a valid http(s) URL", { field: "endpoint" });
   }
   if (!["http:", "https:"].includes(u.protocol)) {
-    throw new ConsoleDomainError("invalid_endpoint", 400, "Endpoint must be a valid http(s) URL");
+    throw new ConsoleDomainError("invalid_pool", 400, "Endpoint must be a valid http(s) URL", { field: "endpoint" });
   }
   if (u.hostname === "localhost" || u.hostname.endsWith(".internal")) {
     throw new ConsoleDomainError("ssrf_rejected", 400, "Private endpoint rejected");
@@ -529,9 +530,10 @@ export function validatePoolLimits(maxInflight?: number, weight?: number): void 
     (!Number.isInteger(maxInflight) || maxInflight < 1 || maxInflight > MAX_POOL_INFLIGHT)
   ) {
     throw new ConsoleDomainError(
-      "invalid_pool_limits",
+      "invalid_pool",
       400,
       "maxInflight must be an integer between 1 and 1000000",
+      { field: "maxInflight" },
     );
   }
   if (
@@ -539,9 +541,10 @@ export function validatePoolLimits(maxInflight?: number, weight?: number): void 
     (!Number.isInteger(weight) || weight < 1 || weight > MAX_POOL_WEIGHT)
   ) {
     throw new ConsoleDomainError(
-      "invalid_pool_limits",
+      "invalid_pool",
       400,
       "weight must be an integer between 1 and 1000",
+      { field: "weight" },
     );
   }
 }

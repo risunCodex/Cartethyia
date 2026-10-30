@@ -68,7 +68,7 @@ describe("native model admission", () => {
         serviceKind: "systemone",
         authorization: authorization(["allowed-model"]),
       }),
-    ).rejects.toMatchObject({ code: "model_not_found", status: 404 });
+    ).rejects.toMatchObject({ code: "model_not_allowed", status: 403 });
   });
 
   test("does not let a combo bypass a blacklisted concrete member", async () => {
@@ -91,6 +91,6 @@ describe("native model admission", () => {
         serviceKind: "systemone",
         authorization: authorization(["secret-model"], "blacklist"),
       }),
-    ).rejects.toMatchObject({ code: "model_not_found", status: 404 });
+    ).rejects.toMatchObject({ code: "model_not_allowed", status: 403 });
   });
 });

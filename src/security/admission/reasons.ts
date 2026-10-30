@@ -20,25 +20,25 @@ const REASON_META: Record<
 > = {
   "rpm-exhausted": {
     message: "This key has used its requests-per-minute allowance (request {requestId}). Wait for the window to roll over, or raise the key's rpm limit. You've maxed this window — pace yourself ⏳",
-    code: "quota_exceeded",
+    code: "rate_limited",
     status: 429,
     metricLabel: "rpm_exhausted",
   },
   "daily-token-limit": {
     message: "This key has used today's token allowance (request {requestId}). It resets at the start of the next day, or raise the key's daily limit. Pace yourself — it resets tomorrow ⏳",
-    code: "quota_exceeded",
+    code: "rate_limited",
     status: 429,
     metricLabel: "daily",
   },
   "monthly-token-limit": {
     message: "This key has used this month's token allowance (request {requestId}). It resets at the start of the next month, or raise the key's monthly limit. Saving up for next month? It resets then ⏳",
-    code: "quota_exceeded",
+    code: "rate_limited",
     status: 429,
     metricLabel: "monthly",
   },
   "lifetime-token-budget": {
     message: "This key has spent its lifetime token budget (request {requestId}). Raise the budget, or issue a new key. The piggy bank is empty — top it up or mint a new key 🐷",
-    code: "quota_exceeded",
+    code: "rate_limited",
     status: 429,
     metricLabel: "lifetime",
   },
@@ -60,14 +60,14 @@ const REASON_META: Record<
   },
   "model-not-allowed": {
     message: "This key is not allowed to use this model under its allowlist (request {requestId}). Add the model to the key, or use one it already allows. The door's locked for this one — check the allowlist 🔒",
-    code: "model_not_found",
-    status: 404,
+    code: "model_not_allowed",
+    status: 403,
     metricLabel: "model_not_allowed",
   },
   "model-denied": {
     message: "This key's denylist blocks this model (request {requestId}). Remove the model from the denylist, or use a different model. This one's on the banned list — pick another 🚫",
-    code: "model_not_found",
-    status: 404,
+    code: "model_not_allowed",
+    status: 403,
     metricLabel: "model_not_allowed",
   },
   "admission-unavailable": {

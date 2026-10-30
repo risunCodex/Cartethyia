@@ -62,7 +62,7 @@ export function createApiKeyAuthenticationMiddleware(deps: {
         safe.name = error instanceof Error ? error.name : "Error";
         log.error("[auth] key lookup failed; treating as unavailable", safe);
         throw new GatewayError(
-          "accounts_unavailable",
+          "admission_unavailable",
           503,
           "The gateway could not verify this API key because its credential store is unavailable (request {requestId}). Retry shortly. The bouncer stepped out — come back shortly 🚪",
           {},

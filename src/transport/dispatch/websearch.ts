@@ -89,7 +89,7 @@ export function createWebsearchHandler(deps: WebsearchHandlerDeps) {
       candidates: prepared.candidates,
       tenantId: prepared.authorization.tenantId,
       strictPoolSelection: false,
-      exhaustedError: new GatewayError("admission_unavailable", 503, "no eligible search route (request {requestId}). The bouncer stepped out — come back shortly 🚪"),
+      exhaustedError: new GatewayError("route_unavailable", 503, "no eligible search route (request {requestId}). The bouncer stepped out — come back shortly 🚪"),
       prepare: async (candidate) => {
         const credential = candidate.provider_account_id
           ? await resolveCredentialForAccount(

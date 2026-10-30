@@ -418,7 +418,7 @@ export class ProxyRequestStateStore {
   require(request: Request): ProxyRequestState {
     const state = this.states.get(request);
     if (!state)
-      throw new GatewayError("admission_unavailable", 503, "The request was never registered, so it cannot be served (request {requestId}). Resend the request. The bouncer stepped out — resend shortly 🚪");
+      throw new GatewayError("route_unavailable", 503, "The request was never registered, so it cannot be served (request {requestId}). Resend the request. The bouncer stepped out — resend shortly 🚪");
     return state;
   }
 

@@ -141,9 +141,10 @@ export function createNetworkPoolOperations(config: NetworkPoolConfig) {
         const rotateCount = request.rotateCount ?? current.rotateCount;
         if (!Number.isInteger(rotateCount) || rotateCount < 1 || rotateCount > 1000) {
           throw new ConsoleDomainError(
-            "invalid_pool_limits",
+            "invalid_pool",
             400,
             "rotateCount must be an integer between 1 and 1000",
+            { field: "rotateCount" },
           );
         }
         const saved = await config.store.setStrategy(a.tenantId, { strategy, rotateCount });
@@ -482,7 +483,7 @@ export function createNetworkPoolOperations(config: NetworkPoolConfig) {
     ): Promise<PoolSpeedTestResult> {
       const a = requireTenantScope(access, "dashboard:read");
       if (!config.store.speedTest) {
-        throw new ConsoleDomainError("not_supported", 400, "Speed tests are unavailable");
+        throw new ConsoleDomainError("capability_unsupported", 400, "Speed tests are unavailable");
       }
       if (!Number.isInteger(bytes) || bytes < SPEED_TEST_MIN_BYTES || bytes > SPEED_TEST_MAX_BYTES) {
         throw new ConsoleDomainError(
@@ -507,7 +508,7 @@ export function createNetworkPoolOperations(config: NetworkPoolConfig) {
     ): Promise<PoolProviderProbeResult> {
       const a = requireTenantScope(access, "dashboard:read");
       if (!config.store.providerProbe) {
-        throw new ConsoleDomainError("not_supported", 400, "Provider probing is unavailable");
+        throw new ConsoleDomainError("capability_unsupported", 400, "Provider probing is unavailable");
       }
       const result = await config.store.providerProbe(a.tenantId, poolId, providerId);
       if (!config.poolSelector) return result;
@@ -596,7 +597,7 @@ export function createNetworkPoolOperations(config: NetworkPoolConfig) {
         );
       }
       if (!config.store.probeAdHocProvider) {
-        throw new ConsoleDomainError("not_supported", 400, "Provider probing is unavailable");
+        throw new ConsoleDomainError("capability_unsupported", 400, "Provider probing is unavailable");
       }
       const probe = config.store.probeAdHocProvider.bind(config.store);
       const results: PoolBatchProviderProbeResult[] = new Array(requests.length);
@@ -632,7 +633,7 @@ export function createNetworkPoolOperations(config: NetworkPoolConfig) {
       if (config.store.probeAdHoc) {
         return config.store.probeAdHoc(a.tenantId, request);
       }
-      throw new ConsoleDomainError("not_supported", 400, "Ad-hoc pool probing is unavailable");
+      throw new ConsoleDomainError("capability_unsupported", 400, "Ad-hoc pool probing is unavailable");
     },
     /**
      * Probes many unsaved pool definitions in one call.
@@ -656,7 +657,7 @@ export function createNetworkPoolOperations(config: NetworkPoolConfig) {
         );
       }
       if (!config.store.probeAdHoc) {
-        throw new ConsoleDomainError("not_supported", 400, "Ad-hoc pool probing is unavailable");
+        throw new ConsoleDomainError("capability_unsupported", 400, "Ad-hoc pool probing is unavailable");
       }
       const probe = config.store.probeAdHoc.bind(config.store);
       const results: PoolBatchProbeResult[] = new Array(requests.length);
@@ -700,7 +701,7 @@ export function createNetworkPoolOperations(config: NetworkPoolConfig) {
     ): Promise<NetworkPoolResponse & { relayUrl: string }> {
       const a = requireTenantScope(access, "dashboard:write");
       if (!config.relayFetch)
-        throw new ConsoleDomainError("not_supported", 503, "Relay deployment is unavailable");
+        throw new ConsoleDomainError("capability_unsupported", 503, "Relay deployment is unavailable");
       if (!isRelayTarget(request.target))
         throw new ConsoleDomainError("invalid_request", 422, `Unsupported relay target: ${String(request.target)}`);
       const result = await deployRelayWorker(config.relayFetch, request);

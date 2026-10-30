@@ -966,7 +966,7 @@ describe("ApiKeyAdmissionService", () => {
         (error: unknown) => error,
       );
     expect(failure).toBeInstanceOf(GatewayError);
-    expect((failure as GatewayError).code).toBe("model_not_found");
+    expect((failure as GatewayError).code).toBe("model_not_allowed");
     expect((failure as GatewayError).details.reason).toBe("model-denied");
   });
 

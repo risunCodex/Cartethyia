@@ -93,7 +93,7 @@ describe("ip abuse — rate limiting", () => {
     const error = await attempt(service, "10.0.0.2");
     expect(error).not.toBeNull();
     expect(error?.status).toBe(429);
-    expect(error?.code).toBe("quota_exceeded");
+    expect(error?.code).toBe("rate_limited");
   });
 
   test("the limit is per address, not global", async () => {

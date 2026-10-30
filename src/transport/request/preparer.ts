@@ -242,13 +242,13 @@ export class ProxyRequestPreparer {
       !allowedForKey
     )
       throw new GatewayError(
-        "model_not_found",
-        404,
-        `This key may only use models starting with '${authorization.modelPrefix}' (request {requestId}). Ask for one inside that prefix, or have an operator widen the key. Try another model — this one's off the menu 📚`,
+        "model_not_allowed",
+        403,
+        `This key may only use models starting with '${authorization.modelPrefix}' (request {requestId}). Ask for one inside that prefix, or have an operator widen the key. The door's locked for this one — check the allowlist 🔒`,
         { model: request.model, required_prefix: authorization.modelPrefix },
       );
     if (!allowedForKey) {
-      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key (request {requestId}). Try another model — this one's off the menu 📚", {
+      throw new GatewayError("model_not_allowed", 403, "model is not allowed for this API key (request {requestId}). The door's locked for this one — check the allowlist 🔒", {
         model: request.model,
       });
     }
@@ -319,7 +319,7 @@ export class ProxyRequestPreparer {
       ),
     );
     if (policyCandidates.length === 0)
-      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key (request {requestId}). Try another model — this one's off the menu 📚", {
+      throw new GatewayError("model_not_allowed", 403, "model is not allowed for this API key (request {requestId}). The door's locked for this one — check the allowlist 🔒", {
         model: request.model,
       });
     if (policyCandidates.length !== plan.candidates.length)
@@ -473,13 +473,13 @@ export class ProxyRequestPreparer {
       !allowedForKey
     )
       throw new GatewayError(
-        "model_not_found",
-        404,
-        `This key may only use models starting with '${input.authorization.modelPrefix}' (request {requestId}). Ask for one inside that prefix, or have an operator widen the key. Try another model — this one's off the menu 📚`,
+        "model_not_allowed",
+        403,
+        `This key may only use models starting with '${input.authorization.modelPrefix}' (request {requestId}). Ask for one inside that prefix, or have an operator widen the key. The door's locked for this one — check the allowlist 🔒`,
         { model: input.model, required_prefix: input.authorization.modelPrefix },
       );
     if (!allowedForKey)
-      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key (request {requestId}). Try another model — this one's off the menu 📚", {
+      throw new GatewayError("model_not_allowed", 403, "model is not allowed for this API key (request {requestId}). The door's locked for this one — check the allowlist 🔒", {
         model: input.model,
       });
     const plan = await this.deps.routingEngine.plan(
@@ -501,7 +501,7 @@ export class ProxyRequestPreparer {
       ),
     );
     if (policyCandidates.length === 0)
-      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key (request {requestId}). Try another model — this one's off the menu 📚", {
+      throw new GatewayError("model_not_allowed", 403, "model is not allowed for this API key (request {requestId}). The door's locked for this one — check the allowlist 🔒", {
         model: input.model,
       });
     const candidates = policyCandidates.filter(input.eligible);

@@ -102,7 +102,7 @@ export function createConsoleMutationLimiterMiddleware(): Elysia {
             ? Math.ceil(CONSOLE_MUTATION_WINDOW_MS / 1000)
             : Math.max(1, Math.ceil((oldest + CONSOLE_MUTATION_WINDOW_MS - now) / 1000));
         set.headers["retry-after"] = String(retryAfterSeconds);
-        throw new GatewayError("quota_exceeded", 429, "Console mutation rate limit exceeded (request {requestId}). Retry shortly. You've maxed this window — pace yourself ⏳");
+        throw new GatewayError("rate_limited", 429, "Console mutation rate limit exceeded (request {requestId}). Retry shortly. You've maxed this window — pace yourself ⏳");
       }
       hits.push(now);
       consoleMutationHits.set(key, hits);

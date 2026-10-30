@@ -93,7 +93,7 @@ Rules (`gateway-error.ts`, `error-lifecycle.ts`):
 
 ---
 
-## 3. `GatewayErrorCode` — complete catalog (52 codes)
+## 3. `GatewayErrorCode` — complete catalog (55 codes)
 
 HTTP status shown is the status the code is normally emitted with; several
 codes can carry different statuses in different call sites (noted). Retry
@@ -114,7 +114,8 @@ semantics come from `classifyUpstreamFailure` (the canonical list in §4.5).
 | Code | HTTP | Retryable | Meaning | Produced by |
 | --- | --- | --- | --- | --- |
 | `ambiguous_model` | 400 | no | Bare model name matches more than one provider owner | `route-model.ts` (`ambiguousModelError`) |
-| `model_not_found` | 404 | yes | Requested model unresolved, alias target missing, or key allowlist/denylist blocks it | `route-model.ts` (`modelNotFoundError`), `preparer.ts`, admission reasons `model-not-allowed`/`model-denied`, `boot/app.ts` model detail |
+| `model_not_found` | 404 | yes | Requested model unresolved, alias target missing | `route-model.ts` (`modelNotFoundError`) |
+| `model_not_allowed` | 403 | no | Model diizinkan untuk key ini (allowlist/prefix/denylist) — distinct dari "tidak ada" | `preparer.ts`, admission reasons `model-not-allowed`/`model-denied` |
 | `upstream_not_found` | 404 | no | Upstream 404 (route/resource missing upstream) — not a model verdict | `failure-policy.ts` status table |
 | `accounts_unavailable` | 503 | yes | Model routed but every serving account is unusable (disabled/locked/no healthy candidate) | `route-model.ts` (`accountsUnavailableError`), `auth-guard.ts` (credential store down) |
 | `accounts_rate_limited` | 429 | yes | Every candidate is inside a cooldown window; carries real `retryAfterMs` | `route-model.ts` (`accountsRateLimitedError`), `router.ts` continuation |
@@ -124,12 +125,14 @@ semantics come from `classifyUpstreamFailure` (the canonical list in §4.5).
 
 | Code | HTTP | Retryable | Meaning | Produced by |
 | --- | --- | --- | --- | --- |
-| `admission_unavailable` | 503 | yes | Request could not be admitted (peer address unknown, counter store unreachable, corrupted counters) | `guard-errors.ts`, `abuse.ts`, `request-context.ts`, `state.ts`, `websearch`/`responses-compact` exhausted routes |
+| `admission_unavailable` | 503 | yes | Request could not be admitted (peer address unknown, counter store unreachable, corrupted counters) | `guard-errors.ts`, `abuse.ts` |
+| `route_unavailable` | 503 | yes | No eligible route/prep/adapter/binding for the request (internal routing failure, not admission) | `request-context.ts`, `state.ts`, `proxy-request.ts`, native-route exhausted errors |
 | `capacity_exhausted` | 429 | yes | API-key concurrency ceiling (admission `concurrency-limit`) — **not** upstream overload | admission `reasons.ts` |
 | `upstream_overloaded` | 529 (503 passthrough) | yes | Upstream overload (529 / capacity identifiers) — distinct from the key-level `capacity_exhausted` | `failure-policy.ts` classification |
 | `tenant_capacity_exhausted` | 429 | no | Tenant-wide concurrency ceiling hit (admission `tenant-capacity-exhausted`) | admission `reasons.ts` |
 | `provider_capacity_exhausted` | 429 | yes | Every *provider account* in the plan is at its max-inflight — distinct from the key-level `capacity_exhausted` | `route-model.ts` (`capacityExhaustedError`) |
-| `quota_exceeded` | 429 (402 passthrough) | yes | Spend/limit verdict: upstream quota, key daily/monthly/lifetime limits, abuse ban/rate limit | admission `reasons.ts`, `abuse.ts`, `console-router-guards.ts`, `failure-policy.ts` |
+| `quota_exceeded` | 429 (402 passthrough) | yes | Spend/limit verdict: upstream quota, abuse ban | admission `reasons.ts` (spend), `abuse.ts`, `failure-policy.ts` |
+| `rate_limited` | 429 | yes | Rate-limit murni (rpm/daily/monthly/lifetime token, abuse window, console throttle) — distinct dari spend quota | admission `reasons.ts`, `abuse.ts`, `console-router-guards.ts` |
 | `upstream_queued` | 503 | yes | Upstream accepted the request and queued it (Qoder 403+10605); carries `retryAfterMs` | `failure-policy.ts` (`upstreamQueuedError`) |
 | `overloaded` | 503 (529 in telemetry) | **no** (client retries after hint) | Process memory headroom shed (OOM avoidance) | `headroom-guard.ts` |
 | `proxy_pool_capacity_exceeded` | 429 | no | Every pool for the provider is at its concurrency limit | `leases.ts` |

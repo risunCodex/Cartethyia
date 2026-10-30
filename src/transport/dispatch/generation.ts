@@ -219,7 +219,7 @@ export function createNativeSurfaceHandler(
       candidates: prepared.candidates,
       tenantId: prepared.authorization.tenantId,
       strictPoolSelection: false,
-      exhaustedError: new GatewayError("admission_unavailable", 503, `no eligible ${noun} generation route (request {requestId}). The bouncer stepped out — come back shortly 🚪`),
+      exhaustedError: new GatewayError("route_unavailable", 503, `no eligible ${noun} generation route (request {requestId}). The bouncer stepped out — come back shortly 🚪`),
       prepare: async (candidate) => {
         const credential = candidate.provider_account_id
           ? await resolveCredentialForAccount(

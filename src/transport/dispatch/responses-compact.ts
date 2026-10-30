@@ -77,16 +77,16 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
       // Lenient pool semantics: a missing slot tolerates direct egress.
       strictPoolSelection: false,
       exhaustedError: new GatewayError(
-        "admission_unavailable",
+        "route_unavailable",
         503,
         "no eligible Codex route (request {requestId}). The bouncer stepped out — come back shortly 🚪",
       ),
       prepare: async (candidate) => {
         if (!candidate.provider_account_id)
           throw new GatewayError(
-            "admission_unavailable",
+            "route_unavailable",
             503,
-            "Codex compact requires an OAuth account (request {requestId}). The bouncer stepped out — come back shortly 🚪",
+            "Codex compact requires an OAuth account (request {requestId}). Wrong key, right door — check the credential 🔑",
           );
         const credential = await resolveCredentialForAccount(
           deps.db,

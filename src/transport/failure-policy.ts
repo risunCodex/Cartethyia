@@ -274,6 +274,7 @@ export function classifyUpstreamFailure(error: unknown): UpstreamFailurePolicy {
         error.code === "capability_unsupported" ||
     error.code === "model_not_found" ||
     error.code === "admission_unavailable" ||
+    error.code === "route_unavailable" ||
     error.code === "capacity_exhausted" ||
     error.code === "upstream_overloaded" ||
     // A provider max-inflight rejection: the plan's next sibling account may
@@ -287,6 +288,7 @@ export function classifyUpstreamFailure(error: unknown): UpstreamFailurePolicy {
     error.code === "accounts_unavailable" ||
     error.code === "accounts_rate_limited" ||
     error.code === "quota_exceeded" ||
+    error.code === "rate_limited" ||
     error.code === "authentication_failed" ||
     error.code === "proxy_auth_required" ||
     error.code === "deadline_exceeded" ||
@@ -433,6 +435,9 @@ const CATEGORY_HTTP_STATUS: Partial<Record<GatewayErrorCode | "unknown_error", n
   transport_closed: 499,
   shutting_down: 503,
   overloaded: 529,
+  route_unavailable: 503,
+  model_not_allowed: 403,
+  rate_limited: 429,
   unknown_error: 500,
 };
 
