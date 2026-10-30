@@ -60,7 +60,7 @@ export function createDispatchStreamEncoder(
   throw new GatewayError(
     "capability_unsupported",
     400,
-    `Unknown surface: ${surface}`,
+    `Unknown surface: ${surface} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
     { surface },
   );
 }

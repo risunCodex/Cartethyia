@@ -251,7 +251,7 @@ async function deployVercel(
     }),
   });
   if (!deployRes.ok)
-    throw new GatewayError("platform_unavailable", deployRes.status, `Vercel deploy failed: ${await readError(deployRes)}`);
+    throw new GatewayError("platform_unavailable", deployRes.status, `Vercel deploy failed (request {requestId}): ${await readError(deployRes)}. Flip the switch back on when ready 🔌`);
   // Pin the region again after the deploy created the project: the PATCH above
   // is a no-op on first deploy (the project does not exist yet), and a redeploy
   // is what Vercel requires for a region change to take effect anyway. The SSO
@@ -280,7 +280,7 @@ async function deployVercel(
   }).catch(() => undefined);
   const deployment = (await deployRes.json().catch(() => ({}))) as { url?: string };
   if (!deployment.url)
-    throw new GatewayError("platform_unavailable", 502, "Vercel deploy returned no URL");
+    throw new GatewayError("platform_unavailable", 502, "Vercel deploy returned no URL (request {requestId}). Flip the switch back on when ready 🔌");
   return {
     target: "vercel",
     projectName,
@@ -333,6 +333,6 @@ export async function deployRelay(
   request: RelayDeployRequest,
 ): Promise<RelayDeployResult> {
   if (!request.token.trim())
-    throw new GatewayError("invalid_request", 400, `${request.target} API token is required`);
+    throw new GatewayError("invalid_request", 400, `${request.target} API token is required (request {requestId}). Wrong key, right door — check the credential 🔑`);
   return DEPLOYERS[request.target](fetchImpl, request);
 }

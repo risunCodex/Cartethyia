@@ -69,11 +69,11 @@ export function createPerplexityAdapter(fetchImpl?: typeof fetch): ProviderAdapt
       void _candidate;
       const query = extractSearchQuery(request);
       if (!query) {
-        throw new GatewayError("invalid_request", 400, "Search query is required.");
+        throw new GatewayError("invalid_request", 400, "Search query is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
       }
       const token = tokenFromContext(context);
       if (!token) {
-        throw new GatewayError("authentication_failed", 401, "Missing Perplexity API key");
+        throw new GatewayError("authentication_failed", 401, "Missing Perplexity API key (request {requestId}). Wrong key, right door — check the key 🔑");
       }
 
       const fetchFn = (context.outbound_fetch as unknown as typeof fetch | undefined) ?? fetchImpl ?? globalThis.fetch;

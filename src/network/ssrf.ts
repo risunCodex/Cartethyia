@@ -170,7 +170,7 @@ export function validateResolvedAddresses(
   policy: SsrfPolicy,
 ): string {
   if (addresses.length === 0 || addresses.some((address) => !isAddressAllowed(address, policy))) {
-    throw new GatewayError("invalid_request", 400, "The upstream address this route resolves to is not allowed. Point the provider at a permitted host.");
+    throw new GatewayError("invalid_request", 400, "The upstream address this route resolves to is not allowed (request {requestId}). Point the provider at a permitted host. All roads blocked — time to find a new route 🗺️");
   }
   return addresses[0]!;
 }

@@ -411,7 +411,7 @@ class GithubAdapter extends OpenAICompatibleAdapter {
 
     const secret = context.credential.secret;
     if (secret === undefined || secret.length === 0) {
-      throw new GatewayError("authentication_failed", 401, "GitHub Copilot credential is missing");
+      throw new GatewayError("authentication_failed", 401, "GitHub Copilot credential is missing (request {requestId}). Wrong key, right door — check the credential 🔑");
     }
     const credential = new TextDecoder().decode(secret);
     const autoInput = autoPrompt(request);
@@ -424,7 +424,7 @@ class GithubAdapter extends OpenAICompatibleAdapter {
       : this.#getCachedAutoDecision(cacheKey, autoInput.hasImage);
     if (autoDecision === undefined) {
       if (autoInput.prompt.length === 0) {
-        throw new GatewayError("invalid_request", 400, "Copilot Auto requires a text prompt");
+        throw new GatewayError("invalid_request", 400, "Copilot Auto requires a text prompt (request {requestId}). Check the shape of what you sent — then resend 🪞");
       }
       autoDecision = await this.#selectAutoModel(
         autoInput.prompt,
@@ -462,7 +462,7 @@ class GithubAdapter extends OpenAICompatibleAdapter {
       throw new GatewayError(
         "upstream_unprocessable",
         502,
-        "Copilot Auto selected a model without a discovered inference endpoint",
+        "Copilot Auto selected a model without a discovered inference endpoint (request {requestId}). The upstream came back empty-handed — retry 🌙",
         { selected_model: selectedModelId },
         "upstream",
       );
@@ -498,7 +498,7 @@ class GithubAdapter extends OpenAICompatibleAdapter {
       ? undefined
       : parseGithubCredential(new TextDecoder().decode(context.credential.secret));
     if (credential === undefined) {
-      throw new GatewayError("authentication_failed", 401, "GitHub Copilot credential is missing");
+      throw new GatewayError("authentication_failed", 401, "GitHub Copilot credential is missing (request {requestId}). Wrong key, right door — check the credential 🔑");
     }
     const payload: Record<string, unknown> = { prompt, tier };
     if (hasImage) payload.has_image = true;
@@ -522,7 +522,7 @@ class GithubAdapter extends OpenAICompatibleAdapter {
       throw new GatewayError(
         "upstream_unprocessable",
         502,
-        "Copilot Auto returned an invalid routing response",
+        "Copilot Auto returned an invalid routing response (request {requestId}). The upstream came back empty-handed — retry 🌙",
         {},
         "upstream",
       );
@@ -545,7 +545,7 @@ class GithubAdapter extends OpenAICompatibleAdapter {
       throw new GatewayError(
         "upstream_unprocessable",
         502,
-        "Copilot Auto did not return a selected model",
+        "Copilot Auto did not return a selected model (request {requestId}). The upstream came back empty-handed — retry 🌙",
         {},
         "upstream",
       );

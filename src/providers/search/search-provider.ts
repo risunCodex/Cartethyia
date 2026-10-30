@@ -53,7 +53,7 @@ function stringField(record: Record<string, unknown> | undefined, key: string): 
 export function searchParamsFromBody(body: Record<string, unknown>): SearchParams {
   const query = typeof body.query === "string" ? body.query.trim() : "";
   if (query.length === 0)
-    throw new GatewayError("invalid_request", 400, "search query is required");
+    throw new GatewayError("invalid_request", 400, "search query is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
   const rawMax = body.max_results;
   const maxResults =
     typeof rawMax === "number" && Number.isFinite(rawMax)
@@ -90,7 +90,7 @@ export function createSearchAdapter(spec: SearchProviderSpec): ProviderAdapter {
       throw new GatewayError(
         "capability_unsupported",
         400,
-        `${spec.provider_id} serves web search, not a chat wire`,
+        `${spec.provider_id} serves web search, not a chat wire (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
       );
     },
     async websearch(
@@ -113,7 +113,7 @@ export function createSearchAdapter(spec: SearchProviderSpec): ProviderAdapter {
         throw new GatewayError(
           "platform_unavailable",
           502,
-          `${spec.provider_id} search unreachable: ${error instanceof Error ? error.message : String(error)}`,
+          `${spec.provider_id} search unreachable (request {requestId}): ${error instanceof Error ? error.message : String(error)}. The connection ghosted us — come back in a moment 👻`,
         );
       }
       if (!res.ok) {
@@ -121,7 +121,7 @@ export function createSearchAdapter(spec: SearchProviderSpec): ProviderAdapter {
         throw new GatewayError(
           res.status >= 500 ? "platform_unavailable" : "invalid_request",
           res.status,
-          `${spec.provider_id} search error: ${detail.slice(0, 240)}`,
+          `${spec.provider_id} search error (request {requestId}): ${detail.slice(0, 240)}. The upstream came back empty-handed — retry 🌙`,
         );
       }
       const raw = await res.text();
@@ -135,7 +135,7 @@ export function createSearchAdapter(spec: SearchProviderSpec): ProviderAdapter {
         throw new GatewayError(
           "platform_unavailable",
           502,
-          `${spec.provider_id} search returned an unparseable body`,
+          `${spec.provider_id} search returned an unparseable body (request {requestId}). The upstream came back empty-handed — retry 🌙`,
         );
       }
       const results = spec.normalize(data);

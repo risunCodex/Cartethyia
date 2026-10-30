@@ -57,7 +57,7 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
       throw new GatewayError(
         "invalid_request",
         400,
-        "The count_tokens body must be a JSON object, the same shape POST /v1/messages accepts.",
+        "The count_tokens body must be a JSON object (request {requestId}), the same shape POST /v1/messages accepts. Check the shape of what you sent — then resend 🪞",
       );
     }
     const countBody = body as Record<string, unknown>;

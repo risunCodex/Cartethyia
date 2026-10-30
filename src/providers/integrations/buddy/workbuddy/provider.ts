@@ -134,7 +134,7 @@ export function workbuddyPrePayload(
   const rawModel = payload["model"];
   const source =
     typeof rawModel === "string" && rawModel.length > 0 ? rawModel : candidate.model_id;
-  if (!source) throw new GatewayError("invalid_request", 400, "WorkBuddy model is required");
+  if (!source) throw new GatewayError("invalid_request", 400, "WorkBuddy model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
   const messages = payload["messages"];
   if (Array.isArray(messages)) {
     const normalizedMessages = messages as Array<Record<string, unknown>>;

@@ -57,6 +57,9 @@ Rules (`gateway-error.ts`, `error-lifecycle.ts`):
   `x-request-id` header is repeated inside the body (structured field) and
   inside the lead message text as `(request {requestId})`, so a client that
   only reads the message string can still correlate it to the server log.
+  The middleware appends the id to any message that does not already carry
+  it, so every public error is correlatable even when the producer builds
+  the message from upstream prose.
 - **`message`** — plain sentence. Legacy prefixes (`Cartethyia Error:`,
   `Upstream Error:`, `Network Error:`) and any leading `<code>:` stamp are
   stripped idempotently (`formatPublicErrorMessage`). The code is never

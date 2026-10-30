@@ -64,7 +64,7 @@ export function createApiKeyAuthenticationMiddleware(deps: {
         throw new GatewayError(
           "accounts_unavailable",
           503,
-          "The gateway could not verify this API key because its credential store is unavailable. Retry shortly.",
+          "The gateway could not verify this API key because its credential store is unavailable (request {requestId}). Retry shortly. The bouncer stepped out — come back shortly 🚪",
           {},
           "cartethyia",
         );

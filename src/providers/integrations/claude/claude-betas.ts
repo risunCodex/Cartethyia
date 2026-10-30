@@ -67,7 +67,7 @@ export const ANTHROPIC_BETA_CAPABILITIES: Readonly<Record<string, readonly strin
 const BETA_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 function invalidBeta(message: string, value: unknown): GatewayError {
-  return new GatewayError("invalid_request", 400, message, { field: "anthropic-beta", value });
+  return new GatewayError("invalid_request", 400, `${message} (request {requestId}). Check the shape of what you sent — then resend 🪞`, { field: "anthropic-beta", value });
 }
 
 /**

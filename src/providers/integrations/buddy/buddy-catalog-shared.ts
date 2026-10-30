@@ -273,7 +273,7 @@ export function makeBuddyModel(
   endpoint?: string,
   realm: "intl" | "cn" = "intl",
 ): ModelDefinition {
-  if (!entry[0]) throw new GatewayError("invalid_request", 400, "invalid model");
+  if (!entry[0]) throw new GatewayError("invalid_request", 400, "invalid model (request {requestId}). Check the shape of what you sent — then resend 🪞");
   const image = BUDDY_IMAGE_MODEL_ID_SET.has(entry[0]);
   const efforts = (realm === "cn" ? BUDDY_CN_EFFORTS : BUDDY_INTL_EFFORTS)[entry[0].toLowerCase()];
   // Refused on free is only a question for the intl realm. cbcn serves every

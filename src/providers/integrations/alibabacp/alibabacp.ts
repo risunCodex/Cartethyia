@@ -61,7 +61,7 @@ function alibabaSpec(envelope: AlibabaCodingPlanEnvelope): ApiKeyProviderSpec {
 function alibabaEnvelope(context: ProviderDispatchContext): AlibabaCodingPlanEnvelope {
   const secret = context.credential.secret;
   if (secret === undefined || secret.length === 0) {
-    throw new GatewayError("invalid_request", 400, "alibabacp: credential is missing a secret value");
+    throw new GatewayError("invalid_request", 400, "alibabacp: credential is missing a secret value (request {requestId}). Wrong key, right door — check the credential 🔑");
   }
   let envelope: AlibabaCodingPlanEnvelope;
   try {
@@ -70,7 +70,7 @@ function alibabaEnvelope(context: ProviderDispatchContext): AlibabaCodingPlanEnv
     throw new GatewayError(
       "invalid_request",
       400,
-      `alibabacp: ${error instanceof Error ? error.message : "stored credential is not an Alibaba envelope"}`,
+      `alibabacp: ${error instanceof Error ? error.message : "stored credential is not an Alibaba envelope"} (request {requestId}). Wrong key, right door — check the credential 🔑`,
     );
   }
   return envelope;

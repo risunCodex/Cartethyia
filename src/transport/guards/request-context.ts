@@ -192,7 +192,7 @@ export function createCanonicalRequestMiddleware(deps: {
         throw new GatewayError(
           "capability_unsupported",
           400,
-          `Surface adapter unavailable: ${detection.surface}`,
+          `Surface adapter unavailable: ${detection.surface} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
           { surface: detection.surface },
         );
       const ingress = deps.stateStore.require(request);

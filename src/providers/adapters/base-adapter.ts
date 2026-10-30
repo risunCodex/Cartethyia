@@ -25,7 +25,7 @@ export abstract class BaseProviderAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (request.model.includes("?")) {
-      throw new GatewayError("invalid_request", 400, "model must not contain query string");
+      throw new GatewayError("invalid_request", 400, "model must not contain query string (request {requestId}). Check the shape of what you sent — then resend 🪞");
     }
     const headers = await this.prepareHeaders(context, request, target);
     const payload = await this.preparePayload(request, target, context);

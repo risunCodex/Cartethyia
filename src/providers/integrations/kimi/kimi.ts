@@ -144,21 +144,21 @@ class KimiCodeAdapter implements ProviderAdapter {
       throw new GatewayError(
         "capability_unsupported",
         400,
-        `kimi supports messages only, got ${candidate.wire_family}`,
+        `kimi supports messages only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
       );
     }
     if (context.credential.credential_kind !== "oauth") {
       throw new GatewayError(
         "invalid_request",
         400,
-        `kimi: OAuth credential required (got credential_kind=${context.credential.credential_kind})`,
+        `kimi: OAuth credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
       );
     }
     if (!context.credential.secret) {
       throw new GatewayError(
         "authentication_failed",
         401,
-        "kimi: OAuth credential secret is required",
+        "kimi: OAuth credential secret is required (request {requestId}). Wrong key, right door — check the credential 🔑",
       );
     }
     const credential = parseKimiCredential(

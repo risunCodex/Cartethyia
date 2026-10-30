@@ -42,7 +42,7 @@ export function readCredentialSecret(credential: ResolvedCredential, errorMessag
     throw new GatewayError(
       "authentication_failed",
       401,
-      errorMessage ?? "Provider credential secret is missing or empty",
+      `${errorMessage ?? "Provider credential secret is missing or empty"} (request {requestId}). Wrong key, right door — check the credential 🔑`,
     );
   }
   return raw;
@@ -352,7 +352,7 @@ export interface WebSearchOutcome {
 function normalizeProviderSlug(id: string): string {
   const trimmed = id.trim().toLowerCase();
   if (!/^[a-z][a-z0-9-]{0,63}$/.test(trimmed)) {
-    throw new GatewayError("invalid_request", 400, "Provider ID must be a lowercase slug");
+    throw new GatewayError("invalid_request", 400, "Provider ID must be a lowercase slug (request {requestId}). Check the shape of what you sent — then resend 🪞");
   }
   return trimmed;
 }

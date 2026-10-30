@@ -270,7 +270,7 @@ export function factoryRegionUnavailable(modelId: string, region: string): Gatew
   return new GatewayError(
     "capability_unsupported",
     400,
-    `factory: ${modelId} is unavailable in this account region (${region})`,
+    `factory: ${modelId} is unavailable in this account region (${region}) (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
     { model: modelId, region, reason: "Factory Droid model is unavailable in this account region." },
   );
 }
@@ -351,7 +351,7 @@ export function factoryRoutingHeaders(
 function factoryEnvelope(context: ProviderDispatchContext): { token: string; orgId: string } {
   const secret = context.credential.secret;
   if (secret === undefined || secret.length === 0) {
-    throw new GatewayError("invalid_request", 400, "factory: credential is missing a secret value");
+    throw new GatewayError("invalid_request", 400, "factory: credential is missing a secret value (request {requestId}). Wrong key, right door — check the credential 🔑");
   }
   try {
     const envelope = decodeFactoryDroidCredential(secret);
@@ -360,7 +360,7 @@ function factoryEnvelope(context: ProviderDispatchContext): { token: string; org
     throw new GatewayError(
       "invalid_request",
       400,
-      `factory: ${error instanceof Error ? error.message : "stored credential is not a Factory Droid envelope"}`,
+      `factory: ${error instanceof Error ? error.message : "stored credential is not a Factory Droid envelope"} (request {requestId}). Wrong key, right door — check the credential 🔑`,
     );
   }
 }
@@ -523,7 +523,7 @@ class FactoryDroidAdapter implements ProviderAdapter {
       throw new GatewayError(
         "platform_unavailable",
         502,
-        "factory gemini returned empty stream",
+        "factory gemini returned empty stream (request {requestId}). The upstream came back empty-handed — retry 🌙",
         {},
         "upstream",
       );

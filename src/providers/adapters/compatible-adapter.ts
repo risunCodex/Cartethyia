@@ -351,7 +351,7 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
         throw new GatewayError(
           "platform_unavailable",
           502,
-          wireFamily === "responses" ? "Responses returned empty stream" : "Chat returned empty stream",
+          `${wireFamily === "responses" ? "Responses returned empty stream" : "Chat returned empty stream"} (request {requestId}). The upstream came back empty-handed — retry 🌙`,
           {},
           "upstream",
         );
@@ -379,7 +379,7 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
         throw new GatewayError(
           "transport_unavailable",
           502,
-          `Upstream returned a non-JSON response: ${summary}`.slice(0, 300),
+          `Upstream returned a non-JSON response: ${summary} (request {requestId}). The connection ghosted us — come back in a moment 👻`.slice(0, 320),
           { upstreamStatus: res.status, contentType },
           "upstream",
         );

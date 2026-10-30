@@ -96,5 +96,5 @@ export function planSlowLaneRetry(
 
 /** Typed error for a caller-aborted wait, so it is never read as a failure. */
 export function slowLaneAborted(): GatewayError {
-  return new GatewayError("transport_closed", 499, "Aborted during slow-lane capacity wait");
+  return new GatewayError("transport_closed", 499, "The request was cancelled during the slow-lane capacity wait (request {requestId}). Send it again whenever ready 🙃");
 }

@@ -57,14 +57,14 @@ const DEFAULT_MAX_EVENT_BYTES = 4 * 1024 * 1024;
 // `upstream` origin keeps the public envelope from prefixing it
 // a gateway-branded message, which blamed the gateway for the provider's bytes.
 function oversized(what: string): GatewayError {
-  return new GatewayError("platform_unavailable", 502, `SSE ${what} exceeds size bound`, {}, "upstream");
+  return new GatewayError("platform_unavailable", 502, `SSE ${what} exceeds size bound (request {requestId}). The upstream sent more than we can hold — retry 🌙`, {}, "upstream");
 }
 
 export async function* decodeSseEvents(
   body: ReadableStream<Uint8Array> | null,
   opts: SseDecodeOptions = {},
 ): AsyncIterable<SseEvent> {
-  if (body === null) throw new GatewayError("platform_unavailable", 502, "SSE response has no body", {}, "upstream");
+  if (body === null) throw new GatewayError("platform_unavailable", 502, "SSE response has no body (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
   const maxEventBytes = opts.maxEventBytes ?? DEFAULT_MAX_EVENT_BYTES;
   const maxLineBytes = opts.maxLineBytes ?? maxEventBytes;
   const signal = opts.signal;
@@ -163,7 +163,7 @@ export async function* decodeSseEvents(
     // not 502 the request: only `event:`/`data:` carry payload, the rest is
     // heartbeat/metadata. Unknown colon-prefixed fields are ignored.
     if (/^[a-zA-Z0-9_-]+:/.test(line)) return;
-    throw new GatewayError("platform_unavailable", 502, "Malformed SSE line", {}, "upstream");
+    throw new GatewayError("platform_unavailable", 502, "Malformed SSE line (request {requestId}). The upstream sent something we can't read — retry 🌙", {}, "upstream");
   }
 
   try {

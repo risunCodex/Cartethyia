@@ -162,7 +162,7 @@ export async function selectAccountTestEgress(
         ? "Every proxy pool for this provider is at its concurrency limit (request {requestId}). Retry shortly, or add a pool or raise its capacity. The pools are full right now — chill 🌊"
         : failure.reason === "cooldown"
           ? "Every proxy pool for this provider is cooling down after upstream failures (request {requestId}). Retry once the cooldown resets. The proxies are catching their breath — zzz 💤"
-          : "No active proxy pool is configured for this tenant and provider. Add one, or route this provider through direct egress.";
+          : "No active proxy pool is configured for this tenant and provider (request {requestId}). Add one, or route this provider through direct egress. No bridge to cross — configure a pool first 🏗️";
     throw new GatewayError(
       code,
       status,

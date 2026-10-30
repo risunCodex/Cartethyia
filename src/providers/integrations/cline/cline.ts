@@ -150,7 +150,7 @@ function clinePrePayload(
     const cur = typeof payload["max_tokens"] === "number" ? (payload["max_tokens"] as number) : 0;
     payload["max_tokens"] = Math.max(cur, 256);
     // keep GatewayError reachable
-    if (!model) throw new GatewayError("invalid_request", 400, "Cline model is required");
+    if (!model) throw new GatewayError("invalid_request", 400, "Cline model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
   }
 }
 

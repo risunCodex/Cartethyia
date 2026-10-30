@@ -108,7 +108,7 @@ export async function buddyGenerateImage(
   context: ProviderDispatchContext,
 ): Promise<ImageGenerationOutcome> {
   const model = modelOf(body, candidate);
-  if (model.length === 0) throw new GatewayError("invalid_request", 400, "model is required");
+  if (model.length === 0) throw new GatewayError("invalid_request", 400, "model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
   const prompt = imagePrompt(body);
   if (config.imageGenerationPath !== undefined) {
     const requestBody: Record<string, unknown> = { model, prompt };
@@ -134,28 +134,28 @@ export async function buddyGenerateImage(
       release();
     }
     if (!isRecord(responseBody)) {
-      throw new GatewayError("platform_unavailable", 502, "CodeBuddy image generation returned an invalid response", {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, "CodeBuddy image generation returned an invalid response (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
     }
     const providerError = buddyErrorOf(responseBody);
     if (providerError !== undefined) {
-      throw new GatewayError("platform_unavailable", 502, providerError, {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, `${providerError} (request {requestId}). The upstream came back empty-handed — retry 🌙`, {}, "upstream");
     }
     if (responseBody.code !== undefined && responseBody.code !== 0 && responseBody.code !== "0") {
       const message =
         typeof responseBody.msg === "string" && responseBody.msg.trim().length > 0
           ? responseBody.msg.trim()
           : `CodeBuddy image generation failed with code ${String(responseBody.code)}`;
-      throw new GatewayError("platform_unavailable", 502, message, {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, `${message} (request {requestId}). The upstream came back empty-handed — retry 🌙`, {}, "upstream");
     }
     if (!isRecord(responseBody.data)) {
-      throw new GatewayError("platform_unavailable", 502, "CodeBuddy image generation returned no image data", {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, "CodeBuddy image generation returned no image data (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
     }
     const result = responseBody.data;
     if (!Array.isArray(result.data) || result.data.some((image) => !isRecord(image))) {
-      throw new GatewayError("platform_unavailable", 502, "CodeBuddy image generation returned malformed image data", {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, "CodeBuddy image generation returned malformed image data (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
     }
     if (result.data.length === 0) {
-      throw new GatewayError("platform_unavailable", 502, "CodeBuddy image generation returned no images", {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, "CodeBuddy image generation returned no images (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
     }
     return {
       ...(typeof result.created === "number" ? { created: result.created } : {}),
@@ -217,7 +217,7 @@ export async function buddyGenerateImage(
   if (!contentType.includes("text/event-stream")) {
     const parsed: unknown = await response.json().catch(() => null);
     const message = buddyErrorOf(parsed) ?? "CodeBuddy image generation returned a non-stream body";
-    throw new GatewayError("platform_unavailable", 502, message, {}, "upstream");
+    throw new GatewayError("platform_unavailable", 502, `${message} (request {requestId}). The upstream came back empty-handed — retry 🌙`, {}, "upstream");
   }
   let content = "";
   for await (const event of decodeSseEvents(response.body, { signal: context.abort_signal })) {
@@ -232,7 +232,7 @@ export async function buddyGenerateImage(
     if (!isRecord(parsed)) continue;
     if (isRecord(parsed.error)) {
       const message = isRecord(parsed.error) && typeof parsed.error.message === "string" ? parsed.error.message : "CodeBuddy image generation failed";
-      throw new GatewayError("platform_unavailable", 502, message, {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, `${message} (request {requestId}). The upstream came back empty-handed — retry 🌙`, {}, "upstream");
     }
     const choices = parsed.choices;
     if (!Array.isArray(choices) || !isRecord(choices[0])) continue;
@@ -244,7 +244,7 @@ export async function buddyGenerateImage(
     throw new GatewayError(
       "platform_unavailable",
       502,
-      "CodeBuddy image generation returned no image in the chat stream",
+      "CodeBuddy image generation returned no image in the chat stream (request {requestId}). The upstream came back empty-handed — retry 🌙",
       {},
       "upstream",
     );
@@ -318,7 +318,7 @@ export async function buddyGenerateVideo(
   context: ProviderDispatchContext,
 ): Promise<Record<string, unknown>> {
   const model = modelOf(body, candidate);
-  if (model.length === 0) throw new GatewayError("invalid_request", 400, "model is required");
+  if (model.length === 0) throw new GatewayError("invalid_request", 400, "model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
   const prompt = imagePrompt(body);
   const submitBody: Record<string, unknown> = { model, prompt };
   if (typeof body.n === "number" && Number.isFinite(body.n)) submitBody["n"] = Math.max(1, Math.floor(body.n));
@@ -354,14 +354,14 @@ export async function buddyGenerateVideo(
     if (url !== undefined) return { data: [{ url }] };
     // Otherwise cb refused (HTTP 200 error envelope) — surface its own reason.
     const message = buddyErrorOf(submitted) ?? "CodeBuddy video submit returned no task id";
-    throw new GatewayError("platform_unavailable", 502, message, {}, "upstream");
+    throw new GatewayError("platform_unavailable", 502, `${message} (request {requestId}). The upstream came back empty-handed — retry 🌙`, {}, "upstream");
   }
   // Poll the sibling task endpoint until the clip is ready.
   const taskPath = `${submitUrl.replace(/\/+$/, "")}/${taskId}`;
   const deadline = Date.now() + VIDEO_POLL_TIMEOUT_MS;
   for (;;) {
     if (context.abort_signal?.aborted) {
-      throw new GatewayError("transport_closed", 499, "video generation aborted");
+      throw new GatewayError("transport_closed", 499, "video generation aborted (request {requestId}). Send it again whenever ready 🙃");
     }
     const lifecycle = createUpstreamDeadlineLifecycle(context);
     let statusRes: Response;
@@ -374,7 +374,7 @@ export async function buddyGenerateVideo(
     } catch (error: unknown) {
       const abortError = abortGatewayError(lifecycle, error, context.abort_signal);
       if (abortError) throw abortError;
-      throw new GatewayError("platform_unavailable", 502, `CodeBuddy video status unreachable: ${error instanceof Error ? error.message : String(error)}`, {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, `CodeBuddy video status unreachable (request {requestId}): ${error instanceof Error ? error.message : String(error)}. The connection ghosted us — come back in a moment 👻`, {}, "upstream");
     } finally {
       lifecycle.release();
     }
@@ -386,10 +386,10 @@ export async function buddyGenerateVideo(
     if (url !== undefined) return { data: [{ url }], task_id: taskId };
     const status = videoStatusOf(payload);
     if (status !== undefined && !VIDEO_PENDING.has(status)) {
-      throw new GatewayError("platform_unavailable", 502, `CodeBuddy video task ended in state "${status}" with no clip`, {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, `CodeBuddy video task ended in state "${status}" with no clip (request {requestId}). The upstream came back empty-handed — retry 🌙`, {}, "upstream");
     }
     if (Date.now() > deadline) {
-      throw new GatewayError("platform_unavailable", 504, `CodeBuddy video task ${taskId} did not finish within ${VIDEO_POLL_TIMEOUT_MS}ms`, {}, "upstream");
+      throw new GatewayError("platform_unavailable", 504, `CodeBuddy video task ${taskId} did not finish within ${VIDEO_POLL_TIMEOUT_MS}ms (request {requestId}). Some things just take longer 🐢`, {}, "upstream");
     }
     await new Promise((resolve) => setTimeout(resolve, VIDEO_POLL_INTERVAL_MS));
   }

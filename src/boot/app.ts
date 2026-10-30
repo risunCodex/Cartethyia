@@ -244,8 +244,9 @@ export function createGatewayApp(deps: GatewayAppDeps) {
   // Shutdown ordering: abort in-flight proxy controllers first so the
   // bounded drain observes cancellation and finalizers run before
   // telemetry flush and pool close. The reason is threaded through so the
-  // streaming path emits a drain-aware terminal frame (`restart_for_update`
-  // vs `shutting_down`) instead of a bare abort that reads as a client drop.
+  // streaming path emits a drain-aware terminal frame (`shutting_down` with
+  // reason `restart_for_update` vs plain `shutting_down`) instead of a bare
+  // abort that reads as a client drop.
   // Only production has a coordinator to wire; the shell never drains.
   if (deps.mode === "production") {
     const coordinator = deps.shutdownCoordinator;

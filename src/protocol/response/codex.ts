@@ -364,7 +364,7 @@ export class CodexStreamFrameProcessor {
       throw new GatewayError(
         "tool_call_loop_detected",
         502,
-        "Codex whitespace-loop guard tripped: tool call emitted only whitespace argument deltas past the safety threshold",
+        "Codex whitespace-loop guard tripped (request {requestId}): tool call emitted only whitespace argument deltas past the safety threshold. Caught in a loop — breaking the cycle 🔁",
         { call_key: key, event_count: next.count, char_count: next.chars },
       );
     }

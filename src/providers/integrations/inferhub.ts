@@ -329,18 +329,18 @@ export class InferhubMessagesAdapter implements ProviderAdapter {
       throw new GatewayError(
         "capability_unsupported",
         400,
-        `inferhub messages leg supports messages only, got ${candidate.wire_family}`,
+        `inferhub messages leg supports messages only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
       );
     }
     if (context.credential.credential_kind !== "api_key") {
       throw new GatewayError(
         "invalid_request",
         400,
-        `inferhub: api_key credential required (got credential_kind=${context.credential.credential_kind})`,
+        `inferhub: api_key credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
       );
     }
     if (context.credential.secret === undefined || context.credential.secret.length === 0) {
-      throw new GatewayError("invalid_request", 400, "inferhub: API key is missing a secret value");
+      throw new GatewayError("invalid_request", 400, "inferhub: API key is missing a secret value (request {requestId}). Wrong key, right door — check the key 🔑");
     }
     const apiKey = new TextDecoder().decode(context.credential.secret);
     const customHeaders = filterClaudeCustomHeaders({

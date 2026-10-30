@@ -51,7 +51,7 @@ export function parseClaudeContent(value: unknown, isOAuth = false): ContentPart
       throw new GatewayError(
         "platform_unavailable",
         502,
-        "Claude response tool_use is missing id or name",
+        "Claude response tool_use is missing id or name (request {requestId}). The upstream came back empty-handed — retry 🌙",
         {},
         "upstream",
       );
@@ -69,7 +69,7 @@ export function parseClaudeContent(value: unknown, isOAuth = false): ContentPart
       throw new GatewayError(
         "platform_unavailable",
         502,
-        "Claude response tool_result is missing tool_use_id",
+        "Claude response tool_result is missing tool_use_id (request {requestId}). The upstream came back empty-handed — retry 🌙",
         {},
         "upstream",
       );
@@ -467,7 +467,7 @@ export async function* parseClaudeSseStream(
       throw new GatewayError(
         "platform_unavailable",
         502,
-        "Malformed Claude SSE event",
+        "Malformed Claude SSE event (request {requestId}). The upstream sent something we can't read — retry 🌙",
         {},
         "upstream",
       );
@@ -476,7 +476,7 @@ export async function* parseClaudeSseStream(
       throw new GatewayError(
         "platform_unavailable",
         502,
-        "Invalid Claude SSE event",
+        "Invalid Claude SSE event (request {requestId}). The upstream sent something we can't read — retry 🌙",
         {},
         "upstream",
       );
@@ -492,7 +492,7 @@ export async function* parseClaudeSseStream(
     throw new GatewayError(
       "platform_unavailable",
       502,
-      "Claude stream ended before message_stop",
+      "Claude stream ended before message_stop (request {requestId}). The upstream came back empty-handed — retry 🌙",
       {},
       "upstream",
     );

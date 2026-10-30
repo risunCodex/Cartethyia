@@ -198,7 +198,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       throw new GatewayError(
         "invalid_request",
         400,
-        `claude: the assistant OAuth credential required (got credential_kind=${context.credential.credential_kind})`,
+        `claude: the assistant OAuth credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
       );
     }
     const customHeaders = filterClaudeCustomHeaders({

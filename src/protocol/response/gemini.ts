@@ -124,7 +124,7 @@ export function decodeGeminiStreamEvent(
     throw new GatewayError(
       "platform_unavailable",
       502,
-      error instanceof Error ? `Malformed SSE event: ${error.message}` : "Malformed SSE event",
+      error instanceof Error ? `Malformed SSE event: ${error.message} (request {requestId}). The upstream sent something we can't read — retry 🌙` : `Malformed SSE event (request {requestId}). The upstream sent something we can't read — retry 🌙`,
       {},
       "upstream",
     );

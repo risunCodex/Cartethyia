@@ -344,7 +344,7 @@ class KiroAdapter implements ProviderAdapter {
       ? new TextDecoder().decode(context.credential.secret).trim()
       : "";
     if (secret.length === 0) {
-      throw new GatewayError("authentication_failed", 401, "Missing Kiro credential", {
+      throw new GatewayError("authentication_failed", 401, "Missing Kiro credential (request {requestId}). Wrong key, right door — check the credential 🔑", {
         providerId: KIRO_PROVIDER_ID,
       });
     }
@@ -381,7 +381,7 @@ class KiroAdapter implements ProviderAdapter {
       throw new GatewayError(
         "invalid_request",
         400,
-        "Kiro cannot accept this conversation",
+        "Kiro cannot accept this conversation (request {requestId}). Check the shape of what you sent — then resend 🪞",
         { providerId: KIRO_PROVIDER_ID, problems: built.error.problems },
       );
     }
@@ -398,7 +398,7 @@ class KiroAdapter implements ProviderAdapter {
       machineId,
     );
     if (!response.body) {
-      throw new GatewayError("platform_unavailable", 502, "Kiro returned an empty body", {
+      throw new GatewayError("platform_unavailable", 502, "Kiro returned an empty body (request {requestId}). The upstream came back empty-handed — retry 🌙", {
         providerId: KIRO_PROVIDER_ID,
       }, "upstream");
     }
@@ -433,14 +433,14 @@ class KiroAdapter implements ProviderAdapter {
       });
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        throw new GatewayError("transport_closed", 499, "request was cancelled", {
+        throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃", {
           providerId: KIRO_PROVIDER_ID,
         });
       }
       throw new GatewayError(
         "transport_unavailable",
         502,
-        `Kiro transport failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Kiro transport failed (request {requestId}): ${error instanceof Error ? error.message : String(error)}. The connection ghosted us — come back in a moment 👻`,
         { providerId: KIRO_PROVIDER_ID },
         "network",
       );
@@ -484,7 +484,7 @@ class KiroAdapter implements ProviderAdapter {
             throw new GatewayError(
               "platform_unavailable",
               502,
-              "Kiro EventStream exceeded the buffer bound",
+              "Kiro EventStream exceeded the buffer bound (request {requestId}). The upstream sent more than we can hold — retry 🌙",
               { providerId: KIRO_PROVIDER_ID },
               "upstream",
             );
@@ -497,7 +497,7 @@ class KiroAdapter implements ProviderAdapter {
           throw new GatewayError(
             "platform_unavailable",
             502,
-            `Kiro EventStream is corrupt: ${decoded.failure.detail}`,
+            `Kiro EventStream is corrupt: ${decoded.failure.detail} (request {requestId}). The upstream sent something we can't read — retry 🌙`,
             { providerId: KIRO_PROVIDER_ID, reason: decoded.failure.reason },
             "upstream",
           );
@@ -506,7 +506,7 @@ class KiroAdapter implements ProviderAdapter {
         for (const message of decoded.messages) {
           const outcome = decoder.decode(message);
           if (outcome.failure !== undefined) {
-            throw new GatewayError("platform_unavailable", 502, outcome.failure.message, {
+            throw new GatewayError("platform_unavailable", 502, `${outcome.failure.message} (request {requestId}). The upstream came back empty-handed — retry 🌙`, {
               providerId: KIRO_PROVIDER_ID,
             }, "upstream");
           }
@@ -578,14 +578,14 @@ class KiroAdapter implements ProviderAdapter {
       await reader.cancel().catch(() => undefined);
       if (error instanceof GatewayError) throw error;
       if (error instanceof Error && error.name === "AbortError") {
-        throw new GatewayError("transport_closed", 499, "request was cancelled", {
+        throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃", {
           providerId: KIRO_PROVIDER_ID,
         });
       }
       throw new GatewayError(
         "platform_unavailable",
         502,
-        `Kiro stream failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Kiro stream failed (request {requestId}): ${error instanceof Error ? error.message : String(error)}. The upstream came back empty-handed — retry 🌙`,
         { providerId: KIRO_PROVIDER_ID },
         "upstream",
       );

@@ -186,7 +186,7 @@ export class StreamFinalizer {
       // origin is the upstream's: labelling it `cartethyia` reported a
       // provider that stopped sending as a gateway defect.
       this.input.state.abortController.abort(
-        new GatewayError("deadline_exceeded", 504, "The upstream stopped sending data mid-stream. Retry; if it keeps happening, the account or pool is unstable.", {}, "upstream"),
+        new GatewayError("deadline_exceeded", 504, "The upstream stopped sending data mid-stream (request {requestId}). Retry; if it keeps happening, the account or pool is unstable. The connection ghosted us — come back in a moment 👻", {}, "upstream"),
       );
     }, timeoutMs);
   }
@@ -363,7 +363,7 @@ export class StreamFinalizer {
     if (drain) return drain;
     if (reason instanceof GatewayError && reason.code === "deadline_exceeded") return reason;
     if (reason instanceof DOMException && reason.name === "TimeoutError")
-      return new GatewayError("deadline_exceeded", 504, "request deadline exceeded", {}, "cartethyia");
+      return new GatewayError("deadline_exceeded", 504, "request deadline exceeded (request {requestId}). Some things just take longer 🐢", {}, "cartethyia");
     return undefined;
   }
 
@@ -453,7 +453,7 @@ export class StreamFinalizer {
         ? new GatewayError(
             "transport_unavailable",
             502,
-            "The upstream closed the stream before it reported a final result. Retry; if it keeps happening, the account or pool is unstable.",
+            "The upstream closed the stream before it reported a final result (request {requestId}). Retry; if it keeps happening, the account or pool is unstable. The connection ghosted us — come back in a moment 👻",
             {},
             "upstream",
           )
@@ -531,7 +531,7 @@ export class StreamFinalizer {
           ? new GatewayError(
               "deadline_exceeded",
               504,
-              "request deadline exceeded",
+              "request deadline exceeded (request {requestId}). Some things just take longer 🐢",
               {},
               "cartethyia",
             )

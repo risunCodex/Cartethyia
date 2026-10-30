@@ -68,7 +68,7 @@ export class CredentialResolver {
     throw new GatewayError(
       "invalid_request",
       401,
-      "No usable upstream credential is configured for the selected provider",
+      "No usable upstream credential is configured for the selected provider (request {requestId}). Wrong key, right door — check the credential 🔑",
       { provider_id: providerId },
     );
   }

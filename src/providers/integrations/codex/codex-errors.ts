@@ -167,7 +167,7 @@ export async function mapCodexErrorResponse(res: Response): Promise<never> {
   throw new GatewayError(
     classification.code,
     classification.status,
-    friendlyMessage ?? sanitized,
+    `${friendlyMessage ?? sanitized} (request {requestId}). The upstream came back empty-handed — retry 🌙`,
     details,
     classification.origin,
   );

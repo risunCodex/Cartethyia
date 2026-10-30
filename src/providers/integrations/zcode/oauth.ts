@@ -78,7 +78,7 @@ function unwrapEnvelope(body: unknown, operation: string): unknown {
       // codebase is 401. A 400 told the client to fix its body when the real
       // action is to fix the credential — and HTTP itself reserves 401 for
       // exactly this, so a standard client reads the class from the status.
-      throw new GatewayError("authentication_failed", 401, `Z.AI ${message}`, { providerId: "zcode" });
+      throw new GatewayError("authentication_failed", 401, `Z.AI ${message} (request {requestId}). Wrong key, right door — check the credential 🔑`, { providerId: "zcode" });
     }
   }
   return root.data ?? body;

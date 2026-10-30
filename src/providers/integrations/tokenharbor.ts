@@ -71,11 +71,11 @@ export const TOKENHARBOR_FALLBACK_MODELS: readonly ModelDefinition[] = [
 function tokenharborPrePayload(payload: Record<string, unknown>): void {
   const model = payload["model"];
   if (typeof model !== "string" || model.length === 0) {
-    throw new GatewayError("invalid_request", 400, "TokenHarbor model is required");
+    throw new GatewayError("invalid_request", 400, "TokenHarbor model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
   }
   // Strip accidental query-string smuggling (mirrors the factory's own guard)
   if (model.includes("?")) {
-    throw new GatewayError("invalid_request", 400, "TokenHarbor model must not contain query string");
+    throw new GatewayError("invalid_request", 400, "TokenHarbor model must not contain query string (request {requestId}). Check the shape of what you sent — then resend 🪞");
   }
 }
 

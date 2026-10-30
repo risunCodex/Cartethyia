@@ -61,14 +61,14 @@ export class AnthropicApiKeyAdapter implements ProviderAdapter {
       throw new GatewayError(
         "capability_unsupported",
         400,
-        `${this.provider_id} supports messages only`,
+        `${this.provider_id} supports messages only (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
       );
     }
     if (context.credential.credential_kind !== "api_key") {
       throw new GatewayError(
         "invalid_request",
         400,
-        `${this.provider_id}: x-api-key credential required (got credential_kind=${context.credential.credential_kind})`,
+        `${this.provider_id}: x-api-key credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
       );
     }
     if (
@@ -78,7 +78,7 @@ export class AnthropicApiKeyAdapter implements ProviderAdapter {
       throw new GatewayError(
         "invalid_request",
         400,
-        `${this.provider_id}: API key is missing a secret value`,
+        `${this.provider_id}: API key is missing a secret value (request {requestId}). Wrong key, right door — check the credential 🔑`,
       );
     }
     const apiKey = new TextDecoder().decode(context.credential.secret);

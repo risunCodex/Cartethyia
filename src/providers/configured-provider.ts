@@ -11,7 +11,7 @@ export function ensurePayloadModel(
 ): string {
   const value = payload["model"];
   const model = typeof value === "string" && value.trim() ? value.trim() : candidate.model_id.trim();
-  if (!model) throw new GatewayError("invalid_request", 400, `${providerName} model is required`);
+  if (!model) throw new GatewayError("invalid_request", 400, `${providerName} model is required (request {requestId}). Check the shape of what you sent — then resend 🪞`);
   payload["model"] = model;
   return model;
 }

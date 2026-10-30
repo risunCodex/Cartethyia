@@ -100,7 +100,7 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
           throw new GatewayError(
             "capability_unsupported",
             400,
-            "Responses compact requires a Codex ChatGPT OAuth account",
+            "Responses compact requires a Codex ChatGPT OAuth account (request {requestId}). Wrong key, right door — check the credential 🔑",
           );
         return { credential, adapter };
       },

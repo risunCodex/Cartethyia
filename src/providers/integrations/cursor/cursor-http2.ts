@@ -46,7 +46,7 @@ function connectErrorEnvelope(payload: Uint8Array): GatewayError | undefined {
     return new GatewayError(
       "quota_exceeded",
       429,
-      `Cursor refused the Run: ${detail}`,
+      `Cursor refused the Run: ${detail} (request {requestId}). You've maxed this window — pace yourself ⏳`,
       { providerId: "cursor", upstreamCode: code },
       "upstream",
     );
@@ -54,7 +54,7 @@ function connectErrorEnvelope(payload: Uint8Array): GatewayError | undefined {
   return new GatewayError(
     "platform_unavailable",
     502,
-    `Cursor refused the Run: ${detail}`,
+    `Cursor refused the Run: ${detail} (request {requestId}). The upstream came back empty-handed — retry 🌙`,
     { providerId: "cursor", upstreamCode: code },
     "upstream",
   );
@@ -126,7 +126,7 @@ export async function openCursorRun(input: {
     throw new GatewayError(
       "invalid_request",
       400,
-      "Cursor Run requires an allowlisted Cursor agent origin",
+      "Cursor Run requires an allowlisted Cursor agent origin (request {requestId}). All roads blocked — time to find a new route 🗺️",
       { origin: input.origin },
     );
   }
@@ -153,7 +153,7 @@ function grpcError(status: string, message: string | undefined): GatewayError {
     return new GatewayError(
       "authentication_failed",
       401,
-      `Cursor refused the credential${detail}`,
+      `Cursor refused the credential${detail} (request {requestId}). Wrong key, right door — check the credential 🔑`,
       { grpcStatus: status },
       "upstream",
     );
@@ -162,7 +162,7 @@ function grpcError(status: string, message: string | undefined): GatewayError {
     return new GatewayError(
       "quota_exceeded",
       429,
-      `Cursor refused the Run${detail}`,
+      `Cursor refused the Run${detail} (request {requestId}). You've maxed this window — pace yourself ⏳`,
       { grpcStatus: status },
       "upstream",
     );
@@ -171,7 +171,7 @@ function grpcError(status: string, message: string | undefined): GatewayError {
     return new GatewayError(
       "deadline_exceeded",
       504,
-      `Cursor Run ended before it finished${detail}`,
+      `Cursor Run ended before it finished${detail} (request {requestId}). Some things just take longer 🐢`,
       { grpcStatus: status },
       "upstream",
     );
@@ -179,7 +179,7 @@ function grpcError(status: string, message: string | undefined): GatewayError {
   return new GatewayError(
     "platform_unavailable",
     502,
-    `Cursor Run failed (gRPC ${status})${detail}`,
+    `Cursor Run failed (gRPC ${status})${detail} (request {requestId}). The upstream came back empty-handed — retry 🌙`,
     { grpcStatus: status },
     "upstream",
   );
@@ -205,7 +205,7 @@ export function cursorRunTerminationError(input: {
       : new GatewayError(
           "transport_unavailable",
           502,
-          `Cursor Run transport interrupted: ${input.reason.error.message}`,
+          `Cursor Run transport interrupted: ${input.reason.error.message} (request {requestId}). The connection ghosted us — come back in a moment 👻`,
           {},
           "network",
         );
@@ -216,7 +216,7 @@ export function cursorRunTerminationError(input: {
     return new GatewayError(
       status === 401 || status === 403 ? "authentication_failed" : "platform_unavailable",
       status === 401 || status === 403 ? 401 : 502,
-      `Cursor Run failed by remote: ${status}`,
+      `Cursor Run failed by remote: ${status} (request {requestId}). The upstream came back empty-handed — retry 🌙`,
       { httpStatus: status, ...(message === undefined ? {} : { upstreamMessage: message }) },
       "upstream",
     );
@@ -229,7 +229,7 @@ export function cursorRunTerminationError(input: {
   return new GatewayError(
     "platform_unavailable",
     502,
-    "Cursor Run ended before turn_ended",
+    "Cursor Run ended before turn_ended (request {requestId}). The upstream came back empty-handed — retry 🌙",
     {},
     "upstream",
   );
@@ -253,7 +253,7 @@ export async function* decodeServerMessages(
       throw new GatewayError(
         "platform_unavailable",
         502,
-        "Cursor Run exceeded the frame buffer bound",
+        "Cursor Run exceeded the frame buffer bound (request {requestId}). The upstream sent more than we can hold — retry 🌙",
         {},
         "upstream",
       );

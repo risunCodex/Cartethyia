@@ -1,7 +1,7 @@
 # Proposal: Error code rework — overlap, ID di envelope, dan bahasa pesan
 
-Status: **implemented** (Fase 1 + 2 + 3 selesai). Referensi final:
-`documentation/reference/errors.md`.
+Status: **implemented** (Fase 1 + 2 + 3 selesai; sapuan pesan seluruh call site).
+Referensi final: `documentation/reference/errors.md`.
 
 ---
 

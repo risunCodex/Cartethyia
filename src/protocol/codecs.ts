@@ -480,7 +480,7 @@ export function assertBoundedJsonDepth(value: unknown): void {
 
 function assertBoundedDepthWalk(value: unknown, depth: number): void {
   if (depth > MAX_JSON_DEPTH)
-    throw new GatewayError("invalid_request", 400, `The request body is nested deeper than this endpoint accepts (${MAX_JSON_DEPTH} levels). Flatten the payload.`);
+    throw new GatewayError("invalid_request", 400, `The request body is nested deeper than this endpoint accepts (${MAX_JSON_DEPTH} levels) (request {requestId}). Flatten the payload. Check the shape of what you sent — then resend 🪞`);
   if (Array.isArray(value)) {
     for (const item of value) assertBoundedDepthWalk(item, depth + 1);
     return;
@@ -1038,7 +1038,7 @@ export function filterProviderCustomHeaders(
   for (const [rawName, rawValue] of Object.entries(input)) {
     const name = rawName.toLowerCase();
     if (!HEADER_TOKEN.test(name)) {
-      throw new GatewayError("invalid_request", 400, `invalid custom header name: ${rawName}`, {
+      throw new GatewayError("invalid_request", 400, `invalid custom header name: ${rawName} (request {requestId}). Check the shape of what you sent — then resend 🪞`, {
         header: rawName,
       });
     }
@@ -1047,7 +1047,7 @@ export function filterProviderCustomHeaders(
       extraReserved.has(name) ||
       name.startsWith("x-forwarded-")
     ) {
-      throw new GatewayError("invalid_request", 400, `custom header is protected: ${rawName}`, {
+      throw new GatewayError("invalid_request", 400, `custom header is protected: ${rawName} (request {requestId}). Not allowed by policy — no hard feelings 🫂`, {
         header: rawName,
       });
     }
@@ -1055,7 +1055,7 @@ export function filterProviderCustomHeaders(
       throw new GatewayError(
         "invalid_request",
         400,
-        `custom header value must be a string: ${rawName}`,
+        `custom header value must be a string: ${rawName} (request {requestId}). Check the shape of what you sent — then resend 🪞`,
         { header: rawName },
       );
     }
@@ -1063,7 +1063,7 @@ export function filterProviderCustomHeaders(
       throw new GatewayError(
         "invalid_request",
         400,
-        `custom header value exceeds 4KiB: ${rawName}`,
+        `custom header value exceeds 4KiB: ${rawName} (request {requestId}). We love long reads, but not that long 📚`,
         { header: rawName },
       );
     }
@@ -1071,7 +1071,7 @@ export function filterProviderCustomHeaders(
       throw new GatewayError(
         "invalid_request",
         400,
-        `custom header value contains control characters: ${rawName}`,
+        `custom header value contains control characters: ${rawName} (request {requestId}). Check the shape of what you sent — then resend 🪞`,
         { header: rawName },
       );
     }

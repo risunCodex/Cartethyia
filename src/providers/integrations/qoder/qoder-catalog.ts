@@ -389,7 +389,7 @@ export async function discoverQoderModels(input: {
     throw new GatewayError(
       "authentication_failed",
       401,
-      "Qoder model discovery requires an account credential.",
+      "Qoder model discovery requires an account credential (request {requestId}). Wrong key, right door — check the credential 🔑",
       { providerId, realm: input.realm },
     );
   }
@@ -398,7 +398,7 @@ export async function discoverQoderModels(input: {
     throw new GatewayError(
       "invalid_request",
       400,
-      "Qoder model discovery requires a validated outbound fetch",
+      "Qoder model discovery requires a validated outbound fetch (request {requestId}). No bridge to cross — configure a pool first 🏗️",
       { providerId, realm: input.realm },
     );
   }
@@ -441,9 +441,9 @@ export async function discoverQoderModels(input: {
   throw new GatewayError(
     "transport_unavailable",
     502,
-    `Qoder model discovery failed for ${input.realm}: ${
+    `Qoder model discovery failed for ${input.realm} (request {requestId}): ${
       lastError instanceof Error ? lastError.message : "unknown error"
-    }`,
+    }. The connection ghosted us — come back in a moment 👻`,
     { providerId, realm: input.realm },
     "upstream",
   );

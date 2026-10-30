@@ -259,7 +259,7 @@ export function ensureMaxTokensForThinking(
     throw new GatewayError(
       "invalid_request",
       400,
-      `Anthropic thinking budget requires max_tokens greater than ${buffer}; got ${currentMax} with budget ${budget}`,
+      `Anthropic thinking budget requires max_tokens greater than ${buffer}; got ${currentMax} with budget ${budget} (request {requestId}). Check the shape of what you sent — then resend 🪞`,
       { budget_tokens: budget, max_tokens: currentMax },
     );
   }
@@ -364,7 +364,7 @@ function validateCacheBreakpoints(hint: CacheHint | undefined): void {
     throw new GatewayError(
       "invalid_request",
       400,
-      `cache_hint declares ${hint.list.length} breakpoints; at most ${MAX_CACHE_BREAKPOINTS} are supported`,
+      `cache_hint declares ${hint.list.length} breakpoints; at most ${MAX_CACHE_BREAKPOINTS} are supported (request {requestId}). Check the shape of what you sent — then resend 🪞`,
       { breakpoint_count: hint.list.length, max_breakpoints: MAX_CACHE_BREAKPOINTS },
     );
   }

@@ -353,9 +353,10 @@ export async function runAttemptLoop<TResult, TAdapter>(
       });
     } catch (error) {
       // A drain aborts the controller, so a mid-flight attempt unwinds here as
-      // an abort. Surface the typed shutdown error (503 shutting_down /
-      // restart_for_update) instead of an opaque `transport_closed`, so the
-      // client's JSON error — not just the SSE path — names the real cause.
+      // an abort. Surface the typed shutdown error (503 shutting_down, reason
+      // restart_for_update for an update drain) instead of an opaque
+      // `transport_closed`, so the client's JSON error — not just the SSE path —
+      // names the real cause.
       const drain = drainAbortReason(state.abortController.signal.reason);
       if (drain !== undefined) error = drain;
       lastError = error;

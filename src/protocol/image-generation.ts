@@ -22,7 +22,7 @@ const OPENAI_ASPECT_RATIOS: Readonly<Record<string, string>> = {
 export function imagePrompt(body: Record<string, unknown>): string {
   if (typeof body.prompt === "string" && body.prompt.trim().length > 0) return body.prompt;
   if (!Array.isArray(body.messages)) {
-    throw new GatewayError("invalid_request", 400, "prompt is required");
+    throw new GatewayError("invalid_request", 400, "prompt is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
   }
   const texts: string[] = [];
   for (const message of body.messages) {
@@ -41,7 +41,7 @@ export function imagePrompt(body: Record<string, unknown>): string {
     }
   }
   const prompt = texts.join("\n").trim();
-  if (prompt.length === 0) throw new GatewayError("invalid_request", 400, "prompt is required");
+  if (prompt.length === 0) throw new GatewayError("invalid_request", 400, "prompt is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
   return prompt;
 }
 

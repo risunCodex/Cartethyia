@@ -304,7 +304,7 @@ export class ProviderProbingService {
             throw new GatewayError(
               "capability_unsupported",
               400,
-              `Provider ${providerId} has no web search transport`,
+              `Provider ${providerId} has no web search transport (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
             );
           }
           const searchProbeQuery = request.prompt?.trim() || "Cartethyia gateway probe";
@@ -325,14 +325,14 @@ export class ProviderProbingService {
             snippet: hit.snippet,
           }));
           if (!response.results || response.results.length === 0) {
-            dispatchError = new GatewayError("platform_unavailable", 502, "web search returned no results");
+            dispatchError = new GatewayError("platform_unavailable", 502, "web search returned no results (request {requestId}). The upstream came back empty-handed — retry 🌙");
           }
         } else if (serviceKind === "systemone") {
           if (typeof adapter.systemone !== "function") {
             throw new GatewayError(
               "capability_unsupported",
               400,
-              `Provider ${providerId} has no System One transport`,
+              `Provider ${providerId} has no System One transport (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
             );
           }
           const response = await adapter.systemone(
@@ -360,14 +360,14 @@ export class ProviderProbingService {
             dispatchError = new GatewayError(
               response.status >= 500 ? "platform_unavailable" : "invalid_request",
               response.status,
-              `System One upstream error: ${raw.slice(0, 240)}`,
+              `System One upstream error (request {requestId}): ${raw.slice(0, 240)}`,
             );
           } else {
             let parsed: unknown;
             try {
               parsed = raw ? JSON.parse(raw) : null;
             } catch {
-              dispatchError = new GatewayError("platform_unavailable", 502, "System One returned invalid JSON");
+              dispatchError = new GatewayError("platform_unavailable", 502, "System One returned invalid JSON (request {requestId}). The upstream came back empty-handed — retry 🌙");
             }
             if (parsed !== null && parsed !== undefined) {
               const answers =
@@ -381,7 +381,7 @@ export class ProviderProbingService {
                 dispatchError = new GatewayError(
                   "platform_unavailable",
                   502,
-                  "System One returned no answers",
+                  "System One returned no answers (request {requestId}). The upstream came back empty-handed — retry 🌙",
                 );
               }
             }
@@ -709,7 +709,7 @@ export class ProviderProbingService {
           throw new GatewayError(
             "transport_unavailable",
             502,
-            `Model discovery failed for ${providerId}: ${error instanceof Error ? error.message : "unknown error"}`,
+            `Model discovery failed for ${providerId}: ${error instanceof Error ? error.message : "unknown error"} (request {requestId}). The connection ghosted us — come back in a moment 👻`,
             {},
             "upstream",
           );
@@ -718,7 +718,7 @@ export class ProviderProbingService {
           throw new GatewayError(
             "transport_unavailable",
             502,
-            `Model discovery failed for ${providerId}: endpoint returned no usable models`,
+            `Model discovery failed for ${providerId}: endpoint returned no usable models (request {requestId}). The upstream came back empty-handed — retry 🌙`,
             {},
             "upstream",
           );
@@ -764,7 +764,7 @@ export class ProviderProbingService {
             throw new GatewayError(
               "transport_unavailable",
               502,
-              `Model discovery failed for ${providerId}: ${error instanceof Error ? error.message : "unknown error"}`,
+              `Model discovery failed for ${providerId}: ${error instanceof Error ? error.message : "unknown error"} (request {requestId}). The connection ghosted us — come back in a moment 👻`,
               {},
               "upstream",
             );
@@ -799,7 +799,7 @@ export class ProviderProbingService {
         throw new GatewayError(
           "invalid_request",
           400,
-          `Add an account for ${providerId} first — model listing needs a credential.`,
+          `Add an account for ${providerId} first — model listing needs a credential (request {requestId}). Wrong key, right door — check the credential 🔑`,
           {},
           "cartethyia",
         );
@@ -811,7 +811,7 @@ export class ProviderProbingService {
         throw new GatewayError(
           "invalid_request",
           400,
-          `Add an account for ${providerId} before fetching its models.`,
+          `Add an account for ${providerId} before fetching its models (request {requestId}). Wrong key, right door — check the credential 🔑`,
           {},
           "cartethyia",
         );
@@ -821,7 +821,7 @@ export class ProviderProbingService {
       throw new GatewayError(
         "capability_unsupported",
         400,
-        `${providerId} publishes no model-listing endpoint. Its catalog ships with Cartethyia; new models appear with an update.`,
+        `${providerId} publishes no model-listing endpoint (request {requestId}). Its catalog ships with Cartethyia; new models appear with an update. Know your tools — this one just isn't in the box 🧰`,
         {},
         "cartethyia",
       );

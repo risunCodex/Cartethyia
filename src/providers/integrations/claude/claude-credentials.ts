@@ -10,7 +10,7 @@ function invalidHeader(
   message: string,
   details: Readonly<Record<string, unknown>> = {},
 ): GatewayError {
-  return new GatewayError("invalid_request", 400, message, details);
+  return new GatewayError("invalid_request", 400, `${message} (request {requestId}). Check the shape of what you sent — then resend 🪞`, details);
 }
 
 function decodeSecret(secret: Uint8Array | undefined): string | undefined {

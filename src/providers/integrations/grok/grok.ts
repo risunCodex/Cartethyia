@@ -529,7 +529,7 @@ class GrokAdapter extends OpenAICompatibleAdapter {
       throw new GatewayError(
         "invalid_request",
         400,
-        "grok requires an xAI OAuth device credential",
+        "grok requires an xAI OAuth device credential (request {requestId}). Wrong key, right door — check the credential 🔑",
       );
     }
     yield* super.dispatch(request, candidate, context);

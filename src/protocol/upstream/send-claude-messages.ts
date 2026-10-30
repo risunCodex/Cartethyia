@@ -55,7 +55,7 @@ export async function* sendClaudeMessagesRequest(
       throw new GatewayError(
         "platform_unavailable",
         502,
-        "Claude response has no stream body",
+        "Claude response has no stream body (request {requestId}). The upstream came back empty-handed — retry 🌙",
         {},
         "upstream",
       );
@@ -70,7 +70,7 @@ export async function* sendClaudeMessagesRequest(
     throw new GatewayError(
       "platform_unavailable",
       502,
-      "Claude response is not valid JSON",
+      "Claude response is not valid JSON (request {requestId}). The upstream came back empty-handed — retry 🌙",
       {},
       "upstream",
     );
@@ -79,7 +79,7 @@ export async function* sendClaudeMessagesRequest(
     throw new GatewayError(
       "platform_unavailable",
       502,
-      "Claude response must be an object",
+      "Claude response must be an object (request {requestId}). The upstream came back empty-handed — retry 🌙",
       {},
       "upstream",
     );

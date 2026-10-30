@@ -292,7 +292,7 @@ export class ProxyRequestStateStore {
     const abortReason =
       reason instanceof Error || reason instanceof DOMException
         ? reason
-        : new GatewayError("shutting_down", 503, "The gateway is shutting down, so this request cannot be served. Retry against a live instance.");
+        : new GatewayError("shutting_down", 503, "The gateway is shutting down, so this request cannot be served (request {requestId}). Retry against a live instance. Maintenance mode — back in a minute 🧘");
     for (const controller of controllers) {
       try {
         if (!controller.signal.aborted) controller.abort(abortReason);

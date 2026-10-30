@@ -191,14 +191,14 @@ class AntigravityAdapter implements ProviderAdapter {
       throw new GatewayError(
         "capability_unsupported",
         400,
-        `antigravity supports chat/responses/messages, got ${candidate.wire_family}`,
+        `antigravity supports chat/responses/messages, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
       );
     }
     if (context.credential.credential_kind !== "oauth") {
       throw new GatewayError(
         "invalid_request",
         400,
-        `antigravity: Google OAuth credential required (got credential_kind=${context.credential.credential_kind})`,
+        `antigravity: Google OAuth credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
       );
     }
     const accessToken = context.credential.secret
@@ -208,7 +208,7 @@ class AntigravityAdapter implements ProviderAdapter {
       throw new GatewayError(
         "authentication_failed",
         401,
-        "antigravity: OAuth access token is required",
+        "antigravity: OAuth access token is required (request {requestId}). Wrong key, right door — check the credential 🔑",
       );
     }
 
@@ -360,7 +360,7 @@ class AntigravityAdapter implements ProviderAdapter {
         throw new GatewayError(
           "platform_unavailable",
           502,
-          "antigravity returned empty stream",
+          "antigravity returned empty stream (request {requestId}). The upstream came back empty-handed — retry 🌙",
           {},
           "upstream",
         );
@@ -508,7 +508,7 @@ class AntigravityAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): Promise<WebSearchOutcome> {
     const query = typeof body.query === "string" ? body.query.trim() : "";
-    if (!query) throw new GatewayError("invalid_request", 400, "search query is required");
+    if (!query) throw new GatewayError("invalid_request", 400, "search query is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
     const rawMax = body.max_results;
     const maxResults =
       typeof rawMax === "number" && Number.isFinite(rawMax)
@@ -531,7 +531,7 @@ class AntigravityAdapter implements ProviderAdapter {
     }
     const results = normalizeAntigravityGrounding(grounded, maxResults);
     if (results.length === 0)
-      throw new GatewayError("platform_unavailable", 502, "Antigravity search returned no grounded results");
+      throw new GatewayError("platform_unavailable", 502, "Antigravity search returned no grounded results (request {requestId}). The upstream came back empty-handed — retry 🌙");
     return { results, total_results: results.length };
   }
 
@@ -544,18 +544,18 @@ class AntigravityAdapter implements ProviderAdapter {
       throw new GatewayError(
         "invalid_request",
         400,
-        `antigravity: Google OAuth credential required (got credential_kind=${context.credential.credential_kind})`,
+        `antigravity: Google OAuth credential required (got credential_kind=${context.credential.credential_kind}) (request {requestId}). Wrong key, right door — check the credential 🔑`,
       );
     }
     const accessToken = context.credential.secret
       ? new TextDecoder().decode(context.credential.secret).trim()
       : "";
     if (!accessToken) {
-      throw new GatewayError("authentication_failed", 401, "antigravity: OAuth access token is required");
+      throw new GatewayError("authentication_failed", 401, "antigravity: OAuth access token is required (request {requestId}). Wrong key, right door — check the credential 🔑");
     }
     const prompt = imagePrompt(body);
     const model = candidate.model_id.length > 0 ? candidate.model_id : typeof body.model === "string" ? body.model : "";
-    if (model.length === 0) throw new GatewayError("invalid_request", 400, "model is required");
+    if (model.length === 0) throw new GatewayError("invalid_request", 400, "model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
     const outboundFetch: typeof fetch = (context.outbound_fetch as unknown as typeof fetch) ?? this.fetchFn;
     const projectId = await loadAntigravityProject(accessToken, {
       baseUrl: this.baseUrl,
@@ -624,7 +624,7 @@ class AntigravityAdapter implements ProviderAdapter {
       throw new GatewayError(
         "platform_unavailable",
         502,
-        `Antigravity image generation unreachable: ${error instanceof Error ? error.message : String(error)}`,
+        `Antigravity image generation unreachable (request {requestId}): ${error instanceof Error ? error.message : String(error)}. The connection ghosted us — come back in a moment 👻`,
         {},
         "upstream",
       );
@@ -646,12 +646,12 @@ class AntigravityAdapter implements ProviderAdapter {
       try {
         parsed = JSON.parse(event.data);
       } catch {
-        throw new GatewayError("platform_unavailable", 502, "Antigravity image stream returned malformed JSON", {}, "upstream");
+        throw new GatewayError("platform_unavailable", 502, "Antigravity image stream returned malformed JSON (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
       }
       images.push(...geminiInlineImages(parsed));
     }
     if (images.length === 0) {
-      throw new GatewayError("platform_unavailable", 502, "Antigravity image generation returned no image", {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, "Antigravity image generation returned no image (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
     }
     return { created: imageCreatedSeconds(), data: images };
   }

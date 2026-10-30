@@ -152,14 +152,14 @@ function finishImage(bytes: Uint8Array): CursorImageInput {
     throw new GatewayError(
       "invalid_request",
       400,
-      "Cursor accepts PNG, JPEG, WebP and GIF image input only",
+      "Cursor accepts PNG, JPEG, WebP and GIF image input only (request {requestId}). Check the shape of what you sent — then resend 🪞",
     );
   }
   if (bytes.byteLength > MAX_IMAGE_BYTES) {
     throw new GatewayError(
       "invalid_request",
       400,
-      `Cursor image input exceeds the ${MAX_IMAGE_BYTES}-byte limit`,
+      `Cursor image input exceeds the ${MAX_IMAGE_BYTES}-byte limit (request {requestId}). We love long reads, but not that long 📚`,
     );
   }
   return { data: bytes, mimeType };
@@ -183,7 +183,7 @@ async function resolveImageInput(
   if (dataUrl !== undefined) {
     const bytes = base64ToBytes(dataUrl.data);
     if (bytes === undefined) {
-      throw new GatewayError("invalid_request", 400, "Cursor image attachment is not valid base64");
+      throw new GatewayError("invalid_request", 400, "Cursor image attachment is not valid base64 (request {requestId}). Check the shape of what you sent — then resend 🪞");
     }
     return finishImage(bytes);
   }
@@ -192,7 +192,7 @@ async function resolveImageInput(
     throw new GatewayError(
       "invalid_request",
       400,
-      "Cursor image URLs must be HTTPS; private and non-TLS sources are not fetched",
+      "Cursor image URLs must be HTTPS; private and non-TLS sources are not fetched (request {requestId}). Check the shape of what you sent — then resend 🪞",
     );
   }
   const fetcher = context.outbound_attachment_fetch;
@@ -200,7 +200,7 @@ async function resolveImageInput(
     throw new GatewayError(
       "invalid_request",
       400,
-      "Cursor has no validated egress to fetch this image URL",
+      "Cursor has no validated egress to fetch this image URL (request {requestId}). All roads blocked — time to find a new route 🗺️",
     );
   }
   // Redirects are not followed: reject the response rather than letting a
@@ -222,7 +222,7 @@ async function resolveImageInput(
     throw new GatewayError(
       "invalid_request",
       400,
-      `Cursor image input exceeds the ${MAX_IMAGE_BYTES}-byte limit`,
+      `Cursor image input exceeds the ${MAX_IMAGE_BYTES}-byte limit (request {requestId}). We love long reads, but not that long 📚`,
     );
   }
   return finishImage(body);
@@ -503,7 +503,7 @@ class CursorAdapter implements ProviderAdapter {
       throw new GatewayError(
         "invalid_request",
         400,
-        "This tool result cannot be matched to a live Cursor Run; resend the complete conversation.",
+        "This tool result cannot be matched to a live Cursor Run (request {requestId}); resend the complete conversation. The session went cold — reconnect or resend 🔌",
       );
     }
     const resolvedAll = pending.map((item) => cursorRunSessions.resolveCall(item.callId, scope));
@@ -530,7 +530,7 @@ class CursorAdapter implements ProviderAdapter {
       throw new GatewayError(
         "invalid_request",
         400,
-        "This tool result refers to a Cursor tool call that is no longer pending. Resend the complete conversation.",
+        "This tool result refers to a Cursor tool call that is no longer pending (request {requestId}). Resend the complete conversation. The session went cold — reconnect or resend 🔌",
         { callIds: pending.map((item) => item.callId) },
       );
     }
@@ -538,12 +538,12 @@ class CursorAdapter implements ProviderAdapter {
       throw new GatewayError(
         "invalid_request",
         400,
-        "These tool results belong to different Cursor Runs; resend them one Run at a time.",
+        "These tool results belong to different Cursor Runs (request {requestId}); resend them one Run at a time. The session went cold — reconnect or resend 🔌",
       );
     }
     const session = cursorRunSessions.get(runId);
     if (session === undefined) {
-      throw new GatewayError("invalid_request", 400, "Cursor Run is no longer live");
+      throw new GatewayError("invalid_request", 400, "Cursor Run is no longer live (request {requestId}). The session went cold — reconnect or resend 🔌");
     }
     const handle = this.#handles.get(runId);
     if (handle === undefined) {
@@ -605,7 +605,7 @@ class CursorAdapter implements ProviderAdapter {
       throw new GatewayError(
         "admission_unavailable",
         503,
-        "Cursor requires validated HTTP/2 egress; none is configured for this route",
+        "Cursor requires validated HTTP/2 egress (request {requestId}); none is configured for this route. No bridge to cross — configure a pool first 🏗️",
         { providerId: CURSOR_PROVIDER_ID },
       );
     }
@@ -784,7 +784,7 @@ class CursorAdapter implements ProviderAdapter {
             : new GatewayError(
                 "platform_unavailable",
                 502,
-                `Cursor Run failed: ${error instanceof Error ? error.message : String(error)}`,
+                `Cursor Run failed (request {requestId}): ${error instanceof Error ? error.message : String(error)}. The upstream came back empty-handed — retry 🌙`,
                 { providerId: CURSOR_PROVIDER_ID },
                 "upstream",
               );
@@ -828,7 +828,7 @@ class CursorAdapter implements ProviderAdapter {
       throw new GatewayError(
         "platform_unavailable",
         502,
-        `Cursor Run origin could not be resolved: ${error instanceof Error ? error.message : String(error)}`,
+        `Cursor Run origin could not be resolved (request {requestId}): ${error instanceof Error ? error.message : String(error)}. The connection ghosted us — come back in a moment 👻`,
         { providerId: CURSOR_PROVIDER_ID },
         "upstream",
       );
@@ -890,7 +890,7 @@ class CursorAdapter implements ProviderAdapter {
         }
         const message = item;
         if (context.abort_signal.aborted) {
-          failure = new GatewayError("transport_closed", 499, "request was cancelled");
+          failure = new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
           break;
         }
         const execServer = recordOf(message["exec_server_message"]);
@@ -994,7 +994,7 @@ class CursorAdapter implements ProviderAdapter {
           : new GatewayError(
               "platform_unavailable",
               502,
-              `Cursor Run failed: ${error instanceof Error ? error.message : String(error)}`,
+              `Cursor Run failed (request {requestId}): ${error instanceof Error ? error.message : String(error)}. The upstream came back empty-handed — retry 🌙`,
               { providerId: CURSOR_PROVIDER_ID },
               "upstream",
             );

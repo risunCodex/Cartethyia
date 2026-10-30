@@ -181,7 +181,7 @@ class GeminiAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (candidate.wire_family !== "chat" && candidate.wire_family !== "responses" && candidate.wire_family !== "messages") {
-      throw new GatewayError("capability_unsupported", 400, `gemini supports chat/responses/messages, got ${candidate.wire_family}`);
+      throw new GatewayError("capability_unsupported", 400, `gemini supports chat/responses/messages, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`);
     }
     const apiKey = readCredentialSecret(context.credential, "Gemini API key is required");
 
@@ -262,7 +262,7 @@ class GeminiAdapter implements ProviderAdapter {
         return;
       }
 
-      if (!response.body) throw new GatewayError("platform_unavailable", 502, "Gemini returned empty stream", {}, "upstream");
+      if (!response.body) throw new GatewayError("platform_unavailable", 502, "Gemini returned empty stream (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
       let seq = 1;
       yield { type: "response_start", sequence_number: seq++, model: request.model } as CanonicalEvent;
       const state = { started: true, stopped: false, activeCalls: new Set<string>() };
@@ -339,7 +339,7 @@ class GeminiAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): Promise<WebSearchOutcome> {
     const query = typeof body.query === "string" ? body.query.trim() : "";
-    if (!query) throw new GatewayError("invalid_request", 400, "search query is required");
+    if (!query) throw new GatewayError("invalid_request", 400, "search query is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
     const rawMax = body.max_results;
     const maxResults =
       typeof rawMax === "number" && Number.isFinite(rawMax)
@@ -368,7 +368,7 @@ class GeminiAdapter implements ProviderAdapter {
       throw new GatewayError(
         "platform_unavailable",
         502,
-        `Gemini search unreachable: ${error instanceof Error ? error.message : String(error)}`,
+        `Gemini search unreachable (request {requestId}): ${error instanceof Error ? error.message : String(error)}. The connection ghosted us — come back in a moment 👻`,
       );
     }
     if (!response.ok) throw await mapUpstreamHttpError(response, "gemini search");
@@ -376,11 +376,11 @@ class GeminiAdapter implements ProviderAdapter {
     try {
       data = await response.json();
     } catch {
-      throw new GatewayError("platform_unavailable", 502, "Gemini search returned invalid JSON");
+      throw new GatewayError("platform_unavailable", 502, "Gemini search returned invalid JSON (request {requestId}). The upstream came back empty-handed — retry 🌙");
     }
     const results = normalizeGroundingResults(data, maxResults);
     if (results.length === 0)
-      throw new GatewayError("platform_unavailable", 502, "Gemini search returned no grounded results");
+      throw new GatewayError("platform_unavailable", 502, "Gemini search returned no grounded results (request {requestId}). The upstream came back empty-handed — retry 🌙");
     return { results, total_results: results.length };
   }
 
@@ -391,7 +391,7 @@ class GeminiAdapter implements ProviderAdapter {
   ): Promise<ImageGenerationOutcome> {
     const prompt = imagePrompt(body);
     const model = candidate.model_id.length > 0 ? candidate.model_id : typeof body.model === "string" ? body.model : "";
-    if (model.length === 0) throw new GatewayError("invalid_request", 400, "model is required");
+    if (model.length === 0) throw new GatewayError("invalid_request", 400, "model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
     const apiKey = readCredentialSecret(context.credential, "Gemini API key is required");
     const outboundFetch = context.outbound_fetch ?? this.fetchFn;
     const lifecycle = createUpstreamDeadlineLifecycle(context);
@@ -418,7 +418,7 @@ class GeminiAdapter implements ProviderAdapter {
       throw new GatewayError(
         "platform_unavailable",
         502,
-        `Gemini image generation unreachable: ${error instanceof Error ? error.message : String(error)}`,
+        `Gemini image generation unreachable (request {requestId}): ${error instanceof Error ? error.message : String(error)}. The connection ghosted us — come back in a moment 👻`,
         {},
         "upstream",
       );
@@ -430,11 +430,11 @@ class GeminiAdapter implements ProviderAdapter {
     try {
       data = await response.json();
     } catch {
-      throw new GatewayError("platform_unavailable", 502, "Gemini image generation returned invalid JSON", {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, "Gemini image generation returned invalid JSON (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
     }
     const images = geminiInlineImages(data);
     if (images.length === 0) {
-      throw new GatewayError("platform_unavailable", 502, "Gemini image generation returned no image", {}, "upstream");
+      throw new GatewayError("platform_unavailable", 502, "Gemini image generation returned no image (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
     }
     return { created: imageCreatedSeconds(), data: images };
   }

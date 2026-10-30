@@ -87,7 +87,7 @@ class AgentRouterAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (candidate.wire_family !== "messages") {
-      throw new GatewayError("capability_unsupported", 400, `agentrouter supports messages only, got ${candidate.wire_family}`);
+      throw new GatewayError("capability_unsupported", 400, `agentrouter supports messages only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`);
     }
     const apiKey = readCredentialSecret(context.credential, "AgentRouter API key is required");
 

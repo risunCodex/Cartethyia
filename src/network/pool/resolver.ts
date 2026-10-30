@@ -552,7 +552,7 @@ function dialThroughPool(
           cleanup();
           secured.destroy();
           reject(
-            new GatewayError("transport_unavailable", 502, "HTTP/2 connection timed out", {}, "network"),
+            new GatewayError("transport_unavailable", 502, "HTTP/2 connection timed out (request {requestId}). Some things just take longer 🐢", {}, "network"),
           );
         }, HTTP2_CONNECT_TIMEOUT_MS);
         secured.once("secureConnect", () => {
@@ -565,7 +565,7 @@ function dialThroughPool(
             new GatewayError(
               "transport_unavailable",
               502,
-              `HTTP/2 TLS handshake failed: ${tlsError.message}`,
+              `HTTP/2 TLS handshake failed: ${tlsError.message} (request {requestId}). The connection ghosted us — come back in a moment 👻`,
               {},
               "network",
             ),
@@ -1058,7 +1058,7 @@ export class ValidatedNetworkBindingFactory {
       assertBidiTarget(url);
       const { hostname } = url;
       if (options?.allowHostname !== undefined && !options.allowHostname(hostname)) {
-        throw new GatewayError("invalid_request", 400, "HTTP/2 target host is not allowlisted");
+        throw new GatewayError("invalid_request", 400, "HTTP/2 target host is not allowlisted (request {requestId}). All roads blocked — time to find a new route 🗺️");
       }
       const signal = options?.signal ?? AbortSignal.timeout(HTTP2_CONNECT_TIMEOUT_MS);
       // Validation runs on every new connection, not once per capability: a
@@ -1066,7 +1066,7 @@ export class ValidatedNetworkBindingFactory {
       // resolved safely the first time is not safe the twentieth.
       const destination = await this.resolve(hostname, signal, 443);
       if (!isAddressAllowed(destination.resolvedAddress, this.policy)) {
-        throw new GatewayError("invalid_request", 400, "unsafe upstream address rejected");
+        throw new GatewayError("invalid_request", 400, "unsafe upstream address rejected (request {requestId}). All roads blocked — time to find a new route 🗺️");
       }
       // Mirrors `fetch`: no pool selected (or none configured) means validated
       // *direct* egress, which is already resolved and SSRF-checked above.
@@ -1086,7 +1086,7 @@ export class ValidatedNetworkBindingFactory {
             throw new GatewayError(
               "proxy_pool_unhealthy",
               503,
-              "Configured proxy pool could not be established.",
+              "Configured proxy pool could not be established (request {requestId}). This bridge looks shaky — repair or reroute 🔧",
               { poolId: networkPoolId, reason: error.message.slice(0, 200) },
               "network",
             );

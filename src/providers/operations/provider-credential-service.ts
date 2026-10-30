@@ -241,7 +241,7 @@ export async function resolveCredentialForAccount(
       throw new GatewayError(
         "authentication_failed",
         401,
-        "provider credential cannot be decrypted; re-save the account credential",
+        "provider credential cannot be decrypted (request {requestId}); re-save the account credential. Wrong key, right door — check the credential 🔑",
         {
           providerId: row.providerId,
           accountId: row.id,
@@ -331,7 +331,7 @@ export async function resolveAccountCredentialsForExport(
       await oauth.refreshService.ensureFreshAccessToken(accountId, refresher);
       account = await loadAccountWithFreshness(db, accountId);
       if (!account) {
-        throw new GatewayError("admission_unavailable", 503, "This provider account no longer exists, so its credential cannot be read. Re-select the account, or point the route at a live one.", {
+        throw new GatewayError("admission_unavailable", 503, "This provider account no longer exists, so its credential cannot be read (request {requestId}). Re-select the account, or point the route at a live one. The account went cold — reconnect or resend 🔌", {
           provider_id: providerId,
           account_id: accountId,
         });

@@ -67,7 +67,7 @@ const STOP_REASONS: Readonly<Record<string, CanonicalStopReason>> = {
 function traeAuth(secret: string, accountId: string | undefined): TraeAuth {
   const token = extractToken(secret);
   if (token === undefined) {
-    throw new GatewayError("authentication_failed", 401, "Trae credential has no access token", {}, "upstream");
+    throw new GatewayError("authentication_failed", 401, "Trae credential has no access token (request {requestId}). Wrong key, right door — check the credential 🔑", {}, "upstream");
   }
   return { token, uid: accountId ?? "" };
 }
@@ -116,7 +116,7 @@ function throwTraeUpstreamError(codeRaw: unknown, messageRaw: unknown): never {
     throw new GatewayError(
       "authentication_failed",
       401,
-      `Trae could not authenticate the account (upstream code 1001): ${message}`,
+      `Trae could not authenticate the account (upstream code 1001): ${message} (request {requestId}). Wrong key, right door — check the credential 🔑`,
       { providerCode: "1001", providerStatus: 1001, credentialEvidence: true },
       "upstream",
     );
@@ -127,7 +127,7 @@ function throwTraeUpstreamError(codeRaw: unknown, messageRaw: unknown): never {
     throw new GatewayError(
       "quota_exceeded",
       429,
-      `Trae quota exceeded (upstream code ${code ?? "unknown"}): ${message}`,
+      `Trae quota exceeded (upstream code ${code ?? "unknown"}): ${message} (request {requestId}). You've maxed this window — pace yourself ⏳`,
       { providerCode: code ?? "4008", providerStatus: code === "4008" ? 4008 : 429 },
       "upstream",
     );
@@ -155,7 +155,7 @@ class TraeAdapter implements ProviderAdapter {
       throw new GatewayError(
         "capability_unsupported",
         400,
-        `trae supports chat only, got ${candidate.wire_family}`,
+        `trae supports chat only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
       );
     }
     const secret = readCredentialSecret(context.credential, "Trae credential is required");
@@ -214,7 +214,7 @@ class TraeAdapter implements ProviderAdapter {
       });
       if (!response.ok) throw await mapUpstreamHttpError(response, this.provider_id);
       if (!response.body) {
-        throw new GatewayError("platform_unavailable", 502, "Trae returned empty body", {}, "upstream");
+        throw new GatewayError("platform_unavailable", 502, "Trae returned empty body (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
       }
       // Headers arrived, so the pre-stream deadline has served its purpose;
       // from here the gateway's own stall watchdog governs the body.

@@ -46,7 +46,7 @@ const LEAK_HOLD_MAX_CHARS = 32_768;
 const LEAK_HOLD_MAX_FRAMES = 200;
 
 const BAD_ECHO_MESSAGE =
-  "Qoder returned an unparseable tool-call echo; no tools were emitted";
+  "Qoder returned an unparseable tool-call echo (request {requestId}); no tools were emitted. The upstream came back empty-handed — retry 🌙";
 
 function badEchoError(): GatewayError {
   return new GatewayError(
@@ -246,7 +246,7 @@ export function qoderOAuthAuth(
     throw new GatewayError(
       "authentication_failed",
       401,
-      "Qoder OAuth account is missing its user identity (auth_state.userId/machineId absent or empty — re-login, or re-export with authState included); sign in again",
+      "Qoder OAuth account is missing its user identity (request {requestId}) (auth_state.userId/machineId absent or empty — re-login, or re-export with authState included); sign in again. Wrong key, right door — check the credential 🔑",
     );
   }
   return {
@@ -387,14 +387,14 @@ async function exchangeQoderPat(
   try {
     responseBody = await response.json();
   } catch {
-    throw new GatewayError("platform_unavailable", 502, "Qoder PAT exchange returned invalid JSON", {}, "upstream");
+    throw new GatewayError("platform_unavailable", 502, "Qoder PAT exchange returned invalid JSON (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
   }
   if (typeof responseBody !== "object" || responseBody === null || Array.isArray(responseBody)) {
-    throw new GatewayError("platform_unavailable", 502, "Qoder PAT exchange returned unexpected response", {}, "upstream");
+    throw new GatewayError("platform_unavailable", 502, "Qoder PAT exchange returned unexpected response (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
   }
   const rec = responseBody as Record<string, unknown>;
   if (typeof rec["id"] !== "string" || typeof rec["securityOauthToken"] !== "string") {
-    throw new GatewayError("platform_unavailable", 502, "Qoder PAT exchange returned incomplete credentials", {}, "upstream");
+    throw new GatewayError("platform_unavailable", 502, "Qoder PAT exchange returned incomplete credentials (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
   }
   return {
     userId: rec["id"] as string,
@@ -481,7 +481,7 @@ function qoderEnvelopeToFrames(data: string): Array<{ event: string | null; data
     throw new GatewayError(
       classification.code,
       classification.status,
-      detail.length > 0 ? detail : `Qoder stream envelope returned HTTP ${status}`,
+      detail.length > 0 ? `${detail} (request {requestId}). The upstream came back empty-handed — retry 🌙` : `Qoder stream envelope returned HTTP ${status} (request {requestId}). The upstream came back empty-handed — retry 🌙`,
       {
         providerId: QODER_PROVIDER_ID,
         providerStatus: status,
@@ -1236,7 +1236,7 @@ class QoderAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     if (candidate.wire_family !== "chat") {
-      throw new GatewayError("capability_unsupported", 400, `qoder supports chat only, got ${candidate.wire_family}`);
+      throw new GatewayError("capability_unsupported", 400, `qoder supports chat only, got ${candidate.wire_family} (request {requestId}). Know your tools — this one just isn't in the box 🧰`);
     }
     const secret = readCredentialSecret(context.credential, "Qoder credential is required");
 
@@ -1253,7 +1253,7 @@ class QoderAdapter implements ProviderAdapter {
       throw new GatewayError(
         "model_not_found",
         404,
-        `Qoder virtual model ${requestedModelId} resolves to a roster key this realm does not serve`,
+        `Qoder virtual model ${requestedModelId} resolves to a roster key this realm does not serve (request {requestId}). Try another model — this one's off the menu 📚`,
         { virtual_model: requestedModelId, target: qoderDispatchModelId(requestedModelId) },
         "upstream",
       );
@@ -1296,7 +1296,7 @@ class QoderAdapter implements ProviderAdapter {
 
       const response = await callQoder(url, qoderBody, modelId, auth, lifecycle.signal, fetcher, version);
       if (!response.ok) throw await mapUpstreamHttpError(response, "qoder");
-      if (!response.body) throw new GatewayError("platform_unavailable", 502, "Qoder returned empty body", {}, "upstream");
+      if (!response.body) throw new GatewayError("platform_unavailable", 502, "Qoder returned empty body (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
       // Headers arrived: the pre-stream deadline has served its purpose.
       // From here the gateway stall/first-chunk watchdog (propagated via
       // context.abort_signal) governs the body. Keeping this timer armed

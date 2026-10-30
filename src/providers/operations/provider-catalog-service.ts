@@ -290,10 +290,10 @@ export async function registerByokProviders(
     try {
       providerId = parseProviderId(row.id);
     } catch {
-      throw new GatewayError("invalid_request", 400, `invalid BYOK provider ID: ${row.id}`);
+      throw new GatewayError("invalid_request", 400, `invalid BYOK provider ID: ${row.id} (request {requestId}). Check the shape of what you sent — then resend 🪞`);
     }
     if (isBundledProviderId(providerId)) {
-      throw new GatewayError("invalid_request", 409, `BYOK provider ID collides with a built-in: ${row.id}`, {
+      throw new GatewayError("invalid_request", 409, `BYOK provider ID collides with a built-in: ${row.id} (request {requestId}). This name's taken — pick another alias ✨`, {
         provider_id: providerId,
       });
     }
@@ -309,14 +309,14 @@ export async function registerByokProviders(
       }
     } catch (error) {
       if (error instanceof GatewayError) throw error;
-      throw new GatewayError("invalid_request", 400, `invalid BYOK base URL for provider ${row.id}`);
+      throw new GatewayError("invalid_request", 400, `invalid BYOK base URL for provider ${row.id} (request {requestId}). Check the shape of what you sent — then resend 🪞`);
     }
     // IP literals are rejected at registration; DNS names are revalidated at dispatch.
     if (isIP(parsedUrl.hostname) !== 0 && !isAddressAllowed(parsedUrl.hostname, ssrfPolicy)) {
       throw new GatewayError(
         "invalid_request",
         400,
-        `BYOK provider ${row.id} host is blocked (private/unsafe address)`,
+        `BYOK provider ${row.id} host is blocked (private/unsafe address) (request {requestId}). All roads blocked — time to find a new route 🗺️`,
       );
     }
     const defaultPort = parsedUrl.protocol === "http:" ? 80 : 443;

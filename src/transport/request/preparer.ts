@@ -101,7 +101,7 @@ export function resolveContinuationAffinity(
       throw new GatewayError(
         "invalid_request",
         400,
-        "These tool results belong to different Cursor accounts; resend them one account at a time.",
+        "These tool results belong to different Cursor accounts (request {requestId}); resend them one account at a time. The session went cold — reconnect or resend 🔌",
         { callIds: [...ids] },
       );
     }
@@ -189,9 +189,9 @@ export class ProxyRequestPreparer {
   }): Promise<PreparedProxyRequest> {
     const { canonicalRequest: initialRequest, authorization, signal } = input;
     if (signal?.aborted)
-      throw new GatewayError("transport_closed", 499, "request was cancelled");
+      throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
     if (!initialRequest.model || initialRequest.model.trim().length === 0) {
-      throw new GatewayError("invalid_request", 400, "Request requires a non-empty model identifier", {
+      throw new GatewayError("invalid_request", 400, "Request requires a non-empty model identifier (request {requestId}). Check the shape of what you sent — then resend 🪞", {
         field: "model",
       });
     }
@@ -244,11 +244,11 @@ export class ProxyRequestPreparer {
       throw new GatewayError(
         "model_not_found",
         404,
-        `This key may only use models starting with '${authorization.modelPrefix}'. Ask for one inside that prefix, or have an operator widen the key.`,
+        `This key may only use models starting with '${authorization.modelPrefix}' (request {requestId}). Ask for one inside that prefix, or have an operator widen the key. Try another model — this one's off the menu 📚`,
         { model: request.model, required_prefix: authorization.modelPrefix },
       );
     if (!allowedForKey) {
-      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key", {
+      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key (request {requestId}). Try another model — this one's off the menu 📚", {
         model: request.model,
       });
     }
@@ -307,7 +307,7 @@ export class ProxyRequestPreparer {
       throw new GatewayError(
         "capability_unsupported",
         400,
-        "no eligible route supports this request's capabilities",
+        "no eligible route supports this request's capabilities (request {requestId}). Drop the unsupported capability, or route to a model that accepts it. Know your tools — this one just isn't in the box 🧰",
         { model: request.model },
       );
     const policyCandidates = plan.candidates.filter((candidate) =>
@@ -319,7 +319,7 @@ export class ProxyRequestPreparer {
       ),
     );
     if (policyCandidates.length === 0)
-      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key", {
+      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key (request {requestId}). Try another model — this one's off the menu 📚", {
         model: request.model,
       });
     if (policyCandidates.length !== plan.candidates.length)
@@ -341,7 +341,7 @@ export class ProxyRequestPreparer {
       throw new GatewayError(
         "capability_unsupported",
         400,
-        `this model is not served on a chat wire — it is a '${kind}' service model${route === undefined ? "" : `; call it at POST ${route}`}`,
+        `this model is not served on a chat wire — it is a '${kind}' service model${route === undefined ? "" : `; call it at POST ${route}`} (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
         { model: request.model, service_kind: kind, ...(route === undefined ? {} : { route }) },
       );
     }
@@ -366,7 +366,7 @@ export class ProxyRequestPreparer {
       }
     }
     if (signal?.aborted)
-      throw new GatewayError("transport_closed", 499, "request was cancelled");
+      throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
     const eligible = plan.candidates;
     // The buddy gateway rejects partial tool rounds outright (`11148`) where
     // the generic synthesis policy would insert a placeholder result, so a
@@ -401,7 +401,7 @@ export class ProxyRequestPreparer {
       effectiveRequest = sanitizeRequestToolIds(effectiveRequest);
     }
     if (signal?.aborted)
-      throw new GatewayError("transport_closed", 499, "request was cancelled");
+      throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
     // Project against the chosen candidate, not the intersection of every
     // candidate in the plan. Still required for generation-control stripping
     // even on the no-tools path — keep it, but it is cheap vs message clones.
@@ -448,7 +448,7 @@ export class ProxyRequestPreparer {
     readonly emptyMessage: string;
   }): Promise<PreparedNativeRequest> {
     if (input.signal?.aborted)
-      throw new GatewayError("transport_closed", 499, "request was cancelled");
+      throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
     const snapshot = await this.deps.snapshotService.getSnapshot();
     const allowCliMappings = allowsCliToolMappings(input.authorization.scopes, {
       ...(input.clientUserAgent === undefined ? {} : { userAgent: input.clientUserAgent }),
@@ -475,11 +475,11 @@ export class ProxyRequestPreparer {
       throw new GatewayError(
         "model_not_found",
         404,
-        `This key may only use models starting with '${input.authorization.modelPrefix}'. Ask for one inside that prefix, or have an operator widen the key.`,
+        `This key may only use models starting with '${input.authorization.modelPrefix}' (request {requestId}). Ask for one inside that prefix, or have an operator widen the key. Try another model — this one's off the menu 📚`,
         { model: input.model, required_prefix: input.authorization.modelPrefix },
       );
     if (!allowedForKey)
-      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key", {
+      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key (request {requestId}). Try another model — this one's off the menu 📚", {
         model: input.model,
       });
     const plan = await this.deps.routingEngine.plan(
@@ -491,7 +491,7 @@ export class ProxyRequestPreparer {
       input.authorization.cliMappingOwnerId ?? input.authorization.id,
     );
     if (input.signal?.aborted)
-      throw new GatewayError("transport_closed", 499, "request was cancelled");
+      throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
     const policyCandidates = plan.candidates.filter((candidate) =>
       isModelAllowed(
         input.authorization.snapshot,
@@ -501,12 +501,12 @@ export class ProxyRequestPreparer {
       ),
     );
     if (policyCandidates.length === 0)
-      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key", {
+      throw new GatewayError("model_not_found", 404, "model is not allowed for this API key (request {requestId}). Try another model — this one's off the menu 📚", {
         model: input.model,
       });
     const candidates = policyCandidates.filter(input.eligible);
     if (candidates.length === 0)
-      throw new GatewayError("capability_unsupported", 400, input.emptyMessage, {
+      throw new GatewayError("capability_unsupported", 400, `${input.emptyMessage} (request {requestId}). Know your tools — this one just isn't in the box 🧰`, {
         model: input.model,
       });
     return {

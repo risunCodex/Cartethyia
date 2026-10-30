@@ -30,7 +30,7 @@
  *   rule as well, so it needs no special case.
  * - **`503`** is capacity or availability: the gateway *correctly* refusing work
  *   it cannot do right now (`admission_unavailable`, `accounts_unavailable`,
- *   `shutting_down`, `restart_for_update`, `platform_unavailable`). Retryable,
+ *   `shutting_down` (incl. update restart), `platform_unavailable`). Retryable,
  *   self-inflicted, and an operator-capacity signal rather than a defect.
  * - **`504`** is a timeout, not a malfunction. It represents a deadline that
  *   expired: the request deadline, the stream-stall

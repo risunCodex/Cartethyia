@@ -81,7 +81,7 @@ function codeBuddyIntlPrePayload(
     typeof rawModel === "string" && rawModel.length > 0
       ? rawModel
       : candidate.model_id;
-  if (!source) throw new GatewayError("invalid_request", 400, "CodeBuddy model is required");
+  if (!source) throw new GatewayError("invalid_request", 400, "CodeBuddy model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
   const messages = payload["messages"];
   if (Array.isArray(messages)) {
     applyBuddySystemPrompt(

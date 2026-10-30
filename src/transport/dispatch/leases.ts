@@ -279,7 +279,7 @@ export async function acquireAttemptLeases(
       : await acquirePoolSlot(candidate, source, input.poolSelector, input.strictPoolSelection);
     if (slot) partial.proxySlot = slot;
     if (input.strictPoolSelection && input.signal.aborted)
-      throw new GatewayError("transport_closed", 499, "request was cancelled");
+      throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
     partial.reservation = await source.routingEngine.reserve({
       ...source.plan,
       candidates: [candidate],

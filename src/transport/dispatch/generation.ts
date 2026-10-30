@@ -163,18 +163,18 @@ export function createNativeSurfaceHandler(
       throw new GatewayError(
         "invalid_request",
         400,
-        `The ${noun} body must be a JSON object. Send one with at least a model and a prompt.`,
+        `The ${noun} body must be a JSON object (request {requestId}). Send one with at least a model and a prompt. Check the shape of what you sent — then resend 🪞`,
       );
     }
     const generation = body as Record<string, unknown>;
     if (typeof generation.model !== "string" || generation.model.trim().length === 0) {
-      throw new GatewayError("invalid_request", 400, `A model is required: it names the ${noun} provider to use.`);
+      throw new GatewayError("invalid_request", 400, `A model is required (request {requestId}): it names the ${noun} provider to use. Check the shape of what you sent — then resend 🪞`);
     }
     if (!authorization.snapshot.scopes?.includes("routing:invoke" as never)) {
       throw new GatewayError(
-        "invalid_request",
+        "policy_rejected",
         403,
-        `${noun} generation not allowed for this key — enable routing:invoke on the API key`,
+        `${noun} generation not allowed for this key (request {requestId}) — enable routing:invoke on the API key. Not allowed by policy — no hard feelings 🫂`,
       );
     }
     // Trust boundary only. Keep accepting `messages` for chat-backed providers
@@ -183,7 +183,7 @@ export function createNativeSurfaceHandler(
       const hasPrompt = typeof generation.prompt === "string" && generation.prompt.trim().length > 0;
       const hasMessages = Array.isArray(generation.messages) && generation.messages.length > 0;
       if (!hasPrompt && !hasMessages) {
-        throw new GatewayError("invalid_request", 400, "prompt is required");
+        throw new GatewayError("invalid_request", 400, "prompt is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
       }
       if (generation.n !== undefined) {
         const n = generation.n;
@@ -191,7 +191,7 @@ export function createNativeSurfaceHandler(
           throw new GatewayError(
             "invalid_request",
             400,
-            `n must be an integer between 1 and ${MAX_ITEMS_PER_REQUEST}`,
+            `n must be an integer between 1 and ${MAX_ITEMS_PER_REQUEST} (request {requestId}). Check the shape of what you sent — then resend 🪞`,
           );
         }
       }
@@ -219,7 +219,7 @@ export function createNativeSurfaceHandler(
       candidates: prepared.candidates,
       tenantId: prepared.authorization.tenantId,
       strictPoolSelection: false,
-      exhaustedError: new GatewayError("admission_unavailable", 503, `no eligible ${noun} generation route`),
+      exhaustedError: new GatewayError("admission_unavailable", 503, `no eligible ${noun} generation route (request {requestId}). The bouncer stepped out — come back shortly 🚪`),
       prepare: async (candidate) => {
         const credential = candidate.provider_account_id
           ? await resolveCredentialForAccount(
@@ -239,7 +239,7 @@ export function createNativeSurfaceHandler(
           throw new GatewayError(
             "capability_unsupported",
             400,
-            `${noun} generation is unavailable for this provider`,
+            `${noun} generation is unavailable for this provider (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
           );
         }
         return { credential, adapter };
@@ -344,7 +344,7 @@ export function createNativeSurfaceHandler(
                   new GatewayError(
                     "capability_unsupported",
                     400,
-                    `${noun} generation is unavailable for this provider`,
+                    `${noun} generation is unavailable for this provider (request {requestId}). Know your tools — this one just isn't in the box 🧰`,
                   ),
                 )
               : adapter

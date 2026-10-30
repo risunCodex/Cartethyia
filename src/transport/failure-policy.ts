@@ -1013,11 +1013,11 @@ export function fallbackRetryDelayMs(attemptIndex: number): number {
 
 /** Sleeps until the delay expires or the request is aborted. */
 export function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.reject(new GatewayError("transport_closed", 499, "request was cancelled"));
+  if (signal.aborted) return Promise.reject(new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃"));
   if (ms <= 0) return Promise.resolve();
   const { promise, resolve, reject } = Promise.withResolvers<void>();
   const timer = setTimeout(() => { signal.removeEventListener("abort", onAbort); resolve(); }, ms);
-  const onAbort = () => { clearTimeout(timer); reject(new GatewayError("transport_closed", 499, "request was cancelled")); };
+  const onAbort = () => { clearTimeout(timer); reject(new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃")); };
   signal.addEventListener("abort", onAbort, { once: true });
   return promise;
 }

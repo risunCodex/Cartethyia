@@ -89,7 +89,7 @@ function assertAdapterIdentity(expected: ProviderId, adapter: ProviderAdapter): 
   // error: `invalid_request` would blame the caller and invite a byte-identical
   // retry. `internal_error` (500) says what is true — the gateway is
   // misconfigured and the request never had a chance.
-  throw new GatewayError("internal_error", 500, "Loaded adapter ID does not match registration", {
+  throw new GatewayError("internal_error", 500, "Loaded adapter ID does not match registration (request {requestId}). Even we have bad days — check the registry wiring 🐻", {
     provider_id: expected,
     adapter_id: adapter.provider_id,
   });
@@ -122,12 +122,12 @@ export class ProviderRegistry {
   register(registration: ProviderRegistration): void {
     const providerId = parseProviderId(registration.provider_id);
     if (this.#registrations.has(providerId)) {
-      throw new GatewayError("invalid_request", 409, "Provider is already registered", {
+      throw new GatewayError("invalid_request", 409, "Provider is already registered (request {requestId}). This name's taken — pick another alias ✨", {
         provider_id: providerId,
       });
     }
     if (providerId !== registration.provider_id) {
-      throw new GatewayError("internal_error", 500, "Provider registration ID is not normalized", {
+      throw new GatewayError("internal_error", 500, "Provider registration ID is not normalized (request {requestId}). Even we have bad days — check the registry wiring 🐻", {
         provider_id: registration.provider_id,
       });
     }
@@ -158,7 +158,7 @@ export class ProviderRegistry {
   upsert(registration: ProviderRegistration): boolean {
     const providerId = parseProviderId(registration.provider_id);
     if (providerId !== registration.provider_id) {
-      throw new GatewayError("internal_error", 500, "Provider registration ID is not normalized", {
+      throw new GatewayError("internal_error", 500, "Provider registration ID is not normalized (request {requestId}). Even we have bad days — check the registry wiring 🐻", {
         provider_id: registration.provider_id,
       });
     }

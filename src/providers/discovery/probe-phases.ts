@@ -109,7 +109,7 @@ export function grok407ProbeFailure(args: {
   return new GatewayError(
     "quota_exceeded",
     429,
-    detail,
+    `${detail} (request {requestId}). You've maxed this window — pace yourself ⏳`,
     {
       ...priorDetails,
       providerCode: "subscription:free-usage-exhausted",
@@ -289,7 +289,7 @@ export async function resolveProbeTarget(args: {
           throw new GatewayError(
             "model_not_found",
             404,
-            `No ${requestedServiceKind} model ${modelId} is registered for provider ${providerId}`,
+            `No ${requestedServiceKind} model ${modelId} is registered for provider ${providerId} (request {requestId}). Try another model — this one's off the menu 📚`,
           );
         }
         const ctx = wireContextFrom(providerWireRow);

@@ -17,7 +17,7 @@ export function createUpstreamDeadlineLifecycle(
         new GatewayError(
           "deadline_exceeded",
           504,
-          "upstream request deadline exceeded",
+          "upstream request deadline exceeded (request {requestId}). Some things just take longer 🐢",
           {},
           "upstream",
         ),
@@ -52,11 +52,11 @@ export function abortGatewayError(
   const reason = lifecycle.signal.reason ?? requestSignal?.reason;
   if (reason instanceof GatewayError) return reason;
   if (reason instanceof DOMException && reason.name === "TimeoutError")
-    return new GatewayError("deadline_exceeded", 504, "request deadline exceeded", {}, "cartethyia");
+    return new GatewayError("deadline_exceeded", 504, "request deadline exceeded (request {requestId}). Some things just take longer 🐢", {}, "cartethyia");
   const abortLike =
     (error instanceof DOMException && error.name === "AbortError") ||
     (error instanceof Error && error.name === "AbortError");
   if (lifecycle.signal.aborted || requestSignal?.aborted || abortLike)
-    return new GatewayError("transport_closed", 499, "request was cancelled");
+    return new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
   return undefined;
 }
