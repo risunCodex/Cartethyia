@@ -9,8 +9,20 @@ import type { OAuthRefreshService, OAuthTokenRefresher } from "../authentication
 import { CredentialResolver, type CredentialAlternative } from "../provider-credential-resolver";
 import { parseProviderId, type CredentialKind } from "../provider-contracts";
 import type { ResolvedCredential } from "../provider-contracts";
-import { record } from "../authentication/oauth-flow-store";
 import { refreshLeadMs } from "./oauth-refresh-lead";
+import { asJsonbRecord } from "../../shared/coerce";
+
+/**
+ * The `auth_state` JSONB column arrives as a POJO from Postgres (drizzle
+ * jsonb) but as a JSON STRING from SQLite (the native column stores text).
+ * The resolver's `record()` helper rejects strings, so a SQLite read dropped
+ * the auth state entirely — Qoder dispatch then saw no userId/machineId and
+ * failed with 401 "missing its user identity". Parse the string form once
+ * here so every backend hands the resolver the same POJO shape.
+ */
+function jsonbRecord(value: unknown): Record<string, unknown> | undefined {
+  return asJsonbRecord(value);
+}
 
 // ── Credential cache ─────────────────────────────────────────────────────────
 /**
@@ -253,7 +265,7 @@ export async function resolveCredentialForAccount(
     }
   }
 
-  const authState = record(row.authState);
+  const authState = jsonbRecord(row.authState);
   const alternative: CredentialAlternative = {
     provider_id: parseProviderId(row.providerId),
     account_id: row.id,

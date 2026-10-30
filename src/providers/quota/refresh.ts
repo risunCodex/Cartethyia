@@ -16,7 +16,7 @@ import { type FetchLike, type ProviderQuotaResult } from "./quota-contracts";
 import type { ProviderId } from "../provider-contracts";
 import type { ProviderRegistry } from "../provider-registry";
 import { GLOBAL_QUOTA_LENS, setCachedQuota } from "./cache";
-import { record } from "../authentication/oauth-flow-store";
+import { asJsonbRecord } from "../../shared/coerce";
 
 /** Why an account quota refresh failed; `null` means the fetch succeeded. */
 export type QuotaRefreshFailureCode = "missing_credential" | "quota_fetch_failed";
@@ -355,7 +355,7 @@ async function runQuotaRefresh(
         ? (deps.markApiKeyCredential?.(target.providerId, credential) ?? credential)
         : credential;
     try {
-      const authState = record(target.authState);
+      const authState = asJsonbRecord(target.authState);
       quota = await fetchProviderQuota(deps.providerRegistry, target.providerId, marked, fetcher, {
         // Carried so a collector can reuse a reading captured from real
         // traffic rather than spending a request to rediscover it.

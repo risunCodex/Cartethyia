@@ -28,7 +28,7 @@ import { providerAccounts, providerOauthStates } from "../../persistence/schema"
 import { decryptCredentialToString, encryptCredential } from "../../security/crypto";
 import { invalidateCredentialCache } from "../operations/provider-credential-service";
 import { resolveAccountDisabledRecoveryMs } from "../../config/cooldowns";
-import { record } from "./oauth-flow-store";
+import { asJsonbRecord } from "../../shared/coerce";
 import {
   loadAccountWithFreshness,
   type AccountWithFreshnessRow,
@@ -224,7 +224,7 @@ async function persistRefreshed(
  * never reach into the database.
  */
 function buildRefreshContext(row: AccountRow, includeAccessToken: boolean): OAuthRefreshContext {
-  const authState = record(row.authState);
+  const authState = asJsonbRecord(row.authState);
   return {
     account_id: row.id,
     ...(authState === undefined ? {} : { auth_state: authState }),

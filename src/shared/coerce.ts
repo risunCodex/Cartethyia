@@ -13,6 +13,25 @@ export function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+/**
+ * Narrow a stored `auth_state`/JSONB value to a plain object. Postgres'
+ * drizzle `jsonb` arrives as a POJO; SQLite's text-backed column arrives as
+ * a JSON STRING. Parse the string form so both backends hand downstream
+ * readers the same shape — otherwise auth-state-dependent providers (Qoder's
+ * userId/machineId, Trae's region, …) silently lose their identity on the
+ * SQLite backend.
+ */
+export function asJsonbRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value === "string") {
+    try {
+      return asRecord(JSON.parse(value));
+    } catch {
+      return undefined;
+    }
+  }
+  return asRecord(value);
+}
+
 /** Narrow to a finite number, else `undefined`. `NaN`/`Infinity` are not numbers here. */
 export function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
