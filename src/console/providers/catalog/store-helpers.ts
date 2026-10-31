@@ -5,6 +5,7 @@
  */
 import { decodeJwtPayload } from "../../../providers/authentication/oauth-flow-store";
 import {
+  asJsonbRecord,
   asRecord,
   firstNonEmptyString as firstString,
   tryParseJson as safeParseJson,
@@ -176,12 +177,31 @@ export function parsePastedOAuthCredential(raw: string): {
  * to, and exports from older installs carry that profile under a different key.
  * Reading neither is how an imported account probes with no
  * profile and is answered `400 profileArn is required`.
+ *
+ * A wrapper's own `authState` bag travels wholesale rather than cherry-picked:
+ * adapters read provider-specific keys this picker cannot enumerate (Qoder's
+ * `machineId`, buddy's `qimei36` device binding, cursor's `method`, coreweave's
+ * project, kiro's `startUrl`), and dropping the bag silently degraded every
+ * imported account to a half-identity credential — failing closed at dispatch
+ * (Qoder answered 401 "missing its user identity"). The flat aliases below only
+ * fill what an older export shape carries beside the bag, and can never invent
+ * a key the bag did not have.
  */
 function pastedAuthState(
   record: Record<string, unknown>,
   nested: Record<string, unknown> | undefined,
 ): Readonly<Record<string, unknown>> {
-  const sources = [record, nested, asRecord(record["providerSpecificData"]), asRecord(record["authState"]), asRecord(nested?.["authState"])];
+  const carried = {
+    ...(asJsonbRecord(record["providerSpecificData"]) ?? {}),
+    ...(asJsonbRecord(record["authState"]) ?? {}),
+    ...(asJsonbRecord(nested?.["authState"]) ?? {}),
+  };
+  // These three are recomputed for the pasted tokens at insert time; a carried
+  // copy would describe the previous token, not this one.
+  delete carried.credentialMode;
+  delete carried.tokenExpiresAt;
+  delete carried.jwtIssuer;
+  const sources = [record, nested, asJsonbRecord(record["providerSpecificData"])];
   const profileArn = firstStringFrom(sources, ["profileArn", "profile_arn"]);
   const authMethod = firstStringFrom(sources, ["authMethod", "auth_method"]);
   const region = firstStringFrom(sources, ["region"]);
@@ -189,11 +209,14 @@ function pastedAuthState(
   // refresh is addressed per upstream user id, so restoring it is what keeps a
   // re-imported account refreshable.
   const userId = firstStringFrom(sources, ["userId", "user_id", "uid", "UserID"]);
+  const machineId = firstStringFrom(sources, ["machineId", "machine_id"]);
   return {
+    ...carried,
     ...(profileArn === undefined ? {} : { profileArn }),
     ...(authMethod === undefined ? {} : { authMethod }),
     ...(region === undefined ? {} : { region }),
     ...(userId === undefined ? {} : { userId }),
+    ...(machineId === undefined ? {} : { machineId }),
   };
 }
 
