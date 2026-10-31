@@ -1,6 +1,6 @@
 import type { ConsoleAccessResolver } from "../auth/access";
 import type { AuditSink } from "../audit/contracts";
-import { Elysia, t } from "elysia";
+import { Elysia, t, type AnyElysia } from "elysia";
 import { errorResponse, requireTenantScope } from "../shared/errors";
 import type { CliToolService } from "./service";
 import type { ApplyInput, CliMappingInput, CliModelMapping } from "./contracts";
@@ -143,7 +143,7 @@ const mappingBody = t.Object({
   ),
 });
 
-export function createCliToolsRoutes(config: CliToolsRoutesConfig): Elysia {
+export function createCliToolsRoutes(config: CliToolsRoutesConfig): AnyElysia {
   const { service, accessResolver, auditSink, snapshotInvalidator } = config;
 
   return new Elysia({ prefix: "/cli-tools" })
@@ -335,5 +335,5 @@ export function createCliToolsRoutes(config: CliToolsRoutesConfig): Elysia {
       } catch (e) {
         return errorResponse(e, set, "CLI tool operation failed");
       }
-    }) as unknown as Elysia;
+    });
 }

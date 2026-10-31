@@ -1,5 +1,5 @@
 import { asCookie, clearCsrfCookie, newCsrfToken, setCsrfCookie } from "../../security/csrf";
-import { Elysia, t } from "elysia";
+import { Elysia, t, type AnyElysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { isRecord } from "../../protocol/codecs";
 import { userRecord, returningRows, assertMutationApplied } from "./row-coercion";
@@ -217,7 +217,7 @@ export function createConsoleAuthRoutes(
   cookiePolicy: SessionCookiePolicy = defaultSessionCookiePolicy,
   trustedProxyBoundary: TrustedProxyBoundary = { mode: "disabled" },
   resolvePeerAddress: (request: Request) => string | undefined = () => undefined,
-): Elysia {
+): AnyElysia {
   const app = new Elysia({ prefix: "/auth" });
   const policy = cookiePolicy;
   const database = db;
@@ -532,5 +532,5 @@ export function createConsoleAuthRoutes(
     },
   );
 
-  return app as unknown as Elysia;
+  return app;
 }

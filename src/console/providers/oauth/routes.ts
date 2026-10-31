@@ -9,7 +9,7 @@ import type { ProviderRegistry } from "../../../providers/provider-registry";
 import { browserAuthorizeRedirectUri } from "../../../config/providers";
 import { log } from "../../../observability/logger";
 import { GatewayError } from "../../../protocol/gateway-error";
-import { Elysia, t } from "elysia";
+import { Elysia, t, type AnyElysia } from "elysia";
 import { ConsoleDomainError, errorResponse, requireScope } from "../../shared/errors";
 import { generateOAuthState, generatePkcePair } from "../../../providers/authentication/oauth-flow-store";
 import type { OAuthFlowStorage } from "../../../providers/authentication/oauth-flow-store";
@@ -639,7 +639,7 @@ const importBody = t.Object({
   accountLabel: t.Optional(t.String()),
 });
 
-export function createOAuthLoginRoutes(config: OAuthLoginConfig): Elysia {
+export function createOAuthLoginRoutes(config: OAuthLoginConfig): AnyElysia {
   const factory = createOAuthLoginOperations(config);
   return new Elysia({ prefix: "/providers" })
     .post(
@@ -721,6 +721,6 @@ export function createOAuthLoginRoutes(config: OAuthLoginConfig): Elysia {
           return oauthErrorResponse(e, set);
         }
       },
-    ) as unknown as Elysia;
+    )
 }
 

@@ -1,5 +1,5 @@
 // Network-pool control-plane HTTP routes. The only module that touches Elysia.
-import { Elysia, t } from "elysia";
+import { Elysia, t, type AnyElysia } from "elysia";
 import { consoleErrorHandler } from "../../shared/errors";
 import { literalUnion } from "../../shared/elysia-schema";
 import { RELAY_TARGETS, type RelayDeployRequest } from "./relay-deploy";
@@ -56,7 +56,7 @@ const importPoolsBody = t.Object({
   family: t.Optional(t.Union([t.String(), t.Null()])),
   labelPrefix: t.Optional(t.String()),
 });
-export function createNetworkPoolRoutes(config: NetworkPoolConfig): Elysia {
+export function createNetworkPoolRoutes(config: NetworkPoolConfig): AnyElysia {
   const factory = createNetworkPoolOperations(config);
   return new Elysia({ prefix: "/network/pools" })
     .error(consoleErrorHandler("Network pool operation failed"))
@@ -207,5 +207,5 @@ export function createNetworkPoolRoutes(config: NetworkPoolConfig): Elysia {
           body as Partial<PoolStrategySetting>,
         );
 },
-    ) as unknown as Elysia;
+    );
 }

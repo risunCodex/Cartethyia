@@ -1,4 +1,4 @@
-import { Elysia, t } from "elysia";
+import { Elysia, t, type AnyElysia } from "elysia";
 import { ConsoleDomainError, consoleErrorHandler } from "../shared/errors";
 import { USAGE_DIMENSIONS, type UsageDimension } from "./usage-dimensions";
 import { createObservabilityOperations, type ObservabilityConfig } from "./contracts";
@@ -18,7 +18,7 @@ const telemetryDetailQuery = t.Object({
   includePayload: t.Optional(t.String()),
   createdAt: t.Optional(t.String()),
 });
-export function createObservabilityRoutes(config: ObservabilityConfig): Elysia {
+export function createObservabilityRoutes(config: ObservabilityConfig): AnyElysia {
   const factory = createObservabilityOperations(config);
   return new Elysia()
     .error(consoleErrorHandler("Observability operation failed"))
@@ -114,5 +114,5 @@ export function createObservabilityRoutes(config: ObservabilityConfig): Elysia {
           query.createdAt,
         );
 },
-    ) as unknown as Elysia;
+    );
 }

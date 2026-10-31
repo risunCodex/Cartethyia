@@ -14,7 +14,7 @@
  * The body bound is enforced here, before the JSON parse, because the whole
  * point of the limit is to not buffer an unbounded file.
  */
-import { Elysia, t } from "elysia";
+import { Elysia, t, type AnyElysia } from "elysia";
 import type { ConsoleAccessResolver } from "../auth/access";
 import { invalidateApiKeyCache } from "../../security/api-key-auth";
 import { invalidatePublicModels } from "../providers/catalog/public-model-store";
@@ -139,7 +139,7 @@ function payloadDocument(chunks: AsyncGenerator<string, void, void>): ReadableSt
   });
 }
 
-export function createBackupRoutes(config: BackupRoutesConfig): Elysia {
+export function createBackupRoutes(config: BackupRoutesConfig): AnyElysia {
   return new Elysia({ prefix: "/backup" })
     .get("/export", { query: exportQuery }, async ({ request, query, set }) => {
       try {
@@ -304,5 +304,5 @@ export function createBackupRoutes(config: BackupRoutesConfig): Elysia {
       } catch (error) {
         return errorResponse(error, set, "Backup inspection failed");
       }
-    }) as unknown as Elysia;
+    });
 }

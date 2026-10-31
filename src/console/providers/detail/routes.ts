@@ -1,4 +1,4 @@
-import { Elysia, t } from "elysia";
+import { Elysia, t, type AnyElysia } from "elysia";
 import { ConsoleDomainError, errorResponse, requireTenantScope } from "../../shared/errors";
 import { literalUnion } from "../../shared/elysia-schema";
 import type { AccessDecision } from "../../../security/access-control";
@@ -160,7 +160,7 @@ const updateRoutingBody = t.Object({
 });
 
 
-export function createProviderDetailRoutes(config: ProviderDetailConfig): Elysia {
+export function createProviderDetailRoutes(config: ProviderDetailConfig): AnyElysia {
   const factory = createProviderDetailOperations(config);
   return new Elysia({ prefix: "/providers" })
     .get("/:providerId/routing", async ({ request, params, set }) => {
@@ -191,5 +191,5 @@ export function createProviderDetailRoutes(config: ProviderDetailConfig): Elysia
           return providerDetailErrorResponse(e, set);
         }
       },
-    ) as unknown as Elysia;
+    )
 }

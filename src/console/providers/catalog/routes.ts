@@ -1,6 +1,6 @@
 import { consoleErrorHandler } from "../../shared/errors";
 import { literalUnion } from "../../shared/elysia-schema";
-import { Elysia, t } from "elysia";
+import { Elysia, t, type AnyElysia } from "elysia";
 import { SERVICE_KINDS, WIRE_FAMILIES } from "../../../protocol/canonical-model";
 import { PROBE_REASONING_EFFORTS } from "../../../providers/discovery/discovery-types";
 import {
@@ -150,7 +150,7 @@ const bulkDeleteModelsBody = t.Object({
 const usageMatrixQuery = t.Object({
   days: t.Optional(t.Integer({ minimum: 1, maximum: 366 })),
 });
-export function createProviderCatalogRoutes(config: ProviderCatalogConfig): Elysia {
+export function createProviderCatalogRoutes(config: ProviderCatalogConfig): AnyElysia {
   const factory = createProviderCatalogOperations(config);
   const modelFactory = createModelCatalogOperations(config);
   return new Elysia({ prefix: "/providers" })
@@ -394,5 +394,5 @@ export function createProviderCatalogRoutes(config: ProviderCatalogConfig): Elys
           body.accountIds,
         );
 },
-    ) as unknown as Elysia;
+    );
 }

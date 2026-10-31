@@ -5,12 +5,12 @@
 // this instance's own module graph and egress), so the route is guarded by
 // `platform:admin` like the other instance-level operations.
 
-import { Elysia } from "elysia";
+import { Elysia, type AnyElysia } from "elysia";
 import { errorResponse, requireGlobalAdmin } from "../shared/errors";
 import { performanceMetricsSnapshot } from "../../observability/performance-metrics";
 import type { PerformanceConfig } from "./performance-contracts";
 
-export function createPerformanceRoutes(config: PerformanceConfig): Elysia {
+export function createPerformanceRoutes(config: PerformanceConfig): AnyElysia {
   return new Elysia()
     .get("/system/performance", ({ request, set }) => {
       try {
@@ -19,5 +19,5 @@ export function createPerformanceRoutes(config: PerformanceConfig): Elysia {
       } catch (e) {
         return errorResponse(e, set, "Performance operation failed");
       }
-    }) as unknown as Elysia;
+    });
 }

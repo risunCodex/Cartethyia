@@ -7,7 +7,7 @@
 // Every endpoint requires `dashboard:read`. The global request count is
 // process-level; pool usage and health are filtered to the caller's tenant.
 
-import { Elysia } from "elysia";
+import { Elysia, type AnyElysia } from "elysia";
 import { errorResponse, requireScope } from "../shared/errors";
 import type { ConsoleAccessResolver } from "../auth/access";
 /**
@@ -86,7 +86,7 @@ function withPoolBytes<T extends { poolId: string; currentInflight?: number }>(
   });
 }
 
-export function createLiveRoutes(config: LiveConfig): Elysia {
+export function createLiveRoutes(config: LiveConfig): AnyElysia {
   return new Elysia()
     .get("/live/requests/stream", ({ request, set }) => {
       try {
@@ -176,5 +176,5 @@ export function createLiveRoutes(config: LiveConfig): Elysia {
           };
         }),
       );
-    }) as unknown as Elysia;
+    });
 }

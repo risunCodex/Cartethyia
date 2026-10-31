@@ -1,4 +1,4 @@
-import { Elysia } from "elysia";
+import { Elysia, type AnyElysia } from "elysia";
 import { t } from "elysia";
 import { errorResponse, requireAnyScope } from "../shared/errors";
 import type { AccessDecision } from "../../security/access-control";
@@ -39,7 +39,7 @@ export function createDataManagementRoutes(
     } | undefined;
     readonly flusher?: { flush(): Promise<void> } | undefined;
   },
-): Elysia {
+): AnyElysia {
   const operations = createDataManagementOperations(config);
 
   return new Elysia({ prefix: "/data-management" })
@@ -101,5 +101,5 @@ export function createDataManagementRoutes(
       } catch (error) {
         return errorResponse(error, set, "Purge failed");
       }
-    }) as unknown as Elysia;
+    });
 }

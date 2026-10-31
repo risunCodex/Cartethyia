@@ -1,4 +1,4 @@
-import { Elysia } from "elysia";
+import { Elysia, type AnyElysia } from "elysia";
 import { spawn } from "node:child_process";
 import { consoleErrorHandler, requireTenantScope } from "../shared/errors";
 import { consoleSseResponse, createConsoleSseStream } from "../observability/sse";
@@ -94,7 +94,7 @@ export function createUpdateRoutes(config: {
   readonly accessResolver: ConsoleAccessResolver;
   readonly observabilityStore: ObservabilityStore;
   readonly fetchRelease?: () => Promise<LatestRelease | null>;
-}): Elysia {
+}): AnyElysia {
   const fetchRelease = config.fetchRelease ?? fetchLatestRelease;
   return new Elysia()
     .error(consoleErrorHandler("Update check failed"))
@@ -199,5 +199,5 @@ export function createUpdateRoutes(config: {
           };
         }),
       );
-    }) as unknown as Elysia;
+    });
 }

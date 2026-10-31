@@ -8,7 +8,7 @@
 // metadata and their args are redacted at the source, the same audience
 // that already reads request/response bodies on Usage.
 
-import { Elysia, t } from "elysia";
+import { Elysia, t, type AnyElysia } from "elysia";
 import { ConsoleDomainError, errorResponse, requireScope } from "../shared/errors";
 import { parseQueryLimit } from "../shared/query";
 import type { ConsoleAccessResolver } from "../auth/access";
@@ -37,7 +37,7 @@ const logsQuery = t.Object({
   limit: t.Optional(t.String()),
 });
 
-export function createLogRoutes(config: LogsConfig): Elysia {
+export function createLogRoutes(config: LogsConfig): AnyElysia {
   const readLogs = (access: AccessDecision | undefined, level?: string, limitRaw?: string) => {
     requireScope(access, "dashboard:read");
     if (level !== undefined && !isLogLevel(level)) {
@@ -83,5 +83,5 @@ export function createLogRoutes(config: LogsConfig): Elysia {
           });
         }),
       );
-    }) as unknown as Elysia;
+    });
 }

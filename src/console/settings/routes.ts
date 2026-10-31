@@ -1,4 +1,4 @@
-import { Elysia } from "elysia";
+import { Elysia, type AnyElysia } from "elysia";
 import {
   createRuntimeSettingsOperations,
   runtimeUpdateBody,
@@ -7,7 +7,7 @@ import {
   type UpdateRuntimeSettingsRequest,
 } from "./contracts";
 
-export function createRuntimeSettingsRoutes(config: RuntimeSettingsConfig): Elysia {
+export function createRuntimeSettingsRoutes(config: RuntimeSettingsConfig): AnyElysia {
   const factory = createRuntimeSettingsOperations(config);
   return new Elysia({ prefix: "/settings/runtime" })
     .get("/", async ({ request, set }) => {
@@ -26,5 +26,5 @@ export function createRuntimeSettingsRoutes(config: RuntimeSettingsConfig): Elys
       } catch (e) {
         return runtimeSettingsErrorResponse(e, set);
       }
-    }) as unknown as Elysia;
+    });
 }

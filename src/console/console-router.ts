@@ -4,7 +4,7 @@
  * composition time; concrete Drizzle stores are the defaults, so this file
  * is the single place that knows them.
  */
-import { Elysia } from "elysia";
+import { Elysia, type AnyElysia } from "elysia";
 import { log } from "../observability/logger";
 import { resolveConsoleAccess, resolveConsoleUser } from "./auth/session-resolver";
 import { ConsoleCredentialService } from "./auth/credentials";
@@ -100,7 +100,7 @@ function readApiKeyBearer(request: Request): string | undefined {
   return match?.[1];
 }
 
-export function createConsoleRouter(deps: ConsoleApiCompositionDeps): Elysia {
+export function createConsoleRouter(deps: ConsoleApiCompositionDeps): AnyElysia {
   const { db, routeSnapshotService, poolSelector, telemetryBuffer, redis } = deps;
   /**
    * Per-request cache: `beforeHandle` resolves the session asynchronously, and
@@ -207,7 +207,7 @@ export function createConsoleRouter(deps: ConsoleApiCompositionDeps): Elysia {
       return user === null ? null : { passwordHash: user.passwordHash };
     },
   };
-  registerConsoleDomains(console as unknown as Elysia, ctx);
+  registerConsoleDomains(console, ctx);
   // Compress the JSON control plane on the way out.
   //
   // `wrap` is used rather than a lifecycle hook because this Elysia beta does
@@ -229,5 +229,5 @@ export function createConsoleRouter(deps: ConsoleApiCompositionDeps): Elysia {
         gzipResponse(request, response),
       ),
   );
-  return console as unknown as Elysia;
+  return console;
 }

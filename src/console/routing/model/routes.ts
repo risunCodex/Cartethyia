@@ -1,5 +1,5 @@
 // Model routing control-plane HTTP routes. The only module that touches Elysia.
-import { Elysia, t } from "elysia";
+import { Elysia, t, type AnyElysia } from "elysia";
 import { errorResponse } from "../../shared/errors";
 import { literalUnion } from "../../shared/elysia-schema";
 import { modelComboStrategy, type ComboStrategy } from "../../../persistence/schema";
@@ -41,7 +41,7 @@ const updateComboBody = t.Object({
   members: t.Optional(t.Array(t.String(), { minItems: 1 })),
   strategy: t.Optional(comboStrategySchema),
 });
-export function createModelRoutingRoutes(config: ModelRoutingConfig): Elysia {
+export function createModelRoutingRoutes(config: ModelRoutingConfig): AnyElysia {
   const factory = createModelRoutingOperations(config);
   return new Elysia({ prefix: "/routing" })
     .get("/aliases", async ({ request, set }) => {
@@ -132,5 +132,5 @@ export function createModelRoutingRoutes(config: ModelRoutingConfig): Elysia {
       } catch (e) {
         return modelRoutingErrorResponse(e, set);
       }
-    }) as unknown as Elysia;
+    });
 }

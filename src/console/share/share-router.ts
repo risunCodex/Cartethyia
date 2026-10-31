@@ -4,7 +4,7 @@ import { globalOrOwnedBy } from "../../persistence/tenant-scope";
 // Share URLs reveal policy and allow one child key to be created per canonical
 // client IP. The child bearer is returned only by the successful issue call.
 
-import { Elysia } from "elysia";
+import { Elysia, type AnyElysia } from "elysia";
 import { and, eq, sql } from "drizzle-orm";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 import { apiKeys, models, providers } from "../../persistence/schema";
@@ -261,7 +261,7 @@ async function resolveFamilyStats(
 }
 
 /** Creates the public enrollment page and one-time shared-key issuance route. */
-export function createShareRouter(options: ShareRouterOptions): Elysia {
+export function createShareRouter(options: ShareRouterOptions): AnyElysia {
   const { db, shareStore } = options;
 
   return new Elysia()
@@ -486,5 +486,5 @@ export function createShareRouter(options: ShareRouterOptions): Elysia {
           };
         }),
       );
-    }) as unknown as Elysia;
+    })
 }

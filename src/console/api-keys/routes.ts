@@ -2,7 +2,7 @@
 //
 // Owns validation, CRUD operations, and route wiring through the ApiKeyStore.
 
-import { Elysia, t } from "elysia";
+import { Elysia, t, type AnyElysia } from "elysia";
 import { randomBytes, randomUUID } from "node:crypto";
 import { decryptCredentialToString, encryptCredential } from "../../security/crypto";
 import { invalidateApiKeyCache } from "../../security/api-key-auth";
@@ -830,7 +830,7 @@ function jsonNull(): Response {
   });
 }
 /** Creates tenant-bound API-key routes with request-local authorization. */
-export function createApiKeyRoutes(config: ApiKeyConfig): Elysia {
+export function createApiKeyRoutes(config: ApiKeyConfig): AnyElysia {
   const factory = createApiKeyOperations(config);
   return new Elysia({ prefix: "/api-keys" })
     .get("/", async ({ request, set }) => {
@@ -988,5 +988,5 @@ export function createApiKeyRoutes(config: ApiKeyConfig): Elysia {
       } catch (error) {
         return errorResponse(error, set, "API-key operation failed");
       }
-    }) as unknown as Elysia;
+    });
 }
