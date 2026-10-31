@@ -1,4 +1,4 @@
-import { Elysia } from "elysia";
+import { Elysia, type AnyElysia } from "elysia";
 import { createIngressPolicyMiddleware } from "./body-policy";
 import {
   createCanonicalRequestMiddleware,
@@ -81,9 +81,9 @@ export interface TransportPipelineContext {
  */
 export interface TransportPipeline {
   /** Applies root-scoped request context and error normalization. */
-  mountRoot(app: Elysia<any, any, any, any, any, any, any, any>): void;
+  mountRoot(app: AnyElysia): void;
   /** Builds the complete `/v1/*` gateway plugin around registered routes. */
-  createGateway(registerRoutes: (routes: Elysia<any, any, any, any, any, any, any, any>) => void): Elysia;
+  createGateway(registerRoutes: (routes: AnyElysia) => void): Elysia;
 }
 
 /**
@@ -129,7 +129,7 @@ export function createTransportPipeline(context: TransportPipelineContext): Tran
       preparer: context.preparer,
     }),
   ];
-  const mountRoot = (app: Elysia<any, any, any, any, any, any, any, any>): void => {
+  const mountRoot = (app: AnyElysia): void => {
     app.use(
       createRequestContextMiddleware({
         stateStore: context.stateStore,
@@ -205,8 +205,8 @@ export function createTransportPipeline(context: TransportPipelineContext): Tran
     }
   };
   const createGateway = (
-    registerRoutes: (routes: Elysia<any, any, any, any, any, any, any, any>) => void,
-  ): Elysia<any, any, any, any, any, any, any, any> => {
+    registerRoutes: (routes: AnyElysia) => void,
+  ): AnyElysia => {
     const gateway = new Elysia({ prefix: "/v1" });
     for (const plugin of stages) gateway.use(plugin);
     // No telemetry/cleanup registration here: the lifecycle is owned by

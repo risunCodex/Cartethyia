@@ -1,4 +1,4 @@
-import { Elysia } from "elysia";
+import { type AnyElysia } from "elysia";
 import { ConsoleDomainError } from "./shared/errors";
 import { createCliToolsRoutes } from "./cli-tools/routes";
 import { createAccountQuotaRoutes } from "./quota/account-quota";
@@ -133,7 +133,7 @@ import type { ProbeOutboundBinding } from "../providers/discovery/probing-servic
 
 
 export function registerConsoleDomains(
-  console: Elysia<any, any, any, any, any, any, any, any>,
+  console: AnyElysia,
   ctx: ConsoleDomainContext,
 ): void {
   const observabilityStore = new DrizzleObservabilityStore(ctx.db, ctx.redis);
