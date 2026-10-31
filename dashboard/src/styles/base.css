@@ -280,14 +280,14 @@ html[data-blur-cards-on="false"] .composer-glass {
  * costs nothing extra. It overrides the per-surface toggles on purpose; a
  * device weak enough for this switch does not want any surface left glass.
  */
-html[data-low-device="true"] .card-glass,
-html[data-low-device="true"] .card-solid,
-html[data-low-device="true"] .glass,
-html[data-low-device="true"] .app-sidebar,
-html[data-low-device="true"] .app-topbar,
-html[data-low-device="true"] .app-topbar-popover,
-html[data-low-device="true"] .user-card-content,
-html[data-low-device="true"] .composer-glass {
+html[data-low-device-rendering="true"] .card-glass,
+html[data-low-device-rendering="true"] .card-solid,
+html[data-low-device-rendering="true"] .glass,
+html[data-low-device-rendering="true"] .app-sidebar,
+html[data-low-device-rendering="true"] .app-topbar,
+html[data-low-device-rendering="true"] .app-topbar-popover,
+html[data-low-device-rendering="true"] .user-card-content,
+html[data-low-device-rendering="true"] .composer-glass {
   background: var(--surface-1) !important;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
