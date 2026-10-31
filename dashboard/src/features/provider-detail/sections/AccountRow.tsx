@@ -26,8 +26,6 @@ import { toast } from "../../../lib/toast";
 import type { ProviderAccountResponse } from "../../../data/contracts";
 import { AccountStatusBadge } from "./AccountStatusBadge";
 
-const QODER_PROVIDER_IDS = new Set(["qoder", "qodercn"]);
-
 function credentialExpiryLabel(expiresAt: string | undefined): string | undefined {
   if (expiresAt === undefined) return undefined;
   const timestamp = new Date(expiresAt).getTime();
