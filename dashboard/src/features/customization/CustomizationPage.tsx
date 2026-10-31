@@ -123,6 +123,7 @@ export default function CustomizationPage(): ReactNode {
       blurChromeEnabled: CUSTOMIZATION_DEFAULTS.blurChromeEnabled,
       blurCardsDepth: CUSTOMIZATION_DEFAULTS.blurCardsDepth,
       blurChromeDepth: CUSTOMIZATION_DEFAULTS.blurChromeDepth,
+      lowDeviceRendering: CUSTOMIZATION_DEFAULTS.lowDeviceRendering,
     });
     toast.success("Blur reset to defaults.");
   };
@@ -184,6 +185,24 @@ export default function CustomizationPage(): ReactNode {
           }
         />
         <CardBody>
+          <div className="mb-10 flex items-center justify-between gap-6 rounded-card border border-inner-border bg-surface-2 px-7 py-6 max-small:flex-col max-small:items-stretch">
+            <span className="flex min-w-0 flex-col">
+              <span className="text-caption font-semibold text-text-primary">Low device rendering</span>
+              <span className="text-badge text-text-tertiary">
+                Solid surfaces, no backdrop blur. Every glass effect on this page is overridden while it is on — the background image stays. For phones and old laptops where glass lags.
+              </span>
+            </span>
+            <Switch
+              checked={settings.lowDeviceRendering}
+              onChange={(checked) => {
+                setSettings({ lowDeviceRendering: checked });
+                if (checked) toast.success("Low device rendering on", { description: "Glass is solid while it is on." });
+                else toast.success("Low device rendering off", { description: "Each surface follows its own blur style again." });
+              }}
+              aria-label="Low device rendering"
+              className="max-small:self-end"
+            />
+          </div>
           <div className="grid gap-10 lg:grid-cols-2">
             {BLUR_TARGET_ORDER.map((target) => {
               const chrome = target === "chrome";
@@ -192,6 +211,7 @@ export default function CustomizationPage(): ReactNode {
                   key={target}
                   target={target}
                   enabled={chrome ? settings.blurChromeEnabled : settings.blurCardsEnabled}
+                  overridden={settings.lowDeviceRendering}
                   onToggle={() =>
                     setSettings(chrome ? { blurChromeEnabled: !settings.blurChromeEnabled } : { blurCardsEnabled: !settings.blurCardsEnabled })
                   }
@@ -396,6 +416,7 @@ function Slider({
 function BlurSlider({
   target,
   enabled,
+  overridden,
   onToggle,
   clarity,
   onClarity,
@@ -404,6 +425,8 @@ function BlurSlider({
 }: {
   readonly target: BlurTarget;
   readonly enabled: boolean;
+  /** Low device rendering holds this surface solid: the toggle and sliders are inert. */
+  readonly overridden: boolean;
   readonly onToggle: () => void;
   readonly clarity: number;
   readonly onClarity: (amount: number) => void;
@@ -411,6 +434,10 @@ function BlurSlider({
   readonly onDepth: (amount: number) => void;
 }): ReactNode {
   const item = BLUR_TARGET_COPY[target] ?? BLUR_TARGET_COPY.cards;
+  // Overridden surfaces still show their saved values, dimmed: the operator
+  // sees what returns when the switch turns off, and nothing here is
+  // interactive because none of it would have an effect.
+  const effective = enabled && !overridden;
   return (
     <div className="flex flex-col gap-8 rounded-card border border-inner-border bg-surface-2 p-8">
       <div className="flex items-center gap-5">
@@ -419,20 +446,29 @@ function BlurSlider({
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="text-body font-semibold text-text-primary">{item.label}</span>
-          <span className="text-micro text-text-tertiary">{item.description}</span>
+          <span className="text-micro text-text-tertiary">
+            {overridden ? "Held solid by low device rendering." : item.description}
+          </span>
         </span>
         <button
           type="button"
           role="switch"
-          aria-checked={enabled}
+          aria-checked={overridden ? false : enabled}
           aria-label={`Toggle ${item.label} blur`}
-          onClick={onToggle}
-          className={enabled ? "h-10 w-18 shrink-0 rounded-pill bg-accent p-1" : "h-10 w-18 shrink-0 rounded-pill bg-surface-active p-1"}
+          disabled={overridden}
+          onClick={overridden ? undefined : onToggle}
+          className={`${
+            overridden
+              ? "h-10 w-18 shrink-0 rounded-pill bg-surface-active p-1 cursor-default"
+              : enabled
+                ? "h-10 w-18 shrink-0 rounded-pill bg-accent p-1"
+                : "h-10 w-18 shrink-0 rounded-pill bg-surface-active p-1"
+          }`}
         >
-          <span className={enabled ? "block size-8 translate-x-8 rounded-full bg-accent-foreground" : "block size-8 rounded-full bg-text-secondary"} />
+          <span className={overridden || !enabled ? "block size-8 rounded-full bg-text-secondary" : "block size-8 translate-x-8 rounded-full bg-accent-foreground"} />
         </button>
       </div>
-      <div className={enabled ? "flex flex-col gap-6" : "flex flex-col gap-6 opacity-40"}>
+      <div className={effective ? "flex flex-col gap-6" : "flex flex-col gap-6 opacity-40"}>
         <label className="flex flex-col gap-3 text-caption text-text-secondary">
           <span className="flex items-center justify-between">
             Clarity

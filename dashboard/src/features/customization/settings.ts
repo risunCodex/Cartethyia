@@ -51,6 +51,12 @@ export interface CustomizationSettings {
   readonly blurCardsEnabled: boolean;
   /** The shell blur is on. Off, the shell is solid. */
   readonly blurChromeEnabled: boolean;
+  /**
+   * Low device rendering: every glass surface goes solid and drops its
+   * backdrop read. Overrides the per-surface blur toggles while it is on; the
+   * background layer itself is untouched.
+   */
+  readonly lowDeviceRendering: boolean;
   /** Draw a dashed frame around an empty panel. Off by default. */
   readonly emptyOutline: boolean;
 }
@@ -78,6 +84,7 @@ export const CUSTOMIZATION_DEFAULTS: CustomizationSettings = {
   blurChromeDepth: 10,
   blurCardsEnabled: true,
   blurChromeEnabled: true,
+  lowDeviceRendering: false,
   emptyOutline: false,
 };
 
@@ -120,6 +127,7 @@ export function normalizeCustomization(raw: unknown): CustomizationSettings {
     blurChromeDepth: clamp(source.blurChromeDepth, 0, 100, CUSTOMIZATION_DEFAULTS.blurChromeDepth),
     blurCardsEnabled: source.blurCardsEnabled !== false,
     blurChromeEnabled: source.blurChromeEnabled !== false,
+    lowDeviceRendering: source.lowDeviceRendering === true,
     emptyOutline: source.emptyOutline === true,
   };
 }
@@ -153,6 +161,7 @@ export function applyCustomization(settings: CustomizationSettings): void {
   root.style.setProperty("--blur-chrome-depth", `${settings.blurChromeDepth}`);
   root.dataset.blurCardsOn = settings.blurCardsEnabled ? "true" : "false";
   root.dataset.blurChromeOn = settings.blurChromeEnabled ? "true" : "false";
+  root.dataset.lowDeviceRendering = settings.lowDeviceRendering ? "true" : "false";
   root.dataset.emptyOutline = settings.emptyOutline ? "true" : "false";
   root.dataset.bgActive = settings.backgroundEnabled ? "true" : "false";
   root.style.setProperty("--bg-opacity", (settings.backgroundOpacity / 100).toFixed(2));

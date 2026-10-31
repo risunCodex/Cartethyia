@@ -249,8 +249,14 @@ html[data-glass-enabled="true"] .card-solid .nested-panel {
 html[data-blur-cards-on="false"] .card-solid,
 html[data-blur-cards-on="false"] .card-glass {
   background: var(--surface-1) !important;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+  /* `!important` matches the rules above: both live in this layer and carry
+     it, and same-importance declarations are resolved by specificity — but a
+     `!important` in `@layer utilities` (none today) or any later rule with it
+     would win otherwise. Without it the toggle's `none` lost against the
+     `blur(...) !important` two rules up, and switching blur off changed
+     nothing at all — the toggle shipped dead. */
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 html[data-blur-chrome-on="false"] .app-sidebar,
@@ -260,8 +266,31 @@ html[data-blur-cards-on="false"] .user-card-content,
 html[data-blur-cards-on="false"] .composer-glass {
 
   background: var(--surface-1) !important;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/*
+ * Low device rendering (Customization). Glass is the console's most expensive
+ * paint: every blurred surface reads a snapshot of what sits under it on every
+ * frame it changes, which is what a weak phone renders late. This switch means
+ * "I would rather have it fast": cards, the composer, and every shell surface
+ * (sidebar, topbar, popovers) go solid and drop the filter entirely, while the
+ * background layer stays — it is a plain picture, not a backdrop read, so it
+ * costs nothing extra. It overrides the per-surface toggles on purpose; a
+ * device weak enough for this switch does not want any surface left glass.
+ */
+html[data-low-device="true"] .card-glass,
+html[data-low-device="true"] .card-solid,
+html[data-low-device="true"] .glass,
+html[data-low-device="true"] .app-sidebar,
+html[data-low-device="true"] .app-topbar,
+html[data-low-device="true"] .app-topbar-popover,
+html[data-low-device="true"] .user-card-content,
+html[data-low-device="true"] .composer-glass {
+  background: var(--surface-1) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 
