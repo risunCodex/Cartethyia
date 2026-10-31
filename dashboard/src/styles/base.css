@@ -271,26 +271,48 @@ html[data-blur-cards-on="false"] .composer-glass {
 }
 
 /*
- * Low device rendering (Customization). Glass is the console's most expensive
- * paint: every blurred surface reads a snapshot of what sits under it on every
- * frame it changes, which is what a weak phone renders late. This switch means
- * "I would rather have it fast": cards, the composer, and every shell surface
- * (sidebar, topbar, popovers) go solid and drop the filter entirely, while the
- * background layer stays — it is a plain picture, not a backdrop read, so it
- * costs nothing extra. It overrides the per-surface toggles on purpose; a
- * device weak enough for this switch does not want any surface left glass.
+ * Render presets ("Off / Pretty / Extreme" on the Customization page).
+ *
+ * `pretty`: card surfaces read at clarity 90 / depth 0 — near-solid with no
+ * backdrop read at all, so a weak device is never asked to diffuse a snapshot;
+ * the shell keeps a shallow tint with a real blur (80/80) to stay legible over
+ * the background. `extreme`: the shipped frosted treatment, forced on. Both
+ * blocks sit after the kill-switch rules on purpose: a preset wins over a
+ * per-surface toggle while it is active. The backdrop numbers here read the
+ * same tokens `applyCustomization` rewrites, so only the filter needs restating.
  */
-html[data-low-device-rendering="true"] .card-glass,
-html[data-low-device-rendering="true"] .card-solid,
-html[data-low-device-rendering="true"] .glass,
-html[data-low-device-rendering="true"] .app-sidebar,
-html[data-low-device-rendering="true"] .app-topbar,
-html[data-low-device-rendering="true"] .app-topbar-popover,
-html[data-low-device-rendering="true"] .user-card-content,
-html[data-low-device-rendering="true"] .composer-glass {
-  background: var(--surface-1) !important;
+html[data-render-mode="pretty"] .card-glass,
+html[data-render-mode="pretty"] .card-solid,
+html[data-render-mode="pretty"] .user-card-content,
+html[data-render-mode="pretty"] .composer-glass {
+  background: color-mix(in srgb, var(--surface-1) calc(40% + var(--blur-cards, 30) * 0.55%), transparent) !important;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
+}
+
+html[data-render-mode="pretty"] .app-sidebar,
+html[data-render-mode="pretty"] .app-topbar,
+html[data-render-mode="pretty"] .app-topbar-popover {
+  background: color-mix(in srgb, var(--surface-1) calc(40% + var(--blur-chrome, 30) * 0.55%), transparent) !important;
+  -webkit-backdrop-filter: blur(calc((100 - var(--blur-chrome, 30)) * var(--blur-chrome-depth, 30) * 0.01px)) !important;
+  backdrop-filter: blur(calc((100 - var(--blur-chrome, 30)) * var(--blur-chrome-depth, 30) * 0.01px)) !important;
+}
+
+html[data-render-mode="extreme"] .card-glass,
+html[data-render-mode="extreme"] .card-solid,
+html[data-render-mode="extreme"] .user-card-content,
+html[data-render-mode="extreme"] .composer-glass {
+  background: color-mix(in srgb, var(--surface-1) calc(40% + var(--blur-cards, 30) * 0.55%), transparent) !important;
+  -webkit-backdrop-filter: blur(calc((100 - var(--blur-cards, 30)) * var(--blur-cards-depth, 30) * 0.01px)) !important;
+  backdrop-filter: blur(calc((100 - var(--blur-cards, 30)) * var(--blur-cards-depth, 30) * 0.01px)) !important;
+}
+
+html[data-render-mode="extreme"] .app-sidebar,
+html[data-render-mode="extreme"] .app-topbar,
+html[data-render-mode="extreme"] .app-topbar-popover {
+  background: color-mix(in srgb, var(--surface-1) calc(40% + var(--blur-chrome, 30) * 0.55%), transparent) !important;
+  -webkit-backdrop-filter: blur(calc((100 - var(--blur-chrome, 30)) * var(--blur-chrome-depth, 30) * 0.01px)) !important;
+  backdrop-filter: blur(calc((100 - var(--blur-chrome, 30)) * var(--blur-chrome-depth, 30) * 0.01px)) !important;
 }
 
 

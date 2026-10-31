@@ -21,6 +21,15 @@ export const BLUR_STYLES: readonly BlurStyle[] = ["none", "frosted", "vibrancy",
 /** Which shell surface a blur style applies to. */
 export type BlurTarget = "cards" | "chrome";
 
+/** Render preset the Customization page offers. */
+export type RenderMode = "off" | "pretty" | "extreme";
+
+export const RENDER_MODES: readonly RenderMode[] = ["off", "pretty", "extreme"];
+
+function isRenderMode(value: unknown): value is RenderMode {
+  return typeof value === "string" && (RENDER_MODES as readonly string[]).includes(value);
+}
+
 export interface CustomizationSettings {
   /** A background blob is stored. The layer renders only when this is true. */
   readonly backgroundSet: boolean;
@@ -52,11 +61,12 @@ export interface CustomizationSettings {
   /** The shell blur is on. Off, the shell is solid. */
   readonly blurChromeEnabled: boolean;
   /**
-   * Low device rendering: every glass surface goes solid and drops its
-   * backdrop read. Overrides the per-surface blur toggles while it is on; the
-   * background layer itself is untouched.
+   * Render preset. `off` obeys the per-surface blur settings above; `pretty`
+   * holds every surface sharp and see-through (no backdrop read at all); the
+   * shipped frosted glass, forced on. Either preset overrides the
+   * per-surface toggles while it is active; the background layer is untouched.
    */
-  readonly lowDeviceRendering: boolean;
+  readonly renderMode: RenderMode;
   /** Draw a dashed frame around an empty panel. Off by default. */
   readonly emptyOutline: boolean;
 }
@@ -84,12 +94,30 @@ export const CUSTOMIZATION_DEFAULTS: CustomizationSettings = {
   blurChromeDepth: 10,
   blurCardsEnabled: true,
   blurChromeEnabled: true,
-  lowDeviceRendering: false,
+  renderMode: "off",
   emptyOutline: false,
 };
 
 const STORAGE_KEY = "cartethyia.customization";
 const CHANGE_EVENT = "cartethyia-customization-change";
+
+/**
+ * The numbers a render preset forces, shared between `applyCustomization` (what
+ * the blur formula reads) and the Customization page (what the locked sliders
+ * display). One source, so the page preview can never drift from the paint.
+ */
+export const RENDER_PRESET_VALUES: Readonly<
+  Record<Exclude<RenderMode, "off">, { cards: { amount: number; depth: number }; chrome: { amount: number; depth: number } }>
+> = {
+  // Pretty: near-solid card bodies with no blur read at all; the shell keeps a
+  // shallow tint with a real blur to stay legible over the background.
+  pretty: { cards: { amount: 90, depth: 0 }, chrome: { amount: 80, depth: 80 } },
+  // Extreme: the frosted treatment the console shipped with, forced on.
+  extreme: {
+    cards: { amount: CUSTOMIZATION_DEFAULTS.blurCardsAmount, depth: CUSTOMIZATION_DEFAULTS.blurCardsDepth },
+    chrome: { amount: CUSTOMIZATION_DEFAULTS.blurChromeAmount, depth: CUSTOMIZATION_DEFAULTS.blurChromeDepth },
+  },
+};
 
 const BLUR_TARGETS: readonly BlurTarget[] = ["cards", "chrome"];
 
@@ -127,7 +155,7 @@ export function normalizeCustomization(raw: unknown): CustomizationSettings {
     blurChromeDepth: clamp(source.blurChromeDepth, 0, 100, CUSTOMIZATION_DEFAULTS.blurChromeDepth),
     blurCardsEnabled: source.blurCardsEnabled !== false,
     blurChromeEnabled: source.blurChromeEnabled !== false,
-    lowDeviceRendering: source.lowDeviceRendering === true,
+    renderMode: isRenderMode(source.renderMode) ? source.renderMode : "off",
     emptyOutline: source.emptyOutline === true,
   };
 }
@@ -155,13 +183,26 @@ export function applyCustomization(settings: CustomizationSettings): void {
   const root = document.documentElement;
   root.dataset.blurCards = settings.blurCards;
   root.dataset.blurChrome = settings.blurChrome;
-  root.style.setProperty("--blur-cards", `${settings.blurCardsAmount}`);
-  root.style.setProperty("--blur-chrome", `${settings.blurChromeAmount}`);
-  root.style.setProperty("--blur-cards-depth", `${settings.blurCardsDepth}`);
-  root.style.setProperty("--blur-chrome-depth", `${settings.blurChromeDepth}`);
-  root.dataset.blurCardsOn = settings.blurCardsEnabled ? "true" : "false";
-  root.dataset.blurChromeOn = settings.blurChromeEnabled ? "true" : "false";
-  root.dataset.lowDeviceRendering = settings.lowDeviceRendering ? "true" : "false";
+  // A preset rewrites the numbers the blur formula reads, so the per-surface
+  // sliders stay untouched in storage: switching back to `off` restores what
+  // was saved, byte for byte. Pretty sends clarity and depth to 0 — a
+  // translucent tint with nothing behind it to read, which is what makes the
+  // backdrop read vanish; Extreme restores the shipped frosted values.
+  const preset = (target: BlurTarget): { amount: number; depth: number } => {
+    const isChrome = target === "chrome";
+    const saved = isChrome
+      ? { amount: settings.blurChromeAmount, depth: settings.blurChromeDepth }
+      : { amount: settings.blurCardsAmount, depth: settings.blurCardsDepth };
+    return settings.renderMode === "off" ? saved : RENDER_PRESET_VALUES[settings.renderMode][isChrome ? "chrome" : "cards"];
+  };
+  const cards = preset("cards");
+  const chrome = preset("chrome");
+  root.style.setProperty("--blur-cards", `${cards.amount}`);
+  root.style.setProperty("--blur-chrome", `${chrome.amount}`);
+  root.style.setProperty("--blur-cards-depth", `${cards.depth}`);
+  root.style.setProperty("--blur-chrome-depth", `${chrome.depth}`);
+  root.dataset.blurCardsOn = settings.blurCardsEnabled || settings.renderMode === "extreme" ? "true" : settings.renderMode === "pretty" ? "false" : "true";
+  root.dataset.renderMode = settings.renderMode;
   root.dataset.emptyOutline = settings.emptyOutline ? "true" : "false";
   root.dataset.bgActive = settings.backgroundEnabled ? "true" : "false";
   root.style.setProperty("--bg-opacity", (settings.backgroundOpacity / 100).toFixed(2));
