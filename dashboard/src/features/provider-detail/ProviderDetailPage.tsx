@@ -474,7 +474,7 @@ export default function ProviderDetail(): ReactNode {
       <UsageActivityMatrixCard providerId={id} />
       {/* Accounts */}
       <div id="provider-accounts" tabIndex={-1}>
-        {provider.requiresAccount === false ? (
+        {provider.requiresAccount === false && accounts.length === 0 ? (
           <Card>
             <CardHeader title="Accounts" icon={<Cable size={16} />} />
             <CardBody>
@@ -536,14 +536,16 @@ export default function ProviderDetail(): ReactNode {
                       : "Add API key"}
                   </Button>
                 )}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<Plus size={13} />}
-                  onClick={() => setAddAccountOpen(true)}
-                >
-                  Add Account
-                </Button>
+                {!provider.requiresAccount === false ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={<Plus size={13} />}
+                    onClick={() => setAddAccountOpen(true)}
+                  >
+                    Add Account
+                  </Button>
+                ) : null}
                 </CardActions>
               }
             />

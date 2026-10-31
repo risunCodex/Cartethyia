@@ -10,6 +10,7 @@ import {
   networkPools,
   poolRoutingSettings,
   providerAccounts,
+  providerPoolAccounts,
   providerRoutingSettings,
   providers,
   tenantDisabledModels,
@@ -372,6 +373,17 @@ const POOL_COLUMNS = {
   weight: networkPools.weight,
 } as const;
 
+const POOL_ACCOUNT_COLUMNS = {
+  id: providerPoolAccounts.id,
+  tenantId: providerPoolAccounts.tenantId,
+  networkPoolId: providerPoolAccounts.networkPoolId,
+  providerId: providerPoolAccounts.providerId,
+  label: providerPoolAccounts.label,
+  status: providerPoolAccounts.status,
+  cooldownUntil: providerPoolAccounts.cooldownUntil,
+  lastErrorCategory: providerPoolAccounts.lastErrorCategory,
+} as const;
+
 const DISABLED_MODEL_COLUMNS = {
   tenantId: tenantDisabledModels.tenantId,
   providerId: tenantDisabledModels.providerId,
@@ -414,7 +426,7 @@ class RouteCatalogRepository {
   constructor(private readonly db: CartethyiaDatabase) {}
 
   async loadRouteCatalogSnapshot(tenantId?: string): Promise<RouteCatalogSnapshotResult> {
-    const [providerRows, modelRows, accountRows, aliasRows, comboRows, routingRows, poolRows, disabledModelRows, cliMappingRows, cliMappingSettingRows, poolSettingRows, settingsRows] =
+    const [providerRows, modelRows, accountRows, aliasRows, comboRows, routingRows, poolRows, poolAccountRows, disabledModelRows, cliMappingRows, cliMappingSettingRows, poolSettingRows, settingsRows] =
       await Promise.all([
         this.db.select(PROVIDER_COLUMNS).from(providers).where(eq(providers.enabled, true)),
         this.db.select(MODEL_COLUMNS).from(models),
@@ -427,6 +439,7 @@ class RouteCatalogRepository {
         this.db.select(COMBO_COLUMNS).from(modelCombos),
         this.db.select(ROUTING_COLUMNS).from(providerRoutingSettings),
         this.db.select(POOL_COLUMNS).from(networkPools),
+        this.db.select(POOL_ACCOUNT_COLUMNS).from(providerPoolAccounts),
         this.db.select(DISABLED_MODEL_COLUMNS).from(tenantDisabledModels),
         this.db.select(CLI_MAPPING_COLUMNS).from(cliToolMappings),
         this.db.select(CLI_MAPPING_SETTING_COLUMNS).from(cliToolSettings),
@@ -498,6 +511,28 @@ class RouteCatalogRepository {
       const list = activePoolsByTenant.get(pool.tenantId) ?? [];
       list.push({ id: pool.id, maxInflight: pool.maxInflight ?? 10, weight: pool.weight ?? 100 });
       activePoolsByTenant.set(pool.tenantId, list);
+    }
+
+    // Pool-as-account rows, grouped by tenant: one per (pool × ip-scoped
+    // provider). For a credential-less ip-scoped provider these are the
+    // account-equivalent routing entities — a spent egress is excluded from
+    // the plan exactly like a cooling account, and the candidate carries the
+    // pool-account's health (see the public-candidate fan-out below).
+    const poolAccountsByTenant = new Map<
+      string,
+      Array<{
+        id: string;
+        networkPoolId: string;
+        providerId: string;
+        status: string;
+        cooldownUntil: Date | null;
+        lastErrorCategory: string | null;
+      }>
+    >();
+    for (const poolAccount of poolAccountRows) {
+      const list = poolAccountsByTenant.get(poolAccount.tenantId) ?? [];
+      list.push(poolAccount);
+      poolAccountsByTenant.set(poolAccount.tenantId, list);
     }
 
     // Per-tenant pool selection strategy; an absent row reads as the
@@ -657,7 +692,67 @@ class RouteCatalogRepository {
       if (accounts.length === 0) {
         const providerRequiresAccount = requiresAccountById.get(model.providerId) ?? true;
         if (!providerRequiresAccount) {
-          // Public models inherit active pools for each tenant that has active pools
+          // Public models inherit active pools for each tenant that has active pools.
+          // When the provider is ip-scoped (limits follow the egress address), the
+          // tenant's pool-account rows are the account-equivalent routing entities:
+          // one candidate per pool, carrying that pool-account's health, so a spent
+          // egress is excluded from the plan exactly like a cooling account.
+          const ownedTenantIds = [...poolAccountsByTenant.keys()].filter((tid) =>
+            (poolAccountsByTenant.get(tid) ?? []).some((pa) => pa.providerId === model.providerId),
+          );
+          let emittedPoolAccount = false;
+          for (const tenantOwnerId of ownedTenantIds) {
+            const poolAccounts = poolAccountsByTenant.get(tenantOwnerId) ?? [];
+            const tenantPoolAccounts = new Map<string, typeof poolAccounts>();
+            for (const pa of poolAccounts) {
+              if (pa.providerId !== model.providerId) continue;
+              const list = tenantPoolAccounts.get(pa.networkPoolId) ?? [];
+              list.push(pa);
+              tenantPoolAccounts.set(pa.networkPoolId, list);
+            }
+            if (tenantPoolAccounts.size === 0) continue;
+            for (const [poolId, pas] of tenantPoolAccounts) {
+              const first = pas[0];
+              if (!first) continue;
+              const tenantPools = resolveNetworkPools(model.providerId, tenantOwnerId);
+              if (!tenantPools) continue;
+              emittedPoolAccount = true;
+              const tenantCandidate: RouteCandidateWithHealth = {
+                provider_id: model.providerId,
+                model_id: model.modelId,
+                wire_family: model.wireFamily as WireFamily,
+                service_kind: model.serviceKind,
+                endpoint: model.endpointPath,
+                ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
+                capability_profile: capabilityProfile,
+                tenant_id: tenantOwnerId,
+                // Public credential-less candidates have no account to own them.
+                owner_tenant_id: null,
+                requires_account: false as const,
+                network_pool_ids: [poolId],
+                network_pool_required: true,
+                network_pool_limits: tenantPools.limits,
+                network_pool_weights: tenantPools.weights,
+                ...(tenantPools.routing ? { network_pool_routing: tenantPools.routing } : {}),
+                ...providerLimitFor(model.providerId, tenantOwnerId),
+                ...(first.status === "disabled"
+                  ? { health_status: "disabled" as const }
+                  : first.status === "cooldown"
+                    ? {
+                        health_status: "cooldown" as const,
+                        cooldown_kind: hardCooldownCategory(first.lastErrorCategory) ? "hard" : "soft",
+                        ...(first.cooldownUntil && first.cooldownUntil.getTime() > Date.now()
+                          ? { cooldown_until: first.cooldownUntil.getTime() }
+                          : {}),
+                      }
+                    : {}),
+              };
+              if (tenantId === undefined || tenantId === tenantOwnerId) {
+                candidates.push(tenantCandidate);
+              }
+            }
+          }
+          if (emittedPoolAccount) continue;
           for (const tId of configuredPoolTenants) {
             const tenantPools = resolveNetworkPools(model.providerId, tId);
             if (tenantPools) {

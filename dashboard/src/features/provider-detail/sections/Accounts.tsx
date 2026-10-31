@@ -141,7 +141,7 @@ export function AccountsList({
   }, [filtered, sort]);
 
   const selectedAccounts = useMemo(
-    () => accounts.filter((account) => selected.has(account.id)),
+    () => accounts.filter((account) => account.kind !== "pool" && selected.has(account.id)),
     [accounts, selected],
   );
   const allFilteredSelected =
@@ -168,7 +168,9 @@ export function AccountsList({
       if (allFilteredSelected) {
         for (const account of filtered) copy.delete(account.id);
       } else {
-        for (const account of filtered) copy.add(account.id);
+        for (const account of filtered) {
+          if (account.kind !== "pool") copy.add(account.id);
+        }
       }
       return copy;
     });
@@ -211,10 +213,11 @@ const TEST_ALL_CONCURRENCY = 3;
    * tracks how far the run has got and nothing about how it went.
    */
   const testAllAccounts = async () => {
-    if (accounts.length === 0) return;
+    const realAccounts = accounts.filter((account) => account.kind !== "pool");
+    if (realAccounts.length === 0) return;
     setBulkBusy(true);
-    setTestAllProgress({ done: 0, total: accounts.length });
-    await mapWithConcurrency(accounts, TEST_ALL_CONCURRENCY, async (account, index) => {
+    setTestAllProgress({ done: 0, total: realAccounts.length });
+    await mapWithConcurrency(realAccounts, TEST_ALL_CONCURRENCY, async (account, index) => {
       const result = await consoleRequest<AccountTestResult>(
         `/accounts/${encodeURIComponent(account.id)}/quota/refresh`,
         { method: "POST" },
@@ -235,7 +238,7 @@ const TEST_ALL_CONCURRENCY = 3;
     setTestAllProgress(null);
     // Count only: the per-account verdicts are toasts and health-log entries,
     // so a summary here would restate them and read as a verdict of its own.
-    toast.success("Test complete", `${accounts.length} account${accounts.length === 1 ? "" : "s"} tested`);
+    toast.success("Test complete", `${realAccounts.length} account${realAccounts.length === 1 ? "" : "s"} tested`);
   };
 
   const bulkSetActive = (active: boolean) =>

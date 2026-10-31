@@ -1,7 +1,9 @@
 // Drizzle-backed console persistence for network pools.
+import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { CartethyiaDatabase } from "../../../persistence/db-handle";
-import { networkPools, poolRoutingSettings } from "../../../persistence/schema";
+import { networkPools, poolRoutingSettings, providerPoolAccounts } from "../../../persistence/schema";
+import { providerRateLimitIsIpScoped } from "../../../providers/provider-metadata";
 import {
   DEFAULT_POOL_STRATEGY,
   type CreateNetworkPoolRequest,
@@ -444,6 +446,24 @@ export class DrizzleNetworkPoolStore implements NetworkPoolStore {
       ...(record.family !== undefined ? { family: record.family } : {}),
     }));
     await this.db.insert(networkPools).values(values);
+
+    // Materialize pool-as-account rows for ip-scoped, credential-less
+    // providers (OpenCode Free today): the operator sees the egress in the
+    // provider's Accounts card, and routing excludes a spent egress like a
+    // cooling account. Every other provider gets no row.
+    if (providerRateLimitIsIpScoped("opencode")) {
+      const now = new Date();
+      const poolAccounts = values.map((value) => ({
+        id: randomUUID(),
+        tenantId: value.tenantId,
+        networkPoolId: value.id,
+        providerId: "opencode",
+        label: `Pool ${value.id.slice(0, 8)}`,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      await this.db.insert(providerPoolAccounts).values(poolAccounts);
+    }
     return values.length;
   }
 

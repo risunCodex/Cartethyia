@@ -121,7 +121,7 @@ export const networkPoolKind = pgEnum("network_pool_kind", ["http", "https", "so
 
 //  health_events.entity_kind — distinguishes which owning
 // table entity_id/account_id/network_pool_id references.
-export const healthEntityKind = pgEnum("health_entity_kind", ["account", "pool"]);
+export const healthEntityKind = pgEnum("health_entity_kind", ["account", "pool", "pool_account"]);
 
 export const telemetrySourceSurface = pgEnum("telemetry_source_surface", [
   "chat",
@@ -569,6 +569,49 @@ export const networkPools = pgTable("network_pools", {
     index("network_pools_family_idx").on(table.family),
   ],
 );
+
+/**
+ * A pool's account-equivalent routing entity for ip-scoped, credential-less
+ * providers (OpenCode Free today).
+ *
+ * These providers own no `provider_accounts` rows — the rate limit belongs to
+ * the egress address, not to a credential. Materializing one row per (pool,
+ * ip-scoped provider) lets the account health machine, routing eligibility, and
+ * the provider-detail accounts UI treat each egress like an account: the row
+ * carries the same health state machine and cooldown columns, so a spent egress
+ * is excluded from the plan the same way a cooling account is, and the operator
+ * sees it in the provider's Accounts card with a "Pool" badge.
+ *
+ * The row is an *account-equivalent*, not an account: it resolves no credential
+ * (`credential_kind` is fixed to `none`-style egress), is skipped by the quota
+ * refresh and identity sweeps (they filter on real credential kinds), and is
+ * owned by its pool — deleting the pool cascades the row.
+ */
+export const providerPoolAccounts = pgTable(
+  "provider_pool_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantRefRequired(),
+    networkPoolId: uuid("network_pool_id")
+      .notNull()
+      .references(() => networkPools.id, { onDelete: "cascade" }),
+    providerId: text("provider_id").notNull(),
+    label: text("label").notNull(),
+    ...healthColumns(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("provider_pool_accounts_pool_provider_uidx").on(
+      table.networkPoolId,
+      table.providerId,
+      table.tenantId,
+    ),
+    index("provider_pool_accounts_tenant_status_idx").on(table.tenantId, table.status),
+    index("provider_pool_accounts_provider_status_idx").on(table.providerId, table.status),
+  ],
+);
+export type ProviderPoolAccount = typeof providerPoolAccounts.$inferSelect;
 
 
 // Account and network-pool health events share one table. The entity kind

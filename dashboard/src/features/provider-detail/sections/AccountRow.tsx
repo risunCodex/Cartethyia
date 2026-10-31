@@ -203,6 +203,7 @@ export function AccountRow({
   const update = useUpdateProviderAccount();
   const recover = useRecoverAccount();
   const testQuota = useRefreshAccountQuota(account.id);
+  const isPool = account.kind === "pool";
   const disabled = account.status === "disabled";
   const cooldownUntilMs = account.cooldownUntil ? new Date(account.cooldownUntil).getTime() : NaN;
   const hasActiveCooldown = Number.isFinite(cooldownUntilMs) && cooldownUntilMs > Date.now();
@@ -321,6 +322,14 @@ export function AccountRow({
                 <span className="text-body font-semibold text-text-primary min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" title={account.label || account.id}>
                   {label}
                 </span>
+                {isPool ? (
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-0.5 border border-inner-border rounded-tiny bg-surface-1 text-micro font-bold uppercase tracking-label text-text-secondary"
+                    title="Proxy pool routing as an account for this ip-scoped provider"
+                  >
+                    Pool
+                  </span>
+                ) : null}
                 <button
                   type="button"
                   className="shrink-0 grid place-items-center w-10 h-10 p-0 border-0 bg-transparent text-text-tertiary cursor-pointer rounded-tiny hover:bg-inner-border hover:text-text-primary"
@@ -371,50 +380,58 @@ export function AccountRow({
         </div>
 
         <div className="account-row-actions flex items-center justify-end gap-3 flex-wrap">
-          <Button
-            size="icon"
-            variant="secondary"
-            icon={<Activity size={12} />}
-            label="Health"
-            aria-label={`Health for ${label}`}
-            onClick={() => setShowHistory(true)}
-            title="View Health & Error History"
-          />
-          <Button
-            size="icon"
-            variant="secondary"
-            icon={
-              testQuota.isPending ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <FlaskConical size={12} />
-              )
-            }
-            label={testQuota.isPending ? "Testing…" : "Test"}
-            aria-label={`Test ${label}`}
-            disabled={testQuota.isPending}
-            onClick={handleTest}
-            title="Refresh quota and health for this account"
-          />
-          <Button
-            size="icon"
-            variant="secondary"
-            icon={<KeyRound size={12} />}
-            label="Edit key"
-            aria-label={`Replace API key for ${label}`}
-            onClick={() => setEditKeyOpen(true)}
-            title="Replace API key"
-          />
-          <Button
-            size="icon"
-            variant="secondary"
-            icon={disabled ? <LockOpen size={12} /> : <PowerOff size={12} />}
-            label={disabled ? "Enable" : "Disable"}
-            aria-label={disabled ? `Enable ${label}` : `Disable ${label}`}
-            disabled={update.isPending}
-            onClick={toggleEnabled}
-            title={disabled ? "Enable account" : "Disable account"}
-          />
+          {!isPool ? (
+            <Button
+              size="icon"
+              variant="secondary"
+              icon={<Activity size={12} />}
+              label="Health"
+              aria-label={`Health for ${label}`}
+              onClick={() => setShowHistory(true)}
+              title="View Health & Error History"
+            />
+          ) : null}
+          {!isPool ? (
+            <Button
+              size="icon"
+              variant="secondary"
+              icon={
+                testQuota.isPending ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <FlaskConical size={12} />
+                )
+              }
+              label={testQuota.isPending ? "Testing…" : "Test"}
+              aria-label={`Test ${label}`}
+              disabled={testQuota.isPending}
+              onClick={handleTest}
+              title="Refresh quota and health for this account"
+            />
+          ) : null}
+          {!isPool ? (
+            <Button
+              size="icon"
+              variant="secondary"
+              icon={<KeyRound size={12} />}
+              label="Edit key"
+              aria-label={`Replace API key for ${label}`}
+              onClick={() => setEditKeyOpen(true)}
+              title="Replace API key"
+            />
+          ) : null}
+          {!isPool ? (
+            <Button
+              size="icon"
+              variant="secondary"
+              icon={disabled ? <LockOpen size={12} /> : <PowerOff size={12} />}
+              label={disabled ? "Enable" : "Disable"}
+              aria-label={disabled ? `Enable ${label}` : `Disable ${label}`}
+              disabled={update.isPending}
+              onClick={toggleEnabled}
+              title={disabled ? "Enable account" : "Disable account"}
+            />
+          ) : null}
           {isRecoverable ? (
             <Button
               size="icon"
@@ -427,15 +444,17 @@ export function AccountRow({
               title="Clear cooldown / restore active status"
             />
           ) : null}
-          <Button
-            size="icon"
-            variant="danger"
-            icon={<Trash2 size={12} />}
-            label="Delete"
-            aria-label={`Delete ${label}`}
-            onClick={() => onDelete(account)}
-            title="Delete account"
-          />
+          {!isPool ? (
+            <Button
+              size="icon"
+              variant="danger"
+              icon={<Trash2 size={12} />}
+              label="Delete"
+              aria-label={`Delete ${label}`}
+              onClick={() => onDelete(account)}
+              title="Delete account"
+            />
+          ) : null}
         </div>
       </div>
       {showHistory && (

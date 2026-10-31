@@ -25,8 +25,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   isOAuthCredentialInvalidated,
-  shouldCooldownPool,
 } from "../../src/transport/dispatch/retry-policy";
+import { classifyEgressFailure } from "../../src/network/rate-limit-verdict";
 import { GatewayError } from "../../src/protocol/gateway-error";
 import { providerRateLimitIsIpScoped } from "../../src/providers/provider-metadata";
 
@@ -34,6 +34,15 @@ import { providerRateLimitIsIpScoped } from "../../src/providers/provider-metada
 const IP_SCOPED_PROVIDER = "opencode";
 /** A bundled provider whose limits are keyed to the account credential. */
 const ACCOUNT_KEYED_PROVIDER = "anthropic";
+
+/**
+ * The pool-cooldown decision is the cooldown side of the unified egress
+ * classifier. Kept as a local wrapper so the rest of this suite pins the
+ * observable behaviour without depending on the classifier's object shape.
+ */
+function shouldCooldownPool(error: unknown, providerId: string): boolean {
+  return classifyEgressFailure(error, providerId).kind === "cooldown";
+}
 
 function upstream429(details: Record<string, unknown> = {}): GatewayError {
   return new GatewayError("accounts_rate_limited", 429, "rate limited", details, "upstream");
@@ -234,7 +243,7 @@ describe("isOAuthCredentialInvalidated — the credential-death signal", () => {
   });
 });
 
-describe("shouldCooldownPool — the IP-scoped rate-limit signal", () => {
+describe("classifyEgressFailure — the IP-scoped rate-limit signal", () => {
   test("a provider-scoped upstream 429 on an IP-scoped provider cools the pool", () => {
     // The case the rule exists for: the upstream counted requests from this
     // address, so the pool is the resource that ran out and backing it off is
@@ -334,17 +343,12 @@ describe("shouldCooldownPool — the IP-scoped rate-limit signal", () => {
     ).toBe(false);
   });
 
-  test("the guard narrows to GatewayError for the caller", () => {
-    // The type guard exists so a caller can hand the same value to
-    // `flagPoolCooldown` without a second narrowing step. This is asserted at
-    // the type level by using the narrowed value's own fields.
-    const error: unknown = upstream429({ rateLimitScope: "provider" });
-    if (shouldCooldownPool(error, IP_SCOPED_PROVIDER)) {
-      expect(error.code).toBe("accounts_rate_limited");
-      expect(error.details.rateLimitScope).toBe("provider");
-    } else {
-      throw new Error("the guard should have narrowed");
-    }
+  test("the classifier reports cooldown for a provider-scoped upstream 429", () => {
+    const verdict = classifyEgressFailure(
+      upstream429({ rateLimitScope: "provider" }),
+      IP_SCOPED_PROVIDER,
+    );
+    expect(verdict.kind).toBe("cooldown");
   });
 
   test("the scope comparison is exact, not case-insensitive", () => {

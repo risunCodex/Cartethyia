@@ -258,7 +258,7 @@ describe("the probe verdict is enforced state, not a decoration", () => {
     }
   });
 
-  test("boot replays a fresh stored blocked verdict, and skips stale or throttled ones", async () => {
+  test("boot replays fresh stored verdicts, and skips stale ones", async () => {
     const { db, close } = await bootedSqlite();
     try {
       const fresh = randomUUID();
@@ -292,8 +292,9 @@ describe("the probe verdict is enforced state, not a decoration", () => {
         })
         .where(eq(networkPools.id, stale));
 
-      // Throttled: a 429 verdict never replays into a cooldown — its window
-      // lives in the mirror markers, not in a stale copy of a verdict.
+      // Throttled: a fresh 429 verdict replays into a cooldown (the probe
+      // measured the rate-limit window; `provider_probe_at` starts that
+      // window, so a restart mid-window does not forget the spent egress).
       const throttled = randomUUID();
       await insertPool(db, throttled);
       await db
@@ -307,15 +308,18 @@ describe("the probe verdict is enforced state, not a decoration", () => {
         .where(eq(networkPools.id, throttled));
 
       const selector = new NetworkPoolSelector();
-      expect(await restorePoolProbeVerdicts(selector, db)).toBe(1);
+      expect(await restorePoolProbeVerdicts(selector, db)).toBe(2);
 
       const enforced = await selector.isProviderCooldown(fresh, "opencode");
       expect(enforced.blocked).toBe(true);
       expect(enforced.inCooldown).toBe(true);
       expect((await selector.isProviderCooldown(stale, "opencode")).inCooldown).toBe(false);
-      expect((await selector.isProviderCooldown(throttled, "opencode")).inCooldown).toBe(false);
+      expect((await selector.isProviderCooldown(throttled, "opencode")).inCooldown).toBe(true);
+      expect((await selector.isProviderCooldown(throttled, "opencode")).blocked).toBe(false);
       // And the replayed block keeps the pool out of rotation immediately.
       expect(await selector.tryAcquireAvailablePool([fresh], "opencode")).toBeUndefined();
+      // The replayed cooldown also excludes the throttled pool.
+      expect(await selector.tryAcquireAvailablePool([throttled], "opencode")).toBeUndefined();
     } finally {
       close();
     }

@@ -1,11 +1,32 @@
 # Proposal — OpenCode pool health unification ("Proxy Account Pool")
 
-Status: proposed — not yet implemented
+Status: implemented (working tree, uncommitted)
 Owner skill when implementing: `.skills/cartethyia-health-routing/`
 Owner areas: `src/transport/routing/`, `src/network/`, `src/providers/discovery/probing-service.ts`,
 `src/console/routing/pools/`, `dashboard/src/features/proxy/`, provider detail accounts UI.
 Triggered by operator report: proxy-page OpenCode test reads `27 allowed · 0 blocked ·
 18 rate-limited`, but dispatch continues dialling the rate-limited egresses.
+
+## Implementation notes (2026-11-01, working tree, no commit)
+
+- **Step 1** — one egress classifier: `src/network/rate-limit-verdict.ts`
+  (`classifyEgressFailure`) replaces `shouldCooldownPool` / `isFreeTierIpBlock`
+  in `retry-policy.ts` (now credential-scoped only) and is used by both dispatch
+  paths (`attempt-loop.ts`, `streaming/finalize.ts`). `probe-verdict.ts`
+  borrows the shared free-tier regex.
+- **Boot replay**: `restorePoolProbeVerdicts` now replays `throttled` verdicts
+  into a cooldown (window starts at `provider_probe_at`), not only `blocked`.
+- **Step 2** — new table `provider_pool_accounts` (migration `0032`, both
+  dialects) + schema. Store hooks create pool-account rows on pool create/import
+  (delete cascades via FK). Route catalog emits one candidate per pool-account
+  for `requiresAccount === false && ipScopedRateLimit` providers, carrying that
+  pool-account's health — spent egresses are excluded at plan time.
+- Console `listAccounts` / `listAllAccounts` append pool-account rows
+  (`kind: "pool"`, `networkPoolId`). Dashboard shows them in the provider's
+  Accounts card with a "Pool" badge; credential/quota bulk actions are hidden
+  for pool rows.
+- Backup/restore: `provider_pool_accounts` added to `CONFIG_TABLES` (direct
+  tenant ownership auto-detected).
 
 ---
 

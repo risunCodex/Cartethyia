@@ -502,6 +502,81 @@ export function assignAccountNames(
 }
 
 /**
+ * Merges multiple credential files into ONE paste block the shared parser can
+ * read back as the same entries.
+ *
+ * A naive concatenation breaks when two files each contain a whole JSON array
+ * (`["a","b"]` + `["c"]` is not parseable as one document). Each file is
+ * therefore normalised to line-oriented form — the shape `parseCredentialBatch`
+ * already understands:
+ *
+ * - a JSON **array** of account records → one JSON object per line (NDJSON);
+ * - a **wrapper** object (`{ accounts: [...] }`, `{ items: [...] }`, …) → one
+ *   JSON object per row;
+ * - a single credential object → kept whole;
+ * - a **cookie/session bundle** (Cookie-Editor / SessionBox / EditThisCookie)
+ *   → kept whole, because it is exactly one account and splitting it would turn
+ *   one bundle into N junk entries;
+ * - a non-JSON file → kept as its own lines, but a single `key: value` block
+ *   stays whole so the shared parser still reads it as one structured
+ *   credential rather than one entry per field.
+ *
+ * The caller shows the returned `entries` in the same batch preview and submits
+ * the returned `text` through the existing path — no second import flow.
+ */
+export function mergeCredentialFiles(
+  files: readonly { readonly name: string; readonly text: string }[],
+): { readonly text: string; readonly entries: readonly ParsedCredentialEntry[] } {
+  const parts: string[] = [];
+  for (const file of files) {
+    const trimmed = file.text.trim();
+    if (!trimmed) continue;
+
+    const whole = parsedJson(trimmed);
+    if (Array.isArray(whole)) {
+      const records = whole.filter((item): item is Record<string, unknown> => asRecord(item) !== undefined);
+      if (records.length > 0 && isCookieArrayExport(records)) {
+        parts.push(trimmed);
+        continue;
+      }
+      for (const item of whole) {
+        const rec = asRecord(item);
+        parts.push(rec !== undefined ? JSON.stringify(rec) : String(item));
+      }
+      continue;
+    }
+
+    const obj = asRecord(whole);
+    if (obj) {
+      const rows = wrapperRows(obj);
+      if (rows !== undefined) {
+        for (const row of rows) parts.push(JSON.stringify(row));
+        continue;
+      }
+      parts.push(trimmed);
+      continue;
+    }
+
+    // Non-JSON. One structured blob (a `key: value` block or a single token)
+    // must stay whole; many lines are already one credential per line.
+    const parsed = parseCredentialBatch(trimmed);
+    if (parsed.length <= 1) {
+      parts.push(trimmed);
+    } else {
+      parts.push(
+        ...trimmed
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0),
+      );
+    }
+  }
+
+  const text = parts.join("\n");
+  return { text, entries: parseCredentialBatch(text) };
+}
+
+/**
  * Splits a paste into requests the server accepts.
  *
  * A single batch request is bounded (100 accounts) so one paste cannot open an

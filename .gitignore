@@ -64,6 +64,10 @@ backup-probe.json
 cartethyia-backup-*.json
 .cleanup-work/
 
+# Local browser-automation tooling (Cartemo). Not project code; keep out of
+# the repo.
+Cartemo/
+
 # Visual regression baseline captured by scripts/dev/visual-baseline.ts.
 # A measurement artifact, not a source of truth — regenerate, do not review.
 dashboard/visual/

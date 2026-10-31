@@ -41,7 +41,8 @@ import {
   type ProviderExchangeCapture,
 } from "./attempt-finalize";
 import { repriceUsage } from "../../providers/provider-usage";
-import { isFreeTierIpBlock, isOAuthCredentialInvalidated, shouldCooldownPool } from "./retry-policy";
+import { classifyEgressFailure } from "../../network/rate-limit-verdict";
+import { isOAuthCredentialInvalidated } from "./retry-policy";
 import { drainAbortReason } from "../shutdown-notice";
 
 /**
@@ -375,11 +376,12 @@ export async function runAttemptLoop<TResult, TAdapter>(
       // single candidate carrying every pool). Judging it there is what made a
       // refused egress end the request instead of failing over to a healthy
       // one.
-      const rateLimitedPool = !cancelled && shouldCooldownPool(error, candidate.provider_id);
+      const egressVerdict = !cancelled ? classifyEgressFailure(error, candidate.provider_id) : { kind: "none" } as const;
       // A free-tier refusal is only ever this provider's: the guard is gated on
       // `ipScopedRateLimit` in the provider metadata, so a 403 from any other
       // upstream still means what it always did and never retires an egress.
-      const blockedPool = !cancelled && isFreeTierIpBlock(error, candidate.provider_id);
+      const rateLimitedPool = egressVerdict.kind === "cooldown";
+      const blockedPool = egressVerdict.kind === "blocked";
       const poolScopedFailure =
         (rateLimitedPool || blockedPool) &&
         networkPoolId !== undefined &&

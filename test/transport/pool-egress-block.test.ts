@@ -10,7 +10,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { GatewayError } from "../../src/protocol/gateway-error";
-import { isFreeTierIpBlock } from "../../src/transport/dispatch/retry-policy";
+import { classifyEgressFailure } from "../../src/network/rate-limit-verdict";
 import { PROVIDER_BLOCK_MS } from "../../src/network/pool/selector";
 import { providerRateLimitIsIpScoped } from "../../src/providers/provider-metadata";
 
@@ -32,15 +32,15 @@ function freeTierRefusal(): GatewayError {
   );
 }
 
-describe("isFreeTierIpBlock", () => {
+describe("classifyEgressFailure — free-tier IP block", () => {
   test("a FreeTierError 403 on an IP-scoped provider is an egress block", () => {
-    expect(isFreeTierIpBlock(freeTierRefusal(), IP_SCOPED_PROVIDER)).toBe(true);
+    expect(classifyEgressFailure(freeTierRefusal(), IP_SCOPED_PROVIDER).kind).toBe("blocked");
   });
 
   test("the provider id must be the IP-scoped one", () => {
     // A 403 from a provider whose limits belong to the credential says nothing
     // about the egress; retiring the pool would sideline healthy siblings.
-    expect(isFreeTierIpBlock(freeTierRefusal(), "anthropic")).toBe(false);
+    expect(classifyEgressFailure(freeTierRefusal(), "anthropic").kind).toBe("none");
   });
 
   test("an ordinary 403 is not an egress block", () => {
@@ -51,10 +51,10 @@ describe("isFreeTierIpBlock", () => {
       { providerId: IP_SCOPED_PROVIDER, providerCode: "11140" },
       "upstream",
     );
-    expect(isFreeTierIpBlock(policy, IP_SCOPED_PROVIDER)).toBe(false);
+    expect(classifyEgressFailure(policy, IP_SCOPED_PROVIDER).kind).toBe("none");
   });
 
-  test("a 429 is not an egress block", () => {
+  test("a 429 is a cooldown, not an egress block", () => {
     const throttled = new GatewayError(
       "accounts_rate_limited",
       429,
@@ -62,11 +62,11 @@ describe("isFreeTierIpBlock", () => {
       { providerId: IP_SCOPED_PROVIDER, rateLimitScope: "provider" },
       "upstream",
     );
-    expect(isFreeTierIpBlock(throttled, IP_SCOPED_PROVIDER)).toBe(false);
+    expect(classifyEgressFailure(throttled, IP_SCOPED_PROVIDER).kind).toBe("cooldown");
   });
 
   test("a non-gateway error is not an egress block", () => {
-    expect(isFreeTierIpBlock(new Error("FreeTierError"), IP_SCOPED_PROVIDER)).toBe(false);
+    expect(classifyEgressFailure(new Error("FreeTierError"), IP_SCOPED_PROVIDER).kind).toBe("none");
   });
 });
 

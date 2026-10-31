@@ -2,13 +2,14 @@
 import { and, asc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { ConsoleDomainError } from "../../shared/errors";
 import { parseCustomProviderId, isBundledProviderId } from "../../../providers/provider-contracts";
+import { providerRateLimitIsIpScoped } from "../../../providers/provider-metadata";
 import type { ModelDefinition } from "../../../providers/provider-model-definition";
 import type { ProviderRegistry } from "../../../providers/provider-registry";
 import { BUNDLED_PROVIDER_MODULES } from "../../../providers/default-registry";
 import { globalOrOwnedBy, ownedByOnly } from "../../../persistence/tenant-scope";
 import { nextSortIndex, reorderSortIndex } from "../../../persistence/sort-order";
 import type { CartethyiaDatabase } from "../../../persistence/db-handle";
-import { buddyTaskLedger, models, providerAccounts, providerOauthStates, providers, telemetryUsageTotals, tenantDisabledModels } from "../../../persistence/schema";
+import { buddyTaskLedger, models, providerAccounts, providerOauthStates, providerPoolAccounts, providers, telemetryUsageTotals, tenantDisabledModels } from "../../../persistence/schema";
 import { breakdownTelemetry } from "../../../observability/event-query";
 import type { WireFamily } from "../../../protocol/canonical-model";
 import { listAccountHealthEvents, recoverAccount, deleteAccountHealthEvents, type AccountHealthEventRecord } from "../../../providers/operations/account-health-service";
@@ -26,6 +27,8 @@ import {
 import { isUniqueViolation } from "../../../persistence/boot";
 import { DEFAULT_ENDPOINT_BY_WIRE_FAMILY, endpointPathForProviderModel, mapProviderRow } from "./catalog-projections";
 import { pushStructuredConsoleLog } from "../../../observability/log-ring";
+
+const emptyUsage: ProviderAccountTokenUsage = { requests: 0, errors: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 };
 
 /** Real Drizzle-backed provider and model catalog repository. */
 
@@ -838,7 +841,14 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
       // same millisecond could swap between loads. `id` breaks a tie so the
       // order is total even before a reorder assigns distinct indices.
       .orderBy(asc(providerAccounts.sortIndex), asc(providerAccounts.createdAt), asc(providerAccounts.id));
-    return this.accountsWithUsage(tenantId, rows);
+    const accounts = await this.accountsWithUsage(tenantId, rows);
+    const poolAccounts = await this.listPoolAccounts(tenantId, providerId);
+    if (poolAccounts.length === 0) return accounts;
+    // Pool-as-account rows are appended after real accounts. They are
+    // account *equivalents* for ip-scoped, credential-less providers, so the
+    // operator sees the egresses that carry those providers' rate limits in
+    // the same list that already explains health.
+    return [...accounts, ...poolAccounts];
   }
 
   async listAllAccounts(tenantId: string): Promise<readonly ProviderAccountResponse[]> {
@@ -847,7 +857,69 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
       .from(providerAccounts)
       .where(globalOrOwnedBy(providerAccounts.tenantId, tenantId))
       .orderBy(asc(providerAccounts.sortIndex), asc(providerAccounts.createdAt), asc(providerAccounts.id));
-    return this.accountsWithUsage(tenantId, rows);
+    const accounts = await this.accountsWithUsage(tenantId, rows);
+    const poolAccounts = await this.listAllPoolAccounts(tenantId);
+    if (poolAccounts.length === 0) return accounts;
+    return [...accounts, ...poolAccounts];
+  }
+
+  /**
+   * Pool-as-account rows for one provider. Only providers whose rate limit
+   * follows the egress address materialize these; every other provider's pool
+   * list stays empty, so real accounts are returned unchanged.
+   */
+  private async listPoolAccounts(
+    tenantId: string,
+    providerId: string,
+  ): Promise<readonly ProviderAccountResponse[]> {
+    if (!providerRateLimitIsIpScoped(providerId)) return [];
+    const rows = await this.db
+      .select()
+      .from(providerPoolAccounts)
+      .where(
+        and(
+          eq(providerPoolAccounts.providerId, providerId),
+          eq(providerPoolAccounts.tenantId, tenantId),
+        ),
+      )
+      .orderBy(asc(providerPoolAccounts.createdAt), asc(providerPoolAccounts.id));
+    return rows.map((row) => this.mapPoolAccount(row));
+  }
+
+  /** Pool-as-account rows across every provider, for tenant-wide listings. */
+  private async listAllPoolAccounts(
+    tenantId: string,
+  ): Promise<readonly ProviderAccountResponse[]> {
+    const rows = await this.db
+      .select()
+      .from(providerPoolAccounts)
+      .where(eq(providerPoolAccounts.tenantId, tenantId))
+      .orderBy(asc(providerPoolAccounts.createdAt), asc(providerPoolAccounts.id));
+    return rows.map((row) => this.mapPoolAccount(row));
+  }
+
+  private mapPoolAccount(row: typeof providerPoolAccounts.$inferSelect): ProviderAccountResponse {
+    return {
+      id: row.id,
+      providerId: row.providerId,
+      tenantId: row.tenantId,
+      label: row.label,
+      credentialKind: "none",
+      status: row.status,
+      usageToday: emptyUsage,
+      usageAllTime: emptyUsage,
+      consecutiveFailures: row.consecutiveFailures,
+      ...(row.lastSuccessAt ? { lastSuccessAt: row.lastSuccessAt.toISOString() } : {}),
+      ...(row.lastError ? { lastError: row.lastError } : {}),
+      ...(row.lastErrorCategory ? { lastErrorCategory: row.lastErrorCategory } : {}),
+      ...(row.lastErrorAt ? { lastErrorAt: row.lastErrorAt.toISOString() } : {}),
+      ...(row.cooldownUntil ? { cooldownUntil: row.cooldownUntil.toISOString() } : {}),
+      ...(row.lastRecoveredAt ? { lastRecoveredAt: row.lastRecoveredAt.toISOString() } : {}),
+      createdAt: row.createdAt.toISOString(),
+      sortIndex: 0,
+      kind: "pool",
+      networkPoolId: row.networkPoolId,
+    };
   }
 
   async createAccount(

@@ -539,6 +539,15 @@ export interface ProviderAccountResponse {
   staticToken?: boolean;
   /** Stable list position within this provider; the console's "Added" order. */
   sortIndex: number;
+  /**
+   * Row flavor. `"pool"` marks a pool-as-account entity (see
+   * `provider_pool_accounts`): it is an account-equivalent for an
+   * ip-scoped, credential-less provider, resolves no credential, and is
+   * owned by its pool. Absent means a real `provider_accounts` row.
+   */
+  kind?: "pool";
+  /** The owning pool row (present for `kind: "pool"`). */
+  networkPoolId?: string;
 }
 /**
  * Plaintext export of one account's decrypted provider tokens.

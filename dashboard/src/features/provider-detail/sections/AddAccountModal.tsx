@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Badge } from "../../../components/ui/badge";
 import { Button, buttonClass } from "../../../components/ui/button";
 import { Dialog } from "../../../components/ui/dialog";
@@ -17,6 +17,7 @@ import {
   detectCrossChannelCredential,
   jwtExpiresAt,
   MAX_ACCOUNTS_PER_BATCH_REQUEST,
+  mergeCredentialFiles,
   parseCredentialBatch,
   type ParsedCredentialEntry,
 } from "../../../lib/credentials";
@@ -46,6 +47,8 @@ export function AddAccountModal({
   // the credential after acknowledging must ask again, or the operator would
   // confirm a token they never saw the warning for.
   const [crossChannelAckFor, setCrossChannelAckFor] = useState<string | undefined>(undefined);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const entries = parseCredentialBatch(secret);
   const isBatch = entries.length > 1;
@@ -89,39 +92,53 @@ export function AddAccountModal({
   };
 
   /**
-   * Reads a picked `.txt`/`.json` file into the same field the paste path fills.
+   * Reads one or more picked/dropped credential files into the same field the
+   * paste path fills.
    *
-   * The parser already accepts a JSON array, one credential per line, and
-   * newline-delimited JSON exports, so the file only has to become text — the
-   * detection, labelling, and batch preview are the shared path, not a second
-   * implementation. Size is capped so a mis-picked file cannot freeze the tab
-   * building a preview it will never submit.
+   * Multiple files are merged first (see `mergeCredentialFiles`), so a JSON
+   * array per file stays parseable and every entry survives. The parser then
+   * detects, labels, and previews the whole selection through the shared path.
+   * Size is capped per file so a mis-picked file cannot freeze the tab.
    */
-  const handleFile = (file: File) => {
-    if (file.size > CREDENTIAL_FILE_MAX_BYTES) {
-      toast.error("File too large", `Credential files must be ${CREDENTIAL_FILE_MAX_MB} MB or smaller.`);
+  const handleFiles = (files: readonly File[]) => {
+    if (files.length === 0) return;
+    const oversized = files.find((file) => file.size > CREDENTIAL_FILE_MAX_BYTES);
+    if (oversized) {
+      toast.error(
+        "File too large",
+        `${oversized.name} is over ${CREDENTIAL_FILE_MAX_MB} MB — credential files must be ${CREDENTIAL_FILE_MAX_MB} MB or smaller.`,
+      );
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = typeof reader.result === "string" ? reader.result : "";
-      setSecret(text);
-      const parsed = parseCredentialBatch(text);
-      if (parsed.length === 0) {
-        toast.error("Nothing to import", "That file held no credential the gateway recognises.");
-        return;
-      }
-      toast.success(
-        `Imported ${file.name}`,
-        parsed.length > 1
-          ? `Detected ${parsed.length} credentials`
-          : parsed[0]?.kind === "oauth"
-            ? "Detected: OAuth export"
-            : "Detected: API key",
-      );
-    };
-    reader.onerror = () => toast.error("Could not read that file");
-    reader.readAsText(file);
+    const readers = files.map(
+      (file) =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+          reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+          reader.readAsText(file);
+        }),
+    );
+    Promise.all(readers)
+      .then((texts) => {
+        const merged = mergeCredentialFiles(
+          files.map((file, index) => ({ name: file.name, text: texts[index] ?? "" })),
+        );
+        if (merged.entries.length === 0) {
+          toast.error("Nothing to import", "None of the selected files held a credential the gateway recognises.");
+          return;
+        }
+        setSecret(merged.text);
+        toast.success(
+          `Imported ${files.length} file${files.length === 1 ? "" : "s"}`,
+          merged.entries.length > 1
+            ? `Detected ${merged.entries.length} credentials`
+            : merged.entries[0]?.kind === "oauth"
+              ? "Detected: OAuth export"
+              : "Detected: API key",
+        );
+      })
+      .catch((error: unknown) => toast.error("Could not read those files", String(error)));
   };
 
   const handleSubmit = async () => {
@@ -291,14 +308,44 @@ export function AddAccountModal({
                 </p>
               ) : null}
           </div>
-          <textarea
-            value={secret}
-            onChange={(event) => setSecret(event.target.value)}
-            placeholder="Paste one credential, or many — one per line, a JSON array, or newline-delimited OAuth exports. Kind and account naming are detected automatically…"
-            rows={6}
-            spellCheck={false}
-            className="font-mono tabular-nums w-full min-w-0 min-h-65 rounded-control border border-inner-border bg-input-bg px-6 py-5 text-caption text-text-primary resize-y box-border"
-          />
+          <div
+            className="flex flex-col gap-2 rounded-control border-2 border-dashed p-3 transition-colors"
+            data-drag-active={dragActive ? "true" : undefined}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragActive(false);
+              const files = [...event.dataTransfer.files].filter((file) =>
+                file.name.endsWith(".json") ||
+                file.name.endsWith(".jsonl") ||
+                file.name.endsWith(".ndjson") ||
+                file.name.endsWith(".txt") ||
+                file.type.startsWith("application/json") ||
+                file.type.startsWith("text/plain"),
+              );
+              if (files.length === 0) {
+                toast.error("Unsupported file", "Drop .json, .txt, .jsonl, or .ndjson credential files.");
+                return;
+              }
+              handleFiles(files);
+            }}
+          >
+            <textarea
+              value={secret}
+              onChange={(event) => setSecret(event.target.value)}
+              placeholder="Paste one credential, or many — one per line, a JSON array, or newline-delimited OAuth exports. Kind and account naming are detected automatically…"
+              rows={6}
+              spellCheck={false}
+              className="font-mono tabular-nums w-full min-w-0 min-h-65 rounded-control border border-inner-border bg-input-bg px-6 py-5 text-caption text-text-primary resize-y box-border"
+            />
+            <p className="text-micro text-text-tertiary text-center">
+              Or drop credential files here — JSON, .txt, .jsonl, .ndjson — several at once, merged and detected together.
+            </p>
+          </div>
           {/* Paste and import feed the same field, so they sit under it rather
               than beside it: sharing a row with the textarea stole ~120px of its
               width and left the two actions floating beside a six-row input.
@@ -312,22 +359,24 @@ export function AddAccountModal({
             >
               Paste
             </Button>
-            {/* Same field, same parser — the file only replaces typing. Accepts
+            {/* Same field, same parser — the files only replace typing. Accepts
                 the JSON export this dialog produces, plus .txt/.jsonl carrying
-                one credential per line. */}
+                one credential per line. Multiple files are merged. */}
             <label className={buttonClass({ size: "sm", className: "cursor-pointer" })}>
               <input
+                ref={fileInputRef}
                 type="file"
                 accept=".json,.txt,.jsonl,.ndjson,application/json,text/plain"
-                aria-label="Import credentials from a file"
+                multiple
+                aria-label="Import credentials from files"
                 className="hidden"
                 onChange={(event) => {
-                  const file = event.target.files?.[0];
+                  const files = [...(event.target.files ?? [])];
                   event.target.value = "";
-                  if (file) handleFile(file);
+                  if (files.length > 0) handleFiles(files);
                 }}
               />
-              Import file
+              Import files
             </label>
           </Inline>
         </Stack>
