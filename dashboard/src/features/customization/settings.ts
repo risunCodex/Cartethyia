@@ -62,9 +62,10 @@ export interface CustomizationSettings {
   readonly blurChromeEnabled: boolean;
   /**
    * Render preset. `off` obeys the per-surface blur settings above; `pretty`
-   * holds every surface sharp and see-through (no backdrop read at all); the
-   * shipped frosted glass, forced on. Either preset overrides the
-   * per-surface toggles while it is active; the background layer is untouched.
+   * holds card bodies near-solid with no backdrop read and the shell at its
+   * shallow blur; `extreme` holds everything near-solid with no backdrop read,
+   * forced on. Either preset overrides the per-surface toggles while it is
+   * active; the background layer is untouched.
    */
   readonly renderMode: RenderMode;
   /** Draw a dashed frame around an empty panel. Off by default. */
@@ -112,11 +113,9 @@ export const RENDER_PRESET_VALUES: Readonly<
   // Pretty: near-solid card bodies with no blur read at all; the shell keeps a
   // shallow tint with a real blur to stay legible over the background.
   pretty: { cards: { amount: 90, depth: 0 }, chrome: { amount: 80, depth: 80 } },
-  // Extreme: the frosted treatment the console shipped with, forced on.
-  extreme: {
-    cards: { amount: CUSTOMIZATION_DEFAULTS.blurCardsAmount, depth: CUSTOMIZATION_DEFAULTS.blurCardsDepth },
-    chrome: { amount: CUSTOMIZATION_DEFAULTS.blurChromeAmount, depth: CUSTOMIZATION_DEFAULTS.blurChromeDepth },
-  },
+  // Extreme: the fastest glass there is — near-solid on every surface, no
+  // backdrop read anywhere.
+  extreme: { cards: { amount: 90, depth: 0 }, chrome: { amount: 90, depth: 0 } },
 };
 
 const BLUR_TARGETS: readonly BlurTarget[] = ["cards", "chrome"];
@@ -187,7 +186,7 @@ export function applyCustomization(settings: CustomizationSettings): void {
   // sliders stay untouched in storage: switching back to `off` restores what
   // was saved, byte for byte. Pretty sends clarity and depth to 0 — a
   // translucent tint with nothing behind it to read, which is what makes the
-  // backdrop read vanish; Extreme restores the shipped frosted values.
+  // backdrop read vanish; Extreme holds every surface near-solid with none.
   const preset = (target: BlurTarget): { amount: number; depth: number } => {
     const isChrome = target === "chrome";
     const saved = isChrome

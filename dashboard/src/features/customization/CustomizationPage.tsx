@@ -192,7 +192,7 @@ export default function CustomizationPage(): ReactNode {
             <span className="flex min-w-0 flex-col">
               <span className="text-caption font-semibold text-text-primary">Render preset</span>
               <span className="text-badge text-text-tertiary">
-                Pretty keeps surfaces near-solid with no card blur; Extreme restores the shipped frosted glass. Either one overrides the toggles below while active — the background image stays.
+                Pretty keeps surfaces near-solid with no card blur; Extreme removes the backdrop read everywhere. Either one overrides the toggles below while active — the background image stays.
               </span>
             </span>
             <Select
