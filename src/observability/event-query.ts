@@ -546,7 +546,9 @@ async function latencyPercentiles(
   };
 }
 
-/** The SQL column one breakdown dimension groups by. */
+/**
+ * The SQL column one breakdown dimension groups by.
+ */
 function dimensionColumn(dimension: string) {
   if (dimension === "model") return telemetryEvents.requestedModel;
   if (dimension === "provider") return telemetryEvents.providerId;
@@ -779,6 +781,121 @@ export async function sumTelemetryTokens(
     .from(telemetryEvents)
     .where(and(...conditions));
   return numeric(row?.total ?? 0);
+}
+
+/** One hour, in milliseconds — the share page's hourly bucket width. */
+const HOUR_MS = 3_600_000;
+
+/**
+ * All-time family counts: the numbers a share page's KPI card shows.
+ *
+ * These must be computed in SQL, not derived from the bounded page read — the
+ * page caps at {@link MAX_LIMIT}, so a busy family would freeze at 500
+ * requests/errors/last-hour regardless of real traffic.
+ */
+export interface FamilyUsageTotals {
+  readonly requests: number;
+  readonly errors: number;
+  readonly lastHourRequests: number;
+}
+
+/** Counts one share family's requests, errors, and last-hour traffic in SQL. */
+export async function familyUsageTotals(
+  db: CartethyiaDatabase,
+  tenantId: string,
+  familyKeyId: string,
+  now: Date,
+): Promise<FamilyUsageTotals> {
+  const lastHourStart = new Date(now.getTime() - HOUR_MS);
+  const conditions = [eq(telemetryEvents.tenantId, tenantId), familyKeyCondition(familyKeyId)];
+  const [row] = await db
+    .select({
+      requests: sql<number>`count(*)`,
+      errors: sql<number>`sum(case when ${IS_GATEWAY_ERROR_SQL} then 1 else 0 end)`,
+      lastHourRequests: sql<number>`sum(case when ${telemetryEvents.createdAt} >= ${lastHourStart} then 1 else 0 end)`,
+    })
+    .from(telemetryEvents)
+    .where(and(...conditions));
+  return {
+    requests: numeric(row?.requests ?? 0),
+    errors: numeric(row?.errors ?? 0),
+    lastHourRequests: numeric(row?.lastHourRequests ?? 0),
+  };
+}
+
+/**
+ * One share family's client-IP breakdown, computed in SQL.
+ *
+ * Unlike the 24-hour page read, this covers the whole retained window so an
+ * address that stopped making requests before the last day still appears —
+ * marked inactive. The `active` flag is decided in the caller from
+ * `lastSeenAt` vs a cutoff; here we only aggregate.
+ */
+export async function familyIpBreakdown(
+  db: CartethyiaDatabase,
+  tenantId: string,
+  familyKeyId: string,
+  limit = 50,
+): Promise<{ ip: string; requests: number; tokens: number; lastSeenAt: Date | null }[]> {
+  const conditions = [eq(telemetryEvents.tenantId, tenantId), familyKeyCondition(familyKeyId)];
+  const rows = await db
+    .select({
+      ip: telemetryEvents.clientIp,
+      requests: sql<number>`count(*)`,
+      tokens: sql<number>`coalesce(sum(coalesce(${telemetryEvents.inputTokens}, 0) + coalesce(${telemetryEvents.outputTokens}, 0)), 0)`,
+      lastSeenAt: sql<Date>`max(${telemetryEvents.createdAt})`,
+    })
+    .from(telemetryEvents)
+    .where(and(...conditions))
+    .groupBy(telemetryEvents.clientIp)
+    .orderBy(desc(sql`count(*)`))
+    .limit(limit);
+  return rows.flatMap((row) =>
+    row.ip === null ? [] : [{ ip: row.ip, requests: numeric(row.requests), tokens: numeric(row.tokens), lastSeenAt: row.lastSeenAt }],
+  );
+}
+
+/**
+ * One share family's time-series buckets, computed in SQL with the family
+ * membership filter.
+ *
+ * Mirrors {@link chartTelemetry} but scoped to a share family. The share page's
+ * 24-hour strip must not be truncated to the bounded page (500 events), or a
+ * busy family's chart undercounts every hour bucket.
+ */
+export async function familyHourlyTelemetry(
+  db: CartethyiaDatabase,
+  tenantId: string,
+  familyKeyId: string,
+  since: Date,
+  bucketSeconds: number,
+): Promise<ChartBucket[]> {
+  const width = Math.max(1, Math.trunc(bucketSeconds));
+  // Inlined (not parameterised) so Postgres sees the SELECT and GROUP BY
+  // expressions as identical — see chartTelemetry for the failure this avoids.
+  const w = sql.raw(String(width));
+  const bucketExpression = isPostgres(db)
+    ? sql<number>`(cast(extract(epoch from ${telemetryEvents.createdAt}) as bigint) / ${w}) * ${w}`
+    : sql<number>`(cast(strftime('%s', ${telemetryEvents.createdAt}) as integer) / ${w}) * ${w}`;
+  const conditions = [scoped(tenantId, since), familyKeyCondition(familyKeyId)];
+  const rows = await db
+    .select({
+      at: bucketExpression,
+      requests: sql<number>`count(*)`,
+      errors: sql<number>`sum(case when ${IS_GATEWAY_ERROR_SQL} then 1 else 0 end)`,
+      inputTokens: sql<number>`coalesce(sum(${telemetryEvents.inputTokens}), 0)`,
+      outputTokens: sql<number>`coalesce(sum(${telemetryEvents.outputTokens}), 0)`,
+    })
+    .from(telemetryEvents)
+    .where(and(...conditions))
+    .groupBy(bucketExpression);
+  return rows.map((row) => ({
+    at: numeric(row.at) * 1000,
+    requests: numeric(row.requests),
+    errors: numeric(row.errors),
+    inputTokens: numeric(row.inputTokens),
+    outputTokens: numeric(row.outputTokens),
+  }));
 }
 
 /**

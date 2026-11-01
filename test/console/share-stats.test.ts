@@ -491,25 +491,24 @@ dbDescribe("createShareStatsPort — time windows", () => {
     // Daily, and Monthly all identical. Each window must be computed from its
     // own boundary — all-time vs today vs this month — so a link with history
     // older than a day or a month reports different values.
+    //
+    // Anchors are chosen to be valid on every calendar day: one row at `now`
+    // (always inside today and this month) and one row 40 days back (always
+    // older than this month, so all-time only). The earlier anchors
+    // (`dayStart - 1ms`, "six days ago") fell into the previous month on the
+    // 1st, which made the suite flake once a month.
     const scope = await familyScope("share-windows-distinct");
     try {
       const key = crypto.randomUUID();
       const now = new Date();
-      const dayStart = new Date(now);
-      dayStart.setUTCHours(0, 0, 0, 0);
-      const monthStart = new Date(now);
-      monthStart.setUTCDate(1);
-      monthStart.setUTCHours(0, 0, 0, 0);
       await writeRows([
-        // This month, before today.
         row(scope.tenantId, key, {
-          createdAt: new Date(dayStart.getTime() - 1),
+          createdAt: now,
           inputTokens: 2_000,
           outputTokens: 0,
         }),
-        // Before this month (all-time only).
         row(scope.tenantId, key, {
-          createdAt: new Date(monthStart.getTime() - 1),
+          createdAt: new Date(now.getTime() - 40 * 24 * 60 * 60_000),
           inputTokens: 4_000,
           outputTokens: 0,
         }),
@@ -519,11 +518,11 @@ dbDescribe("createShareStatsPort — time windows", () => {
         { templateKeyId: key, memberCount: 1 },
         EMPTY_RECIPIENTS,
       );
-      // All three windows are distinct because the rows straddle both boundaries.
+      // All three windows are distinct: the 40-day-old row is all-time only,
+      // the `now` row is all three.
       expect(stats.totals.totalTokens).toBe(6_000);
-      expect(stats.totals.monthTokens).toBeGreaterThanOrEqual(2_000);
-      expect(stats.totals.monthTokens).toBeLessThan(6_000);
-      expect(stats.totals.todayTokens).toBe(0);
+      expect(stats.totals.monthTokens).toBe(2_000);
+      expect(stats.totals.todayTokens).toBe(2_000);
     } finally {
       await scope.cleanup();
     }
@@ -906,6 +905,31 @@ dbDescribe("createShareStatsPort — client addresses are always masked", () => 
       expect(entry?.ip).not.toBe("203.0.113.42");
       expect(entry?.ip).not.toContain("42");
       expect(entry?.ip).toContain("203.0.113");
+      // The row was created "now", so the address is active.
+      expect(entry?.active).toBe(true);
+    } finally {
+      await scope.cleanup();
+    }
+  });
+
+  test("an address quiet for more than 24 hours is inactive", async () => {
+    const scope = await familyScope("share-ip-inactive");
+    try {
+      const key = crypto.randomUUID();
+      await writeRows([
+        row(scope.tenantId, key, {
+          clientIp: "203.0.113.99",
+          createdAt: new Date(Date.now() - 48 * 60 * 60_000),
+        }),
+      ]);
+      const stats = await createShareStatsPort({ db: shareDb }).getFamilyStats(
+        scope.tenantId,
+        { templateKeyId: key, memberCount: 1 },
+        EMPTY_RECIPIENTS,
+      );
+      const entry = stats.clientIps[0];
+      expect(entry?.active).toBe(false);
+      expect(new Date(entry?.lastSeenAt ?? "").getTime()).toBeLessThan(Date.now() - 24 * 60 * 60_000);
     } finally {
       await scope.cleanup();
     }
@@ -1253,6 +1277,72 @@ dbDescribe("createShareStatsPort — SQL injection safety", () => {
       // The table is still there.
       const probe = await shareDb.execute(sql`select count(*)::int as n from telemetry_events`);
       expect(probe.rows.length).toBe(1);
+    } finally {
+      await scope.cleanup();
+    }
+  });
+});
+
+dbDescribe("createShareStatsPort — busy families are not truncated at 500", () => {
+  test("requests/errors/last-hour count the whole family, not a bounded page", async () => {
+    // The page read is capped at 500 events (payload bound). Before the SQL
+    // count fix, totals were derived from that page, so a family busier than
+    // 500 events froze at exactly 500 requests and undercounted the last hour.
+    const scope = await familyScope("share-over500");
+    try {
+      const key = crypto.randomUUID();
+      const now = Date.now();
+      const rows: (typeof telemetryEvents.$inferInsert)[] = [];
+      for (let index = 0; index < 600; index += 1) {
+        rows.push(
+          row(scope.tenantId, key, {
+            createdAt: new Date(now - (index % 60) * 60_000),
+            // A quarter of them are errors (500 = gateway defect; 503/529 are
+            // capacity and intentionally excluded from the error count).
+            status: index % 4 === 0 ? "failed" : "completed",
+            httpStatus: index % 4 === 0 ? 500 : 200,
+          }),
+        );
+      }
+      await writeRows(rows);
+      const stats = await createShareStatsPort({ db: shareDb }).getFamilyStats(
+        scope.tenantId,
+        { templateKeyId: key, memberCount: 1 },
+        EMPTY_RECIPIENTS,
+      );
+      // The core regression: >500 requests are counted, not clamped at 500.
+      expect(stats.totals.requests).toBe(600);
+      expect(stats.totals.errors).toBe(150);
+      expect(stats.totals.lastHourRequests).toBe(600);
+    } finally {
+      await scope.cleanup();
+    }
+  });
+
+  test("the hourly chart sums SQL buckets across the whole family", async () => {
+    // The hourly strip must also be computed over the full family, not the
+    // bounded 500-event page — a busy hour's bar would otherwise cap at 500.
+    const scope = await familyScope("share-over500-hourly");
+    try {
+      const key = crypto.randomUUID();
+      const now = Date.now();
+      const rows: (typeof telemetryEvents.$inferInsert)[] = [];
+      // 700 requests in one hour: a single bucket that exceeds the old page cap.
+      for (let index = 0; index < 700; index += 1) {
+        rows.push(
+          row(scope.tenantId, key, {
+            createdAt: new Date(now - 10 * 60_000),
+          }),
+        );
+      }
+      await writeRows(rows);
+      const stats = await createShareStatsPort({ db: shareDb }).getFamilyStats(
+        scope.tenantId,
+        { templateKeyId: key, memberCount: 1 },
+        EMPTY_RECIPIENTS,
+      );
+      const total = stats.hourly.reduce((sum, bucket) => sum + bucket.requests, 0);
+      expect(total).toBe(700);
     } finally {
       await scope.cleanup();
     }

@@ -527,6 +527,7 @@ export function ShareStatsSection({
                           </th>
                           <th scope="col">Tokens</th>
                           <th scope="col">Last seen</th>
+                          <th scope="col">Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -547,6 +548,23 @@ export function ShareStatsSection({
                               <BarCell value={ip.requests} max={maxIpRequests} label={format(ip.tokens)} />
                             </td>
                             <td>{relativeTime(ip.lastSeenAt)}</td>
+                            <td>
+                              {ip.active ? (
+                                <span
+                                  className="inline-block whitespace-nowrap rounded-pill border border-inner-border bg-surface-2 px-3 py-px font-mono text-micro text-text-secondary"
+                                  title="Made a request in the last 24 hours"
+                                >
+                                  Active
+                                </span>
+                              ) : (
+                                <span
+                                  className="inline-block whitespace-nowrap rounded-pill border border-inner-border bg-surface-2 px-3 py-px font-mono text-micro italic text-text-tertiary"
+                                  title="No request in the last 24 hours"
+                                >
+                                  Inactive
+                                </span>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
