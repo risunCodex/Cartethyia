@@ -15,6 +15,7 @@ import { ProviderIcon } from "./ProviderIcon";
 import { useProviderModels, useProviders } from "../hooks/providers";
 import { useModelAliases, useModelCombos } from "../hooks/routing";
 import { useSystemPrompt, useUpdateSystemPrompt } from "../hooks/system-prompt";
+import { mergeBuiltinPresets } from "../data/builtin-prompts";
 import { toast } from "../lib/toast";
 import { getErrorMessage } from "../data/api";
 import { isWrappedInjectionProvider } from "../../../src/console/system-prompt/contracts";
@@ -801,10 +802,10 @@ export function InjectSystemPromptDialog({
   readonly state: TenantSystemPrompts;
   readonly onSave: (next: TenantSystemPrompts) => void;
 }): ReactNode {
-  const [draft, setDraft] = useState<TenantSystemPrompts>(state);
+  const [draft, setDraft] = useState<TenantSystemPrompts>(() => mergeBuiltinPresets(state));
   const wasOpen = useRef(false);
   useEffect(() => {
-    if (open && !wasOpen.current) setDraft(state);
+    if (open && !wasOpen.current) setDraft(mergeBuiltinPresets(state));
     wasOpen.current = open;
   }, [open, state]);
 

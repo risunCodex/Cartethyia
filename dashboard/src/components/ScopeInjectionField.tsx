@@ -12,6 +12,7 @@ import { Textarea } from "./ui/input";
 import { FileText } from "lucide-react";
 import { EMPTY_STATE } from "./InjectSystemPromptPanel";
 import { useSystemPrompt, useUpdateSystemPrompt } from "../hooks/system-prompt";
+import { mergeBuiltinPresets } from "../data/builtin-prompts";
 import { toast } from "../lib/toast";
 import { getErrorMessage } from "../data/api";
 import type {
@@ -65,7 +66,7 @@ export function ScopeInjectionField({
   const settingsQuery = useSystemPrompt();
   const update = useUpdateSystemPrompt();
 
-  const state = settingsQuery.data ?? EMPTY_STATE;
+  const state = mergeBuiltinPresets(settingsQuery.data ?? EMPTY_STATE);
   const savedRef = kind === "combo" ? state.combos[name] : state.aliases[name];
   const ref = savedRef ?? { kind: "global" as const };
   const { label, active } = describeRef(ref, state.presets);
