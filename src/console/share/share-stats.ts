@@ -314,16 +314,35 @@ interface ShareStatsPortDeps {
 }
 
 export function createShareStatsPort(deps: ShareStatsPortDeps): ShareStatsPort {
+  // In-memory read-through cache for deployments without Redis (the embedded
+  // lite backend). The share stream ticks every 30s; without a cache each
+  // tick recomputes the family rollup from telemetry — the repeated full
+  // window scans that appear as CPU/IO spikes. Redis is preferred when
+  // configured (cross-instance sharing); otherwise this Map serves the same
+  // TTL so compute runs at most once per minute per family.
+  const localCache = new Map<string, { at: number; value: Omit<ShareFamilyStats, "recipients"> }>();
   return {
     async getFamilyStats(tenantId, family, recipients, allowedModels) {
       if (family.templateKeyId.length === 0) return emptyStats(recipients);
-      const cached = await cachedRead<Omit<ShareFamilyStats, "recipients">>(
-        deps.redis,
-        shareFamilyStatsKey(tenantId, family, allowedModels),
-        () => computeFamilyStatsBody(deps.db, tenantId, family.templateKeyId, allowedModels),
-        SHARE_STATS_CACHE_TTL_SECONDS,
-      );
-      return { ...cached, recipients };
+      const key = shareFamilyStatsKey(tenantId, family, allowedModels);
+      const compute = () => computeFamilyStatsBody(deps.db, tenantId, family.templateKeyId, allowedModels);
+      if (deps.redis) {
+        const cached = await cachedRead<Omit<ShareFamilyStats, "recipients">>(
+          deps.redis,
+          key,
+          compute,
+          SHARE_STATS_CACHE_TTL_SECONDS,
+        );
+        return { ...cached, recipients };
+      }
+      const now = Date.now();
+      const hit = localCache.get(key);
+      if (hit !== undefined && now - hit.at < SHARE_STATS_CACHE_TTL_SECONDS * 1000) {
+        return { ...hit.value, recipients };
+      }
+      const value = await compute();
+      localCache.set(key, { at: now, value });
+      return { ...value, recipients };
     },
   };
 }
