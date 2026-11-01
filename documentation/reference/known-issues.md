@@ -107,3 +107,29 @@ call drops its orphan tool turn with the assistant calls").
 **Status.** Fixed in `main` (uncommitted changes at the time of writing).
 Monitor Codex continuation flows to confirm the intermittent error is gone in
 the field.
+
+---
+
+## 4. 503 "dependencies are not ready" during a burst is really overload
+
+**Symptom.** Under a sustained burst (e.g. 20+ concurrent requests), the gateway
+starts answering every /v1/* and /console/api/* call with 503
+"gateway's dependencies are not ready … Warming up". The database and Redis are
+fine.
+
+**Root cause.** The readiness guard probes dependencies on a 5-second memo TTL.
+When the Postgres pool is exhausted (all backends checked out), the probe's
+SELECT 1 waits for a backend and times out — so the memo records a
+"not ready" result, and every request in the window is shed. That is a
+capacity problem, not a dependency failure.
+
+**Current behavior (after fix).** A probe that times out under load is now
+surfaced as 503 overloaded ("The gateway is overloaded … retry shortly")
+with a retry-after hint, distinct from a genuine dependency failure ("not
+ready" is reserved for hard failures — connection refused, migrations missing).
+
+**Workaround / tuning.** The gateway's Postgres pool size defaults to 8
+(DATABASE_POOL_MAX, read in src/persistence/db-pg.ts). If bursts queue on
+the pool, raise it — but keep it comfortably below the server's
+max_connections (default 100) so background sweeps and the console are never
+starved. The production VPS instance runs DATABASE_POOL_MAX=32.

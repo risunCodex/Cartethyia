@@ -13,40 +13,8 @@ Variables read outside the spec are therefore **not** listed below:
 `CARTETHYIA_DB_MODE`, `DATABASE_URL`, `REDIS_URL`, `NODE_ENV`, `LOG_LEVEL`,
 `CARTETHYIA_TELEMETRY_PAYLOAD_DIR`, `CARTETHYIA_DATA_DIR`,
 `CARTETHYIA_INSTALL_ID_DIR`, `CARTETHYIA_CONFIG_DIR`,
-`CARTETHYIA_TEST_DATABASE_URL`, `DATABASE_POOL_MAX`, and the Compose-only
+`CARTETHYIA_TEST_DATABASE_URL`, and the Compose-only
 `CARTETHYIA_REDIS_URL`. See `documentation/installation.md`.
-
-## PostgreSQL connection pool
-
-The gateway reads all database access through one `node-postgres` Pool
-(`src/persistence/db-pg.ts`). The pool size is **not** part of
-`CONFIG_SPEC` — it is read directly from the environment:
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `DATABASE_POOL_MAX` | 8 | Max concurrent Postgres backends held by the pool |
-| `DATABASE_POOL_IDLE_FLOOR` | 2 | Idle floor the shrinker keeps warm |
-| `DATABASE_STATEMENT_TIMEOUT_MS` | 30000 | Per-statement timeout, applied on every checked-out client |
-| `DATABASE_IDLE_IN_TXN_TIMEOUT_MS` | 60000 | Reaps forgotten open transactions |
-| `DATABASE_LOCK_TIMEOUT_MS` | 5000 | Lock-wait timeout on every connection |
-
-Notes:
-
-- The pool max must stay comfortably below Postgres's `max_connections`
-  (default 100) so other consumers (background sweeps, the console, backups)
-  are never starved. Raising `DATABASE_POOL_MAX` beyond the server's
-  `max_connections` does not speed anything up — it just queues pool
-  checkouts.
-- A small default (8) is deliberate: the gateway amortizes its DB reads with
-  a 5-second readiness memo and short-lived queries, so most deployments never
-  hold more than a handful of backends. Raise it only when request latency
-  under burst shows DB-pool queueing (e.g. `SELECT 1` readiness probes
-  timing out during a 20+ request burst — which surfaces as a 503
-  `overloaded` rather than the healthy "dependencies not ready" message).
-- The production VPS instance runs `DATABASE_POOL_MAX=32` on a Postgres
-  server with `max_connections=100` (26-ish active backends under normal
-  peak). Validate against your own `max_connections` before copying that
-  number.
 
 ## HTTP listener and dashboard runtime
 
