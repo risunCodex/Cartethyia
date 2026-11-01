@@ -890,6 +890,14 @@ export const apiKeys = pgTable(
     enabled: boolean("enabled").notNull().default(true),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     /**
+     * Ban state. A ban is distinct from a revoke: it records the operator's
+     * reason (`banReason`) so the console can show it, and it is fully
+     * reversible — unban clears both columns, leaving no metadata behind.
+     * Banned keys are rejected by the auth path exactly like revoked keys.
+     */
+    bannedAt: timestamp("banned_at", { withTimezone: true }),
+    banReason: text("ban_reason"),
+    /**
      * The tenant's mandatory gateway key. Seeded at first boot whether or not
      * `CARTETHYIA_API_KEY` was configured, and the one key the console refuses
      * to revoke — it may only be rotated. A column rather than a label match,

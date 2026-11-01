@@ -75,6 +75,9 @@ export interface ApiKeyRecord {
   readonly clientRouterDenylist?: readonly string[];
   readonly createdAt: Date;
   readonly revokedAt?: Date;
+  /** Ban state; see the schema column for the contract. */
+  readonly bannedAt?: Date;
+  readonly banReason?: string;
   readonly tokensConsumed: number;
 }
 
@@ -128,6 +131,8 @@ export interface ApiKeyPatch
     | "lifetimeTokenBudget"
     | "maxConcurrentRequests"
     | "maxChildren"
+    | "bannedAt"
+    | "banReason"
   > {
   readonly keyHash?: string | null;
   readonly keyEncrypted?: Buffer | null;
@@ -147,6 +152,9 @@ export interface ApiKeyPatch
   readonly lifetimeTokenBudget?: number | null;
   readonly maxConcurrentRequests?: number | null;
   readonly maxChildren?: number | null;
+  /** Ban state; a ban also disables the key, unban clears both columns entirely. */
+  readonly bannedAt?: Date | null;
+  readonly banReason?: string | null;
 }
 
 interface PopupFields {
@@ -247,6 +255,13 @@ export interface ApiKeyStore {
   reorder(tenantId: string, keyIds: readonly string[]): Promise<void>;
   update(tenantId: string, keyId: string, patch: ApiKeyPatch): Promise<ApiKeyRecord | undefined>;
   revoke(tenantId: string, keyId: string, revokedAt: Date): Promise<boolean>;
+  /**
+   * Bans a key: records the operator's reason and disables the key. Returns
+   * false when the key is already revoked (a revoke is terminal).
+   */
+  ban(tenantId: string, keyId: string, reason: string): Promise<boolean>;
+  /** Unbans a key: clears the ban columns entirely — no metadata remains. */
+  unban(tenantId: string, keyId: string): Promise<boolean>;
   remove(tenantId: string, keyId: string): Promise<boolean>;
   findActiveByHash?(hash: string): Promise<typeof apiKeys.$inferSelect | undefined>;
   findActiveById?(keyId: string): Promise<typeof apiKeys.$inferSelect | undefined>;
@@ -314,6 +329,8 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
         : { clientRouterDenylist: row.clientRouterDenylist as string[] }),
       createdAt: row.createdAt,
       ...(row.revokedAt ? { revokedAt: row.revokedAt } : {}),
+      ...(row.bannedAt ? { bannedAt: row.bannedAt } : {}),
+      ...(row.banReason ? { banReason: row.banReason } : {}),
       tokensConsumed: row.lifetimeTokensConsumed,
     };
   }
@@ -586,6 +603,8 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
           // silently dropped — a grant like `routing:cli_mapping` can be
           // turned on and never stick.
           ...(patch.scopes === undefined ? {} : { scopes: patch.scopes }),
+          ...(patch.bannedAt !== undefined ? { bannedAt: patch.bannedAt } : {}),
+          ...(patch.banReason !== undefined ? { banReason: patch.banReason } : {}),
         })
         .where(and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.id, keyId)))
         .returning();
@@ -622,6 +641,42 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
       return true;
     });
   }
+
+  async ban(tenantId: string, keyId: string, reason: string): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(apiKeys)
+        .set({ bannedAt: new Date(), banReason: reason, enabled: false })
+        .where(
+          and(
+            eq(apiKeys.tenantId, tenantId),
+            eq(apiKeys.id, keyId),
+            isNull(apiKeys.revokedAt),
+          ),
+        )
+        .returning({ id: apiKeys.id });
+      return rows.length > 0;
+    });
+  }
+
+  async unban(tenantId: string, keyId: string): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      // Unban clears both ban columns entirely — no tombstone, no leftover
+      // reason. The key returns to its prior enabled state.
+      const rows = await tx
+        .update(apiKeys)
+        .set({ bannedAt: null, banReason: null, enabled: true })
+        .where(
+          and(
+            eq(apiKeys.tenantId, tenantId),
+            eq(apiKeys.id, keyId),
+            isNull(apiKeys.revokedAt),
+          ),
+        )
+        .returning({ id: apiKeys.id });
+      return rows.length > 0;
+    });
+  }
   async remove(tenantId: string, keyId: string): Promise<boolean> {
     return this.db.transaction(async (tx) => {
       const rows = await tx
@@ -647,7 +702,7 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
     const rows = await this.db
       .select()
       .from(apiKeys)
-      .where(and(eq(apiKeys.keyHash, hash), eq(apiKeys.enabled, true), isNull(apiKeys.revokedAt)))
+      .where(and(eq(apiKeys.keyHash, hash), eq(apiKeys.enabled, true), isNull(apiKeys.revokedAt), isNull(apiKeys.bannedAt)))
       .limit(1);
     return rows[0];
   }
@@ -658,7 +713,7 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
     const rows = await this.db
       .select()
       .from(apiKeys)
-      .where(and(eq(apiKeys.id, keyId), eq(apiKeys.enabled, true), isNull(apiKeys.revokedAt)))
+      .where(and(eq(apiKeys.id, keyId), eq(apiKeys.enabled, true), isNull(apiKeys.revokedAt), isNull(apiKeys.bannedAt)))
       .limit(1);
     return rows[0];
   }
@@ -716,6 +771,8 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
       createdAt: date("created_at") ?? new Date(0),
       enabled: flag("enabled"),
       revokedAt: date("revoked_at"),
+      bannedAt: date("banned_at"),
+      banReason: text("ban_reason"),
       keyPrefix: text("key_prefix"),
       keyEncrypted: raw["key_encrypted"] ?? null,
       notesTitle: text("notes_title"),

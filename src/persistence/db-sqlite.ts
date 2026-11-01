@@ -327,7 +327,8 @@ const AUTH_KEY_COLUMNS = [
   "issued_client_ip_key", "label", "scopes", "requests_per_minute", "daily_token_limit",
   "monthly_token_limit", "lifetime_token_budget", "lifetime_tokens_consumed",
   "max_concurrent_requests", "model_access_mode", "model_list", "client_router_denylist",
-  "model_prefix", "created_at", "enabled", "revoked_at", "key_prefix", "key_encrypted",
+  "model_prefix", "created_at", "enabled", "revoked_at", "banned_at", "ban_reason",
+  "key_prefix", "key_encrypted",
   "notes_title", "notes_subtitle", "notes_body", "is_default", "sort_index",
 ].join(", ");
 
@@ -341,7 +342,7 @@ export interface SqliteAuthStatements {
 }
 
 export function prepareAuthStatements(sqlite: Database): SqliteAuthStatements {
-  const active = `enabled = 1 AND revoked_at IS NULL`;
+  const active = `enabled = 1 AND revoked_at IS NULL AND banned_at IS NULL`;
   // `query`, not `prepare`: bun's `prepare` compiles a statement per call and
   // never finalizes one, while `query` caches the compiled statement behind an
   // LRU of its own. All three are constant text run once per authenticated

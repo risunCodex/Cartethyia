@@ -101,6 +101,9 @@ export interface ApiKeyResponse {
   readonly sharePopupBody?: string;
   readonly createdAt: string;
   readonly revokedAt?: string;
+  /** Ban state; see the schema columns for the contract. */
+  readonly bannedAt?: string;
+  readonly banReason?: string;
   readonly tokensConsumed: number;
 }
 /** Creation result; plaintext is returned only when a personal key is minted. */
@@ -111,6 +114,28 @@ export interface CreateApiKeyResponse extends ApiKeyResponse {
 /** Edit result carries one new secret on personal rotation or template conversion. */
 export interface UpdateApiKeyResponse extends ApiKeyResponse {
   readonly secret?: string;
+}
+
+/**
+ * Ban reasons offered by the console dropdown. The first two are the operator's
+ * own: "Instant Ban — Suka suka Gw" for the arbitrary ban, and a template for
+ * suspicious traffic. The rest are generic, and an operator can still type a
+ * custom reason — the dropdown is a convenience, not a closed set.
+ */
+export const API_KEY_BAN_REASONS: readonly { readonly value: string; readonly label: string }[] = [
+  { value: "instant_arbitrary", label: "Instant Ban — Suka suka Gw" },
+  { value: "traffic_suspicious", label: "Your traffic looks suspicious" },
+  { value: "abuse", label: "Abuse of the gateway" },
+  { value: "policy_violation", label: "Policy violation" },
+  { value: "compromised", label: "Key may be compromised" },
+  { value: "quota_exceeded", label: "Quota abused" },
+  { value: "other", label: "Other / custom" },
+] as const;
+
+/** Body accepted by the ban endpoint. */
+export interface BanApiKeyRequest {
+  readonly reason: string;
+  readonly reasonLabel?: string;
 }
 
 /** API-key route dependency boundary. */
@@ -400,6 +425,8 @@ export function sanitizeApiKeyResponse(record: ApiKeyRecord): ApiKeyResponse {
       : { clientRouterDenylist: record.clientRouterDenylist }),
     createdAt: record.createdAt.toISOString(),
     ...(record.revokedAt === undefined ? {} : { revokedAt: record.revokedAt.toISOString() }),
+    ...(record.bannedAt === undefined ? {} : { bannedAt: record.bannedAt.toISOString() }),
+    ...(record.banReason === undefined ? {} : { banReason: record.banReason }),
     tokensConsumed: record.tokensConsumed,
   };
 }

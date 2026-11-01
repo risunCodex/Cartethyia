@@ -12,7 +12,7 @@ import type { AccessDecision } from "../../security/access-control";
 import { ConsoleDomainError, errorResponse, requireTenantScope } from "../shared/errors";
 import { literalUnion } from "../shared/elysia-schema";
 import { API_KEY_MODES, API_KEY_MODEL_ACCESS_MODES, type ShareLinkKind } from "../../persistence/schema";
-import type { ApiKeyConfig, ApiKeyResponse, UpdateApiKeyResponse } from "./contracts";
+import type { ApiKeyConfig, ApiKeyResponse, BanApiKeyRequest, UpdateApiKeyResponse } from "./contracts";
 import type {
   ApiKeyPatch,
   ApiKeyRecord,
@@ -775,6 +775,58 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
       });
       return { success: true };
     },
+    async banKey(
+      access: AccessDecision | undefined,
+      keyId: string,
+      request: BanApiKeyRequest,
+    ): Promise<ApiKeyResponse> {
+      const authorized = requireTenantScope(access, "dashboard:write");
+      const reason = request.reason.trim();
+      if (reason.length === 0)
+        throw new ConsoleDomainError("invalid_request", 400, "reason is required");
+      const current = await config.store.get(authorized.tenantId, keyId);
+      if (!current || current.revokedAt !== undefined)
+        throw new ConsoleDomainError("key_not_found", 404, "Key not found");
+      if (current.parentKeyId !== undefined)
+        throw new ConsoleDomainError(
+          "shared_key_managed_by_parent",
+          409,
+          "Ban or revoke this key through its share parent",
+        );
+      const banned = await config.store.ban(authorized.tenantId, keyId, reason);
+      if (!banned) throw new ConsoleDomainError("key_not_found", 404, "Key not found");
+      // A banned key must leave the auth cache for every process at once.
+      invalidateApiKeyCache();
+      await config.auditSink?.record({
+        access: authorized,
+        action: "api_key.banned",
+        target: keyId,
+        detail: { reason },
+      });
+      const record = await config.store.get(authorized.tenantId, keyId);
+      if (!record) throw new ConsoleDomainError("key_not_found", 404, "Key not found");
+      return sanitizeApiKeyResponse(record);
+    },
+    async unbanKey(
+      access: AccessDecision | undefined,
+      keyId: string,
+    ): Promise<ApiKeyResponse> {
+      const authorized = requireTenantScope(access, "dashboard:write");
+      const current = await config.store.get(authorized.tenantId, keyId);
+      if (!current || current.revokedAt !== undefined)
+        throw new ConsoleDomainError("key_not_found", 404, "Key not found");
+      const unbanned = await config.store.unban(authorized.tenantId, keyId);
+      if (!unbanned) throw new ConsoleDomainError("key_not_found", 404, "Key not found");
+      invalidateApiKeyCache();
+      await config.auditSink?.record({
+        access: authorized,
+        action: "api_key.unbanned",
+        target: keyId,
+      });
+      const record = await config.store.get(authorized.tenantId, keyId);
+      if (!record) throw new ConsoleDomainError("key_not_found", 404, "Key not found");
+      return sanitizeApiKeyResponse(record);
+    },
   };
   return operations;
 }
@@ -946,6 +998,24 @@ export function createApiKeyRoutes(config: ApiKeyConfig): AnyElysia {
     .delete("/:keyId", async ({ request, params, set }) => {
       try {
         return await factory.deleteKey(config.accessResolver(request), params.keyId);
+      } catch (error) {
+        return errorResponse(error, set, "API-key operation failed");
+      }
+    })
+    .post(
+      "/:keyId/ban",
+      { body: t.Object({ reason: t.String(), reasonLabel: t.Optional(t.String()) }) },
+      async ({ request, params, body, set }) => {
+        try {
+          return await factory.banKey(config.accessResolver(request), params.keyId, body);
+        } catch (error) {
+          return errorResponse(error, set, "API-key operation failed");
+        }
+      },
+    )
+    .post("/:keyId/unban", async ({ request, params, set }) => {
+      try {
+        return await factory.unbanKey(config.accessResolver(request), params.keyId);
       } catch (error) {
         return errorResponse(error, set, "API-key operation failed");
       }

@@ -83,6 +83,35 @@ export function useRevokeApiKey() {
   });
 }
 
+/** Bans an API key with an operator-chosen reason, then refreshes the list. */
+export function useBanApiKey() {
+  const queryClient = useQueryClient();
+  return useMutation<UpdateApiKeyResponse, ApiErrorShape, { keyId: string; reason: string; reasonLabel?: string }>({
+    mutationFn: ({ keyId, reason, reasonLabel }) =>
+      consoleRequest<UpdateApiKeyResponse>(`/api-keys/${encodeURIComponent(keyId)}/ban`, {
+        method: "POST",
+        body: JSON.stringify({ reason, ...(reasonLabel === undefined ? {} : { reasonLabel }) }),
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
+    },
+  });
+}
+
+/** Unbans an API key, clearing its ban metadata entirely, and refreshes the list. */
+export function useUnbanApiKey() {
+  const queryClient = useQueryClient();
+  return useMutation<UpdateApiKeyResponse, ApiErrorShape, { keyId: string }>({
+    mutationFn: ({ keyId }) =>
+      consoleRequest<UpdateApiKeyResponse>(`/api-keys/${encodeURIComponent(keyId)}/unban`, {
+        method: "POST",
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
+    },
+  });
+}
+
 /**
  * Loads the key's stable link, or null when it has none yet. Never rotates:
  * the console shows one link that stays put until the operator regenerates it.

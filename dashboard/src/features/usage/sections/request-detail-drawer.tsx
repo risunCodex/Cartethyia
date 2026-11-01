@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import {
+  Ban as BanIcon,
   Check,
   CheckCircle2,
   Copy,
@@ -19,11 +20,14 @@ import { toast } from "../../../lib/toast";
 import { Button } from "../../../components/ui/button";
 import { Drawer } from "../../../components/ui/drawer";
 import { Stack } from "../../../components/ui/stack";
+import { Select } from "../../../components/ui/select";
 import { Banner } from "../../../components/patterns/banner";
 import { ErrorState } from "../../../components/ui/state";
 import { useProviderAccounts } from "../../../hooks/providers";
 import { useUsageRequestDetail } from "../../../hooks/system";
 import { useTrackedTimeout } from "../../../hooks/use-timeout";
+import { useBanApiKey } from "../../../hooks/api-keys";
+import { API_KEY_BAN_REASONS } from "../../../data/contracts";
 import { formatBytes, formatDuration, formatNumber } from "../../../lib/format/numbers";
 import { formatSpeed, formatUsd } from "./formatters";
 import { errorLabel, statusCode, STATUS_TONE_COLOR } from "./status";
@@ -107,6 +111,9 @@ export function RequestDetailDrawer({
 }): ReactNode {
   const detailQuery = useUsageRequestDetail(requestId);
   const detail = detailQuery.data;
+  const banKey = useBanApiKey();
+  const [banReasonOpen, setBanReasonOpen] = useState(false);
+  const [banReason, setBanReason] = useState<string>(API_KEY_BAN_REASONS[0]!.value);
   const providerAccounts = useProviderAccounts(detail?.providerId);
   const accountLabel = (item: { readonly accountId?: string } | null | undefined): string => {
     const accountId = item?.accountId;
@@ -217,7 +224,60 @@ export function RequestDetailDrawer({
             >
               Download telemetry
             </Button>
+            {detail.apiKeyId && detail.apiKeyLabel ? (
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<BanIcon size={13} />}
+                disabled={banKey.isPending}
+                title="Ban the API key that made this request"
+                onClick={() => setBanReasonOpen((open) => !open)}
+                className="w-full"
+              >
+                {banKey.isPending ? "Banning…" : "Ban key"}
+              </Button>
+            ) : null}
           </div>
+          {banReasonOpen && detail.apiKeyId ? (
+            <div className="flex flex-col gap-3 rounded-control border border-warning-line bg-surface-2 px-4 py-4">
+              <Select
+                label="Reason"
+                id="request-ban-reason"
+                value={banReason}
+                onValueChange={(value) => setBanReason(value)}
+                options={API_KEY_BAN_REASONS.map((r) => ({ value: r.value, label: r.label }))}
+              />
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" size="sm" onClick={() => setBanReasonOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => {
+                    const option = API_KEY_BAN_REASONS.find((r) => r.value === banReason);
+                    banKey.mutate(
+                      {
+                        keyId: detail.apiKeyId as string,
+                        reason: banReason,
+                        reasonLabel: option?.label,
+                      },
+                      {
+                        onSuccess: () => {
+                          toast.success("API key banned");
+                          setBanReasonOpen(false);
+                        },
+                        onError: (error) =>
+                          toast.error(getErrorMessage(error, "Could not ban key.")),
+                      },
+                    );
+                  }}
+                >
+                  {banKey.isPending ? "Banning…" : "Confirm ban"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           {detail.errorKind ? (
             <Banner tone="danger" live="alert" className="flex flex-col gap-2 [overflow-wrap:anywhere] break-words">
@@ -247,7 +307,7 @@ export function RequestDetailDrawer({
               <FlowNode
                 icon={<Server size={13} />}
                 title={`Upstream · ${detail.providerId ?? "—"}`}
-                meta={`${[accountLabel(detail), detail.model ?? "—"].filter((part) => part !== "—").join(" · ") || "—"}\nApi Key : ${displayApiKeyName}\nProxy : ${detail.proxy ?? "direct"}`}
+                meta={`${[accountLabel(detail), detail.model ?? "—"].filter((part) => part !== "—").join(" · ") || "—"}\nApi Key : ${displayApiKeyName}\nProxy : ${detail.proxy ?? "direct"}${detail.networkPoolLabel && detail.networkPoolLabel !== detail.proxy ? `\nPool : ${detail.networkPoolLabel}` : ""}`}
               />
               <FlowNode
                 icon={<CheckCircle2 size={13} />}
