@@ -974,26 +974,33 @@ dbDescribe("createShareStatsPort — client addresses are always masked", () => 
     }
   });
 
-  test("addresses are grouped and ranked, with the newest User-Agent winning", async () => {
-    // The label must be the client's *current* identity, not whichever header it
-    // happened to send first, and `array_agg` skipping nulls is what lets an
-    // address that never sent one still appear.
+  test("addresses are grouped and ranked by most recent activity, newest User-Agent winning", async () => {
+    // The table answers "who is using the link right now", so recency outranks
+    // volume: a single request a minute ago beats an address with many requests
+    // but nothing recent. Within one address, the label is its *current*
+    // identity — the newest header — not whichever it sent first.
     const scope = await familyScope("share-ip-ranking");
     try {
       const key = crypto.randomUUID();
       const now = Date.now();
       await writeRows([
+        // Busy-but-quiet: two requests, the latest hours ago.
         row(scope.tenantId, key, {
           clientIp: "203.0.113.10",
           userAgent: "old-client/1.0",
-          createdAt: new Date(now - 60 * 60_000),
+          createdAt: new Date(now - 10 * 60 * 60_000),
         }),
         row(scope.tenantId, key, {
           clientIp: "203.0.113.10",
           userAgent: "new-client/2.0",
+          createdAt: new Date(now - 5 * 60_000),
+        }),
+        // One request just now must outrank the busy address.
+        row(scope.tenantId, key, {
+          clientIp: "203.0.113.20",
+          userAgent: null,
           createdAt: new Date(now - 60_000),
         }),
-        row(scope.tenantId, key, { clientIp: "203.0.113.20", userAgent: null }),
       ]);
       const stats = await createShareStatsPort({ db: shareDb }).getFamilyStats(
         scope.tenantId,
@@ -1001,11 +1008,15 @@ dbDescribe("createShareStatsPort — client addresses are always masked", () => 
         EMPTY_RECIPIENTS,
       );
       expect(stats.clientIps).toHaveLength(2);
-      const busiest = stats.clientIps[0];
-      expect(busiest?.requests).toBe(2);
-      expect(busiest?.clientType).toBe("new-client");
-      // An address that never sent a User-Agent renders a blank, not a chip.
-      expect(stats.clientIps[1]?.clientType).toBeNull();
+      const latest = stats.clientIps[0];
+      expect(latest?.requests).toBe(1);
+      expect(latest?.clientType).toBeNull();
+      const quieter = stats.clientIps[1];
+      expect(quieter?.requests).toBe(2);
+      expect(quieter?.clientType).toBe("new-client");
+      expect(new Date(String(latest?.lastSeenAt ?? "0")).getTime()).toBeGreaterThan(
+        new Date(String(quieter?.lastSeenAt ?? "0")).getTime(),
+      );
     } finally {
       await scope.cleanup();
     }

@@ -1,5 +1,6 @@
 import { BarChart3, ChevronRight, Globe, Scaling } from "lucide-react";
 import { Card } from "../../components/ui/card";
+import { Switch } from "../../components/ui/switch";
 import {
   createContext,
   useCallback,
@@ -392,12 +393,16 @@ export function ShareStatsSection({
   readonly loading: boolean;
 }): ReactElement {
   const [open, setOpen] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);
   const format = useTokenFormat();
   const totals = stats?.totals;
   const models = stats?.models ?? [];
   const ips = stats?.clientIps ?? [];
+  // Inactive addresses are hidden by default — the table answers "who is using
+  // the link right now" — and a toggle reveals them for a full sweep.
+  const visibleIps = showInactive ? ips : ips.filter((ip) => ip.active);
   const maxModelTokens = Math.max(1, ...models.map((model) => model.tokens));
-  const maxIpRequests = Math.max(1, ...ips.map((ip) => ip.requests));
+  const maxIpRequests = Math.max(1, ...visibleIps.map((ip) => ip.requests));
 
   return (
     <Card surface="muted" className="min-w-0 border-glass-border-2 bg-glass-bg p-5 backdrop-blur-md backdrop-saturate-150">
@@ -512,8 +517,15 @@ export function ShareStatsSection({
               <section aria-label="Client IPs">
                 <div className="flex items-center justify-between gap-6">
                   <h3 className="inline-flex items-center gap-3 text-text-secondary font-mono text-badge font-bold tracking-label transition-colors duration-150"><Globe size={13} aria-hidden="true" /> CLIENT IPS</h3>
+                  <Switch
+                    checked={showInactive}
+                    onChange={setShowInactive}
+                    label="Show inactive"
+                    aria-label="Show inactive client addresses"
+                    className="shrink-0"
+                  />
                 </div>
-                {ips.length === 0 ? (
+                {visibleIps.length === 0 ? (
                   <p className="py-9 text-center text-text-tertiary text-caption">No client addresses recorded yet.</p>
                 ) : (
                   <div className={STATS_TABLE_SCROLL_CLASS}>
@@ -531,7 +543,7 @@ export function ShareStatsSection({
                         </tr>
                       </thead>
                       <tbody>
-                        {ips.map((ip) => (
+                        {visibleIps.map((ip) => (
                           <tr key={ip.ip}>
                             <td>
                               <code>{ip.ip}</code>

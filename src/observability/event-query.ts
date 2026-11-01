@@ -848,7 +848,10 @@ export async function familyIpBreakdown(
     .from(telemetryEvents)
     .where(and(...conditions))
     .groupBy(telemetryEvents.clientIp)
-    .orderBy(desc(sql`count(*)`))
+    // Most recent activity first: the table answers "who is using the link
+    // right now", not "who has used it most", so an address that hit a minute
+    // ago outranks one with ten times the volume but nothing since yesterday.
+    .orderBy(desc(sql`max(${telemetryEvents.createdAt})`))
     .limit(limit);
   return rows.flatMap((row) =>
     row.ip === null ? [] : [{ ip: row.ip, requests: numeric(row.requests), tokens: numeric(row.tokens), lastSeenAt: row.lastSeenAt }],
