@@ -19,7 +19,7 @@
  */
 import { and, desc, eq, gte, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import type { CartethyiaDatabase } from "../persistence/db-handle";
-import { apiKeys, telemetryEvents } from "../persistence/schema";
+import { apiKeys, telemetryEvents, telemetryUsageTotals } from "../persistence/schema";
 import type { TelemetryEventRecord } from "./event-log";
 import { gatewayErrorSql } from "./telemetry-status";
 
@@ -787,6 +787,50 @@ export async function sumTelemetryTokens(
 const HOUR_MS = 3_600_000;
 
 /**
+ * All-time family counts from the durable rollup, not from a scan of the
+ * retained telemetry window.
+ *
+ * The share KPI cards need lifetime numbers. `telemetry_usage_totals` is
+ * charged at write time and accumulates per identity, so a family's lifetime
+ * requests/errors/tokens are a SUM over its rows (keyed by
+ * `family_template_key_id`) — sub-millisecond on a small table, versus a
+ * full-window aggregate over `telemetry_events` that reads every retained
+ * event on every tick. The rollup is the same definition as the read-side
+ * counts, so the two cannot drift.
+ */
+export interface FamilyKpiTotals {
+  readonly requests: number;
+  readonly errors: number;
+  readonly tokens: number;
+}
+
+/** Sums one share family's durable lifetime totals. */
+export async function familyKpiTotals(
+  db: CartethyiaDatabase,
+  tenantId: string,
+  familyKeyId: string,
+): Promise<FamilyKpiTotals> {
+  const [row] = await db
+    .select({
+      requests: sql<number>`coalesce(sum(${telemetryUsageTotals.requests}), 0)`,
+      errors: sql<number>`coalesce(sum(${telemetryUsageTotals.errors}), 0)`,
+      tokens: sql<number>`coalesce(sum(coalesce(${telemetryUsageTotals.inputTokens}, 0) + coalesce(${telemetryUsageTotals.outputTokens}, 0)), 0)`,
+    })
+    .from(telemetryUsageTotals)
+    .where(
+      and(
+        eq(telemetryUsageTotals.tenantId, tenantId),
+        eq(telemetryUsageTotals.familyTemplateKeyId, familyKeyId),
+      ),
+    );
+  return {
+    requests: numeric(row?.requests ?? 0),
+    errors: numeric(row?.errors ?? 0),
+    tokens: numeric(row?.tokens ?? 0),
+  };
+}
+
+/**
  * All-time family counts: the numbers a share page's KPI card shows.
  *
  * These must be computed in SQL, not derived from the bounded page read — the
@@ -823,21 +867,50 @@ export async function familyUsageTotals(
   };
 }
 
+/** Counts one share family's requests in a bounded window — a range scan, not a full-window aggregate. */
+export async function familyWindowRequests(
+  db: CartethyiaDatabase,
+  tenantId: string,
+  familyKeyId: string,
+  since: Date,
+): Promise<number> {
+  const [row] = await db
+    .select({
+      requests: sql<number>`count(*)`,
+    })
+    .from(telemetryEvents)
+    .where(
+      and(
+        eq(telemetryEvents.tenantId, tenantId),
+        familyKeyCondition(familyKeyId),
+        gte(telemetryEvents.createdAt, since),
+      ),
+    );
+  return numeric(row?.requests ?? 0);
+}
+
 /**
  * One share family's client-IP breakdown, computed in SQL.
  *
- * Unlike the 24-hour page read, this covers the whole retained window so an
- * address that stopped making requests before the last day still appears —
- * marked inactive. The `active` flag is decided in the caller from
- * `lastSeenAt` vs a cutoff; here we only aggregate.
+ * Unlike the 24-hour page read, this covers a bounded history so an address
+ * that stopped before the last day still appears — marked inactive. The
+ * `active` flag is decided in the caller from `lastSeenAt` vs a cutoff; here
+ * we only aggregate. The window is bounded (`since`, default the whole
+ * retained window) so an unbounded scan is never the default for callers
+ * that only need recent addresses.
  */
 export async function familyIpBreakdown(
   db: CartethyiaDatabase,
   tenantId: string,
   familyKeyId: string,
   limit = 50,
+  since?: Date,
 ): Promise<{ ip: string; requests: number; tokens: number; lastSeenAt: Date | null }[]> {
-  const conditions = [eq(telemetryEvents.tenantId, tenantId), familyKeyCondition(familyKeyId)];
+  const conditions = [
+    eq(telemetryEvents.tenantId, tenantId),
+    familyKeyCondition(familyKeyId),
+    ...(since === undefined ? [] : [gte(telemetryEvents.createdAt, since)]),
+  ];
   const rows = await db
     .select({
       ip: telemetryEvents.clientIp,
@@ -848,10 +921,9 @@ export async function familyIpBreakdown(
     .from(telemetryEvents)
     .where(and(...conditions))
     .groupBy(telemetryEvents.clientIp)
-    // Most recent activity first: the table answers "who is using the link
-    // right now", not "who has used it most", so an address that hit a minute
-    // ago outranks one with ten times the volume but nothing since yesterday.
-    .orderBy(desc(sql`max(${telemetryEvents.createdAt})`))
+    // Highest volume first: the table answers "who has used the link most",
+    // not just who is active right now.
+    .orderBy(desc(sql`count(*)`))
     .limit(limit);
   return rows.flatMap((row) =>
     row.ip === null ? [] : [{ ip: row.ip, requests: numeric(row.requests), tokens: numeric(row.tokens), lastSeenAt: row.lastSeenAt }],

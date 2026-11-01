@@ -25,7 +25,8 @@ const previousDataDir = process.env.CARTETHYIA_DATA_DIR;
 process.env.CARTETHYIA_DATA_DIR = sandbox;
 
 const { createShareStatsPort, SHARE_STATS_CACHE_TTL_SECONDS } = await import("../../src/console/share/share-stats");
-const { telemetryEvents, tenants, apiKeys } = await import("../../src/persistence/schema");
+const { telemetryEvents, tenants, apiKeys, telemetryUsageTotals } = await import("../../src/persistence/schema");
+const { sql } = await import("drizzle-orm");
 const { createSqliteDatabase, applySqliteMigrations, buildSqliteHandle } = await import("../../src/persistence/db-sqlite");
 
 // The port reads telemetry_events (the SQL record), so this needs a migrated
@@ -105,6 +106,37 @@ async function writeEvent(
     outputTokens: 50,
     ...overrides,
   } as never);
+  // Mirror production's durable rollup (`insertEvents` charges
+  // `telemetry_usage_totals` from inserted rows); the share KPI reads that
+  // rollup for lifetime numbers.
+  const status = String(overrides.status ?? "completed");
+  const httpStatus = overrides.httpStatus as number | undefined;
+  await db
+    .insert(telemetryUsageTotals)
+    .values({
+      tenantId,
+      identityType: "api_key",
+      entityId: apiKeyId,
+      familyTemplateKeyId: apiKeyId,
+      requests: 1,
+      errors:
+        (status === "failed" || status === "truncated") &&
+        (httpStatus === undefined || (httpStatus >= 500 && ![503, 504, 529].includes(httpStatus)))
+          ? 1
+          : 0,
+      inputTokens: Number(overrides.inputTokens ?? 100),
+      outputTokens: Number(overrides.outputTokens ?? 50),
+      lastUsedAt: new Date(),
+    } as never)
+    .onConflictDoUpdate({
+      target: [telemetryUsageTotals.tenantId, telemetryUsageTotals.identityType, telemetryUsageTotals.entityId],
+      set: {
+        requests: sql`${telemetryUsageTotals.requests} + excluded.requests`,
+        errors: sql`${telemetryUsageTotals.errors} + excluded.errors`,
+        inputTokens: sql`${telemetryUsageTotals.inputTokens} + excluded.input_tokens`,
+        outputTokens: sql`${telemetryUsageTotals.outputTokens} + excluded.output_tokens`,
+      },
+    });
 }
 
 const RECIPIENTS = { total: 2, active: 1 } as const;

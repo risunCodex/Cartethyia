@@ -55,7 +55,7 @@ function addUsageDelta(
   delta.outputTokens += row.outputTokens ?? 0;
 }
 
-function aggregateUsage(rows: readonly (typeof telemetryEvents.$inferInsert)[]) {
+export function aggregateUsage(rows: readonly (typeof telemetryEvents.$inferInsert)[]) {
   const deltas = new Map<string, UsageTotalDelta>();
   for (const row of rows) {
     addUsageDelta(deltas, row, "account", row.accountId);

@@ -26,9 +26,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { pgHandleFromPool } from "../../src/persistence/db-pg";
-import { apiKeys, telemetryEvents } from "../../src/persistence/schema";
+import { apiKeys, telemetryEvents, telemetryUsageTotals } from "../../src/persistence/schema";
+import { aggregateUsage } from "../../src/persistence/stores/telemetry-store";
 import { createRunId, dbDescribe, getTestPool, requireDatabase } from "../helpers/database";
 import { createTenant } from "../helpers/fixtures";
 
@@ -133,6 +134,62 @@ async function writeRows(
   await shareDb.insert(telemetryEvents).values(
     withFamily.map((row) => ({ ...row, id: row.requestId })),
   );
+  // Mirror production's durable rollup: `insertEvents` charges
+  // `telemetry_usage_totals` from the inserted rows using `aggregateUsage`.
+  // The share KPI now reads that rollup for lifetime numbers, so a fixture
+  // that writes events without charging the rollup would make lifetime counts
+  // read as zero.
+  const deltas = aggregateUsage(withFamily);
+  if (deltas.length > 0) {
+    const apiKeyIds = [
+      ...new Set(
+        deltas
+          .filter((delta) => delta.identityType === "api_key")
+          .map((delta) => delta.entityId),
+      ),
+    ];
+    const familyTemplates = new Map<string, string | null>();
+    if (apiKeyIds.length > 0) {
+      const keyRows = await shareDb
+        .select({ id: apiKeys.id, parentKeyId: apiKeys.parentKeyId })
+        .from(apiKeys)
+        .where(inArray(apiKeys.id, apiKeyIds));
+      for (const row of keyRows) {
+        familyTemplates.set(row.id, row.parentKeyId ?? row.id);
+      }
+    }
+    for (const delta of deltas) {
+      const familyKey =
+        delta.identityType === "api_key" ? (familyTemplates.get(delta.entityId) ?? undefined) : undefined;
+      await shareDb
+        .insert(telemetryUsageTotals)
+        .values({
+          tenantId: delta.tenantId,
+          identityType: delta.identityType,
+          entityId: delta.entityId,
+          familyTemplateKeyId: familyKey,
+          requests: delta.requests,
+          errors: delta.errors,
+          inputTokens: delta.inputTokens,
+          outputTokens: delta.outputTokens,
+          lastUsedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [
+            telemetryUsageTotals.tenantId,
+            telemetryUsageTotals.identityType,
+            telemetryUsageTotals.entityId,
+          ],
+          set: {
+            requests: sql`${telemetryUsageTotals.requests} + excluded.requests`,
+            errors: sql`${telemetryUsageTotals.errors} + excluded.errors`,
+            inputTokens: sql`${telemetryUsageTotals.inputTokens} + excluded.input_tokens`,
+            outputTokens: sql`${telemetryUsageTotals.outputTokens} + excluded.output_tokens`,
+            lastUsedAt: sql`${telemetryUsageTotals.lastUsedAt}`,
+          },
+        });
+    }
+  }
 }
 
 /** A telemetry row with only what a test names set. */
@@ -974,17 +1031,16 @@ dbDescribe("createShareStatsPort — client addresses are always masked", () => 
     }
   });
 
-  test("addresses are grouped and ranked by most recent activity, newest User-Agent winning", async () => {
-    // The table answers "who is using the link right now", so recency outranks
-    // volume: a single request a minute ago beats an address with many requests
-    // but nothing recent. Within one address, the label is its *current*
+  test("addresses are grouped and ranked by request volume, highest first", async () => {
+    // The table answers "who has used the link most", so the busy address
+    // outranks the quiet one. Within one address, the label is its *current*
     // identity — the newest header — not whichever it sent first.
     const scope = await familyScope("share-ip-ranking");
     try {
       const key = crypto.randomUUID();
       const now = Date.now();
       await writeRows([
-        // Busy-but-quiet: two requests, the latest hours ago.
+        // Busy address: two requests, the latest hours ago.
         row(scope.tenantId, key, {
           clientIp: "203.0.113.10",
           userAgent: "old-client/1.0",
@@ -995,7 +1051,7 @@ dbDescribe("createShareStatsPort — client addresses are always masked", () => 
           userAgent: "new-client/2.0",
           createdAt: new Date(now - 5 * 60_000),
         }),
-        // One request just now must outrank the busy address.
+        // Quiet address: one request just now must rank below the busy one.
         row(scope.tenantId, key, {
           clientIp: "203.0.113.20",
           userAgent: null,
@@ -1008,15 +1064,12 @@ dbDescribe("createShareStatsPort — client addresses are always masked", () => 
         EMPTY_RECIPIENTS,
       );
       expect(stats.clientIps).toHaveLength(2);
-      const latest = stats.clientIps[0];
-      expect(latest?.requests).toBe(1);
-      expect(latest?.clientType).toBeNull();
+      const busiest = stats.clientIps[0];
+      expect(busiest?.requests).toBe(2);
+      expect(busiest?.clientType).toBe("new-client");
       const quieter = stats.clientIps[1];
-      expect(quieter?.requests).toBe(2);
-      expect(quieter?.clientType).toBe("new-client");
-      expect(new Date(String(latest?.lastSeenAt ?? "0")).getTime()).toBeGreaterThan(
-        new Date(String(quieter?.lastSeenAt ?? "0")).getTime(),
-      );
+      expect(quieter?.requests).toBe(1);
+      expect(quieter?.clientType).toBeNull();
     } finally {
       await scope.cleanup();
     }
