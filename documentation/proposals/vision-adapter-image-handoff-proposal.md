@@ -1,6 +1,7 @@
 # Proposal — Vision Adapter: image handoff ke model vision global
 
-**Status:** draft untuk dibaca, belum diimplementasikan.
+**Status:** ✅ diimplementasikan (commit `33766b33`), proposal dipertahankan
+sebagai catatan desain & keputusan.
 **Tanggal:** 2026-11-01
 **Scope:** request/degradation (preparer) + dispatch interno (attempt-loop) +
 tenant preferences (schema) + dashboard (Settings / Combos & Routes).
@@ -162,12 +163,15 @@ dua pelajaran yang dipakai sebagai batasan, bukan sebagai desain:
 
 ### 3.4 Alur runtime baru
 
-Di `ProxyRequestPreparer.prepare`, **sebelum** jatuh ke placeholder:
+Di `ProxyRequestPreparer.prepare`, **di dalam loop degradasi** — tepat ketika
+variant yang menang mendegradasi capability `image` (artinya model terpilih
+tidak image-capable):
 
-1. Deteksi gambar di request (`hasImage`).
+1. Deteksi bahwa variant menang mendegradasi `image` (`variant.degraded`
+   memuat `"image"`).
 2. Resolve `visionHandoffModels` dari tenant preferences (global) — array
    terurut, prioritas fallback.
-3. Kalau kosong → perilaku lama (`[image]`), selesai.
+3. Kalau kosong → lanjut ke perilaku lama (`[image]`), selesai.
 4. Kalau ada:
    a. Bangun sub-request vision:
       - `messages`: **satu** pesan user berisi part gambar + teks saudaranya
@@ -181,13 +185,22 @@ Di `ProxyRequestPreparer.prepare`, **sebelum** jatuh ke placeholder:
    c. **Failover ke daftar**: kalau model pertama gagal (cooldown / quota /
       upstream error), `runAttemptLoop` memindahkan candidate yang gagal dan
       mencoba model berikutnya dari daftar — sama seperti combo fallback.
-   d. Ambil teks hasil → **ganti setiap part gambar** di request asli dengan
-      `{ kind: "text", text: <deskripsi> }`.
+   d. Ambil teks hasil → **ganti setiap part gambar / placeholder `[image]`**
+      di variant yang menang dengan `{ kind: "text", text: <deskripsi> }`
+      (degradasi lain, mis. tools, tetap dipertahankan).
+   e. Re-plan variant yang sudah text-only; kalau berhasil, pakai plan ini
+      (degradasi `image` dihapus dari daftar degraded).
 5. Lanjutkan planning seperti biasa — request sekarang text-only, model asli
    menjawab.
 
 Deskripsi disuntik **menggantikan** part gambar, bukan ditambah sebagai pesan
 baru, supaya posisi dan konteks pesan asli tetap terjaga.
+
+> Catatan implementasi: `plan()` melempar `accounts_unavailable` (503), bukan
+> `capability_unsupported`, saat tidak ada candidate yang mendukung capability
+> yang diminta. Loop degradasi diperbaiki untuk meneruskan ke variant berikutnya
+> pada kasus itu (hanya dari variant pristine) agar fallback `[image]` benar-benar
+> tercapai — sebelumnya request bergambar ke model text-only berakhir 503.
 
 ### 3.5 Batas & guard
 
