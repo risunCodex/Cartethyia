@@ -71,7 +71,6 @@ const SETTINGS = {
   upstreamTimeoutSeconds: null,
   telemetryWindowMinutes: null,
   imageClampMaxBytes: null,
-  visionHandoffModels: [],
   // The panel reads `settings.defaults.*` to name what each unset row
   // resolves to, so a fixture without it makes the panel throw rather than
   // merely render an empty label.

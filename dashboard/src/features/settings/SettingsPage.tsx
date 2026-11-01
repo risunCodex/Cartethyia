@@ -2,10 +2,7 @@ import {
   Archive,
   Database,
   Eye,
-  Image as ImageIcon,
-  Plus,
   Shield,
-  X,
   Zap,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -17,8 +14,6 @@ import { ErrorState, LoadingState } from "../../components/ui/state";
 import { Banner } from "../../components/patterns/banner";
 import { BackupPanel } from "../../components/BackupPanel";
 import { DataManagementPanel } from "./DataManagementPanel";
-import { ModelPickerModal, type FlatModelEntry } from "../../components/ModelPicker";
-import { SortableList } from "../../components/SortableList";
 import { toast } from "../../lib/toast";
 import { useChangePassword } from "../../hooks/auth";
 import {
@@ -26,7 +21,6 @@ import {
   useUpdateRuntimeSettings,
 } from "../../hooks/settings";
 import { getErrorMessage } from "../../data/api";
-import type { UpdateRuntimeSettingsRequest } from "../../data/contracts";
 /**
  * The values the operational dropdowns offer.
  *
@@ -211,113 +205,6 @@ function SettingsRow({
  */
 function SettingsGroup({ title }: { readonly title: string }): ReactNode {
   return <p className="settings-group-head">{title}</p>;
-}
-
-/** The vision-only model filter used by the picker. */
-function isVisionModel(entry: FlatModelEntry): boolean {
-  return entry.kind === "model" && entry.entry.vision === true;
-}
-
-/**
- * The ordered vision-handoff model list control. The first healthy model on
- * the list describes the image; if it fails (cooldown/quota/upstream error)
- * the gateway falls through to the next entry. Empty = the legacy `[image]`
- * placeholder behavior. Order is edited with the sortable list; the picker
- * only offers image-capable chat models.
- */
-function VisionHandoffControl({
-  models,
-  save,
-}: {
-  readonly models: readonly string[] | undefined;
-  readonly save: (patch: UpdateRuntimeSettingsRequest, message: string) => void;
-}): ReactNode {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [list, setList] = useState<readonly { id: string; value: string }[]>(
-    () => (models ?? []).map((value) => ({ id: `v${value}`, value })),
-  );
-
-  const toggle = (value: string) => {
-    const next = list.some((m) => m.value === value)
-      ? list.filter((m) => m.value !== value)
-      : [...list, { id: `v${value}-${list.length}`, value }];
-    setList(next);
-    save(
-      { visionHandoffModels: next.map((m) => m.value) },
-      "Vision handoff models updated.",
-    );
-  };
-
-  const reorder = (ids: string[]) => {
-    const byId = new Map(list.map((m) => [m.id, m]));
-    const next = ids.map((id) => byId.get(id)).filter((m): m is { id: string; value: string } => Boolean(m));
-    setList(next);
-    save(
-      { visionHandoffModels: next.map((m) => m.value) },
-      "Vision handoff order updated.",
-    );
-  };
-
-  return (
-    <>
-      <div className="settings-row">
-        <div className="settings-row-text">
-          <span className="settings-row-label">Vision handoff models</span>
-          <p className="settings-row-hint">
-            When a request carries images but the chosen model cannot see them,
-            the gateway sends the image to the first model on this list and
-            injects its description as text — the chosen model still answers.
-            If a model is unhealthy (cooldown, quota, upstream error), the
-            handoff falls to the next. Leave empty to keep the legacy{" "}
-            <code>[image]</code> placeholder.
-          </p>
-        </div>
-        <div className="settings-row-control">
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<Plus size={13} />}
-            onClick={() => setPickerOpen(true)}
-          >
-            Pick models
-          </Button>
-        </div>
-      </div>
-      {list.length > 0 ? (
-        <div className="settings-row">
-          <SortableList
-            items={list}
-            label="Vision handoff models"
-            gap="6px"
-            onReorder={reorder}
-            renderItem={(m) => (
-              <div className="flex items-center gap-3">
-                <ImageIcon size={14} className="shrink-0 text-text-tertiary" />
-                <code className="code-chip">{m.value}</code>
-                <button
-                  type="button"
-                  aria-label={`Remove ${m.value}`}
-                  onClick={() => toggle(m.value)}
-                  className="ml-auto grid size-7 cursor-pointer place-items-center rounded-control text-text-tertiary hover:bg-hover"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            )}
-          />
-        </div>
-      ) : null}
-      <ModelPickerModal
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        selected={list.map((m) => m.value)}
-        onToggle={toggle}
-        title="Select vision models"
-        multi
-        filter={isVisionModel}
-      />
-    </>
-  );
 }
 
 /**
@@ -848,8 +735,6 @@ function OperationalPanel(): ReactNode {
           />
         }
       />
-      <SettingsGroup title="Vision handoff" />
-      <VisionHandoffControl models={settings.visionHandoffModels} save={save} />
     </>
   );
 }
