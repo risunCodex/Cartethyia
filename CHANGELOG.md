@@ -8,7 +8,7 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [Unreleased] — 2.7.5
 
 ### Added
 
@@ -25,6 +25,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   own limit; a per-key child with no cap is unlimited on its own slot. Migration
   `0037` adds `api_keys.concurrency_scope` for both dialects. The API key form
   and the share page show the active scope.
+- **Vision adapter: hand images to a configured vision model instead of a
+  `[image]` placeholder.** When a request carries images but the selected model
+  is not image-capable, the gateway now forwards the image to an ordered list of
+  configured vision models (global setting `visionHandoffModels`), asks the
+  image *contents* — no chat history — and injects the description as text into
+  the original model's request. The original model still answers; only the image
+  travels. If a listed vision model is unhealthy (cooldown, quota, upstream
+  error), the handoff falls through to the next model on the list. If no vision
+  model succeeds or none is configured, the request falls back to the legacy
+  `[image]` placeholder and never fails because of the handoff. Config lives in
+  the runtime Settings (global per tenant), no migration required; the Settings
+  page gains a "Vision handoff models" card with multi-select, ordered picks.
+
+### Changed
+
+- **Routing prefers accounts with remaining credit, free tier to any account.**
+  Within the same rank group, the gateway now orders accounts with remaining
+  pooled credit first, then unknown-quota accounts, then known-zero last. A
+  model the provider marks as free (`free_tier`) is exempt: it may land on any
+  account regardless of credit balance. The rule applies to every provider —
+  Qoder included — because both signals are already per-candidate. The rank
+  (fresh → slow → cooling → saturated) remains the primary sort key; credit only
+  breaks ties inside one rank.
 
 ### Fixed
 
@@ -34,6 +57,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   including the Docker image — could not spawn them (`[qoder] elf mint failed`,
   EACCES). The bridge now self-heals with a best-effort `chmod 755` before
   spawning, and the Dockerfile marks the POSIX binaries executable at build.
+- **Trae region-unavailable refusals cool the account for a day.** Upstream
+  error `4013` ("AI service is not available in the current region now.") fell
+  through to the generic 502 platform-fault path, which cooled the account for
+  30 seconds without mutating it — the account was re-dialled on every request
+  inside the closed region window. It is now classified as a hard, account-wide
+  24-hour cooldown.
+- **Qoder quota refusals cool only the errored model.** Qoder's quota verdicts
+  (code `110` "Billing daily count exceeded" and the exhausted-quota upstream
+  499 close) were treated as account-wide quota exhaustion, parking every model
+  on the account when only one model's spend cap was hit. They are now
+  model-scoped: that model cools for a day while the account keeps serving its
+  other models.
+- **Notifications popover loads system health lazily.** The shell no longer
+  polls `/system/health` every 10 seconds for the whole page lifetime. The
+  popover fetches on first open (usually already cached from the shell's
+  version read), reuses that payload on every open, and refreshes only while it
+  is open — closing it stops the polling. This fixes the panel showing "System
+  health unavailable" with every metric Unavailable.
 
 ## [2.7.4] - 2026-11-01
 
