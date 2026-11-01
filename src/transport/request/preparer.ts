@@ -412,9 +412,17 @@ export class ProxyRequestPreparer {
                 ];
                 break;
               } catch (error) {
-                if (error instanceof GatewayError && error.code === "capability_unsupported") {
+                if (
+                  error instanceof GatewayError &&
+                  (error.code === "capability_unsupported" ||
+                    error.code === "accounts_unavailable")
+                ) {
                   // Re-plan failed without the image requirement; keep the
-                  // degraded `[image]` plan captured above.
+                  // degraded `[image]` plan captured above. `accounts_unavailable`
+                  // is also swallowed: the text-only re-plan can be refused for
+                  // the same health/pool reasons the original plan was, and the
+                  // parent request must never fail because a best-effort
+                  // handoff could not be re-planned.
                 } else {
                   throw error;
                 }

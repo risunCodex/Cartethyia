@@ -351,6 +351,7 @@ const ELIGIBILITY_REASON_LABELS: Readonly<Record<string, string>> = {
   locked: "all accounts are locked by another request",
   credit_floor_reached: "credit or quota is exhausted",
   quota_exhausted: "every account has an exhausted quota window or is below its configured usage floor",
+  capability_unsupported: "the accounts serving this model do not support the request's capabilities (e.g. images, tools, or reasoning)",
 };
 
 function explainEligibilityReasons(reasons: readonly string[]): string {
@@ -459,10 +460,18 @@ export function accountsUnavailableError(
   reasons: readonly string[],
 ): GatewayError {
   const distinct = [...new Set(reasons)].sort();
+  const capabilityBlocked = distinct.includes("capability_unsupported");
+  // When the blocker is a capability (the model exists and accounts exist, but
+  // none can carry the request's images/tools/reasoning), telling the client to
+  // "add an account" or wait out a coffee break is misleading — more accounts
+  // cannot conjure a capability the model itself lacks. Name the real fix.
+  const hint = capabilityBlocked
+    ? "Request a model that supports this capability (or a vision-capable model for images), or drop the unsupported part of the request. The model is the limit, not the pool 🧰"
+    : "Add an account, or wait for an operator to re-enable one. Every account is on a coffee break — try later ☕️";
   return new GatewayError(
     "accounts_unavailable",
     503,
-    `No account in the pool can serve '${requested}' right now (request {requestId}) (${explainEligibilityReasons(distinct)}). Add an account, or wait for an operator to re-enable one. Every account is on a coffee break — try later ☕️`,
+    `No account in the pool can serve '${requested}' right now (request {requestId}) (${explainEligibilityReasons(distinct)}). ${hint}`,
     { model: requested, reasons: distinct, candidate_count: reasons.length, gateway_hint: "no_healthy_account" },
   );
 }

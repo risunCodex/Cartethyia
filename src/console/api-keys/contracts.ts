@@ -130,34 +130,16 @@ export interface UpdateApiKeyResponse extends ApiKeyResponse {
 }
 
 /**
- * Ban reasons offered by the console dropdown. The first two are the operator's
- * own: "Instant Ban — Suka suka Gw" for the arbitrary ban, and a template for
- * suspicious traffic. The rest are generic, and an operator can still type a
- * custom reason — the dropdown is a convenience, not a closed set.
+ * Ban reasons offered by the console dropdown, and the durations the ban
+ * endpoint accepts. These are pure lists, kept in `ban-constants.ts` (no
+ * `node:*` imports) so the dashboard can import them without dragging Node
+ * crypto into the browser bundle. Re-exported here for backend consumers
+ * (`routes.ts` validates against `BAN_DURATION_CHOICES`).
  */
-export const API_KEY_BAN_REASONS: readonly { readonly value: string; readonly label: string }[] = [
-  { value: "instant_arbitrary", label: "Instant Ban — Suka suka Gw" },
-  { value: "traffic_suspicious", label: "Your traffic looks suspicious" },
-  { value: "abuse", label: "Abuse of the gateway" },
-  { value: "policy_violation", label: "Policy violation" },
-  { value: "compromised", label: "Key may be compromised" },
-  { value: "quota_exceeded", label: "Quota abused" },
-  { value: "other", label: "Other / custom" },
-] as const;
-
-/**
- * Ban durations the console offers, in whole minutes. `null` is permanent.
- * Mirrored by the dashboard (`dashboard/src/lib/ban-durations.ts`) so the UI
- * and the API agree on one list.
- */
-export const BAN_DURATION_CHOICES: readonly { readonly minutes: number | null; readonly label: string }[] = [
-  { minutes: 60, label: "1 hour" },
-  { minutes: 6 * 60, label: "6 hours" },
-  { minutes: 12 * 60, label: "12 hours" },
-  { minutes: 24 * 60, label: "1 day" },
-  { minutes: 7 * 24 * 60, label: "7 days" },
-  { minutes: null, label: "Permanent" },
-];
+export {
+  API_KEY_BAN_REASONS,
+  BAN_DURATION_CHOICES,
+} from "./ban-constants";
 
 /** What a bare "ban this key" click uses: the shortest, most reversible choice. */
 export const DEFAULT_BAN_MINUTES: number = 60;

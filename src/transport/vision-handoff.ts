@@ -13,6 +13,7 @@
  * failover engine.
  */
 import { GatewayError } from "../protocol/gateway-error";
+import { log } from "../observability/logger";
 import type { CanonicalEvent, CanonicalMessage, CanonicalRequest, ContentPart } from "../protocol/canonical-model";
 import type { ResolvedApiKey } from "../security/api-key-auth";
 import type { ProviderAdapter } from "../providers/provider-contracts";
@@ -136,8 +137,13 @@ export async function tryVisionHandoff(
           ...(input.signal === undefined ? {} : { signal: input.signal }),
           ...(input.clientUserAgent === undefined ? {} : { clientUserAgent: input.clientUserAgent }),
         });
-      } catch {
+      } catch (error) {
         // Unroutable / not allowed for this key / no account — try the next.
+        log.warn("[vision-handoff] vision model skipped", {
+          model,
+          tenantId: input.authorization.tenantId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
         continue;
       }
       if (prepared.candidate.capability_profile.image !== true) continue;
@@ -278,12 +284,23 @@ export async function tryVisionHandoff(
       if (text.trim().length > 0) {
         results.push({ description: text.trim(), model });
       }
-    } catch {
+    } catch (error) {
       // Any failure — upstream error, stream failure, accounting — falls
       // through to the next configured vision model.
+      log.warn("[vision-handoff] vision model attempt failed", {
+        model,
+        tenantId: input.authorization.tenantId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       childState.cleanup();
     }
+  }
+  if (results.length === 0 && models.length > 0) {
+    log.warn("[vision-handoff] all configured vision models failed; falling back to [image] placeholder", {
+      tenantId: input.authorization.tenantId,
+      models,
+    });
   }
   return results;
 }
