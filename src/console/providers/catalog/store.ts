@@ -30,6 +30,28 @@ import { pushStructuredConsoleLog } from "../../../observability/log-ring";
 
 const emptyUsage: ProviderAccountTokenUsage = { requests: 0, errors: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 };
 
+/**
+ * The owning pool's provider cooldown markers, filtered to the ones still in
+ * force and shaped like `NetworkPoolResponse.providerCooldowns`. Expired
+ * markers are skipped — a spent window is not a reason to flag the row.
+ */
+function activePoolProviderCooldowns(
+  markers: Record<string, { until: number; reason: string; blocked?: boolean }>,
+): { providerId: string; until: string; reason: string; blocked: boolean }[] {
+  const now = Date.now();
+  const active: { providerId: string; until: string; reason: string; blocked: boolean }[] = [];
+  for (const [providerId, marker] of Object.entries(markers)) {
+    if (marker.until <= now) continue;
+    active.push({
+      providerId,
+      until: new Date(marker.until).toISOString(),
+      reason: marker.reason,
+      blocked: marker.blocked === true,
+    });
+  }
+  return active;
+}
+
 /** Real Drizzle-backed provider and model catalog repository. */
 
 import {
@@ -1053,6 +1075,9 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
       sortIndex: 0,
       kind: "pool",
       networkPoolId: row.networkPoolId,
+      ...(pool?.providerCooldowns
+        ? { providerCooldowns: activePoolProviderCooldowns(pool.providerCooldowns) }
+        : {}),
     };
   }
 

@@ -548,6 +548,18 @@ export interface ProviderAccountResponse {
   kind?: "pool";
   /** The owning pool row (present for `kind: "pool"`). */
   networkPoolId?: string;
+  /**
+   * Provider-scoped rate-limit markers on the owning pool, when this is a
+   * pool-as-account row. Mirrors `NetworkPoolResponse.providerCooldowns`: a
+   * 429 cooldown refills, a block means the upstream retired the egress
+   * address. Absent for real accounts and for pools with no markers.
+   */
+  providerCooldowns?: Array<{
+    providerId: string;
+    until: string;
+    reason: string;
+    blocked: boolean;
+  }>;
 }
 /**
  * Plaintext export of one account's decrypted provider tokens.

@@ -75,6 +75,38 @@ function activeCredentialTone(account: ProviderAccountResponse): "blue" | "ok" {
   return account.credentialKind === "oauth" ? "blue" : "ok";
 }
 
+/**
+ * Provider-scoped rate-limit badge for pool-as-account rows. A pool can read
+ * `active` (the egress is reachable) while the upstream is still refusing it
+ * for one provider — the marker lives on the pool row, not in the account's
+ * own status. Without this a spent OpenCode free-tier egress looked identical
+ * to a healthy one.
+ */
+function PoolProviderCooldownBadge({
+  account,
+}: {
+  readonly account: ProviderAccountResponse;
+}): ReactNode {
+  const markers = account.providerCooldowns;
+  if (!markers || markers.length === 0) return null;
+  const now = Date.now();
+  const active = markers.filter((marker) => new Date(marker.until).getTime() > now);
+  if (active.length === 0) return null;
+  const blocked = active.some((marker) => marker.blocked);
+  const soonest = active.reduce((min, marker) => {
+    const at = new Date(marker.until).getTime();
+    return at < min ? at : min;
+  }, Infinity);
+  const title = active
+    .map((marker) => `${marker.providerId}: ${marker.reason}${marker.blocked ? " (blocked)" : ""}`)
+    .join(" · ");
+  return (
+    <Badge tone="warn" title={`${title} — resets ${formatResetDistance(new Date(soonest).toISOString())}`}>
+      {blocked ? "Egress blocked" : "Rate-limited"}
+    </Badge>
+  );
+}
+
 export function AccountStatusBadge({
   account,
 }: {
@@ -119,6 +151,7 @@ export function AccountStatusBadge({
         <Badge tone={activeCredentialTone(account)} dot>
           Active{credentialFamily(account) ? ` - ${credentialFamily(account)}` : ""}
         </Badge>
+        <PoolProviderCooldownBadge account={account} />
         {renderErrorPill(account)}
         <ModelCooldownChip cooldowns={modelCooldowns} reason={account.lastErrorCategory === "quota_exhausted" ? account.lastError : undefined} />
       </Inline>
@@ -131,6 +164,7 @@ export function AccountStatusBadge({
           Cooldown{credentialFamily(account) ? ` - ${credentialFamily(account)}` : ""}{" "}
           {account.cooldownUntil ? `(${formatResetDistance(account.cooldownUntil)})` : ""}
         </Badge>
+        <PoolProviderCooldownBadge account={account} />
         {renderErrorPill(account)}
         <ModelCooldownChip cooldowns={modelCooldowns} reason={account.lastErrorCategory === "quota_exhausted" ? account.lastError : undefined} />
       </Inline>

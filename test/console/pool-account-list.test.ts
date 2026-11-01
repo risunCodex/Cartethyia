@@ -18,6 +18,7 @@ import {
 import { networkPools, providerPoolAccounts, providers, tenants } from "../../src/persistence/schema";
 import { DrizzleProviderCatalogStore } from "../../src/console/providers/catalog/store";
 import { ProviderRegistry } from "../../src/providers/provider-registry";
+import type { CartethyiaDatabase } from "../../src/persistence/db-handle";
 
 function removeDir(dir: string): void {
   try {
@@ -30,7 +31,7 @@ function removeDir(dir: string): void {
 }
 
 async function withStore(
-  run: (ctx: { readonly store: DrizzleProviderCatalogStore; readonly tenantId: string }) => Promise<void>,
+  run: (ctx: { readonly store: DrizzleProviderCatalogStore; readonly tenantId: string; readonly db: CartethyiaDatabase }) => Promise<void>,
 ): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), "cartethyia-poolaccount-"));
   const sqlite = createSqliteDatabase(join(dir, "cartethyia.sqlite"));
@@ -73,7 +74,7 @@ async function withStore(
       updatedAt: new Date(),
     });
 
-    await run({ store, tenantId });
+    await run({ store, tenantId, db });
   } finally {
     sqlite.close();
     removeDir(dir);
@@ -97,6 +98,23 @@ describe("pool-as-account list", () => {
     await withStore(async ({ store, tenantId }) => {
       const accounts = await store.listAccounts(tenantId, "anthropic");
       expect(accounts.filter((account) => account.kind === "pool")).toHaveLength(0);
+    });
+  });
+
+  test("pool-account rows surface active provider cooldown markers", async () => {
+    await withStore(async ({ store, tenantId, db }) => {
+      const future = Date.now() + 60 * 60 * 1000;
+      await db.update(networkPools).set({
+        providerCooldowns: {
+          opencode: { until: future, reason: "Provider opencode rate limit" },
+          anthropic: { until: Date.now() - 1000, reason: "expired" },
+        },
+      });
+      const accounts = await store.listAccounts(tenantId, "opencode");
+      const pool = accounts.find((account) => account.kind === "pool");
+      expect(pool?.providerCooldowns).toEqual([
+        { providerId: "opencode", until: new Date(future).toISOString(), reason: "Provider opencode rate limit", blocked: false },
+      ]);
     });
   });
 });
