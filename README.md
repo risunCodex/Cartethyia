@@ -77,16 +77,19 @@ and change routing without restarting anything.
 
 <table>
 <tr>
-<td align="center"><img src="documentation/assets/screenshots/overview.png" width="100%" alt="Overview" /><br /><b>Overview</b><br /><sub>Health of the whole install at a glance</sub></td>
+<td align="center"><img src="documentation/assets/screenshots/overview.png" width="100%" alt="Overview" /><br /><b>Overview</b><br /><sub>Gateway endpoint, remote support, and compression</sub></td>
 <td align="center"><img src="documentation/assets/screenshots/usage.png" width="100%" alt="Usage" /><br /><b>Usage</b><br /><sub>Volume, latency, cached tokens, spend per model</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="documentation/assets/screenshots/provider.png" width="100%" alt="Provider detail" /><br /><b>Provider detail</b><br /><sub>Accounts, quota, health, and routing controls per provider</sub></td>
+<td align="center"><img src="documentation/assets/screenshots/quota-management.png" width="100%" alt="Quota Management" /><br /><b>Quota Management</b><br /><sub>Per-account quota windows, resets, and availability</sub></td>
+<td align="center"><img src="documentation/assets/screenshots/proxy-pool.png" width="100%" alt="Proxy &amp; Requests" /><br /><b>Proxy &amp; Requests</b><br /><sub>Outbound proxy pools: capacity, latency, and health</sub></td>
+</tr>
+<tr>
 <td align="center"><img src="documentation/assets/screenshots/model-lab.png" width="100%" alt="Model Lab" /><br /><b>Model Lab</b><br /><sub>Chat a routed model through the real gateway path</sub></td>
+<td align="center"><img src="documentation/assets/screenshots/cli-tools.png" width="100%" alt="CLI Tools" /><br /><b>CLI Tools</b><br /><sub>Per-CLI model mappings and downloadable config</sub></td>
 </tr>
 <tr>
 <td align="center"><img src="documentation/assets/screenshots/customization.png" width="100%" alt="Customization" /><br /><b>Customization</b><br /><sub>Background, transparency, and per-surface blur</sub></td>
-<td align="center"><img src="documentation/assets/screenshots/settings.png" width="100%" alt="Settings" /><br /><b>Settings</b><br /><sub>Backup, retention, payload capture, update checks</sub></td>
 </tr>
 </table>
 
