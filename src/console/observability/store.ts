@@ -17,7 +17,7 @@ import { clientNameFromUserAgent } from "../../observability/client-name";
 // derivation cannot drift between writer and reader. Existing console
 // imports of `clientNameFromUserAgent` keep working.
 export { clientNameFromUserAgent };
-import { cachedReadWithEtag, type CachedResult } from "../shared/read-through-cache";
+import { cachedReadWithEtag, READ_THROUGH_DEFAULT_TTL_SECONDS, type CachedResult } from "../shared/read-through-cache";
 import { decodeDatedCursor, encodeCursor, trimKeysetPage } from "../shared/cursor";
 import { CARTETHYIA_VERSION } from "../../version";
 import { CachedPreferencesReader, DrizzlePreferencesReader, type PreferencesReader } from "../../persistence/tenant-preferences";
@@ -255,6 +255,15 @@ function breakdownDimension(dimension: UsageDimension): string {
 
 /** Real Drizzle-backed observability repository used by the production console. */
 export class DrizzleObservabilityStore implements ObservabilityStore {
+  /**
+   * In-memory read-through cache for deployments without Redis (the embedded
+   * lite backend). Console polls hit the same cache keys every few seconds and
+   * each compute re-aggregates telemetry; Redis is preferred when configured
+   * (cross-instance sharing), otherwise this Map serves the same TTL so a
+   * busy poller does not re-scan the window on every poll.
+   */
+  private readonly localCache = new Map<string, { at: number; value: unknown; etag: string }>();
+
   constructor(
     private readonly db: CartethyiaDatabase,
     private readonly redis: RedisClient | undefined,
@@ -406,7 +415,18 @@ export class DrizzleObservabilityStore implements ObservabilityStore {
    * poll can be answered with a `304` instead of the whole payload.
    */
   private readThroughWithEtag<T>(key: string, compute: () => Promise<T>): Promise<CachedResult<T>> {
-    return cachedReadWithEtag(this.redis, key, compute);
+    if (this.redis) return cachedReadWithEtag(this.redis, key, compute);
+    // No Redis: serve from the in-memory cache with the same TTL semantics,
+    // so a poller without Redis does not re-compute on every poll.
+    const now = Date.now();
+    const hit = this.localCache.get(key);
+    if (hit !== undefined && now - hit.at < READ_THROUGH_DEFAULT_TTL_SECONDS * 1000) {
+      return Promise.resolve({ value: hit.value as T, etag: hit.etag });
+    }
+    return cachedReadWithEtag(undefined, key, compute).then((result) => {
+      this.localCache.set(key, { at: now, value: result.value, etag: result.etag });
+      return result;
+    });
   }
 
   private async computeUsage(tenantId: string, period: string): Promise<UsageResponse> {

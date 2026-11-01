@@ -64,6 +64,34 @@ export function etagKey(key: string): string {
 }
 
 /**
+ * In-memory fallback store used when no Redis client is configured (the
+ * embedded lite backend). Keyed by the same cache key, storing the value and
+ * its validator with a TTL. Bounded so a busy gateway cannot grow it without
+ * limit.
+ */
+const LOCAL_CACHE_MAX_ENTRIES = 2000;
+const localCache = new Map<string, { at: number; value: string; etag: string }>();
+
+function localGet(key: string): { value: string; etag: string } | undefined {
+  const entry = localCache.get(key);
+  if (entry === undefined) return undefined;
+  if (Date.now() - entry.at >= READ_THROUGH_DEFAULT_TTL_SECONDS * 1000) {
+    localCache.delete(key);
+    return undefined;
+  }
+  return { value: entry.value, etag: entry.etag };
+}
+
+function localSet(key: string, value: string, etag: string): void {
+  if (localCache.size >= LOCAL_CACHE_MAX_ENTRIES) {
+    // Evict the oldest entry (Map iterates in insertion order).
+    const oldest = localCache.keys().next();
+    if (!oldest.done) localCache.delete(oldest.value);
+  }
+  localCache.set(key, { at: Date.now(), value, etag });
+}
+
+/**
  * Reads through the cache and returns a strong validator alongside the value.
  *
  * The validator is computed once, at the moment the body is written, and read
@@ -74,7 +102,8 @@ export function etagKey(key: string): string {
  * With no cache configured (`client === undefined`) the value is computed and
  * the validator is still returned, so conditional requests keep working for
  * the length of the client's own polling loop; only the cross-instance sharing
- * is lost.
+ * is lost. A process-local Map serves the same TTL when Redis is absent, so a
+ * poller still gets cache hits.
  */
 export async function cachedReadWithEtag<T>(
   client: ReadThroughCacheClient | undefined,
@@ -83,8 +112,15 @@ export async function cachedReadWithEtag<T>(
   ttlSeconds: number = READ_THROUGH_DEFAULT_TTL_SECONDS,
 ): Promise<CachedResult<T>> {
   if (client === undefined) {
+    const entry = localGet(key);
+    if (entry !== undefined) {
+      return { value: JSON.parse(entry.value) as T, etag: entry.etag };
+    }
     const fresh = await compute();
-    return { value: fresh, etag: etagFor(JSON.stringify(fresh) ?? "null") };
+    const bytes = JSON.stringify(fresh) ?? "null";
+    const etag = etagFor(bytes);
+    localSet(key, bytes, etag);
+    return { value: fresh, etag };
   }
   try {
     const hit = await client.get(key);
