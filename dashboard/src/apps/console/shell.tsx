@@ -37,12 +37,13 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { UpdateDialog, readDismissedUpdate, dismissUpdate } from "../../components/UpdateDialog";
 import { clearPersistedCache, queryClient } from "../../data/query-client";
 import { prefetchRouteIntent } from "../../data/route-prefetch";
+import { POLL } from "../../data/query-policy";
 import { useSystemHealth, useLatestRelease, useNotifications } from "../../hooks/system";
 import { useProviders } from "../../hooks/providers";
 import { DASHBOARD_RELEASE_LABEL, DASHBOARD_VERSION } from "../../lib/version";
 import { formatUptime } from "../../lib/format/numbers";
 import { GITHUB_RELEASES_URL } from "../../lib/links";
-import { isNewerRelease, type SystemHealthResponse } from "../../data/contracts";
+import { isNewerRelease } from "../../data/contracts";
 import type { SessionUser } from "../../data/contracts";
 
 interface NavItemDef {
@@ -255,10 +256,8 @@ function MetricTile({
 }
 
 function NotificationsPopover({
-  health,
   onOpenUpdate,
 }: {
-  health?: SystemHealthResponse;
   /** Opens the update dialog. A release alert is answered there, not on GitHub. */
   onOpenUpdate: () => void;
 }) {
@@ -267,6 +266,14 @@ function NotificationsPopover({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const notifications = useNotifications();
+  // Health is loaded lazily, keyed to the popover: the first open fetches it
+  // (the shell's version read usually already warmed the cache), every open
+  // reuses that cached payload, and the refresh timer runs only while the
+  // popover is open — closing it stops the polling, never the other way.
+  const { data: health } = useSystemHealth({
+    enabled: open,
+    refetchInterval: open ? POLL.status : false,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -904,7 +911,6 @@ export function DashboardShell({
               <HeaderExtras />
               <ThemeToggle />
               <NotificationsPopover
-                health={healthQuery.data}
                 onOpenUpdate={() => setUpdateOpen(true)}
               />
             </div>
