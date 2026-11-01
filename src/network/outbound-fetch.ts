@@ -1,7 +1,7 @@
 // Validated fetch: SSRF-guarded outbound fetch with optional pool-agent support.
 import { GatewayError } from "../protocol/gateway-error";
-import { Agent as HttpAgent } from "node:http";
-import { Agent as HttpsAgent } from "node:https";
+import { request as httpRequest, Agent as HttpAgent } from "node:http";
+import { request as httpsRequest, Agent as HttpsAgent } from "node:https";
 import { Agent as UndiciAgent, fetch as undiciFetch, type UndiciRequestInit } from "undici";
 import { SocksProxyAgent } from "socks-proxy-agent";
 import { resolveAllAddresses, validateResolvedAddresses } from "./ssrf";
@@ -167,6 +167,66 @@ async function dial(
   });
 }
 
+/**
+ * One raw GET/HEAD dial that carries a body.
+ *
+ * The runtime-native fetch (`Bun`/undici) rejects `GET`/`HEAD` requests with a
+ * body — "request with GET/HEAD method cannot have body" — but some upstreams
+ * validate a signature over the body on a GET (Qoder's `/model/list` does).
+ * This is the Node `http`/`https` path for exactly that case. It runs only
+ * after the SSRF resolve/validate pass and only when no pool/relay agent owns
+ * the dial, so the security boundary is unchanged.
+ */
+function nodeDial(url: URL, init: RequestInit): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const mod = url.protocol === "http:" ? httpRequest : httpsRequest;
+    const headers: Record<string, string> = {};
+    {
+      const h = new Headers(init.headers);
+      h.forEach((value, key) => {
+        headers[key] = value;
+      });
+    }
+    let payload: Buffer | undefined;
+    const body = init.body;
+    if (typeof body === "string") {
+      payload = Buffer.from(body, "utf8");
+    } else if (Buffer.isBuffer(body)) {
+      payload = body;
+    } else if (body instanceof Uint8Array) {
+      payload = Buffer.from(body);
+    } else if (body !== null && body !== undefined) {
+      reject(new TypeError("nodeDial only supports string/Buffer/Uint8Array bodies"));
+      return;
+    }
+    if (payload !== undefined) headers["content-length"] = String(payload.byteLength);
+    const req = mod(
+      url,
+      {
+        method: (init.method ?? "GET").toUpperCase(),
+        headers,
+        ...(init.signal === undefined ? {} : { signal: init.signal as AbortSignal }),
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () => {
+          resolve(
+            new Response(Buffer.concat(chunks), {
+              status: res.statusCode ?? 200,
+              ...(res.statusMessage === undefined ? {} : { statusText: res.statusMessage }),
+              headers: res.headers as unknown as HeadersInit,
+            }),
+          );
+        });
+      },
+    );
+    req.on("error", reject);
+    if (payload !== undefined) req.write(payload);
+    req.end();
+  });
+}
+
 export function createValidatedFetch(options: ValidatedFetchOptions = {}): ValidatedFetch {
   const policy = options.policy ?? {};
   const maxRedirects = options.maxRedirects ?? policy.maxRedirects ?? 3;
@@ -242,7 +302,18 @@ export function createValidatedFetch(options: ValidatedFetchOptions = {}): Valid
         // serverless front door refuses (400).
         response = await dial(relay.url, relay.init, fetchFn, undefined);
       } else {
-        response = await dial(url, requestInit, fetchFn, proxyUrl, socksAgent ? socksDispatcherFor(socksAgent) : undefined, socksFetch);
+        const method = (requestInit.method ?? "GET").toUpperCase();
+        const hasBody = requestInit.body !== undefined && requestInit.body !== null;
+        // The runtime fetch cannot carry a body on GET/HEAD, but Qoder's
+        // model-list endpoint requires a signed GET body. When no pool/relay
+        // owns the dial and no injected test fetch is present, dial through the
+        // Node http(s) client (post SSRF validation). Every other case keeps
+        // the existing fetch path.
+        if ((method === "GET" || method === "HEAD") && hasBody && !socksAgent && options.fetchFn === undefined) {
+          response = await nodeDial(url, requestInit);
+        } else {
+          response = await dial(url, requestInit, fetchFn, proxyUrl, socksAgent ? socksDispatcherFor(socksAgent) : undefined, socksFetch);
+        }
       }
       if (response.status < 300 || response.status >= 400) {
         trackNetworkCall(url.hostname, performance.now() - startedAt);

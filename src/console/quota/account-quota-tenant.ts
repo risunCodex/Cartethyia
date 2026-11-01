@@ -54,6 +54,7 @@ import {
   listAccountResetCredits,
 } from "../../providers/operations/account-reset-service";
 import {
+  enqueueBackgroundQuotaRefresh,
   pendingQuotaRefreshes,
   toQuotaAccountHealth,
   toQuotaView,
@@ -369,6 +370,15 @@ export function registerAccountQuotaTenantRoutes(
           icon: providerId,
         }));
       let refreshing = 0;
+      // Cold-cache backfill: the overview renders whatever is cached, and the
+      // periodic sweep owns freshness — but with many accounts (e.g. a large
+      // Qoder roster) the sweep's per-pass cap cannot keep every cache warm,
+      // so a page open would show accounts with no badge for minutes. Enqueue
+      // a bounded background refresh for accounts whose cache entry is missing
+      // (not merely stale), so the badge fills in without waiting for the next
+      // sweep pass and without fanning out to the whole roster at once.
+      const coldCacheCap = 20;
+      let coldCacheEnqueued = 0;
       // The sweep's day markers answer "attempted today" without an upstream
       // request; only check-in-capable accounts can carry one, so only they
       // are read.
@@ -404,6 +414,21 @@ export function registerAccountQuotaTenantRoutes(
         const canRefresh = providerRegistry.hasQuotaCollector(row.providerId);
         const isRefreshing = canRefresh && (pending.has(row.id) || entry === undefined);
         if (isRefreshing) refreshing += 1;
+        // Backfill a missing cache entry on page open (bounded, see above).
+        if (
+          canRefresh &&
+          entry === undefined &&
+          !pending.has(row.id) &&
+          coldCacheEnqueued < coldCacheCap
+        ) {
+          coldCacheEnqueued += 1;
+          enqueueBackgroundQuotaRefresh(refreshDeps, {
+            accountId: row.id,
+            providerId: row.providerId,
+            tenantId: row.tenantId,
+            credentialKind: row.credentialKind,
+          });
+        }
         return {
           id: row.id,
           provider: row.providerId,

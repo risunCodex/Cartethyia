@@ -803,14 +803,11 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
       const current = await config.store.get(authorized.tenantId, keyId);
       if (!current || current.revokedAt !== undefined)
         throw new ConsoleDomainError("key_not_found", 404, "Key not found");
-      if (current.parentKeyId !== undefined)
-        throw new ConsoleDomainError(
-          "shared_key_managed_by_parent",
-          409,
-          "Ban or revoke this key through its share parent",
-        );
       const banned = await config.store.ban(authorized.tenantId, keyId, reason, bannedUntil);
       if (!banned) throw new ConsoleDomainError("key_not_found", 404, "Key not found");
+      // A banned child key does not affect its share template or sibling keys:
+      // `store.ban` only turns off the one row named by `keyId`, and the auth
+      // path rejects per key hash. The template keeps issuing working children.
       // A banned key must leave the auth cache for every process at once.
       invalidateApiKeyCache();
       await config.auditSink?.record({

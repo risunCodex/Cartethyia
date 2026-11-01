@@ -175,15 +175,18 @@ async function tryClaimDaily(
   if (campaigns === null) {
     return { state: "error", amount: 0, error: "Campaign list unavailable." };
   }
-  for (const campaign of campaigns) {
+  // Claim a `CLAIMABLE` CREDITS-kind campaign. Promo rows (`VIEW_DETAILS`,
+  // no benefit) are not credit grants and must not be claimed — claiming one
+  // spends the account's daily slot for nothing and makes the sweep report a
+  // misleading `claimed` with 0 credits.
+  const claimable = campaigns.filter((c) => {
+    if (String(c["claim_status"] ?? "").toUpperCase() !== "CLAIMABLE") return false;
+    const kind = String(asRecord(c["benefit"])?.["kind"] ?? "").toUpperCase();
+    const action = String(c["action_type"] ?? "").toUpperCase();
+    return kind === "CREDITS" || action === "CLAIM_BENEFIT";
+  });
+  for (const campaign of claimable) {
     const benefit = asRecord(campaign["benefit"]);
-    const kind = String(benefit?.["kind"] ?? "").toUpperCase();
-    if (kind !== "CREDITS" && kind !== "") continue;
-    const actionType = String(campaign["action_type"] ?? "");
-    if (actionType !== "" && actionType !== "CLAIM_BENEFIT") continue;
-    const claimStatus = String(campaign["claim_status"] ?? "").toUpperCase();
-    if (claimStatus === "CLAIMED") return { state: "already_claimed", amount: 0, error: null };
-    if (claimStatus !== "CLAIMABLE") continue;
     const campaignId = String(campaign["campaign_id"] ?? "");
     if (!campaignId) continue;
     const claim = await claimWithHeaders(base, campaignId, headers, fetcher);
@@ -195,6 +198,18 @@ async function tryClaimDaily(
     if (claim.state === "not_eligible") return { state: "not_eligible", amount: 0, error: null };
     return { state: "error", amount: 0, error: "Campaign claim failed." };
   }
+  // Nothing claimable. Only a CREDITS-kind campaign that is `CLAIMED` proves
+  // today's credit was already taken; a claimed promo (`VIEW_DETAILS`, no
+  // benefit) says nothing about the daily grant, so it must not be reported
+  // as already_claimed. When the CREDITS campaign is absent entirely, the
+  // daily grant is simply not present (or hidden) for this account.
+  const anyCreditsClaimed = campaigns.some((c) => {
+    if (String(c["claim_status"] ?? "").toUpperCase() !== "CLAIMED") return false;
+    const kind = String(asRecord(c["benefit"])?.["kind"] ?? "").toUpperCase();
+    const action = String(c["action_type"] ?? "").toUpperCase();
+    return kind === "CREDITS" || action === "CLAIM_BENEFIT";
+  });
+  if (anyCreditsClaimed) return { state: "already_claimed", amount: 0, error: null };
   return { state: "unavailable", amount: 0, error: "No daily CREDITS campaign claimable." };
 }
 
@@ -224,6 +239,9 @@ async function probeDailyClaim(
 ): Promise<{ result: { state: DailyCheckinState; amount: number; error: string | null }; identity: QoderNativeIdentity | null }> {
   const basic = await tryClaimDaily(base, campaignHeaders(credential), fetcher);
   if (basic.state === "claimed" || basic.state === "already_claimed") {
+    // `tryClaimDaily` only claims CREDITS-kind campaigns, so a `claimed` or
+    // `already_claimed` basic result is already about the daily credit grant —
+    // terminal, no identity probe needed.
     return { result: basic, identity: null };
   }
   if (basic.state === "unavailable") {

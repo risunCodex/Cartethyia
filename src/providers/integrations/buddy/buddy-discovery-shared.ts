@@ -100,12 +100,43 @@ export async function fetchBuddyDirectoryModels(args: {
   readonly fetcher?: typeof fetch | undefined;
 }): Promise<readonly ModelDefinition[] | null> {
   const fetcher = args.fetcher ?? globalThis.fetch;
-  const primary = await fetchBuddyDirectoryOnce(args, fetcher, BUDDY_CONFIG_PATH);
-  if (primary !== null) return primary;
-  // Both references rank `/v3/config` above the personal-models path, but this
-  // repo has only ever called the latter, so the fallback keeps today's
-  // behaviour intact for a host that answers one and not the other.
-  return await fetchBuddyDirectoryOnce(args, fetcher, args.modelsPath);
+  // Fetch both catalog scopes and merge them. `/v3/config` is ranked higher and
+  // is the primary source (matches the reference gateways), but the personal
+  // models path carries models the v3 response does not always publish — so a
+  // single-source read can silently miss models that are callable. Merging with
+  // dedupe by model id gives the union, mirroring the upstream codebuddy2api
+  // catalog aggregation. Each failure falls through to the other source, so a
+  // host that answers only one behaves exactly as it does today.
+  const v3 = await fetchBuddyDirectoryOnce(args, fetcher, BUDDY_CONFIG_PATH);
+  const personal = await fetchBuddyDirectoryOnce(args, fetcher, args.modelsPath);
+  if (v3 !== null && personal !== null) return mergeBuddyDirectories(v3, personal);
+  return v3 ?? personal;
+}
+
+/**
+ * Merges two buddy directory reads into one roster, preserving each source's
+ * declaration order and de-duplicating by model id. `primary` wins when both
+ * sources declare the same id; models present only in `supplemental` are
+ * appended. Both lists are already filtered (disabled/CLI-roster/not-chat),
+ * so the merge only has to combine them.
+ */
+function mergeBuddyDirectories(
+  primary: readonly ModelDefinition[],
+  supplemental: readonly ModelDefinition[],
+): readonly ModelDefinition[] {
+  const seen = new Set<string>();
+  const merged: ModelDefinition[] = [];
+  for (const model of primary) {
+    if (seen.has(model.modelId)) continue;
+    seen.add(model.modelId);
+    merged.push(model);
+  }
+  for (const model of supplemental) {
+    if (seen.has(model.modelId)) continue;
+    seen.add(model.modelId);
+    merged.push(model);
+  }
+  return merged;
 }
 
 /** Reads one directory path; `null` on any transport, status, or shape miss. */

@@ -3,9 +3,10 @@
  *
  * Both reference gateways call `/v3/config` and treat the personal-models path
  * as the narrower fallback. This repo only ever called the latter, so the
- * config path is added *ahead* of it — which makes the ordering itself the
- * thing worth pinning, along with the guarantee that a host answering only the
- * old path still works exactly as before.
+ * config path is added *ahead* of it. Discovery now fetches BOTH catalog
+ * scopes and merges them (dedupe by model id) — mirroring the upstream
+ * codebuddy2api catalog aggregation — so a host that answers both publishes the
+ * union, and a host answering only one behaves exactly as before.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -25,13 +26,26 @@ const CATALOG = {
   },
 };
 
-/** Records each requested URL and answers `ok` only for `allowed` paths. */
+/** Personal-path catalog that carries a model absent from the shared catalog. */
+const PERSONAL_CATALOG = {
+  code: 0,
+  data: {
+    models: [
+      { id: "glm-5.2", name: "GLM 5.2", maxInputTokens: 200_000, maxOutputTokens: 128_000 },
+      { id: "personal-only-model", name: "Personal Only", maxInputTokens: 64_000, maxOutputTokens: 16_000 },
+    ],
+  },
+};
+
+/** Records each requested URL and answers with the per-path payload. */
 function recordingFetcher(allowed: readonly string[]) {
   const calls: string[] = [];
   const fetcher = (async (url: string | URL | Request) => {
-    calls.push(String(url));
-    const ok = allowed.some((path) => String(url).includes(path));
-    return new Response(JSON.stringify(CATALOG), {
+    const raw = String(url);
+    calls.push(raw);
+    const ok = allowed.some((path) => raw.includes(path));
+    const body = raw.includes(BUDDY_CONFIG_PATH) ? CATALOG : PERSONAL_CATALOG;
+    return new Response(JSON.stringify(body), {
       status: ok ? 200 : 503,
       headers: { "content-type": "application/json" },
     });
@@ -47,16 +61,19 @@ const base = {
 };
 
 describe("buddy model discovery", () => {
-  test("tries /v3/config before the personal-models path", async () => {
+  test("fetches /v3/config and the personal-models path, merging the union", async () => {
     const { calls, fetcher } = recordingFetcher([BUDDY_CONFIG_PATH, BUDDY_INTL_MODELS_PATH]);
     const models = await fetchBuddyDirectoryModels({
       ...base,
       modelsPath: BUDDY_INTL_MODELS_PATH,
       fetcher,
     });
-    expect(models?.length).toBe(2);
-    expect(calls.length).toBe(1);
+    // Shared glm-5.2 (deduped) + gpt-6-astra from config + personal-only model.
+    expect(models?.length).toBe(3);
+    expect(models?.map((model) => model.modelId)).toContain("personal-only-model");
+    expect(calls.length).toBe(2);
     expect(calls[0]).toContain(BUDDY_CONFIG_PATH);
+    expect(calls[1]).toContain(BUDDY_INTL_MODELS_PATH);
   });
 
   test("falls back to the personal-models path when config is unanswered", async () => {
@@ -67,6 +84,7 @@ describe("buddy model discovery", () => {
       fetcher,
     });
     expect(models?.length).toBe(2);
+    expect(models?.map((model) => model.modelId)).toContain("personal-only-model");
     expect(calls.length).toBe(2);
     expect(calls[0]).toContain(BUDDY_CONFIG_PATH);
     expect(calls[1]).toContain(BUDDY_INTL_MODELS_PATH);

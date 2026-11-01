@@ -37,11 +37,11 @@ export const QODER_VIRTUAL_MODELS: readonly QoderVirtualModel[] = [
   { id: "qwen3.8-flash", target: "qfmodel", displayName: "Qwen3.8-Flash" },
   { id: "qwen3.7-max", target: "qmodel_latest", displayName: "Qwen3.7-Max" },
   { id: "qwen3.7-plus", target: "qmodel", displayName: "Qwen3.7-Plus" },
-  { id: "kimi-k3", target: "kmodel_latest", displayName: "Kimi-K3" },
+  { id: "kimi-k3", target: "kmodel_latest", displayName: "Kimi-K3.1-Pro" },
   { id: "kimi-k2.8-preview", target: "kmodel", displayName: "Kimi-K2.8-Preview" },
   { id: "glm-5.3", target: "gmodel", displayName: "GLM-5.3" },
   { id: "glm-5.3-flash", target: "gfmodel", displayName: "GLM-5.3-Flash" },
-  { id: "minimax-m3", target: "mmodel", displayName: "MiniMax-M3" },
+  { id: "minimax-m3", target: "mmodel", displayName: "MiniMax-M3.1-Flash" },
 ];
 
 /** Virtual id → roster key. */

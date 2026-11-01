@@ -133,13 +133,15 @@ export const QODER_INTL_MODEL_CONFIGS: Readonly<Record<string, QoderModelConfig>
   qfmodel: { id: "qfmodel", display_name: "Qwen3.8-Flash", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_free: true, is_reasoning: true },
   qmodel_latest: { id: "qmodel_latest", display_name: "Qwen3.7-Max", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_reasoning: false },
   qmodel: { id: "qmodel", display_name: "Qwen3.7-Plus", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_reasoning: false },
-  kmodel_latest: { id: "kmodel_latest", display_name: "Kimi-K3", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_free: false, is_reasoning: false },
+  kmodel_latest: { id: "kmodel_latest", display_name: "Kimi-K3.1-Pro", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_free: false, is_reasoning: false },
   kmodel: { id: "kmodel", display_name: "Kimi-K2.8-Preview", max_input_tokens: 1000000, max_output_tokens: 65_536, is_vl: true, is_free: false, is_reasoning: false },
   gmodel: { id: "gmodel", display_name: "GLM-5.3", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_free: false, is_reasoning: true },
   gfmodel: { id: "gfmodel", display_name: "GLM-5.3-Flash", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_reasoning: true },
   dmodel: { id: "dmodel", display_name: "DeepSeek-V4-Pro", max_input_tokens: 1000000, max_output_tokens: 384_000, is_vl: true, is_free: false, is_reasoning: true },
-  dfmodel: { id: "dfmodel", display_name: "DeepSeek-Flash", max_input_tokens: 1000000, max_output_tokens: 384_000, is_vl: true, is_free: true, is_reasoning: true },
-  mmodel: { id: "mmodel", display_name: "MiniMax-M3", max_input_tokens: 1000000, max_output_tokens: 512_000, is_vl: true, is_free: false, is_reasoning: false },
+  // Live roster (2026-11-01) reports dfmodel as billed (is_free false); it was
+  // previously marked free. Display names are corrected from the same capture.
+  dfmodel: { id: "dfmodel", display_name: "DeepSeek-Flash", max_input_tokens: 1000000, max_output_tokens: 384_000, is_vl: true, is_free: false, is_reasoning: true },
+  mmodel: { id: "mmodel", display_name: "MiniMax-M3.1-Flash", max_input_tokens: 1000000, max_output_tokens: 512_000, is_vl: true, is_free: false, is_reasoning: false },
 };
 
 /**
@@ -354,6 +356,14 @@ interface CachedRoster {
 const discoveryCache = new Map<QoderRealm, CachedRoster>();
 
 /**
+ * Per-realm max-context window per roster key, taken from the live list's
+ * `context_config` (the widest selectable window). This is what dispatch reads
+ * to send `model_config.max_input_tokens`; without it the request would use the
+ * static roster's *currently active* window (often 180k) instead of the max.
+ */
+const discoveryMaxContextByKey = new Map<QoderRealm, Map<string, number>>();
+
+/**
  * Drops one realm's cached list.
  *
  * Exported for tests: the cache is module state, so a test that builds a
@@ -361,8 +371,21 @@ const discoveryCache = new Map<QoderRealm, CachedRoster>();
  * previous assertion left behind.
  */
 export function resetQoderDiscoveryCache(realm?: QoderRealm): void {
-  if (realm === undefined) discoveryCache.clear();
-  else discoveryCache.delete(realm);
+  if (realm === undefined) {
+    discoveryCache.clear();
+    discoveryMaxContextByKey.clear();
+  } else {
+    discoveryCache.delete(realm);
+    discoveryMaxContextByKey.delete(realm);
+  }
+}
+
+/**
+ * The widest selectable context window per roster key for one realm, from the
+ * live model list. Empty when discovery has not succeeded for that realm yet.
+ */
+export function qoderDiscoveredMaxContexts(realm: QoderRealm): ReadonlyMap<string, number> {
+  return discoveryMaxContextByKey.get(realm) ?? new Map();
 }
 
 export async function discoverQoderModels(input: {
@@ -409,6 +432,11 @@ export async function discoverQoderModels(input: {
     const url = `${host}${QODER_MODELS_PATH}`;
     try {
       const headers = await input.headers(url, signedBody);
+      // GET, not POST: upstream refuses POST on the model-list surface (400
+      // "Request method 'POST' not supported"). The signature covers the body,
+      // so the body must accompany the GET. The gateway's validated egress
+      // dials GET+body through the Node http(s) client (the runtime fetch
+      // rejects GET bodies), which is exactly the shape the donor client sends.
       const response = await fetcher(url, {
         method: "GET",
         headers: headers as unknown as HeadersInit,
@@ -430,9 +458,19 @@ export async function discoverQoderModels(input: {
         continue;
       }
       const models = enabled.map((entry) => qoderCatalogModel(entry, providerId));
+      // Index the widest selectable window per key (from `context_config`,
+      // already computed into `maxInputTokens` by `mapQoderCatalogResponse`) so
+      // dispatch can send the maximum rather than the currently active one.
+      const maxCtx = new Map<string, number>();
+      for (const entry of enabled) {
+        if (entry.maxInputTokens !== undefined && entry.key.length > 0) {
+          maxCtx.set(entry.key, entry.maxInputTokens);
+        }
+      }
       // Cached only after a host actually answered: a failure must stay
       // retryable on the next call rather than being frozen for five minutes.
       discoveryCache.set(input.realm, { at: Date.now(), models });
+      discoveryMaxContextByKey.set(input.realm, maxCtx);
       return models;
     } catch (error) {
       lastError = error;

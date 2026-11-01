@@ -25,15 +25,11 @@ import { compactTokens, limitLabel } from "../lib/format/tokens";
 import { useClipboard } from "../hooks/use-clipboard";
 import { useRuntimeSettings, useUpdateRuntimeSettings } from "../hooks/settings";
 import { PowerOff } from "lucide-react";
-import { AlertTriangle, Ban as BanIcon, Eye, ShieldOff } from "lucide-react";
-import { Select } from "./ui/select";
-import { API_KEY_BAN_REASONS } from "../data/contracts";
+import { AlertTriangle, Eye, ShieldOff } from "lucide-react";
 import type { ApiKeyResponse } from "../data/contracts";
-import { BAN_DURATION_CHOICES } from "../lib/ban-durations";
 import { BannedKeysDialog } from "./BannedKeysDialog";
 import {
   useApiKeys,
-  useBanApiKey,
   useCreateApiKey,
   useRegenerateApiKey,
   useReorderApiKeys,
@@ -54,7 +50,6 @@ export function ApiKeysPanel(): ReactNode {
   const createKey = useCreateApiKey();
   const updateKey = useUpdateApiKey();
   const revokeKey = useRevokeApiKey();
-  const banKey = useBanApiKey();
   const unbanKey = useUnbanApiKey();
   const regenerateKey = useRegenerateApiKey();
   const revealKey = useRevealApiKey();
@@ -67,10 +62,6 @@ export function ApiKeysPanel(): ReactNode {
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ApiKeyResponse | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<ApiKeyResponse | null>(null);
-  const [banOpen, setBanOpen] = useState(false);
-  const [banKeyId, setBanKeyId] = useState<string>("");
-  const [banReason, setBanReason] = useState<string>(API_KEY_BAN_REASONS[0]!.value);
-  const [banMinutes, setBanMinutes] = useState<number | null>(BAN_DURATION_CHOICES[0]!.minutes);
   const [bansOpen, setBansOpen] = useState(false);
   const [seeReasonTarget, setSeeReasonTarget] = useState<ApiKeyResponse | null>(null);
   const [rotateTarget, setRotateTarget] = useState<ApiKeyResponse | null>(null);
@@ -141,20 +132,6 @@ export function ApiKeysPanel(): ReactNode {
               icon={<PowerOff size={13} />}
             >
               {invokeDisabled ? "Enable Invoke" : "Disable Invoke"}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={keys.length === 0}
-              onClick={() => {
-                setBanKeyId(keys[0]?.id ?? "");
-                setBanReason(API_KEY_BAN_REASONS[0]!.value);
-                setBanMinutes(BAN_DURATION_CHOICES[0]!.minutes);
-                setBanOpen(true);
-              }}
-              icon={<BanIcon size={13} />}
-            >
-              Ban
             </Button>
             <Button
               variant="secondary"
@@ -499,75 +476,6 @@ export function ApiKeysPanel(): ReactNode {
       <ApiKeySecretDialog secret={revealedSecret} onClose={() => setRevealedSecret(null)} />
 
       {bansOpen ? <BannedKeysDialog keys={keys} onClose={() => setBansOpen(false)} /> : null}
-
-      <Dialog
-        open={banOpen}
-        onClose={() => setBanOpen(false)}
-        title="Ban API Key"
-        description="Select a key and a reason. The key is rejected immediately; its ban metadata can be cleared later via Unban."
-        size="sm"
-        footer={
-          <>
-            <Button variant="secondary" size="sm" onClick={() => setBanOpen(false)} disabled={banKey.isPending}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              disabled={banKey.isPending || !banKeyId}
-              onClick={() => {
-                const reasonOption = API_KEY_BAN_REASONS.find((r) => r.value === banReason);
-                banKey.mutate(
-                  {
-                    keyId: banKeyId,
-                    reason: banReason,
-                    reasonLabel: reasonOption?.label,
-                    minutes: banMinutes,
-                  },
-                  {
-                    onSuccess: () => {
-                      toast.success("API key banned");
-                      setBanOpen(false);
-                    },
-                    onError: (error) => toast.error(getErrorMessage(error, "Could not ban key.")),
-                  },
-                );
-              }}
-            >
-              {banKey.isPending ? "Banning…" : "Ban key"}
-            </Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-5">
-          <Select
-            label="Key"
-            id="ban-key-select"
-            value={banKeyId}
-            onValueChange={(value) => setBanKeyId(value)}
-            options={keys
-              .filter((key) => !key.revokedAt && !key.bannedAt)
-              .map((key) => ({ value: key.id, label: key.label || key.id.slice(0, 8) }))}
-          />
-          <Select
-            label="Reason"
-            id="ban-reason-select"
-            value={banReason}
-            onValueChange={(value) => setBanReason(value)}
-            options={API_KEY_BAN_REASONS.map((r) => ({ value: r.value, label: r.label }))}
-          />
-          <Select
-            label="Duration"
-            id="ban-duration-select"
-            value={banMinutes === null ? "null" : String(banMinutes)}
-            onValueChange={(value) => setBanMinutes(value === "null" ? null : Number(value))}
-            options={BAN_DURATION_CHOICES.map((choice) => ({
-              value: choice.minutes === null ? "null" : String(choice.minutes),
-              label: choice.label,
-            }))}
-          />
-        </div>
-      </Dialog>
 
       <Dialog
         open={seeReasonTarget !== null}

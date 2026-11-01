@@ -11,19 +11,43 @@ conclusion. Older measurements remain historical evidence and should not
 override newer findings. In particular, see the Qoder identity follow-up and
 the current Copilot Auto probe.
 
+## Organization
+
+Topics with many findings live in subfolders (`qoder/`, `copilot/`); single
+or foundational notes stay at this root.
+
+## Subfolders
+
+| Folder | Topic | Notes |
+|---|---|---|
+| `qoder/` | Qoder wire, identity, credits, IDE surface, plugin endpoint map | 3 findings |
+| `copilot/` | Copilot capability/context/auto routing | 3 findings |
+
+## Root notes
+
 | Date | Topic | Note |
 |---|---|---|
-| 2026-10-15 | Copilot | [VS Code 1.142.0 / Copilot Chat 0.70.0 capability map](2026-10-15-copilot-chat-capability-map.md) |
-| 2026-10-16 | Copilot | [Chat context and live API probe](2026-10-16-copilot-context-probe.md) |
 | 2026-10-23 | Routing | [Request-path census](2026-10-23-routing-request-path-census.md) |
 | 2026-10-23 | Routing | [Layered caching proposal](2026-10-23-routing-layered-caching-proposal.md) |
 | 2026-10-23 | Trae | [Agent vs. chat surface](2026-10-23-trae-agent-vs-chat-surface.md) |
 | 2026-10-28 | OpenCode | [Free-tier wire behavior](2026-10-28-opencode-free-tier.md) |
 | 2026-10-28 | Turing | [x-device-token reverse notes](2026-10-28-turing-x-device-token-reverse.md) |
-| 2026-10-29 | Qoder | [Daily credit campaign](2026-10-29-qoder-daily-credit-campaign.md) |
 | 2026-10-30 | Buddy | [Device binding implementation](2026-10-30-buddy-device-binding.md) |
-| 2026-10-30 | Copilot | [Auto routing — VS Code 1.144.0](2026-10-30-copilot-auto-routing.md) |
-| 2026-10-30 | Qoder | [Trial activity-claim endpoints](2026-10-30-qoder-trial-activity-claims.md) |
-| 2026-10-30 | Qoder | [UMID and identity findings](2026-10-30-qoder-umid-and-identity-findings.md) |
 | 2026-10-30 | Security | [Share-link minting abuse incident](2026-10-30-security-share-link-minting-abuse.md) |
 | 2026-10-30 | Database | [Share-child row optimization](2026-10-30-database-share-child-row-optimization.md) |
+
+## Qoder findings (`qoder/`)
+
+| Date | Note |
+|---|---|
+| 2026-10-29 | [Credits, claims & identity (incl. 1 Nov deep-dive)](qoder/2026-10-29-qoder-credits-claims-identity.md) |
+| 2026-11-01 | [Chat wire verification (plugin + IDE surface)](qoder/2026-11-01-qoder-chat-wire-verification.md) |
+| 2026-11-01 | [JetBrains plugin endpoint & service map](qoder/2026-11-01-qoder-jetbrains-plugin-endpoint-map.md) |
+
+## Copilot findings (`copilot/`)
+
+| Date | Note |
+|---|---|
+| 2026-10-15 | [Capability map](copilot/2026-10-15-copilot-chat-capability-map.md) |
+| 2026-10-16 | [Chat context and live API probe](copilot/2026-10-16-copilot-context-probe.md) |
+| 2026-10-30 | [Auto routing](copilot/2026-10-30-copilot-auto-routing.md) |

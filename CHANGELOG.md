@@ -8,7 +8,21 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [2.7.4] - Unreleased
+## [2.7.4] - 2026-11-01
+
+> **Instalasi ulang.** `2.7.4` tersedia di registri npm. Jika instalasi yang
+> sudah ada bermasalah setelah `npm update` — terutama error integritas
+> (`shasum`/`integrity` mismatch) saat `npm install` — **uninstall dulu lalu
+> install ulang**:
+>
+> ```sh
+> npm uninstall -g cartethyia
+> npm install -g cartethyia
+> ```
+>
+> Data aman: konfigurasi, database, dan state tersimpan di direktori data
+> gateway (`~/.config/cartethyia` / `~/.cartethyia`), bukan di dalam paket,
+> sehingga uninstall/reinstall tidak menghapus apa pun.
 
 ### Added
 
@@ -53,6 +67,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   CHECK; it now matches every other health-state column. A dead `pool_account`
   member of the `health_entity_kind` enum (never written by the code) was
   removed so the schema and the committed migrations agree again.
+- **Qoder adapter defaults to the IDE model-server surface.** Chat now streams
+  from `/model/v1/chat/completions` (immediate, no server-side queue); the
+  legacy COSY surface stays selectable as an explicit fallback. Virtual names
+  are resolved to roster keys before dispatch, the catalog is synced to the
+  live roster (`dfmodel` no longer free, Kimi-K3.1-Pro / MiniMax-M3.1-Flash
+  display fixes), and the SSE decoder tolerates JSON events split across lines.
 
 ### Changed
 
@@ -105,6 +125,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Customization presets.** A render-preset dropdown (Off, Pretty, Extreme)
   plus a low-device switch that forces every glass surface solid; the Extreme
   preset renders near-solid everywhere with no backdrop read.
+- **Bans are per-key and live in Request Detail, not API Credentials.** The
+  API Credentials "Ban" modal is gone; banning happens from a request's Detail
+  drawer (reason + duration). A banned child key of a share template disables
+  only that child — the template and its other children are unaffected. The
+  Banned Users dialog still lists and lifts bans.
+- **Qoder daily check-in claims CREDITS-kind campaigns only.** Promo banners
+  are no longer claimed (they reported "claimed" with 0 credits), and
+  `already_claimed` is only reported for a CREDITS campaign — fixing accounts
+  that showed a permanent false "already claimed".
+- **Quota overview backfills cold caches on page open.** Accounts whose quota
+  cache entry is missing (e.g. a large Qoder roster the sweep's per-pass cap
+  cannot keep warm) get a bounded background refresh instead of rendering a
+  blank badge until the next sweep pass.
+- **Buddy model discovery merges `/v3/config` and the personal-models
+  catalog.** Both scopes are fetched and combined (dedupe by model id) —
+  mirroring the upstream codebuddy2api aggregation — so models present in only
+  one catalog are no longer lost.
 
 ### Fixed
 

@@ -40,6 +40,21 @@ export const QODER_CHAT_PATH =
 export const QODER_MODELS_PATH = "/algo/api/v2/model/list?Encode=1";
 
 /**
+ * The modern model-server surface used by the IDE / QoderWake (OpenAI-shaped
+ * chunks, plain bearer auth). This surface streams immediately — the legacy
+ * `/algo` chat endpoint answers `10605 isQueued` and parks requests in a
+ * server-side queue, so dispatch prefers this surface when it is available.
+ */
+export const QODER_IDE_CHAT_PATH = "/model/v1/chat/completions";
+
+/** The model-server host for one realm (intl: `api2-v2`, cn: gateway). */
+export function qoderIdeChatUrl(realm: QoderRealm): string {
+  return realm === "cn"
+    ? `https://gateway.qoder.com.cn${QODER_IDE_CHAT_PATH}`
+    : `https://api2-v2.qoder.sh${QODER_IDE_CHAT_PATH}`;
+}
+
+/**
  * Realm → deployment.
  *
  * `intl` carries two gateway fallbacks (`api2`, `api3`); `cn` has exactly one

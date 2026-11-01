@@ -29,8 +29,13 @@ import { parseQoderOAuthState } from "./qoder-oauth";
 import { getQoderVersion } from "../../operations/client-versions";
 import { abortGatewayError, createUpstreamDeadlineLifecycle } from "../../operations/upstream-deadline";
 import { qoderMachineOs } from "../../operations/cli-platform";
-import { qoderInferenceCandidates, QODER_CHAT_PATH, QODER_REALMS, type QoderRealm } from "./qoder-realm";
-import { QODER_CN_MODEL_CONFIGS, QODER_INTL_MODEL_CONFIGS, QODER_INTL_MODELS } from "./qoder-catalog";
+import { qoderIdeChatUrl, qoderInferenceCandidates, QODER_CHAT_PATH, QODER_REALMS, type QoderRealm } from "./qoder-realm";
+import {
+  QODER_CN_MODEL_CONFIGS,
+  QODER_INTL_MODEL_CONFIGS,
+  QODER_INTL_MODELS,
+  qoderDiscoveredMaxContexts,
+} from "./qoder-catalog";
 import { isQoderVirtualModel, qoderDispatchModelId } from "./qoder-virtual";
 import {
   LEAK_MARKER_ANY_RE,
@@ -498,8 +503,11 @@ function qoderEnvelopeToFrames(data: string): Array<{ event: string | null; data
   }
   const body = rec["body"];
   if (body === "[DONE]") return [{ event: null, data: "[DONE]" }];
-  if (typeof body !== "string") return [];
-  return [{ event: null, data: body.replace(/\r?\n/g, "") }];
+  if (typeof body === "string") return [{ event: null, data: body.replace(/\r?\n/g, "") }];
+  // Direct OpenAI chunk (IDE surface): no envelope body, but a `choices` array
+  // is present. Pass the raw data through so the chunk parser sees it.
+  if (Array.isArray(rec["choices"])) return [{ event: null, data }];
+  return [];
 }
 
 function qoderStableHash(prefix: string, ...parts: string[]): string {
@@ -538,6 +546,21 @@ function qoderStableRecordId(modelId: string, messages: CanonicalRequest["messag
   }
   h.update(`\0mt=${maxTokens}`);
   return h.digest("hex").slice(0, 16);
+}
+
+/**
+ * The widest selectable context window for one model key.
+ *
+ * The live list's `context_config` is the authority when discovery has run:
+ * it names every window the account can switch to, and the widest one is what
+ * a dispatch should send (`model_config.max_input_tokens`) so a conversation is
+ * never capped at the *currently active* window (often 180k) when the account
+ * can use 1M. Falls back to the static roster's stated window otherwise.
+ */
+function qoderMaxContextFor(modelId: string, modelConfig: QoderModelConfig, realm: QoderRealm): number {
+  const discovered = qoderDiscoveredMaxContexts(realm).get(modelId);
+  if (discovered !== undefined) return discovered;
+  return modelConfig.max_input_tokens;
 }
 
 function qoderRequestedMaxTokens(request: CanonicalRequest, modelConfig: QoderModelConfig): number {
@@ -927,7 +950,11 @@ export function buildQoderRequest(
       url: "",
       is_vl: modelConfig.is_vl,
       is_reasoning: modelConfig.is_reasoning,
-      max_input_tokens: modelConfig.max_input_tokens,
+      // Send the widest selectable window from the live list's `context_config`
+      // (falling back to the static roster's stated window). Without this, the
+      // request would declare the *currently active* window — often 180k — even
+      // when the account can use 1M, capping the conversation the upstream sees.
+      max_input_tokens: qoderMaxContextFor(modelId, modelConfig, realm),
       // Mirrors the roster's stated ceiling. A fixed 32k fallback would be sent
       // for every model alike, so the request would declare a cap the catalog
       // does not publish.
@@ -951,9 +978,89 @@ export function buildQoderRequest(
   };
 }
 
+/**
+ * Builds the modern model-server (`/model/v1/chat/completions`) request body.
+ *
+ * It reuses the message translation from `buildQoderRequest` (tool turns,
+ * reasoning echo, image parts) and wraps the result in the OpenAI-shaped body
+ * the IDE surface expects: top-level `model`, `messages`, `stream_options`,
+ * and a `metadata.context`/`metadata.business` block. `model` is the roster
+ * key after virtual-name resolution, so the upstream never sees a virtual id
+ * (which it answers by falling back to `auto`).
+ */
+export function buildQoderIdeRequest(
+  modelId: string,
+  request: CanonicalRequest,
+  modelConfig: QoderModelConfig,
+  auth: QoderAuth,
+  realm: QoderRealm = "intl",
+  version = getQoderVersion(),
+): Record<string, unknown> {
+  const legacy = buildQoderRequest(modelId, request, modelConfig, auth, realm);
+  const messages = legacy.messages as Array<Record<string, unknown>>;
+  return {
+    model: modelId,
+    messages,
+    stream: true,
+    stream_options: { include_usage: true },
+    metadata: {
+      context: {
+        request_id: legacy.request_id,
+        request_set_id: legacy.request_set_id,
+        session_id: legacy.session_id,
+        source_session_id: "",
+        task_id: "common",
+        client_type: "5",
+      },
+      business: {
+        business_product: "cli",
+        business_type: "agent",
+        business_version: version,
+        scene: "assistant",
+      },
+    },
+    max_tokens: (legacy.max_tokens as number) ?? 65_536,
+  };
+}
+
+/** Identity headers for the modern model-server surface (plain bearer). */
+function qoderIdeHeaders(auth: QoderAuth, version: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${auth.securityOauthToken}`,
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+    "X-Request-ID": randomUUID(),
+    "X-Session-ID": randomUUID(),
+    "Cosy-Version": version,
+    "Cosy-ClientType": "5",
+    "Cosy-MachineOS": qoderMachineOs(),
+    "Cosy-MachineHostname": "DESKTOP-QODER",
+    "Cosy-MachineId": auth.machineId,
+    "Cosy-MachineToken": auth.machineId,
+    "Cosy-MachineType": "5",
+  };
+}
+
+async function callQoderIde(
+  url: string,
+  body: Record<string, unknown>,
+  auth: QoderAuth,
+  signal: AbortSignal,
+  fetcher: QoderFetcher,
+  version = getQoderVersion(),
+): Promise<Response> {
+  return fetcher(url, {
+    method: "POST",
+    headers: qoderIdeHeaders(auth, version),
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
 // Stream transformation — decode SSE, unwrap COSY envelope, map OpenAI chat chunks to CanonicalEvent
 
 function mapQoderFinishReason(raw: unknown): CanonicalStopReason | undefined {
+  if (raw === "stop") return "stop";
   if (raw === "length") return "length";
   if (raw === "tool_calls") return "tool_use";
   if (raw === "content_filter") return "content_filter";
@@ -1002,7 +1109,39 @@ export async function* qoderBodyToCanonicalEvents(
       } catch {
         continue;
       }
+      // IDE surface error event: `{"code":"invalid_model_error","message":"..."}`
+      // carries no choices. Surface it as an upstream failure instead of an
+      // empty successful stream.
+      if (json["error"] !== undefined && json["choices"] === undefined) {
+        const error = json["error"] as Record<string, unknown> | string;
+        const message =
+          typeof error === "string"
+            ? error
+            : typeof error?.["message"] === "string"
+              ? (error["message"] as string)
+              : typeof json["message"] === "string"
+                ? (json["message"] as string)
+                : "Qoder model server error";
+        const code = typeof json["code"] === "string" ? (json["code"] as string) : undefined;
+        throw new GatewayError(
+          code === "invalid_model_error" ? "model_not_found" : "platform_unavailable",
+          code === "invalid_model_error" ? 404 : 502,
+          `${message} (request {requestId}). The upstream came back empty-handed — retry 🌙`,
+          { providerId: QODER_PROVIDER_ID, ...(code === undefined ? {} : { providerCode: code }) },
+          "upstream",
+        );
+      }
       if (json["usage"] && typeof json["usage"] === "object") rawUsage = json["usage"] as Record<string, unknown>;
+      // IDE surface terminal event: `choices:[]` + `raw_usage`. It carries the
+      // final usage and confirms the turn ended, so record it and synthesize a
+      // stop reason — the terminal event has no `choices[].finish_reason`.
+      if (json["raw_usage"] && typeof json["raw_usage"] === "object") {
+        const rawUsageObj = json["raw_usage"] as Record<string, unknown>;
+        rawUsage = (rawUsageObj["data"] as Record<string, unknown> | undefined) ?? rawUsageObj;
+        if (json["choices"] === undefined || (json["choices"] as unknown[]).length === 0) {
+          finishReason = finishReason ?? "stop";
+        }
+      }
       const choices = (json["choices"] as Array<Record<string, unknown>>) ?? [];
       for (const choice of choices) {
         const delta = choice["delta"] as Record<string, unknown> | undefined;
@@ -1128,12 +1267,16 @@ export async function* qoderBodyToCanonicalEvents(
           }
         }
         const fr = choice["finish_reason"];
-        if (fr !== null && fr !== undefined) finishReason = fr;
+        // The IDE surface sends an empty string (`""`) for the per-delta finish
+        // reason, which is not a real stop signal — only a value that maps to a
+        // canonical stop reason (or the terminal `[DONE]` frame) ends the turn.
+        if (fr !== null && fr !== undefined && fr !== "") finishReason = fr;
         // Some providers send usage in choices[0].usage or top-level
         if (choice["usage"] && typeof choice["usage"] === "object") rawUsage = choice["usage"] as Record<string, unknown>;
       }
-      // Some Qoder chunks carry finish_reason at top level
-      if (json["finish_reason"] !== undefined) finishReason = json["finish_reason"];
+      // Some Qoder chunks carry finish_reason at top level (empty string means
+      // no stop signal, same as the per-delta field).
+      if (json["finish_reason"] !== undefined && json["finish_reason"] !== "") finishReason = json["finish_reason"];
     }
   }
   // End of stream: recover a held-back marker+JSON echo. A valid echo becomes
@@ -1168,7 +1311,12 @@ export async function* qoderBodyToCanonicalEvents(
       }
     }
   }
-  // If no terminal arrived, synthesize one (prevents truncation error)
+  // A `[DONE]` frame from the IDE surface may be the only terminal signal (the
+  // per-delta `finish_reason` is empty and `raw_usage` is not always sent), so
+  // a clean end-of-stream with no finish reason is a normal stop, not a
+  // truncation. If no terminal arrived at all, still synthesize one (prevents
+  // truncation error).
+  if (hasTerminal && finishReason === undefined) finishReason = "stop";
   const stopReason = mapQoderFinishReason(finishReason);
   const _providerStop = typeof finishReason === "string" ? finishReason : undefined;
   void hasTerminal;
@@ -1204,16 +1352,28 @@ interface QoderAdapterOptions {
   readonly realm?: QoderRealm;
   /** Bundled provider id, so the adapter's own id matches the route's. */
   readonly providerId?: string;
+  /**
+   * Which chat surface to dispatch on.
+   *
+   * `ide` (default) uses the modern model-server surface
+   * (`/model/v1/chat/completions`, plain bearer, OpenAI-shaped chunks): it
+   * streams immediately. The legacy `cosy` surface (`/algo/.../agent_chat_generation`)
+   * answers `10605 isQueued` and parks requests in a server queue, so it is a
+   * fallback, not a default.
+   */
+  readonly surface?: "ide" | "cosy";
 }
 
 class QoderAdapter implements ProviderAdapter {
   readonly provider_id: ProviderId;
   private readonly realm: QoderRealm;
+  private readonly surface: "ide" | "cosy";
   private readonly fetchFn: typeof fetch;
 
   constructor(options: QoderAdapterOptions = {}) {
     this.provider_id = (options.providerId ?? QODER_PROVIDER_ID) as ProviderId;
     this.realm = options.realm ?? "intl";
+    this.surface = options.surface ?? "ide";
     this.fetchFn = options.fetch ?? globalThis.fetch;
   }
 
@@ -1283,7 +1443,6 @@ class QoderAdapter implements ProviderAdapter {
       const auth = isQoderPat(secret)
         ? await exchangeQoderPat(secret, lifecycle.signal, fetcher, version, this.realm)
         : qoderOAuthAuth(secret, context.credential.auth_state, context.credential.account_id);
-      const qoderBody = buildQoderRequest(modelId, request, modelConfig, auth, this.realm);
       // A full URL from the route wins, but the fallback is this realm's
       // gateway — not the intl host hardcoded into `MODERN_PROFILE`. Dispatching
       // a CN credential to `*.qoder.sh` is refused outright. The host order
@@ -1292,9 +1451,16 @@ class QoderAdapter implements ProviderAdapter {
       const url =
         candidate.endpoint_path && candidate.endpoint_path.startsWith("http")
           ? candidate.endpoint_path
-          : `${qoderInferenceCandidates(this.realm, auth.securityOauthToken)[0] ?? ""}${QODER_CHAT_PATH}`;
+          : this.surface === "ide"
+            ? qoderIdeChatUrl(this.realm)
+            : `${qoderInferenceCandidates(this.realm, auth.securityOauthToken)[0] ?? ""}${QODER_CHAT_PATH}`;
 
-      const response = await callQoder(url, qoderBody, modelId, auth, lifecycle.signal, fetcher, version);
+      // The modern IDE surface streams immediately and needs no COSY signing;
+      // the legacy COSY surface is kept as an explicit fallback.
+      const response =
+        this.surface === "ide"
+          ? await callQoderIde(url, buildQoderIdeRequest(modelId, request, modelConfig, auth, this.realm, version), auth, lifecycle.signal, fetcher, version)
+          : await callQoder(url, buildQoderRequest(modelId, request, modelConfig, auth, this.realm), modelId, auth, lifecycle.signal, fetcher, version);
       if (!response.ok) throw await mapUpstreamHttpError(response, "qoder");
       if (!response.body) throw new GatewayError("platform_unavailable", 502, "Qoder returned empty body (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
       // Headers arrived: the pre-stream deadline has served its purpose.

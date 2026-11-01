@@ -163,6 +163,17 @@ export async function* decodeSseEvents(
     // not 502 the request: only `event:`/`data:` carry payload, the rest is
     // heartbeat/metadata. Unknown colon-prefixed fields are ignored.
     if (/^[a-zA-Z0-9_-]+:/.test(line)) return;
+    // Some vendors (Qoder IDE /model/v1) emit a single `data:` event whose JSON
+    // payload contains literal newlines, so the event arrives as several lines:
+    // the first has the `data:` prefix, the rest are bare continuations. Treat
+    // a bare line as a continuation of the open `data:` event rather than a
+    // malformed stream. A bare line with no open data is still an error.
+    if (dataLines.length > 0) {
+      dataLines.push(line);
+      eventBytes += line.length;
+      if (eventBytes > maxEventBytes) throw oversized("event");
+      return;
+    }
     throw new GatewayError("platform_unavailable", 502, "Malformed SSE line (request {requestId}). The upstream sent something we can't read — retry 🌙", {}, "upstream");
   }
 
