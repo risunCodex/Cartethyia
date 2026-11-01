@@ -265,14 +265,14 @@ const HOURS_WINDOW = 24;
  * Matched to the share page's SSE tick, which was the point of the old 2 s
  * value — but at 2 s the cache expired on every tick, so every single push was
  * a full parse of the retained telemetry window. A share page's numbers move
- * when a request does, not every 2 s; 10 s still reads as live, and cuts the
- * parse rate by five.
+ * when a request does, not every 2 s; 30 s still reads as live (the tick is
+ * 30 s), and cuts the parse rate by fifteen versus the old 2 s.
  *
  * Declared here rather than imported from the router so this port does not
  * depend on it. `SHARE_STATS_STREAM_INTERVAL_MS` must be raised with it, or
  * the two drift apart and the cache expires between ticks for no reason.
  */
-export const SHARE_STATS_CACHE_TTL_SECONDS = 10;
+export const SHARE_STATS_CACHE_TTL_SECONDS = 30;
 
 /**
  * Cache key for one family's rollup. The family is named by its template key

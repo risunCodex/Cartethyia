@@ -34,12 +34,12 @@ const MIN_TOKEN_LENGTH = 20;
 /**
  * Cadence of the share stats SSE snapshot.
  *
- * Raised with `SHARE_STATS_CACHE_TTL_SECONDS` (10 s). At 2 s the tick was
+ * Raised with `SHARE_STATS_CACHE_TTL_SECONDS` (30 s). At 2 s the tick was
  * shorter than the rollup's own cache TTL, so every push re-parsed the whole
  * retained telemetry window — the interval was the thing making this read
  * expensive, not the number of viewers. Short enough to still read as live.
  */
-const SHARE_STATS_STREAM_INTERVAL_MS = 10_000;
+const SHARE_STATS_STREAM_INTERVAL_MS = 30_000;
 
 /**
  * Context and capabilities for one allowed model, sourced from the public
