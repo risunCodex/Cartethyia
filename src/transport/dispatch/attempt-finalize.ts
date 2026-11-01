@@ -823,6 +823,7 @@ export async function completeAttempt(
           (completion.error instanceof ProxyConnectRefusalError ? "network" : undefined);
         await recordPoolDispatchOutcome(completion.db, completion.networkPoolId, {
           succeeded: completion.status === "completed",
+          ...(completion.providerId === undefined ? {} : { providerId: completion.providerId }),
           ...(completion.error === undefined ? {} : { error: completion.error }),
           // A CONNECT refusal is the proxy's own answer, given before any
           // upstream was dialed, so it is a network fault even though the

@@ -5,6 +5,7 @@ import type { CartethyiaDatabase } from "../persistence/db-handle";
 import { healthEvents, networkPools } from "../persistence/schema";
 import { drainPoolByteDelta } from "./pool/byte-accounting";
 import { resolvePoolCooldownMs } from "../config/cooldowns";
+import { dropProviderCooldownMarker, pruneExpiredProviderCooldownMarkers } from "./pool-cooldown-store";
 export interface PoolHealthEvent {
   readonly id: string;
   readonly networkPoolId: string;
@@ -54,7 +55,14 @@ function poolFaultCategory(error: unknown, origin: string | undefined): string |
 export async function recordPoolDispatchOutcome(
   db: CartethyiaDatabase,
   poolId: string,
-  input: { readonly succeeded: boolean; readonly error?: unknown; readonly errorOrigin?: string; readonly snapshotInvalidator?: { invalidate(): unknown } },
+  input: {
+    readonly succeeded: boolean;
+    readonly error?: unknown;
+    readonly errorOrigin?: string;
+    /** The provider the attempt dialed; used to clear its stale egress marker on success. */
+    readonly providerId?: string;
+    readonly snapshotInvalidator?: { invalidate(): unknown };
+  },
 ): Promise<void> {
   const category = input.succeeded ? undefined : poolFaultCategory(input.error, input.errorOrigin);
   // Metered bytes are banked even when health is untouched: an upstream-origin
@@ -95,6 +103,14 @@ export async function recordPoolDispatchOutcome(
     lastErrorCategory = null;
     lastErrorAt = null;
     lastSuccessAt = now;
+    // A completed dispatch proves the egress is serving again for this
+    // provider — clear its stale rate-limit marker (the selector's local
+    // entry and the Redis copy) so a spent pool is not kept out of rotation
+    // after it demonstrably recovered. Fire-and-forget: a failed clear must
+    // never fail a completed request.
+    if (input.providerId !== undefined) {
+      void dropProviderCooldownMarker(db, poolId, input.providerId).catch(() => undefined);
+    }
   } else {
     failures += 1;
     // Every failed probe parks the pool: a pool that cannot carry traffic is
@@ -252,5 +268,9 @@ export async function sweepExpiredPoolCooldowns(db: CartethyiaDatabase): Promise
   await db.update(networkPools).set({ status: "active", consecutiveFailures: 0, cooldownUntil: null, lastRecoveredAt: now }).where(inArray(networkPools.id, expired.map((row) => row.id)));
   await db.insert(healthEvents).values(expired.map((row) => ({ id: randomUUID(), entityKind: "pool" as const, networkPoolId: row.id, fromStatus: row.status, toStatus: "active" as const, reason: "Cooldown elapsed — auto-recovered", errorCategory: null, createdAt: now })));
   for (const row of expired) publishPoolHealth({ poolId: row.id, tenantId: row.tenantId, status: "active", consecutiveFailures: 0 });
+  // The pool-level cooldown elapsed, so the same window's provider markers are
+  // expired too. Drop them from the durable JSON mirror — the selector and
+  // Redis prune on read, but the row's stale copy would otherwise live forever.
+  await Promise.all(expired.map((row) => pruneExpiredProviderCooldownMarkers(db, row.id)));
   return expired.length;
 }

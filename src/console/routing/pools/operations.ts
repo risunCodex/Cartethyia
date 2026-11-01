@@ -448,6 +448,12 @@ export function createNetworkPoolOperations(config: NetworkPoolConfig) {
       const a = requireTenantScope(access, "dashboard:write");
       const recovered = await config.store.recover(a.tenantId, poolId);
       if (!recovered) throw new ConsoleDomainError("pool_not_found", 404, `Pool ${poolId} not found`);
+      // Recover is the operator's "make this pool healthy again": besides
+      // resetting the pool-level state, drop every provider-rate-limit marker
+      // (volatile and durable) so a just-cleared pool is not still excluded
+      // by a stale 429 flag.
+      await config.poolSelector?.clearPoolCooldowns(poolId).catch(() => undefined);
+      await config.store.dropAllProviderCooldownMarkers?.(a.tenantId, poolId);
       await config.poolAgentReleaser?.releasePool(poolId, a.tenantId);
       await config.auditSink?.record({
         access: a,

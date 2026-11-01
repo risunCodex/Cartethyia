@@ -20,12 +20,14 @@ import { NetworkPoolSelector, PROVIDER_BLOCK_MS } from "../../src/network/pool/s
 import {
   dropAllProviderCooldownMarkers,
   dropProviderCooldownMarker,
+  pruneExpiredProviderCooldownMarkers,
   recordProbeVerdict,
   restorePoolProbeVerdicts,
   restoreProviderCooldownMarkers,
   upsertProviderCooldownMarker,
 } from "../../src/network/pool-cooldown-store";
 import { flagPoolCooldown } from "../../src/network/pool-health";
+import { recordPoolDispatchOutcome } from "../../src/network/pool-health-machine";
 import { GatewayError } from "../../src/protocol/gateway-error";
 import { resetCooldownCacheForTests } from "../../src/config/cooldowns";
 
@@ -320,6 +322,101 @@ describe("the probe verdict is enforced state, not a decoration", () => {
       expect(await selector.tryAcquireAvailablePool([fresh], "opencode")).toBeUndefined();
       // The replayed cooldown also excludes the throttled pool.
       expect(await selector.tryAcquireAvailablePool([throttled], "opencode")).toBeUndefined();
+    } finally {
+      close();
+    }
+  });
+});
+
+describe("pruning expired provider cooldown markers", () => {
+  test("expired markers are dropped while live cooldowns and blocks survive", async () => {
+    const { db, close } = await bootedSqlite();
+    try {
+      const poolId = randomUUID();
+      await insertPool(db, poolId);
+      const future = Date.now() + 60 * 60 * 1000;
+      await upsertProviderCooldownMarker(db, poolId, "opencode", {
+        until: Date.now() - 1000,
+        reason: "spent window",
+      });
+      await upsertProviderCooldownMarker(db, poolId, "anthropic", {
+        until: future,
+        reason: "live cooldown",
+      });
+      await upsertProviderCooldownMarker(db, poolId, "deepseek", {
+        until: future,
+        reason: "retired egress",
+        blocked: true,
+      });
+
+      const dropped = await pruneExpiredProviderCooldownMarkers(db, poolId);
+      expect(dropped).toBe(1);
+
+      const [row] = await db
+        .select({ providerCooldowns: networkPools.providerCooldowns })
+        .from(networkPools);
+      expect(row?.providerCooldowns).not.toHaveProperty("opencode");
+      expect(row?.providerCooldowns?.anthropic?.until).toBe(future);
+      expect(row?.providerCooldowns?.deepseek?.blocked).toBe(true);
+    } finally {
+      close();
+    }
+  });
+});
+
+describe("dispatch success clears the provider cooldown marker", () => {
+  test("a completed request drops the pool's marker for that provider", async () => {
+    const { db, close } = await bootedSqlite();
+    try {
+      const poolId = randomUUID();
+      await insertPool(db, poolId);
+      await upsertProviderCooldownMarker(db, poolId, "opencode", {
+        until: Date.now() + 60 * 60 * 1000,
+        reason: "Provider opencode rate limit",
+      });
+
+      await recordPoolDispatchOutcome(db, poolId, {
+        succeeded: true,
+        providerId: "opencode",
+      });
+
+      const [row] = await db
+        .select({
+          providerCooldowns: networkPools.providerCooldowns,
+          status: networkPools.status,
+          consecutiveFailures: networkPools.consecutiveFailures,
+        })
+        .from(networkPools);
+      expect(row?.providerCooldowns ?? {}).toEqual({});
+      // And the pool row shows the recovery.
+      expect(row?.status).toBe("active");
+      expect(row?.consecutiveFailures).toBe(0);
+    } finally {
+      close();
+    }
+  });
+
+  test("a failed attempt leaves the marker intact", async () => {
+    const { db, close } = await bootedSqlite();
+    try {
+      const poolId = randomUUID();
+      await insertPool(db, poolId);
+      await upsertProviderCooldownMarker(db, poolId, "opencode", {
+        until: Date.now() + 60 * 60 * 1000,
+        reason: "Provider opencode rate limit",
+      });
+
+      await recordPoolDispatchOutcome(db, poolId, {
+        succeeded: false,
+        providerId: "opencode",
+        error: new GatewayError("proxy_unreachable", 502, "tunnel failed", {}, "network"),
+        errorOrigin: "network",
+      });
+
+      const [row] = await db
+        .select({ providerCooldowns: networkPools.providerCooldowns })
+        .from(networkPools);
+      expect(row?.providerCooldowns?.opencode?.reason).toBe("Provider opencode rate limit");
     } finally {
       close();
     }
