@@ -41,15 +41,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   success, manual Clear/Recover, and the expiry sweep now drop the owning
   provider's cooldown markers, so a healthy pool no longer shows a permanent
   "1 cooldown" badge (previously the mirror was write-only).
+- **PostgreSQL → embedded SQLite migration tool.** `scripts/migrate-pg-to-sqlite.ts`
+  copies a full-mode deployment (every public table, including telemetry) from
+  Postgres into the lite backend's SQLite file, rebuilding the target through
+  the SQLite migration set and verifying per-table counts,
+  `foreign_key_check`, `integrity_check`, and that a stored credential still
+  decrypts. Sealed credentials stay verbatim under the same encryption key, so
+  the cutover does not re-encrypt anything.
+- **Migration `0035` (both databases): `provider_pool_accounts.status` uses the
+  `health_status` enum.** The table was created with a `text` column plus a
+  CHECK; it now matches every other health-state column. A dead `pool_account`
+  member of the `health_entity_kind` enum (never written by the code) was
+  removed so the schema and the committed migrations agree again.
 
 ### Changed
 
 - **Share stats and usage are computed in SQL, not from a bounded page.** A
   busy share family no longer freezes its KPI cards at 500 requests/errors: the
   totals, 24-hour chart, and client-IP breakdown are SQL aggregates over the
-  whole retained window. Client IPs are ranked by most recent activity (not raw
-  volume), and inactive addresses are hidden by default behind a "Show inactive"
+  whole retained window. Client IPs are ranked by request volume (highest
+  first), and inactive addresses are hidden by default behind a "Show inactive"
   toggle.
+- **Share KPI lifetime numbers come from the durable rollup.** The all-time
+  requests/errors/tokens a share page shows are read from
+  `telemetry_usage_totals` (charged at write time) instead of re-aggregating
+  the retained telemetry window on every tick; today/month figures stay bounded
+  window reads, and the client-IP ranking is bounded to a 7-day window. The
+  share-stats cache TTL is 300s, so the cold recompute runs at most once per
+  family per five minutes — eliminating the per-minute CPU/IO spikes a busy
+  family caused.
+- **Read-through caching works without Redis.** When no Redis is configured,
+  the console's read-through cache serves from a process-local store with the
+  same TTL instead of recomputing a telemetry aggregate on every poll.
 - **Quota aggregation is unified across the server and the dashboard.** A
   single `quotaPillSummary` drives the account-row quota pill, Command Code
   credits are correctly pooled, a zero ceiling reads as a spent balance, and
@@ -85,6 +108,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Migration drift between the schema and the committed migrations.** The
+  schema declared a `pool_account` member of `health_entity_kind` nothing ever
+  writes, and `provider_pool_accounts.status` was a `text` column in the
+  migration but an enum in the schema. The dead enum member is gone and
+  migration `0035` converts the column, so `check:migrations` passes again
+  (36 migrations).
 - **Pool health modal "Failed to load pool health events" for OpenCode.** The
   dashboard dialed `/routing/pools/...` while the pools router is mounted at
   `/network/pools`; both the health-events and provider-probe hooks now use the
