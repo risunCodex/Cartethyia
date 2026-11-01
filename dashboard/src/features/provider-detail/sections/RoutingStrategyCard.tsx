@@ -96,7 +96,7 @@ export function RoutingStrategyCard({
     ? "Saving..."
     : routing.saveFailed
       ? "Save failed — reverted to last saved value"
-      : `Active: ${activeLabel} · ${poolModeLabel}`;
+      : "Per-account and per-pool routing";
   // The slider stops at 50; one step further is unlimited. A typed value above
   // 50 still shows, parked at the end with its real number beside it.
   const unlimited = routing.maxInflight === null;
@@ -143,167 +143,197 @@ export function RoutingStrategyCard({
       <CardHeader title="Routing Strategy" subtitle={subtitle} icon={<Layers size={16} />} />
       <CardBody>
         <div className="grid gap-5 w-full min-w-0">
-          <Row
-            action={
-              <>
-                {routing.roundRobinEnabled ? (
-                  <div
-                    role="group"
-                    aria-label="Accounts per rotation"
-                    className="inline-flex items-center gap-1 rounded-control border border-inner-border bg-surface-1 p-1"
-                  >
-                    <span className="px-2 text-badge text-text-secondary">Accounts/rotation</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-9 rounded-tiny"
-                      aria-label="Decrease accounts per rotation"
-                      disabled={routing.rotateCount <= 1}
-                      icon={<Minus size={14} />}
-                      onClick={() => adjustRotateCount(-1)}
-                    />
-                    <output
-                      className="min-w-8 text-center text-body font-semibold tabular-nums"
-                      aria-live="polite"
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-4 border-b border-inner-border pb-3">
+              <span className="text-micro font-bold uppercase tracking-label text-text-tertiary">
+                Provider accounts
+              </span>
+              <span className="inline-flex items-center gap-2 text-badge text-text-secondary">
+                <span
+                  className={`status-indicator-dot${routing.roundRobinEnabled ? " bg-accent" : " bg-text-tertiary"}`}
+                  aria-hidden="true"
+                />
+                {activeLabel}
+              </span>
+            </div>
+
+            <Row
+              action={
+                <>
+                  {routing.roundRobinEnabled ? (
+                    <div
+                      role="group"
+                      aria-label="Accounts per rotation"
+                      className="inline-flex items-center gap-1 rounded-control border border-inner-border bg-surface-1 p-1"
                     >
-                      {routing.rotateCount}
-                    </output>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-9 rounded-tiny"
-                      aria-label="Increase accounts per rotation"
-                      disabled={routing.rotateCount >= 1000}
-                      icon={<Plus size={14} />}
-                      onClick={() => adjustRotateCount(1)}
+                      <span className="px-2 text-badge text-text-secondary">Accounts/rotation</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-9 rounded-tiny"
+                        aria-label="Decrease accounts per rotation"
+                        disabled={routing.rotateCount <= 1}
+                        icon={<Minus size={14} />}
+                        onClick={() => adjustRotateCount(-1)}
+                      />
+                      <output
+                        className="min-w-8 text-center text-body font-semibold tabular-nums"
+                        aria-live="polite"
+                      >
+                        {routing.rotateCount}
+                      </output>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-9 rounded-tiny"
+                        aria-label="Increase accounts per rotation"
+                        disabled={routing.rotateCount >= 1000}
+                        icon={<Plus size={14} />}
+                        onClick={() => adjustRotateCount(1)}
+                      />
+                    </div>
+                  ) : null}
+                  <Switch
+                    checked={routing.roundRobinEnabled}
+                    onChange={routing.setRoundRobinEnabled}
+                    id="routing-round-robin"
+                  />
+                </>
+              }
+            >
+              <div className="min-w-0">
+                <label htmlFor="routing-round-robin">
+                  <Inline gap="6px" className="text-body font-semibold">
+                    <Repeat
+                      size={15}
+                      aria-hidden="true"
+                      className={`shrink-0 ${routing.roundRobinEnabled ? "text-accent" : "text-text-tertiary"}`}
                     />
-                  </div>
-                ) : null}
+                    Rotate accounts
+                  </Inline>
+                </label>
+                <div className="mt-1 text-badge text-text-tertiary">
+                  Off uses priority order with failover. On rotates requests across this provider's
+                  accounts.
+                </div>
+              </div>
+            </Row>
+
+            <Row
+              action={
                 <Switch
-                  checked={routing.roundRobinEnabled}
-                  onChange={routing.setRoundRobinEnabled}
-                  id="routing-round-robin"
+                  checked={routing.skipProxy}
+                  onChange={routing.setSkipProxy}
+                  id="routing-skip-proxy"
                 />
-              </>
-            }
-          >
-            <div className="min-w-0">
-              <label htmlFor="routing-round-robin">
-                <Inline gap="6px" className="text-body font-semibold">
-                  <Repeat
-                    size={15}
-                    aria-hidden="true"
-                    className={`shrink-0 ${routing.roundRobinEnabled ? "text-accent" : "text-text-tertiary"}`}
-                  />
-                  Round robin
-                </Inline>
-              </label>
-              <div className="mt-1 text-badge text-text-tertiary">
-                Off uses priority order with failover. On rotates requests across this provider's
-                accounts.
-              </div>
-            </div>
-          </Row>
-
-          <Row
-            action={
-              <Switch
-                checked={routing.skipProxy}
-                onChange={routing.setSkipProxy}
-                id="routing-skip-proxy"
-              />
-            }
-          >
-            <div className="min-w-0">
-              <label htmlFor="routing-skip-proxy">
-                <Inline gap="6px" className="text-body font-semibold">
-                  <Cable
-                    size={15}
-                    aria-hidden="true"
-                    className={`shrink-0 ${routing.skipProxy ? "text-accent" : "text-text-tertiary"}`}
-                  />
-                  Always direct
-                </Inline>
-              </label>
-              <div className="mt-1 text-badge text-text-tertiary">
-                Bypass automatic proxy-pool routing for this provider and always dial direct
-              </div>
-            </div>
-          </Row>
-
-          <Row
-            action={
-              <Inline gap="8px" align="center">
-                {poolStrategy?.strategy === "round_robin" && !routing.skipProxy ? (
-                  <div
-                    role="group"
-                    aria-label="Pools per rotation"
-                    className="inline-flex items-center gap-1 rounded-control border border-inner-border bg-surface-1 p-1"
-                  >
-                    <span className="px-2 text-badge text-text-secondary">Pools/rotation</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-9 rounded-tiny"
-                      aria-label="Decrease pools per rotation"
-                      disabled={updatePoolStrategy.isPending || poolStrategy.rotateCount <= 1}
-                      icon={<Minus size={14} />}
-                      onClick={() => adjustPoolRotateCount(-1)}
+              }
+            >
+              <div className="min-w-0">
+                <label htmlFor="routing-skip-proxy">
+                  <Inline gap="6px" className="text-body font-semibold">
+                    <Cable
+                      size={15}
+                      aria-hidden="true"
+                      className={`shrink-0 ${routing.skipProxy ? "text-accent" : "text-text-tertiary"}`}
                     />
-                    <output
-                      className="min-w-8 text-center text-body font-semibold tabular-nums"
-                      aria-live="polite"
+                    Always direct
+                  </Inline>
+                </label>
+                <div className="mt-1 text-badge text-text-tertiary">
+                  Bypass automatic proxy-pool routing for this provider and always dial direct
+                </div>
+              </div>
+            </Row>
+          </div>
+
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-4 border-b border-inner-border pb-3">
+              <span className="text-micro font-bold uppercase tracking-label text-text-tertiary">
+                Proxy pools
+              </span>
+              <span className="inline-flex items-center gap-2 text-badge text-text-secondary">
+                <span
+                  className={`status-indicator-dot${routing.skipProxy ? " bg-text-tertiary" : " bg-accent"}`}
+                  aria-hidden="true"
+                />
+                {poolModeLabel}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 -my-1"
+                aria-label="How pool routing works"
+                onClick={() => setPoolHelpOpen(true)}
+              >
+                How it works
+              </Button>
+            </div>
+
+            <Row
+              action={
+                <Inline gap="8px" align="center">
+                  {poolStrategy?.strategy === "round_robin" && !routing.skipProxy ? (
+                    <div
+                      role="group"
+                      aria-label="Pools per rotation"
+                      className="inline-flex items-center gap-1 rounded-control border border-inner-border bg-surface-1 p-1"
                     >
-                      {poolStrategy.rotateCount}
-                    </output>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-9 rounded-tiny"
-                      aria-label="Increase pools per rotation"
-                      disabled={updatePoolStrategy.isPending || poolStrategy.rotateCount >= 1000}
-                      icon={<Plus size={14} />}
-                      onClick={() => adjustPoolRotateCount(1)}
-                    />
-                  </div>
-                ) : null}
-                <Select
-                  id="routing-pool-strategy"
-                  aria-label="Pool selection mode"
-                  value={poolStrategy?.strategy ?? ""}
-                  disabled={routing.skipProxy || updatePoolStrategy.isPending}
-                  options={POOL_STRATEGY_OPTIONS}
-                  onValueChange={handlePoolStrategyChange}
-                />
-              </Inline>
-            }
-          >
-            <div className="min-w-0">
-              <label htmlFor="routing-pool-strategy" className="flex items-center gap-2">
-                <Inline gap="6px" className="text-body font-semibold">
-                  <Shuffle
-                    size={15}
-                    aria-hidden="true"
-                    className={`shrink-0 ${routing.skipProxy ? "text-text-tertiary" : "text-accent"}`}
+                      <span className="px-2 text-badge text-text-secondary">Pools/rotation</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-9 rounded-tiny"
+                        aria-label="Decrease pools per rotation"
+                        disabled={updatePoolStrategy.isPending || poolStrategy.rotateCount <= 1}
+                        icon={<Minus size={14} />}
+                        onClick={() => adjustPoolRotateCount(-1)}
+                      />
+                      <output
+                        className="min-w-8 text-center text-body font-semibold tabular-nums"
+                        aria-live="polite"
+                      >
+                        {poolStrategy.rotateCount}
+                      </output>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-9 rounded-tiny"
+                        aria-label="Increase pools per rotation"
+                        disabled={updatePoolStrategy.isPending || poolStrategy.rotateCount >= 1000}
+                        icon={<Plus size={14} />}
+                        onClick={() => adjustPoolRotateCount(1)}
+                      />
+                    </div>
+                  ) : null}
+                  <Select
+                    id="routing-pool-strategy"
+                    aria-label="Pool selection mode"
+                    value={poolStrategy?.strategy ?? ""}
+                    disabled={routing.skipProxy || updatePoolStrategy.isPending}
+                    options={POOL_STRATEGY_OPTIONS}
+                    onValueChange={handlePoolStrategyChange}
                   />
-                  Pool selection
                 </Inline>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 -my-1"
-                  aria-label="How pool routing works"
-                  onClick={() => setPoolHelpOpen(true)}
-                >
-                  How it works
-                </Button>
-              </label>
-              <div className="mt-1 text-badge text-text-tertiary">
-                How proxy pools are chosen when this provider dials one.
-                {routing.skipProxy ? " Disabled while “Always direct” is on." : ""}
+              }
+            >
+              <div className="min-w-0">
+                <label htmlFor="routing-pool-strategy">
+                  <Inline gap="6px" className="text-body font-semibold">
+                    <Shuffle
+                      size={15}
+                      aria-hidden="true"
+                      className={`shrink-0 ${routing.skipProxy ? "text-text-tertiary" : "text-accent"}`}
+                    />
+                    Pool mode
+                  </Inline>
+                </label>
+                <div className="mt-1 text-badge text-text-tertiary">
+                  How proxy pools are chosen when this provider dials one.
+                  {routing.skipProxy ? " Disabled while “Always direct” is on." : ""}
+                </div>
               </div>
-            </div>
-          </Row>
+            </Row>
+          </div>
 
           {/* Keep these paired controls balanced, filling the row on wide cards
               and stacking when the card cannot fit two readable tracks. */}

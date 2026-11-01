@@ -40,7 +40,7 @@ export function usePoolHealthEvents(poolId: string | undefined) {
     queryKey: queryKeys.network.poolHealthEvents(poolId ?? ""),
     queryFn: (context) =>
       consoleRequest<PoolHealthEvent[]>(
-        `/routing/pools/${encodeURIComponent(poolId ?? "")}/health-events`,
+        `/network/pools/${encodeURIComponent(poolId ?? "")}/health-events`,
         { signal: querySignal(context) },
       ),
     enabled: poolId !== undefined,
@@ -56,7 +56,7 @@ export function usePoolProviderProbe() {
   >({
     mutationFn: ({ poolId, providerId }) =>
       consoleRequest<PoolProviderProbeResult>(
-        `/routing/pools/${encodeURIComponent(poolId)}/provider-probe`,
+        `/network/pools/${encodeURIComponent(poolId)}/provider-probe`,
         { method: "POST", body: JSON.stringify({ providerId }) },
       ),
   });

@@ -1,6 +1,7 @@
 import { shareCodeMessage } from "../apps/share/share-code";
 import { STREAM_RETRY_MS } from "../lib/stream-retry";
 import { useEffect, useState } from "react";
+import { useSseWhenVisible } from "./sse-visibility";
 
 /** Context and capabilities for one allowed model, from the model catalog. */
 export interface ShareModelInfoData {
@@ -130,6 +131,7 @@ export function useShareData<TData>(
 ): ShareDataState<TData> {
   const streamEvent = options?.streamEvent;
   const [state, setState] = useState<ShareDataState<TData>>({ data: null, error: null, code: null, loading: true });
+  const visible = useSseWhenVisible();
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
@@ -157,6 +159,8 @@ export function useShareData<TData>(
         });
       return () => { active = false; controller.abort(); };
     }
+
+    if (!visible) return;
 
     // SSE mode. EventSource reconnects on its own for transient drops; this
     // loop owns the "stream ended / never opened" case so the section keeps
@@ -193,6 +197,6 @@ export function useShareData<TData>(
       source?.close();
       clearTimeout(retryTimer);
     };
-  }, [path, streamEvent]);
+  }, [path, streamEvent, visible]);
   return state;
 }

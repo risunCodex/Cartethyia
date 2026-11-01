@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { consoleRequest, isRecord } from "../data/api";
 import { STREAM_RETRY_MS } from "../lib/stream-retry";
+import { useSseWhenVisible } from "./sse-visibility";
 
 export type ConsoleLogLevel = "debug" | "info" | "warn" | "error";
 
@@ -78,7 +79,10 @@ export function useConsoleLogStream() {
     id: `l${(nextId.current += 1)}`,
   });
 
+  const visible = useSseWhenVisible();
+
   useEffect(() => {
+    if (!visible) return;
     let stopped = false;
     let source: EventSource | undefined;
     const runId = (attempt.current += 1);
@@ -176,7 +180,7 @@ export function useConsoleLogStream() {
       timers.current.clear();
       source?.close();
     };
-  }, []);
+  }, [visible]);
 
   const clear = useCallback(async () => {
     await consoleRequest<unknown>("/logs", { method: "DELETE" });

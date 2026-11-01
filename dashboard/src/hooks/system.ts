@@ -7,6 +7,7 @@ import { DASHBOARD_QUERY_OPTIONS, POLL } from "../data/query-policy";
 import { GITHUB_RELEASES_URL } from "../lib/links";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { useSseWhenVisible } from "./sse-visibility";
 
 export interface NotificationItem {
   readonly id: string;
@@ -52,8 +53,10 @@ function readNotification(value: unknown): NotificationItem | undefined {
 /** Streams server-generated memory and release alerts without blocking shell rendering. */
 export function useNotifications(): readonly NotificationItem[] {
   const [notifications, setNotifications] = useState<readonly NotificationItem[]>([]);
+  const visible = useSseWhenVisible();
 
   useEffect(() => {
+    if (!visible) return;
     let active = true;
     let source: EventSource | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -91,7 +94,7 @@ export function useNotifications(): readonly NotificationItem[] {
       source?.close();
       clearTimeout(reconnectTimer);
     };
-  }, []);
+  }, [visible]);
 
   return notifications;
 }

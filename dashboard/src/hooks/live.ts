@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { consoleRequest, isRecord } from "../data/api";
 import { queryKeys } from "../data/query-keys";
 import { STREAM_RETRY_MS } from "../lib/stream-retry";
+import { useSseWhenVisible } from "./sse-visibility";
 
 export interface InFlightState {
   /** Latest live count, or null before the first snapshot arrives. */
@@ -38,8 +39,10 @@ export function useInFlight(): InFlightState {
   const [count, setCount] = useState<number | null>(null);
   const [uniqueIps, setUniqueIps] = useState<number | null>(null);
   const [live, setLive] = useState(false);
+  const visible = useSseWhenVisible();
 
   useEffect(() => {
+    if (!visible) return;
     let stopped = false;
     let source: EventSource | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -98,7 +101,7 @@ export function useInFlight(): InFlightState {
       if (retryTimer !== undefined) clearTimeout(retryTimer);
       source?.close();
     };
-  }, []);
+  }, [visible]);
 
   return { count, uniqueIps, live };
 }
@@ -207,8 +210,10 @@ export function usePoolUsage(): PoolUsageState {
   const [pools, setPools] = useState<readonly PoolUsageRow[] | null>(null);
   const [live, setLive] = useState(false);
   const maxBytesByPool = useState(() => new Map<string, PoolUsageRow>())[0];
+  const visible = useSseWhenVisible();
 
   useEffect(() => {
+    if (!visible) return;
     let stopped = false;
     let source: EventSource | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -262,7 +267,7 @@ export function usePoolUsage(): PoolUsageState {
       if (retryTimer !== undefined) clearTimeout(retryTimer);
       source?.close();
     };
-  }, [queryClient]);
+  }, [queryClient, visible]);
 
   return { pools, live };
 }
@@ -278,8 +283,10 @@ export function usePoolUsage(): PoolUsageState {
  */
 export function useRequestsStream(): void {
   const queryClient = useQueryClient();
+  const visible = useSseWhenVisible();
 
   useEffect(() => {
+    if (!visible) return;
     let stopped = false;
     let source: EventSource | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -332,5 +339,5 @@ export function useRequestsStream(): void {
       if (retryTimer !== undefined) clearTimeout(retryTimer);
       source?.close();
     };
-  }, [queryClient]);
+  }, [queryClient, visible]);
 }
