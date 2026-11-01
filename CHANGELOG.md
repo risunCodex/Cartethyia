@@ -8,6 +8,17 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Qoder umid bridge binaries are made executable before running.** The
+  `umidpack` runtime-info files ship without the exec bit (git mode 100644)
+  and nothing else in the delivery path set it, so fresh Linux/macOS installs —
+  including the Docker image — could not spawn them (`[qoder] elf mint failed`,
+  EACCES). The bridge now self-heals with a best-effort `chmod 755` before
+  spawning, and the Dockerfile marks the POSIX binaries executable at build.
+
 ## [2.7.4] - 2026-11-01
 
 > **Instalasi ulang.** `2.7.4` tersedia di registri npm. Jika instalasi yang
