@@ -421,5 +421,8 @@ export function useUpdatePoolStrategy() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.network.poolStrategy });
     },
+    onError: (error) => {
+      toast.error("Could not update pool routing", getErrorMessage(error));
+    },
   });
 }

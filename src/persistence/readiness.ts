@@ -89,12 +89,15 @@ async function runReadinessChecks(
 
   // 1. Check database connectivity via simple query
   let dbOk = false;
+  let dbTimedOut = false;
   try {
     const result = await withTimeoutCheck(
       () => db.execute(sql`SELECT 1`),
       "Database connectivity check",
     );
-    if (result !== "timeout") {
+    if (result === "timeout") {
+      dbTimedOut = true;
+    } else {
       dbOk = true;
     }
   } catch {
@@ -107,7 +110,10 @@ async function runReadinessChecks(
       db: "disconnected",
       migrations: "pending",
       redis: "disconnected",
-      reason: "database not connected",
+      // A timed-out probe under load is not evidence the database is down —
+      // it is the probe itself failing to get a backend in time. The guard
+      // reads this to call it overload rather than a dependency failure.
+      reason: dbTimedOut ? "database probe timed out" : "database not connected",
     };
   }
 
@@ -115,13 +121,16 @@ async function runReadinessChecks(
   // Readiness requires every discovered migration to have a ledger row; a
   // reachable ledger alone is not proof the upgrade finished.
   let migrationsApplied = false;
+  let migrationsTimedOut = false;
   try {
     const result = await withTimeoutCheck(
       () => readMigrationLedgerStatus(db),
       "Migrations check",
     );
 
-    if (result !== "timeout") {
+    if (result === "timeout") {
+      migrationsTimedOut = true;
+    } else {
       migrationsApplied = result.applied;
     }
   } catch {
@@ -134,18 +143,21 @@ async function runReadinessChecks(
       db: "connected",
       migrations: "pending",
       redis: "disconnected",
-      reason: "migrations not yet applied",
+      reason: migrationsTimedOut ? "migrations probe timed out" : "migrations not yet applied",
     };
   }
 
   // 3. Check Redis. The memory backend is healthy by construction — there is
   // no connection to probe — so it passes without a round trip.
   let redisOk = redisBackend === "memory";
+  let redisTimedOut = false;
 
   if (redisBackend === "redis" && redis) {
     try {
       const result = await withTimeoutCheck(() => redis.ping(), "Redis connectivity check");
-      if (result !== "timeout" && result === "PONG") {
+      if (result === "timeout") {
+        redisTimedOut = true;
+      } else if (result === "PONG") {
         redisOk = true;
       }
     } catch {
@@ -159,7 +171,7 @@ async function runReadinessChecks(
       db: "connected",
       migrations: "applied",
       redis: "disconnected",
-      reason: "redis not connected",
+      reason: redisTimedOut ? "redis probe timed out" : "redis not connected",
     };
   }
 

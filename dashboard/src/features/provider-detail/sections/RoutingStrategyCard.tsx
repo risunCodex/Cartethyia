@@ -1,4 +1,4 @@
-import { Cable, Fingerprint, Gauge, Info, Layers, Minus, Plus, Repeat, Waypoints } from "lucide-react";
+import { Cable, Fingerprint, Gauge, Info, Layers, Minus, Plus, Repeat, Shuffle, Waypoints } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Card, CardBody, CardHeader } from "../../../components/ui/card";
 import { Dialog } from "../../../components/ui/dialog";
@@ -15,6 +15,15 @@ import {
   ROUTING_ACTIVE_LABEL,
   useRoutingStrategy,
 } from "../../../hooks/routing-strategy";
+import { usePoolStrategy, useUpdatePoolStrategy } from "../../../hooks/network";
+import type { PoolStrategySetting } from "../../../data/contracts";
+
+/** Pool selection modes, mirroring POOL_ROUTING_STRATEGIES on the backend. */
+const POOL_STRATEGY_OPTIONS: readonly { value: PoolStrategySetting["strategy"]; label: string }[] = [
+  { value: "least_loaded", label: "Least loaded" },
+  { value: "round_robin", label: "Round robin" },
+  { value: "random", label: "Random" },
+];
 
 /** The slider's own scale: 1–50, with one step past the end meaning unlimited. */
 const SLIDER_MAX = 50;
@@ -48,7 +57,10 @@ export function RoutingStrategyCard({
   readonly userAgentEditable: boolean;
 }): ReactNode {
   const routing = useRoutingStrategy(providerId, userAgentEditable);
+  const poolStrategyQuery = usePoolStrategy();
+  const updatePoolStrategy = useUpdatePoolStrategy();
   const [limitsHelpOpen, setLimitsHelpOpen] = useState(false);
+  const [poolHelpOpen, setPoolHelpOpen] = useState(false);
   const showUnsupportedHint = PROXY_SKIP_HINT_PROVIDERS.has(providerId);
   const presets = userAgentPresets(
     DASHBOARD_VERSION,
@@ -66,11 +78,25 @@ export function RoutingStrategyCard({
   const activeLabel = routing.roundRobinEnabled
     ? `${ROUTING_ACTIVE_LABEL.roundRobin} · ${routing.rotateCount} account${routing.rotateCount === 1 ? "" : "s"} per rotation`
     : ROUTING_ACTIVE_LABEL.fallback;
+  const poolStrategy = poolStrategyQuery.data;
+  const poolStrategyOption = POOL_STRATEGY_OPTIONS.find(
+    (option) => option.value === poolStrategy?.strategy,
+  );
+  const poolModeLabel =
+    poolStrategy === undefined
+      ? "…"
+      : routing.skipProxy
+        ? "Direct — proxy pools bypassed"
+        : poolStrategyOption
+          ? poolStrategy.strategy === "round_robin"
+            ? `${poolStrategyOption.label} · ${poolStrategy.rotateCount} per rotation`
+            : poolStrategyOption.label
+          : "Unset";
   const subtitle = routing.isSaving
     ? "Saving..."
     : routing.saveFailed
       ? "Save failed — reverted to last saved value"
-      : `Active: ${activeLabel}`;
+      : `Active: ${activeLabel} · ${poolModeLabel}`;
   // The slider stops at 50; one step further is unlimited. A typed value above
   // 50 still shows, parked at the end with its real number beside it.
   const unlimited = routing.maxInflight === null;
@@ -93,6 +119,17 @@ export function RoutingStrategyCard({
     routing.setUserAgent(next);
     const label = userAgentOptions.find((option) => option.value === next)?.label ?? next;
     toast.success("Client identity updated", label);
+  };
+
+  const handlePoolStrategyChange = (next: string) => {
+    if (next === poolStrategy?.strategy) return;
+    updatePoolStrategy.mutate({ strategy: next as PoolStrategySetting["strategy"] });
+  };
+  const adjustPoolRotateCount = (delta: number) => {
+    if (!poolStrategy) return;
+    updatePoolStrategy.mutate({
+      rotateCount: Math.min(1000, Math.max(1, poolStrategy.rotateCount + delta)),
+    });
   };
 
   // The provider's own discovered client, shown verbatim when its identity is
@@ -190,6 +227,80 @@ export function RoutingStrategyCard({
               </label>
               <div className="mt-1 text-badge text-text-tertiary">
                 Bypass automatic proxy-pool routing for this provider and always dial direct
+              </div>
+            </div>
+          </Row>
+
+          <Row
+            action={
+              <Inline gap="8px" align="center">
+                {poolStrategy?.strategy === "round_robin" && !routing.skipProxy ? (
+                  <div
+                    role="group"
+                    aria-label="Pools per rotation"
+                    className="inline-flex items-center gap-1 rounded-control border border-inner-border bg-surface-1 p-1"
+                  >
+                    <span className="px-2 text-badge text-text-secondary">Pools/rotation</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-9 rounded-tiny"
+                      aria-label="Decrease pools per rotation"
+                      disabled={updatePoolStrategy.isPending || poolStrategy.rotateCount <= 1}
+                      icon={<Minus size={14} />}
+                      onClick={() => adjustPoolRotateCount(-1)}
+                    />
+                    <output
+                      className="min-w-8 text-center text-body font-semibold tabular-nums"
+                      aria-live="polite"
+                    >
+                      {poolStrategy.rotateCount}
+                    </output>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-9 rounded-tiny"
+                      aria-label="Increase pools per rotation"
+                      disabled={updatePoolStrategy.isPending || poolStrategy.rotateCount >= 1000}
+                      icon={<Plus size={14} />}
+                      onClick={() => adjustPoolRotateCount(1)}
+                    />
+                  </div>
+                ) : null}
+                <Select
+                  id="routing-pool-strategy"
+                  aria-label="Pool selection mode"
+                  value={poolStrategy?.strategy ?? ""}
+                  disabled={routing.skipProxy || updatePoolStrategy.isPending}
+                  options={POOL_STRATEGY_OPTIONS}
+                  onValueChange={handlePoolStrategyChange}
+                />
+              </Inline>
+            }
+          >
+            <div className="min-w-0">
+              <label htmlFor="routing-pool-strategy" className="flex items-center gap-2">
+                <Inline gap="6px" className="text-body font-semibold">
+                  <Shuffle
+                    size={15}
+                    aria-hidden="true"
+                    className={`shrink-0 ${routing.skipProxy ? "text-text-tertiary" : "text-accent"}`}
+                  />
+                  Pool selection
+                </Inline>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 -my-1"
+                  aria-label="How pool routing works"
+                  onClick={() => setPoolHelpOpen(true)}
+                >
+                  How it works
+                </Button>
+              </label>
+              <div className="mt-1 text-badge text-text-tertiary">
+                How proxy pools are chosen when this provider dials one.
+                {routing.skipProxy ? " Disabled while “Always direct” is on." : ""}
               </div>
             </div>
           </Row>
@@ -410,6 +521,49 @@ export function RoutingStrategyCard({
               <p className="text-badge text-text-tertiary">
                 Unlimited means no counter is kept for this provider, so the limit costs
                 nothing until you set one.
+              </p>
+            </div>
+          </Dialog>
+          <Dialog
+            open={poolHelpOpen}
+            onClose={() => setPoolHelpOpen(false)}
+            title="How pool routing works"
+            size="md"
+          >
+            <div className="grid gap-4 text-body">
+              <p className="text-text-secondary">
+                When a provider dials a proxy pool, the gateway picks the pool
+                with one of three modes. All modes skip pools that are cooling
+                down, full, or disabled — the pool's own gates always apply.
+              </p>
+              <dl className="grid gap-3">
+                <div>
+                  <dt className="font-semibold">Least loaded</dt>
+                  <dd className="text-badge text-text-tertiary">
+                    Each request goes to the pool with the most headroom
+                    (weighted). The default — spreads load and prefers the
+                    fastest-available egress.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold">Round robin</dt>
+                  <dd className="text-badge text-text-tertiary">
+                    Requests rotate across pools in a fixed order, with a set
+                    number of successful requests per pool before moving on.
+                    Useful for even request counts across pools.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold">Random</dt>
+                  <dd className="text-badge text-text-tertiary">
+                    Each request picks from the eligible pools at random, so a
+                    burst does not gang up on the first pools in the order.
+                  </dd>
+                </div>
+              </dl>
+              <p className="text-badge text-text-tertiary">
+                Turning on “Always direct” bypasses pools entirely — this mode
+                has no effect then.
               </p>
             </div>
           </Dialog>

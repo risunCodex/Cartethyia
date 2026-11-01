@@ -38,6 +38,7 @@ import {
   useDeleteNetworkPoolBatch,
   useHealthCheckNetworkPool,
   useNetworkPools,
+  usePoolStrategy,
   useSetNetworkPoolStatusBatch,
   useSpeedTestNetworkPool,
   useUpdateNetworkPool,
@@ -100,6 +101,16 @@ const SPEED_TEST_SIZES = [
 
 export default function Proxy(): ReactNode {
   const poolsQuery = useNetworkPools();
+  const poolStrategyQuery = usePoolStrategy();
+  const poolStrategy = poolStrategyQuery.data;
+  const poolRuleLabel =
+    poolStrategy === undefined
+      ? null
+      : poolStrategy.strategy === "round_robin"
+        ? `Round robin · ${poolStrategy.rotateCount}/rotation`
+        : poolStrategy.strategy === "random"
+          ? "Random"
+          : "Least loaded";
   const deletePool = useDeleteNetworkPool();
   const deletePoolBatch = useDeleteNetworkPoolBatch();
   const setPoolStatusBatch = useSetNetworkPoolStatusBatch();
@@ -562,6 +573,11 @@ export default function Proxy(): ReactNode {
           icon={<ShieldCheck size={16} />}
           action={
             <Inline gap="8px">
+              {poolRuleLabel ? (
+                <Badge tone="accent" title="Proxy pool selection mode">
+                  Pool routing: {poolRuleLabel}
+                </Badge>
+              ) : null}
               <Button
                 variant="secondary"
                 size="sm"
