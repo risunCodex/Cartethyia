@@ -44,6 +44,11 @@ function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
+/** A single-quoted SQL string literal, with embedded quotes doubled. */
+function quoteLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 function asRows(rows: unknown): Record<string, unknown>[] {
   return rows as Record<string, unknown>[];
 }
@@ -106,18 +111,46 @@ async function pgTableNames(pool: Pool): Promise<string[]> {
 }
 
 async function pgColumns(pool: Pool, table: string): Promise<PgColumn[]> {
+  const literal = quoteLiteral(table);
   const result = await pool.query(
     `select column_name, data_type, udt_name
        from information_schema.columns
-      where table_schema = 'public' and table_name = $1
+      where table_schema = 'public' and table_name = ${literal}
       order by ordinal_position`,
-    [table],
   );
   return asRows(result.rows).map((row) => ({
     name: String(row.column_name),
     dataType: String(row.data_type),
     udtName: String(row.udt_name),
   }));
+}
+
+/**
+ * Order-key columns from the destination SQLite schema: the primary key when
+ * one exists, else the first non-partial unique index's columns.
+ *
+ * Paging needs a total deterministic order — offset pagination over a
+ * non-deterministic order runs a fresh query per page and can hand back
+ * overlapping rows, which fails a UNIQUE insert. A primary key or unique
+ * index is unique by definition, so ordering by it partitions the table
+ * exactly. Reading the key from the destination (rather than the PostgreSQL
+ * catalog) keeps the tool self-consistent: it orders by the same uniqueness
+ * the target enforces.
+ */
+function sqliteOrderKeyColumns(sqlite: Database, table: string): string[] {
+  const list = sqlite.query(`pragma index_list(${quoteLiteral(table)})`).all() as {
+    name: string;
+    unique: number;
+    origin: string;
+  }[];
+  const index =
+    list.find((entry) => entry.origin === "pk") ??
+    list.find((entry) => entry.unique === 1 && entry.origin !== "pk");
+  if (index === undefined) return [];
+  const columns = sqlite.query(`pragma index_info(${quoteLiteral(index.name)})`).all() as {
+    name: string;
+  }[];
+  return columns.map((column) => column.name);
 }
 
 function sqliteColumnNames(sqlite: Database, table: string): string[] {
@@ -145,10 +178,14 @@ async function copyTable(
     .join(", ")}) values (${common.map(() => "?").join(", ")})`;
   const statement = sqlite.prepare(insert);
 
+  const keyOrder = sqliteOrderKeyColumns(sqlite, table);
+  const orderBy = keyOrder.length > 0 ? keyOrder.map(quoteIdent).join(", ") : quoteIdent(srcCols[0]!.name);
+  const pageSql = `${select} order by ${orderBy} limit ${PAGE_ROWS} offset $1`;
+
   let offset = 0;
   let copied = 0;
   for (;;) {
-    const result = await pool.query(`${select} limit ${PAGE_ROWS} offset ${offset}`);
+    const result = await pool.query(pageSql, [offset]);
     const rows = asRows(result.rows);
     if (rows.length === 0) break;
     sqlite.transaction(() => {
@@ -157,6 +194,7 @@ async function copyTable(
       }
     })();
     copied += rows.length;
+    if (rows.length < PAGE_ROWS) break;
     offset += PAGE_ROWS;
   }
   return { copied, skipped: false };
@@ -182,6 +220,11 @@ async function main(): Promise<void> {
     throw new Error("DATABASE_URL is required (the full-mode source)");
   }
   const pool = new Pool({ connectionString });
+  const origQuery = pool.query.bind(pool);
+  pool.query = ((text: string, params?: readonly unknown[]) => {
+    console.error(`[pg] ${text.slice(0, 160)}${(params?.length ?? 0) > 0 ? ` :: ${JSON.stringify(params)}` : ""}`);
+    return origQuery(text, params as unknown[] | undefined);
+  }) as typeof pool.query;
   try {
     // The target is always rebuilt from scratch: a half-finished migration must
     // never be re-run onto itself.
