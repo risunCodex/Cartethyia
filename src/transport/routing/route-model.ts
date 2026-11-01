@@ -85,6 +85,12 @@ export interface RouteCandidate {
    */
   readonly pro_only?: boolean;
   /**
+   * True when the provider publishes this model as free (its own directory
+   * statement, e.g. Qoder's `is_free`). A free model may be routed to any
+   * account — the credit-preference ordering skips it entirely.
+   */
+  readonly free_tier?: boolean;
+  /**
    * The plan the provider last reported for `provider_account_id`.
    *
    * Absent means the plan was never read, which is a different state from

@@ -726,6 +726,7 @@ class RouteCatalogRepository {
                 ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
                 capability_profile: capabilityProfile,
                 tenant_id: tenantOwnerId,
+                ...(model.freeTier === true ? { free_tier: true } : {}),
                 // Public credential-less candidates have no account to own them.
                 owner_tenant_id: null,
                 requires_account: false as const,
@@ -765,6 +766,7 @@ class RouteCatalogRepository {
                 ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
                 capability_profile: capabilityProfile,
                 tenant_id: tId,
+                ...(model.freeTier === true ? { free_tier: true } : {}),
                 // Public credential-less candidates have no account to own them.
                 owner_tenant_id: null,
                 requires_account: false as const,
@@ -793,6 +795,7 @@ class RouteCatalogRepository {
           ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
           capability_profile: capabilityProfile,
           tenant_id: providerTenantId,
+          ...(model.freeTier === true ? { free_tier: true } : {}),
           // Public credential-less candidates have no account to own them.
           owner_tenant_id: null,
           ...(providerRequiresAccount
@@ -835,6 +838,7 @@ class RouteCatalogRepository {
           ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
           capability_profile: capabilityProfile,
           ...(routeUserAgent === undefined ? {} : { user_agent: routeUserAgent }),
+          ...(model.freeTier === true ? { free_tier: true } : {}),
           tenant_id: rowTenantId,
           provider_account_id: account.id,
           // The account's owning tenant (null = shared pool-wide) — the bucket

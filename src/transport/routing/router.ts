@@ -68,6 +68,23 @@ function belowUsageFloor(state: {
 }
 
 /**
+ * Routing priority for an account's remaining allowance when two candidates sit
+ * in the same rank group: positive remaining credit first, then unknown, then
+ * known-zero last. Free-tier models skip the preference entirely — a free model
+ * routes to any account, as the provider's own directory stated it is free.
+ */
+function creditPriority(
+  candidate: RouteCandidate & { quota_windows?: readonly unknown[] },
+): number {
+  if (candidate.free_tier === true) return 0;
+  const windows = candidate.quota_windows as readonly ProviderQuotaWindow[] | undefined;
+  if (windows === undefined || windows.length === 0) return 0;
+  const credit = totalRemainingCredit(windows);
+  if (credit === null) return 0;
+  return credit > 0 ? 1 : -1;
+}
+
+/**
  * Normalizes a requested model name before alias lookup. Coding-agent CLIs
  * version their model ids with variant suffixes (`claude-opus-5[1m]`,
  * effort tags, …) that must never each become a mapping row. Normalization
@@ -467,13 +484,16 @@ export class RoutingEngine {
       accountId,
       this.redis,
     ).catch(() => undefined);
-    const quotaWindows = cached?.quota.windows ?? [];
+    const quotaWindows = cached?.quota.windows;
     return {
       ...candidate,
       ...(setting?.usageFloor == null
         ? {}
         : { usage_floor: setting.usageFloor, usage_floor_unit: setting.usageFloorUnit }),
-      quota_windows: quotaWindows,
+      // The cache is authoritative when it has a reading; when it does not,
+      // keep whatever the candidate already carried (the credit ordering reads
+      // these windows, and a miss must not erase a stamped value).
+      ...(quotaWindows === undefined ? {} : { quota_windows: quotaWindows }),
     };
   }
 
@@ -810,11 +830,14 @@ export class RoutingEngine {
       );
     }
 
-    // Single sort by rank (fresh → slow → cooling → saturated), stable.
+    // Single sort by rank (fresh → slow → cooling → saturated), stable. Within
+    // the same rank, accounts with remaining credit come first unless the model
+    // is free tier, which routes to any account.
     eligible = [...eligible].sort((left, right) => {
       const leftRank = decisions.get(admissionKey(left))?.rank ?? ROUTING_RANK.FRESH;
       const rightRank = decisions.get(admissionKey(right))?.rank ?? ROUTING_RANK.FRESH;
-      return leftRank - rightRank;
+      if (leftRank !== rightRank) return leftRank - rightRank;
+      return creditPriority(right) - creditPriority(left);
     });
 
     // Provider routing rotates accounts within the same rank group only; it can
