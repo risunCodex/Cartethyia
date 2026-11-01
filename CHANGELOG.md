@@ -8,6 +8,81 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.7.4] - Unreleased
+
+### Added
+
+- **API-key bans with reasons, durations, and a Banned Users dialog.** A ban is
+  distinct from revoke/disable: it records *why* (`ban_reason`) and — with the
+  new `banned_until` column (migration `0034`, both databases) — can be timed,
+  so a temporary ban lapses on its own without SQL. The ban flow now offers the
+  duration choices the old model-abuse surface used (1h/6h/12h/1d/7d/permanent,
+  default 1h) in both the API Credentials ban modal and the request-detail ban
+  action. Banned keys are rejected by the auth path exactly like revoked keys;
+  unban clears all three ban columns with no leftover metadata. The API
+  Credentials header gains a **Banned Users** dialog listing active bans
+  (key, reason, lapse countdown) with per-row Unban — the surface the old
+  model-abuse layer used to own.
+- **Proxy pools behave like accounts in the provider detail.** Pool-as-account
+  rows (`kind: "pool"`, for ip-scoped credential-less providers like OpenCode
+  Free) now join the owning pool's live health: real status, last error,
+  cooldown, today/lifetime usage from telemetry, and active provider
+  rate-limit markers that render as a "Rate-limited"/"Egress blocked" badge
+  with the reason and reset time. They gain the same Health (pool event modal)
+  and Test (provider probe) actions as real accounts.
+- **Proxy pool routing is transparent and operator-controllable.** The Routing
+  Strategy card now surfaces and edits the tenant's pool-selection mode
+  (least loaded / round robin / random) with the pools-per-rotation stepper and
+  an explanatory dialog, and the Proxy page shows a read-only pool-routing
+  badge. The card is regrouped under Provider accounts / Proxy pools headers
+  with status chips, and the account toggle is renamed "Rotate accounts" so it
+  no longer reads as pool round robin.
+- **A pool's provider cooldown markers clear when the pool recovers.** Dispatch
+  success, manual Clear/Recover, and the expiry sweep now drop the owning
+  provider's cooldown markers, so a healthy pool no longer shows a permanent
+  "1 cooldown" badge (previously the mirror was write-only).
+
+### Changed
+
+- **Share stats and usage are computed in SQL, not from a bounded page.** A
+  busy share family no longer freezes its KPI cards at 500 requests/errors: the
+  totals, 24-hour chart, and client-IP breakdown are SQL aggregates over the
+  whole retained window. Client IPs are ranked by most recent activity (not raw
+  volume), and inactive addresses are hidden by default behind a "Show inactive"
+  toggle.
+- **Quota aggregation is unified across the server and the dashboard.** A
+  single `quotaPillSummary` drives the account-row quota pill, Command Code
+  credits are correctly pooled, a zero ceiling reads as a spent balance, and
+  remaining-only pooled windows (no limit) still count — fixing quotas that
+  rendered as "0 of 0" or disappeared (Qoder free-tier exhausted, CodeBuddy
+  credits).
+- **Readiness distinguishes overload from dependency failure.** A readiness
+  probe that times out under load now surfaces as a 503 `overloaded` with a
+  retry-after hint ("The gateway is overloaded"), while "dependencies are not
+  ready" is reserved for real failures (connection refused, migrations missing).
+- **Postgres pool default raised to 16 (from 8).** Combined with the consumer
+  fixes above, a 16-connection ceiling sustains a hundred concurrent requests;
+  the production override was removed so the code default governs.
+- **Live SSE streams pause when the tab is hidden.** Notifications, in-flight,
+  pools, requests, logs, and share-stats streams close their EventSource while
+  the tab is hidden and reopen on visibility, cutting idle background load to
+  zero. Share-stats and memory sampling cadences move from 10s to 30s.
+- **Error messages carry a warmer tone; codes reworked.** GatewayError call
+  sites were swept for consistent `{requestId}` inclusion, overlap fixes, and
+  warmer wording; deduplicated codes including `route_unavailable`,
+  `model_not_allowed`, and `rate_limited`.
+
+### Fixed
+
+- **Pool health modal "Failed to load pool health events" for OpenCode.** The
+  dashboard dialed `/routing/pools/...` while the pools router is mounted at
+  `/network/pools`; both the health-events and provider-probe hooks now use the
+  correct prefix.
+- **Share page 500-stuck** (see Changed — SQL aggregates).
+- **SQLite JSONB `auth_state` read as a string** on OAuth paste import.
+- **Low-device rendering switch** now matches the published dataset attribute,
+  and the Extreme preset renders near-solid everywhere with no backdrop read.
+
 ## [2.7.3] - 2026-10-30
 
 > **Instalasi ulang.** `2.7.3` di-registri npm telah diperbarui sekali setelah rilis
