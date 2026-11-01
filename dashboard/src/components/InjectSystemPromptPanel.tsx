@@ -237,7 +237,9 @@ function PromptEditor({
 
 /**
  * The per-scope "source" selector: Global, a named preset, or Custom. Renders
- * a dropdown of available sources plus (when Custom) the prompt editor.
+ * a dropdown of available sources plus (when Custom) the prompt editor. For the
+ * global scope itself, "Global" is meaningless (self-reference), so
+ * `includeGlobalSource` is turned off and an explicit "Off" entry is offered.
  */
 function ScopeSourcePicker({
   id,
@@ -245,25 +247,31 @@ function ScopeSourcePicker({
   presets,
   onChange,
   rows = 5,
+  includeGlobalSource = true,
+  allowOff = false,
 }: {
   readonly id: string;
   readonly ref: ScopePromptRef;
   readonly presets: Readonly<Record<string, SystemPromptPreset>>;
   readonly onChange: (next: ScopePromptRef) => void;
   readonly rows?: number;
+  readonly includeGlobalSource?: boolean;
+  readonly allowOff?: boolean;
 }): ReactNode {
   const presetList = Object.values(presets);
   const sourceOptions: { value: string; label: string }[] = [
-    { value: "global", label: "Global" },
+    ...(allowOff ? [{ value: "off", label: "Off" }] : []),
+    ...(includeGlobalSource ? [{ value: "global", label: "Global" }] : []),
     ...presetList.map((preset) => ({ value: `preset:${preset.id}`, label: `Preset · ${preset.name}` })),
     { value: "custom", label: "Custom" },
   ];
   const currentKind = ref.kind;
   const currentValue =
-    currentKind === "preset" ? `preset:${ref.presetId}` : currentKind === "custom" ? "custom" : "global";
+    currentKind === "preset" ? `preset:${ref.presetId}` : currentKind === "custom" ? "custom" : currentKind === "off" ? "off" : "global";
 
   const onSourceChange = (next: string) => {
-    if (next === "global") onChange(globalRef());
+    if (next === "off") onChange({ kind: "off" });
+    else if (next === "global") onChange(globalRef());
     else if (next === "custom") onChange(customRef({ enabled: true, mode: "append", text: "" }));
     else {
       const presetId = next.slice("preset:".length);
@@ -293,31 +301,38 @@ function ScopeSourcePicker({
   );
 }
 
-/** Global scope row: toggle + mode + textarea + explicit clear. */
+/** Global scope row: source (preset/custom/off), toggle, explicit clear. */
 function GlobalScopeSection({
   value,
+  presets,
   onChange,
 }: {
-  readonly value: PromptSetting | null;
-  readonly onChange: (next: PromptSetting | null) => void;
+  readonly value: ScopePromptRef | null;
+  readonly presets: Readonly<Record<string, SystemPromptPreset>>;
+  readonly onChange: (next: ScopePromptRef | null) => void;
 }): ReactNode {
-  const active = value !== null;
+  const ref = value ?? { kind: "off" as const };
+  const isOff = ref.kind === "off";
+  const isCustomOn = ref.kind === "custom" && ref.setting.enabled;
+  const isPresetOn = ref.kind === "preset" && presets[ref.presetId]?.enabled === true;
+  const active = isCustomOn || isPresetOn;
   return (
     <div className="rounded-control border border-inner-border bg-surface-2 p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2.5">
             <p className="text-body font-semibold">Global injection</p>
-            <Badge tone={active && value?.enabled ? "ok" : "default"} dot>
-              {active && value?.enabled ? "Active" : "Off"}
+            <Badge tone={active ? "ok" : "default"} dot>
+              {active ? "Active" : "Off"}
             </Badge>
           </div>
           <p className="mt-1 text-badge leading-normal text-text-tertiary">
-            Applied to every request regardless of provider, model, combo, or alias.
+            Applied to every request regardless of provider, model, combo, or alias. Choose a preset or a
+            custom prompt; turn it off to stop global injection.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {active ? (
+          {value !== null ? (
             <Button
               variant="secondary"
               size="sm"
@@ -330,14 +345,31 @@ function GlobalScopeSection({
           ) : null}
           <Switch
             id="isp-global"
-            checked={active && value?.enabled === true}
-            onChange={(next) => onChange(next ? enabledSetting(value?.text ?? "", value?.mode ?? "append") : value ? { ...value, enabled: false } : null)}
+            checked={active}
+            onChange={(next) =>
+              onChange(
+                next
+                  ? value && value.kind !== "off"
+                    ? value
+                    : customRef(enabledSetting("", "append"))
+                  : { kind: "off" },
+              )
+            }
             aria-label="Enable global injection"
             className="shrink-0"
           />
         </div>
       </div>
-      {active && value ? <PromptEditor id="isp-global-prompt" value={value} onChange={onChange} /> : null}
+      {!isOff ? (
+        <ScopeSourcePicker
+          id="isp-global-source"
+          ref={ref}
+          presets={presets}
+          onChange={onChange}
+          includeGlobalSource={false}
+          allowOff
+        />
+      ) : null}
     </div>
   );
 }
@@ -546,6 +578,7 @@ function ProviderScopeCard({
   const customConfigured = ref.kind === "custom";
   const active = ref.kind === "custom" && customSetting?.enabled === true;
   const presetActive = ref.kind === "preset" ? presets[ref.presetId]?.enabled === true : false;
+  const isOff = ref.kind === "off";
   const isActive = active || presetActive;
 
   return (
@@ -568,6 +601,10 @@ function ProviderScopeCard({
           {isActive ? (
             <Badge tone="ok" dot>
               Active
+            </Badge>
+          ) : isOff ? (
+            <Badge tone="default" dot>
+              Off
             </Badge>
           ) : customConfigured ? (
             <Badge tone="warn" dot>
@@ -596,6 +633,8 @@ function ProviderScopeCard({
             <span className="line-clamp-2 flex-1 whitespace-pre-wrap break-words text-text-secondary">{customSetting.text}</span>
           ) : ref.kind === "preset" ? (
             <span>Using preset “{presets[ref.presetId]?.name ?? ref.presetId}”.</span>
+          ) : ref.kind === "off" ? (
+            <span>Injection is off for this provider — nothing is appended.</span>
           ) : (
             <span>Follows the global prompt.</span>
           )}
@@ -608,6 +647,7 @@ function ProviderScopeCard({
         presets={presets}
         onChange={onChange}
         rows={5}
+        allowOff
       />
     </div>
   );
@@ -635,6 +675,7 @@ function ModelScopeRow({
   const customSetting = ref.kind === "custom" ? ref.setting : undefined;
   const active = ref.kind === "custom" && customSetting?.enabled === true;
   const presetActive = ref.kind === "preset" ? presets[ref.presetId]?.enabled === true : false;
+  const isOff = ref.kind === "off";
   const isActive = active || presetActive;
 
   return (
@@ -653,6 +694,10 @@ function ModelScopeRow({
             <Badge tone="ok" dot>
               Active
             </Badge>
+          ) : isOff ? (
+            <Badge tone="default" dot>
+              Off
+            </Badge>
           ) : null}
           <Switch
             id={`isp-model-${key}`}
@@ -661,14 +706,14 @@ function ModelScopeRow({
               onChange(
                 next
                   ? customRef(enabledSetting(ref.kind === "custom" ? ref.setting.text : "", "append"))
-                  : undefined,
+                  : { kind: "off" },
               )
             }
             aria-label={`Enable injection for ${modelId}`}
           />
         </div>
       </div>
-      <ScopeSourcePicker id={`isp-model-${key}`} ref={ref} presets={presets} onChange={onChange} rows={3} />
+      <ScopeSourcePicker id={`isp-model-${key}`} ref={ref} presets={presets} onChange={onChange} rows={3} allowOff />
     </div>
   );
 }
@@ -691,6 +736,7 @@ function NamedScopeRow({
   const customSetting = ref.kind === "custom" ? ref.setting : undefined;
   const active = ref.kind === "custom" && customSetting?.enabled === true;
   const presetActive = ref.kind === "preset" ? presets[ref.presetId]?.enabled === true : false;
+  const isOff = ref.kind === "off";
   const isActive = active || presetActive;
 
   return (
@@ -711,6 +757,10 @@ function NamedScopeRow({
             <Badge tone="ok" dot>
               Active
             </Badge>
+          ) : isOff ? (
+            <Badge tone="default" dot>
+              Off
+            </Badge>
           ) : null}
           <Switch
             id={`isp-${kind}-${name}`}
@@ -719,14 +769,14 @@ function NamedScopeRow({
               onChange(
                 next
                   ? customRef(enabledSetting(ref.kind === "custom" ? ref.setting.text : "", "append"))
-                  : undefined,
+                  : { kind: "off" },
               )
             }
             aria-label={`Enable injection for ${kind} ${name}`}
           />
         </div>
       </div>
-      <ScopeSourcePicker id={`isp-${kind}-${name}`} ref={ref} presets={presets} onChange={onChange} rows={3} />
+      <ScopeSourcePicker id={`isp-${kind}-${name}`} ref={ref} presets={presets} onChange={onChange} rows={3} allowOff />
     </div>
   );
 }
@@ -783,7 +833,7 @@ export function InjectSystemPromptDialog({
   const aliases = aliasesQuery.data ?? [];
   const combos = combosQuery.data ?? [];
 
-  const patchGlobal = (next: PromptSetting | null) =>
+  const patchGlobal = (next: ScopePromptRef | null) =>
     setDraft((prev) => ({ ...prev, global: next }));
   const patchPresets = (next: Readonly<Record<string, SystemPromptPreset>>) =>
     setDraft((prev) => ({ ...prev, presets: next }));
@@ -858,7 +908,7 @@ export function InjectSystemPromptDialog({
           <p className="mb-3 mt-1 text-badge leading-normal text-text-tertiary">
             Applied to every request regardless of provider, model, combo, or alias.
           </p>
-          <GlobalScopeSection value={draft.global} onChange={patchGlobal} />
+          <GlobalScopeSection value={draft.global} presets={draft.presets} onChange={patchGlobal} />
         </section>
 
         <section className="border-t border-inner-border pt-6">
@@ -1092,7 +1142,23 @@ export function InjectSystemPromptPanel(): ReactNode {
         <Stack gap="14px">
           <div className="grid grid-cols-3 gap-4 max-medium:grid-cols-1">
             {(() => {
-              const globalOn = state.global !== null && state.global.enabled;
+              const globalRefValue = state.global;
+              const globalOn =
+                globalRefValue !== null &&
+                (globalRefValue.kind === "custom"
+                  ? globalRefValue.setting.enabled
+                  : globalRefValue.kind === "preset"
+                    ? state.presets[globalRefValue.presetId]?.enabled === true
+                    : false);
+              const globalLabel = globalOn
+                ? globalRefValue?.kind === "preset"
+                  ? `Preset · ${state.presets[globalRefValue.presetId]?.name ?? globalRefValue.presetId}`
+                  : globalRefValue?.kind === "custom"
+                    ? globalRefValue.setting.mode === "override"
+                      ? "Override"
+                      : "On"
+                    : "On"
+                : "Off";
               const Tile = ({
                 icon,
                 label,
@@ -1132,7 +1198,7 @@ export function InjectSystemPromptPanel(): ReactNode {
                   <Tile
                     icon={<Globe2 size={16} />}
                     label="Global"
-                    value={globalOn ? state.global?.mode === "override" ? "Override" : "On" : "Off"}
+                    value={globalLabel}
                     active={globalOn}
                   />
                   <Tile

@@ -38,19 +38,20 @@ export interface SystemPromptRoute {
 
 /**
  * Resolves one scope reference to a concrete prompt setting. Returns
- * `undefined` when the scope has nothing to say (no entry, global disabled,
- * preset missing/disabled, custom disabled). `undefined` here means "skip
- * this scope" — the caller decides the final global fallback.
+ * `undefined` when the scope has nothing to say (no entry, preset
+ * missing/disabled, custom disabled). `undefined` here means "skip this
+ * scope" — the caller decides the final global fallback.
+ *
+ * `global` is itself a `ScopePromptRef | null`, so the `{ kind: "global" }`
+ * marker resolves through the global ref — which may be a preset, a custom
+ * setting, or `null` (nothing). An explicit `{ kind: "off" }` is handled by
+ * the caller before this function runs.
  */
 function resolveRef(
   prompts: TenantSystemPrompts,
   ref: ScopePromptRef | undefined,
-  global: PromptSetting | null,
 ): PromptSetting | undefined {
-  if (ref === undefined) return undefined;
-  if (ref.kind === "global") {
-    return global !== null && global.enabled ? global : undefined;
-  }
+  if (ref === undefined || ref.kind === "off" || ref.kind === "global") return undefined;
   if (ref.kind === "preset") {
     const preset = prompts.presets[ref.presetId];
     if (preset === undefined || !preset.enabled) return undefined;
@@ -60,10 +61,19 @@ function resolveRef(
 }
 
 /**
+ * Whether a scope entry explicitly stops injection. An explicit `off` is
+ * terminal — it does NOT fall through to the global prompt.
+ */
+function isExplicitOff(ref: ScopePromptRef | undefined): boolean {
+  return ref?.kind === "off";
+}
+
+/**
  * Resolves the effective prompt for a route: the most-specific enabled scope
  * wins. Alias/combo scopes (keyed by the requested name) beat the model scope;
- * a provider scope honours its reference; model scope is always explicit.
- * Returns `undefined` when nothing applies.
+ * a provider scope honours its reference; model scope is always explicit. An
+ * explicit `off` at any scope stops injection for that request — it does not
+ * fall through to the global prompt. Returns `undefined` when nothing applies.
  */
 export function resolveTenantSystemPrompt(
   prompts: TenantSystemPrompts | undefined,
@@ -76,25 +86,33 @@ export function resolveTenantSystemPrompt(
   if (requested !== undefined && requested.length > 0 && requested !== route.modelId) {
     const aliasRef = prompts.aliases[requested];
     if (aliasRef !== undefined) {
-      const aliasSetting = resolveRef(prompts, aliasRef, global);
+      if (isExplicitOff(aliasRef)) return undefined;
+      const aliasSetting = resolveRef(prompts, aliasRef);
       if (aliasSetting !== undefined) return aliasSetting;
     }
     const comboRef = prompts.combos[requested];
     if (comboRef !== undefined) {
-      const comboSetting = resolveRef(prompts, comboRef, global);
+      if (isExplicitOff(comboRef)) return undefined;
+      const comboSetting = resolveRef(prompts, comboRef);
       if (comboSetting !== undefined) return comboSetting;
     }
   }
 
   const model = prompts.models[systemPromptModelKey(route.providerId, route.modelId)];
-  const modelSetting = resolveRef(prompts, model, global);
-  if (modelSetting !== undefined) return modelSetting;
+  if (model !== undefined) {
+    if (isExplicitOff(model)) return undefined;
+    const modelSetting = resolveRef(prompts, model);
+    if (modelSetting !== undefined) return modelSetting;
+  }
 
   const provider = prompts.providers[route.providerId];
-  const providerSetting = resolveRef(prompts, provider, global);
-  if (providerSetting !== undefined) return providerSetting;
+  if (provider !== undefined) {
+    if (isExplicitOff(provider)) return undefined;
+    const providerSetting = resolveRef(prompts, provider);
+    if (providerSetting !== undefined) return providerSetting;
+  }
 
-  return global !== null && global.enabled ? global : undefined;
+  return resolveRef(prompts, global ?? undefined);
 }
 
 /** Marker text guard so retries never double-inject. */

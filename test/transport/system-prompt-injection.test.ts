@@ -29,6 +29,16 @@ function setting(text: string, mode: "append" | "override" = "append", enabled =
   return { enabled, mode, text };
 }
 
+/** A global ref pointing at a custom prompt. */
+function globalCustom(text: string, mode: "append" | "override" = "append", enabled = true) {
+  return { kind: "custom" as const, setting: setting(text, mode, enabled) };
+}
+
+/** A global ref pointing at a preset. */
+function globalPreset(presetId: string) {
+  return { kind: "preset" as const, presetId };
+}
+
 function prompts(overrides: Partial<TenantSystemPrompts> = {}): TenantSystemPrompts {
   return {
     global: null,
@@ -43,7 +53,7 @@ function prompts(overrides: Partial<TenantSystemPrompts> = {}): TenantSystemProm
 
 describe("resolveTenantSystemPrompt", () => {
   const base = prompts({
-    global: setting("global-prompt"),
+    global: globalCustom("global-prompt"),
     providers: {
       "prov-a": { kind: "global" },
       "prov-b": { kind: "custom", setting: setting("prov-b-prompt") },
@@ -123,10 +133,64 @@ describe("resolveTenantSystemPrompt", () => {
       resolveTenantSystemPrompt(prompts(), { providerId: "x", modelId: "y" }),
     ).toBeUndefined();
   });
+
+  test("global can reference a preset", () => {
+    const withGlobalPreset = prompts({
+      global: globalPreset("pre-1"),
+      presets: {
+        "pre-1": { id: "pre-1", name: "Rules", enabled: true, mode: "append", text: "preset-prompt" },
+      },
+    });
+    expect(
+      resolveTenantSystemPrompt(withGlobalPreset, { providerId: "x", modelId: "y" })?.text,
+    ).toBe("preset-prompt");
+  });
+
+  test("global disabled preset yields nothing", () => {
+    const withGlobalPreset = prompts({
+      global: globalPreset("pre-off"),
+      presets: {
+        "pre-off": { id: "pre-off", name: "Off", enabled: false, mode: "append", text: "disabled" },
+      },
+    });
+    expect(
+      resolveTenantSystemPrompt(withGlobalPreset, { providerId: "x", modelId: "y" }),
+    ).toBeUndefined();
+  });
+
+  test("explicit off on a provider stops injection instead of falling back to global", () => {
+    const withOff = prompts({
+      global: globalCustom("global-prompt"),
+      providers: { "prov-off": { kind: "off" } },
+    });
+    expect(
+      resolveTenantSystemPrompt(withOff, { providerId: "prov-off", modelId: "m" }),
+    ).toBeUndefined();
+  });
+
+  test("explicit off on a model stops injection instead of falling back to global", () => {
+    const withOff = prompts({
+      global: globalCustom("global-prompt"),
+      models: { [systemPromptModelKey("p", "m")]: { kind: "off" } },
+    });
+    expect(
+      resolveTenantSystemPrompt(withOff, { providerId: "p", modelId: "m" }),
+    ).toBeUndefined();
+  });
+
+  test("provider following global resolves a custom global", () => {
+    const withGlobal = prompts({
+      global: globalCustom("global-prompt"),
+      providers: { "prov-a": { kind: "global" } },
+    });
+    expect(
+      resolveTenantSystemPrompt(withGlobal, { providerId: "prov-a", modelId: "m" })?.text,
+    ).toBe("global-prompt");
+  });
 });
 
 describe("applyInjectSystemPrompt", () => {
-  const basePrompts = prompts({ global: setting("tenant"), providers: {}, models: {} });
+  const basePrompts = prompts({ global: globalCustom("tenant"), providers: {}, models: {} });
 
   test("appends tenant text after existing system content", () => {
     const base = request({ system: [{ kind: "text", text: "caller" }] });
@@ -152,7 +216,7 @@ describe("applyInjectSystemPrompt", () => {
     const base = request({ system: [{ kind: "text", text: "caller" }] });
     const next = applyInjectSystemPrompt(
       base,
-      prompts({ global: setting("tenant", "override") }),
+      prompts({ global: globalCustom("tenant", "override") }),
       { providerId: "p", modelId: "m", serviceKind: "llm" },
     );
     expect(next.system).toEqual([{ kind: "text", text: "tenant" }]);
@@ -161,7 +225,7 @@ describe("applyInjectSystemPrompt", () => {
   test("override keeps replaced content when no caller system exists", () => {
     const next = applyInjectSystemPrompt(
       request(),
-      prompts({ global: setting("tenant", "override") }),
+      prompts({ global: globalCustom("tenant", "override") }),
       { providerId: "p", modelId: "m", serviceKind: "llm" },
     );
     expect(next.system).toEqual([{ kind: "text", text: "tenant" }]);
@@ -195,7 +259,7 @@ describe("applyInjectSystemPrompt", () => {
     const base = request();
     const next = applyInjectSystemPrompt(
       base,
-      prompts({ global: setting("x", "append", false) }),
+      prompts({ global: globalCustom("x", "append", false) }),
       { providerId: "p", modelId: "m", serviceKind: "llm" },
     );
     expect(next).toBe(base);

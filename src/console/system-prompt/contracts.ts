@@ -29,25 +29,29 @@ export interface SystemPromptPreset {
 }
 
 /**
- * How one scope decides what to inject. Three modes:
+ * How one scope decides what to inject. Modes:
  *
+ * - `off`    — explicitly inject nothing for this scope; scope-specific stop,
+ *              does NOT fall through to the global prompt.
  * - `global`  — follow the tenant's global prompt (the default posture).
  * - `preset`  — use the referenced named preset (disabled preset = no inject).
  * - `custom`  — carry this scope's own prompt inline.
  *
  * A scope with no entry at all behaves as `global` (resolution falls through
  * to the global prompt), so omitting a key is the same as an explicit
- * `{ kind: "global" }` reference.
+ * `{ kind: "global" }` reference. The global scope itself never uses
+ * `{ kind: "global" }` — it is `null` (off), a preset, or a custom setting.
  */
 export type ScopePromptRef =
+  | { readonly kind: "off" }
   | { readonly kind: "global" }
   | { readonly kind: "preset"; readonly presetId: string }
   | { readonly kind: "custom"; readonly setting: PromptSetting };
 
 /** The full per-tenant configuration, one row in `tenant_system_prompts`. */
 export interface TenantSystemPrompts {
-  /** `null` = never configured — distinct from an explicit disabled setting. */
-  readonly global: PromptSetting | null;
+  /** `null` = no global injection — distinct from an explicit disabled setting. */
+  readonly global: ScopePromptRef | null;
   /** preset id → preset */
   readonly presets: Readonly<Record<string, SystemPromptPreset>>;
   /** providerId → ref */
@@ -163,7 +167,7 @@ export function isSystemPromptPreset(value: unknown): value is SystemPromptPrese
 export function isScopePromptRef(value: unknown): value is ScopePromptRef {
   if (typeof value !== "object" || value === null) return false;
   const kind = (value as { kind?: unknown }).kind;
-  if (kind === "global") return true;
+  if (kind === "off" || kind === "global") return true;
   if (kind === "preset") {
     const presetId = (value as { presetId?: unknown }).presetId;
     return typeof presetId === "string" && presetId.length > 0;

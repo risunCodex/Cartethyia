@@ -1278,7 +1278,7 @@ export const consoleSettings = pgTable("console_settings", {
 // shapes and the resolution rules implemented by the dispatch-path transform.
 export const tenantSystemPrompts = pgTable("tenant_system_prompts", {
   tenantId: tenantRefPrimaryKey(),
-  global: jsonb("global").$type<import("../console/system-prompt/contracts").PromptSetting | null>(),
+  global: jsonb("global").$type<import("../console/system-prompt/contracts").ScopePromptRef | null>(),
   presets: jsonb("presets")
     .notNull()
     .default({})

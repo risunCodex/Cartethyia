@@ -112,11 +112,6 @@ function validateBody(value: unknown): TenantSystemPrompts {
     aliases?: unknown;
   };
 
-  const global =
-    body.global === null || body.global === undefined
-      ? null
-      : validateSetting(body.global, "global");
-
   if (body.presets !== undefined && typeof body.presets !== "object") {
     throw new ConsoleDomainError("invalid_request", 400, "presets must be an object");
   }
@@ -134,6 +129,11 @@ function validateBody(value: unknown): TenantSystemPrompts {
     presets[id] = validatePreset(rawPresets[id], `preset ${id}`);
   }
   const presetIdSet = new Set(presetIds);
+
+  const global =
+    body.global === null || body.global === undefined
+      ? null
+      : validateScopeRef(body.global, "global", presetIdSet);
 
   const readRefMap = (
     raw: unknown,

@@ -101,7 +101,7 @@ export async function readTenantSystemPrompts(
   }
 
   return {
-    global: row.global !== null && isPromptSetting(row.global) ? row.global : null,
+    global: row.global !== null && isScopePromptRef(row.global) ? row.global : null,
     presets,
     providers,
     models,
