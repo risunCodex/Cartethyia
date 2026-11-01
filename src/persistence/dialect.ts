@@ -143,7 +143,11 @@ export function affectedRows(result: unknown): number {
  * `.for()`, but a transaction there is already the write lock, so the query
  * runs as-is. The two builders disagree on `.for()`, so the call is typed at
  * the boundary instead of pushed into every store.
+ *
+ * The dialect is read from the query itself, not the process environment: a
+ * test may build a SQLite handle while the suite runs in full mode, and a
+ * PostgreSQL query always carries `.for` while a SQLite one never does.
  */
 export function lockRows<T>(query: T & { for?(mode: string): PromiseLike<unknown> }): PromiseLike<T extends PromiseLike<infer R> ? R : never> {
-  return (sqliteDialect() ? query : query.for!("update")) as PromiseLike<T extends PromiseLike<infer R> ? R : never>;
+  return (typeof query.for === "function" ? query.for!("update") : query) as PromiseLike<T extends PromiseLike<infer R> ? R : never>;
 }

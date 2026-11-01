@@ -16,6 +16,7 @@ const ACCOUNT_ERROR_LABELS: Readonly<Record<string, string>> = {
   rate_limit_transient: "Rate limited",
   missing_credential: "No credential",
   validation_required: "Verification required",
+  model_unreachable: "Model unavailable",
 };
 
 /**
