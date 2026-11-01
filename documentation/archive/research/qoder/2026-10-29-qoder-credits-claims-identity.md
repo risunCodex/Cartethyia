@@ -133,7 +133,7 @@ Agutah`, `Lanjar Binsahab`, `Endang Pattipeilohy`, and others.
 
 ### A.8 Open questions
 
-- Can the 20 GSuite no-grant accounts be activated before the grant appears? Untested.
+- Can the 20 GSuite no-grant accounts be activated before the grant appears? NO, ITS NEVER GRANTED.
 - Precise open/close window period (estimated ~5–8 min between bursts).
 - Whether the program resets daily (campaign `act-20261027-489` is valid 30 days, not obviously daily).
 - Whether `VIEW_DETAILS` promos flip to `CLAIM_BENEFIT` when their conditions are met.
