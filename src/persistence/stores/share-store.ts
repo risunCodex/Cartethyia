@@ -7,7 +7,7 @@ import { createHash, randomBytes, randomInt } from "node:crypto";
 import { and, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { CartethyiaDatabase } from "../db-handle";
 import { lockRows } from "../dialect";
-import { apiKeys, shareLinks, sharePopups, type ShareLinkKind, type ApiKeyModelAccessMode } from "../schema";
+import { apiKeys, shareLinks, sharePopups, type ShareLinkKind, type ApiKeyModelAccessMode, type ApiKeyConcurrencyScope } from "../schema";
 
 /** Hashes a share bearer token for storage and lookup. */
 /**
@@ -86,6 +86,7 @@ export interface ShareLinkPolicy {
   readonly monthlyTokenLimit: number | null;
   readonly lifetimeTokenBudget: number | null;
   readonly maxConcurrentRequests: number | null;
+  readonly concurrencyScope: ApiKeyConcurrencyScope;
   readonly modelAccessMode: ApiKeyModelAccessMode | null;
   readonly modelList: readonly string[] | null;
   readonly modelPrefix: string | null;
@@ -185,6 +186,7 @@ function mapShareRow(key: ApiKeyRow, link: ShareLinkRow, popup?: PopupRow): Shar
     monthlyTokenLimit: key.monthlyTokenLimit,
     lifetimeTokenBudget: key.lifetimeTokenBudget,
     maxConcurrentRequests: key.maxConcurrentRequests,
+    concurrencyScope: key.concurrencyScope ?? "family",
     modelAccessMode: key.modelAccessMode as ApiKeyModelAccessMode | null,
     modelList: key.modelList as readonly string[] | null,
     modelPrefix: key.modelPrefix,
@@ -213,6 +215,7 @@ function mapHandoffRow(key: ApiKeyRow, link: ShareLinkRow, popup?: PopupRow): Sh
     monthlyTokenLimit: key.monthlyTokenLimit,
     lifetimeTokenBudget: key.lifetimeTokenBudget,
     maxConcurrentRequests: key.maxConcurrentRequests,
+    concurrencyScope: key.concurrencyScope ?? "family",
     modelAccessMode: key.modelAccessMode as ApiKeyModelAccessMode | null,
     modelList: key.modelList as readonly string[] | null,
     modelPrefix: key.modelPrefix,
@@ -557,6 +560,12 @@ export class DrizzleShareLinkStore implements ShareLinkStore {
       // Nullable policy columns stay NULL; `model_access_mode` takes its
       // NOT NULL default ('whitelist'). Keep in sync with migration 0029 and
       // `normalizeShareChildPolicy` in `src/console/backup/store.ts`.
+      //
+      // Exception: a template with `concurrencyScope: "per_key"` lets each
+      // recipient carry its own concurrency cap, so the cap is copied to the
+      // child at issue (the child's admission identity is its own id, not the
+      // parent's). The `family` default keeps child caps NULL — they inherit
+      // the parent's cap through auth.
       const [child] = await tx
         .insert(apiKeys)
         .values({
@@ -571,6 +580,9 @@ export class DrizzleShareLinkStore implements ShareLinkStore {
           keyPrefix: material.keyPrefix,
           keyEncrypted: null,
           lifetimeTokensConsumed: 0,
+          ...(parent.concurrencyScope === "per_key"
+            ? { concurrencyScope: "per_key" as const, maxConcurrentRequests: parent.maxConcurrentRequests }
+            : {}),
         })
         .returning({ id: apiKeys.id, tenantId: apiKeys.tenantId, createdAt: apiKeys.createdAt });
       if (!child) throw new Error("shared API-key insert returned no row");

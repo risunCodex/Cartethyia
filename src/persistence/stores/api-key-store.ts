@@ -5,7 +5,7 @@ import { nextSortIndex, reorderSortIndex, type SortOrderDb } from "../sort-order
 import { getDbHandle } from "../boot";
 import type { CartethyiaDatabase } from "../db-handle";
 import { lockRows } from "../dialect";
-import { apiKeys, shareLinks, sharePopups, telemetryUsageTotals, type ApiKeyMode, type ApiKeyModelAccessMode } from "../schema";
+import { apiKeys, shareLinks, sharePopups, telemetryUsageTotals, type ApiKeyMode, type ApiKeyModelAccessMode, type ApiKeyConcurrencyScope } from "../schema";
 import type { AccessScope } from "../../security/access-control";
 
 /** Sortable columns for the paged share-child listing (api_keys columns only). */
@@ -78,6 +78,7 @@ export interface ApiKeyRecord {
   readonly monthlyTokenLimit?: number;
   readonly lifetimeTokenBudget?: number;
   readonly maxConcurrentRequests?: number;
+  readonly concurrencyScope?: ApiKeyConcurrencyScope;
   /** Share-template recipient slot cap; undefined = unlimited. */
   readonly maxChildren?: number;
   readonly modelPrefix?: string;
@@ -344,6 +345,9 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
       ...(row.maxConcurrentRequests === null
         ? {}
         : { maxConcurrentRequests: row.maxConcurrentRequests }),
+      ...(row.concurrencyScope
+        ? { concurrencyScope: row.concurrencyScope as ApiKeyConcurrencyScope }
+        : {}),
       ...(row.maxChildren === null ? {} : { maxChildren: row.maxChildren }),
       ...(row.modelPrefix === null ? {} : { modelPrefix: row.modelPrefix }),
       modelAccessMode: row.modelAccessMode,
@@ -547,6 +551,7 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
       monthlyTokenLimit: record.monthlyTokenLimit ?? null,
       lifetimeTokenBudget: record.lifetimeTokenBudget ?? null,
       maxConcurrentRequests: record.maxConcurrentRequests ?? null,
+      concurrencyScope: record.concurrencyScope ?? "family",
       maxChildren: record.maxChildren ?? null,
       modelPrefix: record.modelPrefix ?? null,
       modelAccessMode: record.modelAccessMode ?? "whitelist",
@@ -614,6 +619,9 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
             : {}),
           ...(patch.maxConcurrentRequests !== undefined
             ? { maxConcurrentRequests: patch.maxConcurrentRequests }
+            : {}),
+          ...(patch.concurrencyScope !== undefined
+            ? { concurrencyScope: patch.concurrencyScope }
             : {}),
           ...(patch.maxChildren !== undefined ? { maxChildren: patch.maxChildren } : {}),
           ...(patch.modelPrefix !== undefined ? { modelPrefix: patch.modelPrefix } : {}),
@@ -802,6 +810,7 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
       lifetimeTokenBudget: integer("lifetime_token_budget"),
       lifetimeTokensConsumed: integer("lifetime_tokens_consumed") ?? 0,
       maxConcurrentRequests: integer("max_concurrent_requests"),
+      concurrencyScope: (text("concurrency_scope") ?? "family") as ApiKeyConcurrencyScope,
       modelAccessMode: (text("model_access_mode") ?? "whitelist") as ApiKeyModelAccessMode,
       modelList: json("model_list"),
       clientRouterDenylist: json("client_router_denylist"),

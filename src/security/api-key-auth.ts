@@ -363,6 +363,12 @@ export async function resolveApiKeyAuthorization(
   // keep the issued row values forever. Reading the parent here makes denylist /
   // one-time / recurring edits apply on the next cache miss.
   const policy = parent ?? row;
+  // Share-template concurrency scope decides whether the family shares one
+  // admission counter (default `family`) or each recipient has its own
+  // (`per_key`). In `family` mode the child participates in the parent's
+  // counter namespace; in `per_key` mode the child is its own admission
+  // identity and carries its own cap.
+  const perKeyConcurrency = parent !== undefined && row.concurrencyScope === "per_key";
   // Only a `share` parent can have children, and children are the only thing
   // the SUM below can find. Every other key ran an aggregate that was certain
   // to return 0 — one extra Postgres round-trip on the auth path for nothing.
@@ -381,8 +387,10 @@ export async function resolveApiKeyAuthorization(
     api_key_id: row.id,
     tenant_id: row.tenantId,
     // Family quota / concurrency share one admission counter namespace so two
-    // recipients cannot each burn a full lifetime/daily budget.
-    ...(parent ? { admission_identity: parent.id } : {}),
+    // recipients cannot each burn a full lifetime/daily budget. In `per_key`
+    // concurrency mode the child is its own admission identity so its cap and
+    // counter are independent.
+    ...(parent && !perKeyConcurrency ? { admission_identity: parent.id } : {}),
     ...(policy.modelList ? { model_list: policy.modelList as string[] } : {}),
     model_access_mode: policy.modelAccessMode ?? "whitelist",
     ...(policy.clientRouterDenylist
@@ -393,7 +401,11 @@ export async function resolveApiKeyAuthorization(
     ...(policy.monthlyTokenLimit != null ? { monthly_tokens: policy.monthlyTokenLimit } : {}),
     ...(policy.lifetimeTokenBudget != null ? { lifetime_token_budget: policy.lifetimeTokenBudget } : {}),
     lifetime_tokens_consumed: consumed,
-    ...(policy.maxConcurrentRequests != null ? { max_concurrent: policy.maxConcurrentRequests } : {}),
+    // `per_key` mode: the child carries its own cap (copied at issue); family
+    // mode inherits the parent's cap.
+    ...((perKeyConcurrency ? row.maxConcurrentRequests : policy.maxConcurrentRequests) != null
+      ? { max_concurrent: perKeyConcurrency ? row.maxConcurrentRequests : policy.maxConcurrentRequests }
+      : {}),
     scopes,
   });
 

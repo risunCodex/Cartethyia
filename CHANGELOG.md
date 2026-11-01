@@ -10,6 +10,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **System Prompt presets and per-modal/provider references.** A tenant can save
+  reusable system-prompt presets and reference them per model, per provider, or
+  globally. Combos/aliases inject the preset for their requested model (its own
+  preset, or the global fallback). The Inject System Prompt panel exposes preset
+  cards, add/remove, and a multi-preset picker; disabling a preset no longer
+  clears its text — a separate Clear button does.
+- **Share-template concurrency scope: global or per key.** A share template's
+  "Concurrent" limit is now explicit. `family` (default) keeps today's behavior —
+  one shared admission counter and cap across every recipient of the template.
+  `per_key` copies the cap onto each child at issue, so every recipient gets its
+  own limit; a per-key child with no cap is unlimited on its own slot. Migration
+  `0037` adds `api_keys.concurrency_scope` for both dialects. The API key form
+  and the share page show the active scope.
+
 ### Fixed
 
 - **Qoder umid bridge binaries are made executable before running.** The

@@ -820,6 +820,10 @@ export type ApiKeyMode = (typeof API_KEY_MODES)[number];
 export const API_KEY_MODEL_ACCESS_MODES = ["whitelist", "blacklist"] as const;
 export type ApiKeyModelAccessMode = (typeof API_KEY_MODEL_ACCESS_MODES)[number];
 
+/** Share-template concurrency scope — see `apiKeys.concurrencyScope`. */
+export const API_KEY_CONCURRENCY_SCOPES = ["family", "per_key"] as const;
+export type ApiKeyConcurrencyScope = (typeof API_KEY_CONCURRENCY_SCOPES)[number];
+
 /**
  * Inbound `/v1/*` keys never store plaintext secrets. Personal keys carry an
  * authentication hash; share templates carry policy and child keys point back
@@ -858,6 +862,24 @@ export const apiKeys = pgTable(
       .notNull()
       .default(0),
     maxConcurrentRequests: integer("max_concurrent_requests"),
+    /**
+     * How `maxConcurrentRequests` applies to a share family:
+     *
+     * - `family` (default) — one cap across the whole family: every recipient
+     *   key shares the same admission counter and budget, so 20 means 20
+     *   concurrent requests across all children of the template.
+     * - `per_key` — each recipient key gets its own independent concurrent
+     *   window and cap. The cap is copied from the template to each child at
+     *   issue time (children carry their own `maxConcurrentRequests`), and a
+     *   child's admission identity is its own id, not the parent's.
+     *
+     * Only meaningful for `share` keys; personal keys always use their own
+     * per-key cap.
+     */
+    concurrencyScope: text("concurrency_scope")
+      .$type<ApiKeyConcurrencyScope>()
+      .notNull()
+      .default("family"),
     /**
      * Slot cap for a share template: the maximum number of concurrently
      * active child keys it may mint. `null` = unlimited (legacy behavior).

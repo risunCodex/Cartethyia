@@ -270,7 +270,13 @@ export function ShareQuotaPanel({
       })}
       <div className="flex flex-wrap items-center gap-2">
         <span className="inline-flex min-h-14 items-center gap-3.5 rounded-pill border border-inner-border bg-surface-2 px-5 py-2.5 text-text-secondary font-mono text-badge leading-[1.3]">RPM {policy.requestsPerMinute ?? "unlimited"}</span>
-        <span className="inline-flex min-h-14 items-center gap-3.5 rounded-pill border border-inner-border bg-surface-2 px-5 py-2.5 text-text-secondary font-mono text-badge leading-[1.3]">Concurrent {policy.maxConcurrentRequests ?? "unlimited"}</span>
+        <span
+          className="inline-flex min-h-14 items-center gap-3.5 rounded-pill border border-inner-border bg-surface-2 px-5 py-2.5 text-text-secondary font-mono text-badge leading-[1.3]"
+          title={policy.concurrencyScope === "per_key" ? "Each recipient key has its own concurrent cap and counter." : "All recipients of this share template share one concurrent cap and counter."}
+        >
+          Concurrent {policy.maxConcurrentRequests ?? "unlimited"}
+          <span className="font-semibold text-text-tertiary">{policy.concurrencyScope === "per_key" ? "· per key" : "· family"}</span>
+        </span>
         {recipients ? (
           <span className="inline-flex min-h-14 items-center gap-3.5 rounded-pill border border-inner-border bg-surface-2 px-5 py-2.5 text-text-secondary font-mono text-badge leading-[1.3]">
             {recipients.active} / {recipients.total} recipients active

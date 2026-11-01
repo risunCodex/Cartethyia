@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import type { ApiKeyRecord, ApiKeyStore } from "../../persistence/stores/api-key-store";
 import { hashSecret } from "../../security/crypto";
 import { type ShareLinkStore, type ShareLinkSummary } from "../../persistence/stores/share-store";
-import { API_KEY_MODES, type ApiKeyMode, type ApiKeyModelAccessMode, type ShareLinkKind } from "../../persistence/schema";
+import { API_KEY_MODES, API_KEY_CONCURRENCY_SCOPES, type ApiKeyMode, type ApiKeyModelAccessMode, type ShareLinkKind } from "../../persistence/schema";
 import { isValidTenantKeyScope, type AccessScope } from "../../security/access-control";
 import { normalizeClientRouterId } from "../../security/client-router-fingerprint";
 import type { ShareActivityPort } from "../share/share-usage";
@@ -34,6 +34,9 @@ export type {
   SharedKeySummary,
   SharedKeyActivityDetail,
 } from "../share/share-usage";
+/** How a share template's concurrency cap applies to its recipients. */
+export type ConcurrencyScope = (typeof API_KEY_CONCURRENCY_SCOPES)[number];
+
 /** Input accepted when creating or editing a key. Null limits mean unlimited. */
 export interface CreateApiKeyRequest {
   enabled?: boolean;
@@ -49,6 +52,13 @@ export interface CreateApiKeyRequest {
   monthlyTokenLimit?: number | null;
   lifetimeTokenBudget?: number | null;
   maxConcurrentRequests?: number | null;
+  /**
+   * How `maxConcurrentRequests` applies to a share template's family:
+   * `family` (default) = one cap across all recipient keys (a single shared
+   * admission counter); `per_key` = each recipient key gets its own cap and
+   * independent counter. Ignored/meaningless for personal keys.
+   */
+  concurrencyScope?: ConcurrencyScope;
   /** Share-template slot cap; only meaningful when keyMode === "share". */
   maxChildren?: number | null;
   modelPrefix?: string;
@@ -90,6 +100,7 @@ export interface ApiKeyResponse {
   readonly modelList?: readonly string[];
   readonly clientRouterDenylist?: readonly string[];
   readonly maxConcurrentRequests?: number;
+  readonly concurrencyScope?: ConcurrencyScope;
   readonly maxChildren?: number;
   readonly notesTitle?: string;
   readonly notesSubtitle?: string;
@@ -349,6 +360,19 @@ export function validateApiKeyRequest(request: CreateApiKeyRequest): readonly Ac
   finitePositive(request.monthlyTokenLimit, "monthlyTokenLimit");
   finitePositive(request.lifetimeTokenBudget, "lifetimeTokenBudget");
   finitePositive(request.maxConcurrentRequests, "maxConcurrentRequests");
+  if (
+    request.concurrencyScope !== undefined &&
+    !(API_KEY_CONCURRENCY_SCOPES as readonly string[]).includes(request.concurrencyScope)
+  ) {
+    throw new ConsoleDomainError("invalid_limits", 400, "concurrencyScope must be family or per_key");
+  }
+  if (request.concurrencyScope !== undefined && keyMode !== "share") {
+    throw new ConsoleDomainError(
+      "invalid_limits",
+      400,
+      "concurrencyScope is only valid for share templates",
+    );
+  }
   if (request.maxChildren !== undefined && request.maxChildren !== null) {
     finitePositive(request.maxChildren, "maxChildren");
     if (request.maxChildren > 10_000) {
@@ -440,6 +464,7 @@ export function sanitizeApiKeyResponse(record: ApiKeyRecord): ApiKeyResponse {
     ...(record.monthlyTokenLimit === undefined ? {} : { monthlyTokenLimit: record.monthlyTokenLimit }),
     ...(record.lifetimeTokenBudget === undefined ? {} : { lifetimeTokenBudget: record.lifetimeTokenBudget }),
     ...(record.maxConcurrentRequests === undefined ? {} : { maxConcurrentRequests: record.maxConcurrentRequests }),
+    ...(record.concurrencyScope === undefined ? {} : { concurrencyScope: record.concurrencyScope }),
     ...(record.maxChildren === undefined ? {} : { maxChildren: record.maxChildren }),
     ...(record.modelPrefix === undefined ? {} : { modelPrefix: record.modelPrefix }),
     ...(record.modelAccessMode === undefined ? {} : { modelAccessMode: record.modelAccessMode }),

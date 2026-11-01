@@ -125,6 +125,7 @@ export type {
   ApiKeyResponse,
   CreateApiKeyResponse,
   UpdateApiKeyResponse,
+  ConcurrencyScope,
   BanApiKeyRequest,
   ShareKeyResponse,
 } from "../../../src/console/api-keys/contracts";

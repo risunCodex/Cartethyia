@@ -75,6 +75,11 @@ time, so an edit on the parent takes effect without rewriting child rows:
 - **Denylist, allowlist, budgets** — `invalidateApiKeyCache` runs for the parent
   *and every child* after a parent edit. Without that loop a denylist or budget
   edit looks like a no-op for up to `AUTH_CACHE_TTL_MS` per child.
+- **Concurrency scope** — the template's `concurrency_scope` chooses how the
+  max-concurrent limit is enforced. `family` (default) keeps one shared
+  admission counter and cap across every recipient; `per_key` copies the cap
+  onto each child at issue, so a recipient's own slot is independent (a
+  per-key child with no cap is unlimited on its own slot).
 - **Revocation** — flipping a key from `share` to `personal` revokes every live
   child and deactivates every share link in the same transaction.
 
@@ -98,6 +103,7 @@ check against the bundle proves nothing.
 | --- | --- |
 | Token format or hash | `src/console/api-keys/routes.ts`, `hashShareToken` in `src/persistence/stores/share-store.ts`, and `MIN_TOKEN_LENGTH` in `src/console/share/share-router.ts` |
 | Enrollment issuance | `src/console/share/share-router.ts` and `src/persistence/stores/share-store.ts` |
+| Concurrency scope | `src/security/api-key-auth.ts`, `src/persistence/stores/share-store.ts`, and migration `0037` |
 | Family usage and stats | `src/console/share/{share-usage,share-stats}.ts` |
 | Popup validation | `src/console/api-keys/share-popup-image.ts` |
 | Link and popup schema | `src/persistence/schema.ts` (`shareLinks`, `sharePopups`) |

@@ -22,6 +22,8 @@ export interface ShareLinkPolicyData {
   readonly oneTimeLimit: number | null;
   readonly requestsPerMinute: number | null;
   readonly maxConcurrentRequests: number | null;
+  /** How the concurrent cap applies: family (all recipients share) or per_key. */
+  readonly concurrencyScope: "family" | "per_key";
   /** Models this link grants, in the order the policy resolved them. */
   readonly models: string[];
   /**

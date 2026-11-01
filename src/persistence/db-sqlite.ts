@@ -326,7 +326,7 @@ const AUTH_KEY_COLUMNS = [
   "id", "tenant_id", "key_hash", "key_mode", "parent_key_id", "issued_client_ip",
   "issued_client_ip_key", "label", "scopes", "requests_per_minute", "daily_token_limit",
   "monthly_token_limit", "lifetime_token_budget", "lifetime_tokens_consumed",
-  "max_concurrent_requests", "model_access_mode", "model_list", "client_router_denylist",
+  "max_concurrent_requests", "concurrency_scope", "model_access_mode", "model_list", "client_router_denylist",
   "model_prefix", "created_at", "enabled", "revoked_at", "banned_at", "ban_reason", "banned_until",
   "key_prefix", "key_encrypted",
   "notes_title", "notes_subtitle", "notes_body", "is_default", "sort_index",
