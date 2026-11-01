@@ -1242,21 +1242,33 @@ export const consoleSettings = pgTable("console_settings", {
 
 // Tenant-scoped system prompt injection (append/override). One row per
 // tenant; `global` NULL means never configured, distinct from an explicit
-// disabled setting. Providers/models are JSON object maps keyed by
-// providerId and `providerId::modelId` respectively — see
-// `src/console/system-prompt/contracts.ts` for the value shapes and the
-// resolution rules implemented by the dispatch-path transform.
+// disabled setting. Providers/models/combos/aliases are JSON object maps
+// keyed by providerId, `providerId::modelId`, combo name, and alias name
+// respectively — see `src/console/system-prompt/contracts.ts` for the value
+// shapes and the resolution rules implemented by the dispatch-path transform.
 export const tenantSystemPrompts = pgTable("tenant_system_prompts", {
   tenantId: tenantRefPrimaryKey(),
   global: jsonb("global").$type<import("../console/system-prompt/contracts").PromptSetting | null>(),
+  presets: jsonb("presets")
+    .notNull()
+    .default({})
+    .$type<Record<string, import("../console/system-prompt/contracts").SystemPromptPreset>>(),
   providers: jsonb("providers")
     .notNull()
     .default({})
-    .$type<Record<string, import("../console/system-prompt/contracts").ProviderPromptEntry>>(),
+    .$type<Record<string, import("../console/system-prompt/contracts").ScopePromptRef>>(),
   models: jsonb("models")
     .notNull()
     .default({})
-    .$type<Record<string, import("../console/system-prompt/contracts").PromptSetting>>(),
+    .$type<Record<string, import("../console/system-prompt/contracts").ScopePromptRef>>(),
+  combos: jsonb("combos")
+    .notNull()
+    .default({})
+    .$type<Record<string, import("../console/system-prompt/contracts").ScopePromptRef>>(),
+  aliases: jsonb("aliases")
+    .notNull()
+    .default({})
+    .$type<Record<string, import("../console/system-prompt/contracts").ScopePromptRef>>(),
   updatedAt: updatedAtColumn(),
 });
 

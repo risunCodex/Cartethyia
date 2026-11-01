@@ -8,8 +8,9 @@
  * injection (Claude identity/billing prepend, buddy fixed system turn,
  * antigravity identity) happens later, in the adapters, and is untouched.
  *
- * Resolution is most-specific-wins: model > provider > global, where a
- * provider either follows the tenant's global prompt or carries a custom one.
+ * Resolution is most-specific-wins: alias/combo (when the caller's requested
+ * name matches one) > model > provider > global. A scope either references a
+ * named preset, carries a custom setting, or follows the global prompt.
  * Failure is non-fatal — an unusable configuration must not fail a
  * dispatchable request.
  */
@@ -17,6 +18,7 @@ import type { CanonicalRequest } from "../../protocol/canonical-model";
 import type { ServiceKind } from "../../protocol/canonical-model";
 import type {
   PromptSetting,
+  ScopePromptRef,
   TenantSystemPrompts,
 } from "../../console/system-prompt/contracts";
 import {
@@ -28,28 +30,71 @@ export interface SystemPromptRoute {
   readonly providerId: string;
   readonly modelId: string;
   readonly serviceKind: ServiceKind;
+  /** The model name the client asked for (pre-alias/combo resolution), when
+   * it differs from the resolved `modelId` — lets a combo/alias carry its
+   * own injection reference. */
+  readonly requestedModel?: string;
+}
+
+/**
+ * Resolves one scope reference to a concrete prompt setting. Returns
+ * `undefined` when the scope has nothing to say (no entry, global disabled,
+ * preset missing/disabled, custom disabled). `undefined` here means "skip
+ * this scope" — the caller decides the final global fallback.
+ */
+function resolveRef(
+  prompts: TenantSystemPrompts,
+  ref: ScopePromptRef | undefined,
+  global: PromptSetting | null,
+): PromptSetting | undefined {
+  if (ref === undefined) return undefined;
+  if (ref.kind === "global") {
+    return global !== null && global.enabled ? global : undefined;
+  }
+  if (ref.kind === "preset") {
+    const preset = prompts.presets[ref.presetId];
+    if (preset === undefined || !preset.enabled) return undefined;
+    return { enabled: true, mode: preset.mode, text: preset.text };
+  }
+  return ref.setting.enabled ? ref.setting : undefined;
 }
 
 /**
  * Resolves the effective prompt for a route: the most-specific enabled scope
- * wins. A provider scope honours its `followGlobal` toggle; model scope is
- * always explicit. Returns `undefined` when nothing applies.
+ * wins. Alias/combo scopes (keyed by the requested name) beat the model scope;
+ * a provider scope honours its reference; model scope is always explicit.
+ * Returns `undefined` when nothing applies.
  */
 export function resolveTenantSystemPrompt(
   prompts: TenantSystemPrompts | undefined,
-  route: Pick<SystemPromptRoute, "providerId" | "modelId">,
+  route: Pick<SystemPromptRoute, "providerId" | "modelId" | "requestedModel">,
 ): PromptSetting | undefined {
   if (prompts === undefined) return undefined;
-  const model = prompts.models[systemPromptModelKey(route.providerId, route.modelId)];
-  if (model !== undefined && model.enabled) return model;
-  const provider = prompts.providers[route.providerId];
-  if (provider !== undefined) {
-    if (provider.followGlobal) {
-      return prompts.global !== null && prompts.global.enabled ? prompts.global : undefined;
+  const global = prompts.global;
+
+  const requested = route.requestedModel;
+  if (requested !== undefined && requested.length > 0 && requested !== route.modelId) {
+    const aliasRef = prompts.aliases[requested];
+    if (aliasRef !== undefined) {
+      const aliasSetting = resolveRef(prompts, aliasRef, global);
+      if (aliasSetting !== undefined) return aliasSetting;
     }
-    if (provider.setting !== undefined && provider.setting.enabled) return provider.setting;
+    const comboRef = prompts.combos[requested];
+    if (comboRef !== undefined) {
+      const comboSetting = resolveRef(prompts, comboRef, global);
+      if (comboSetting !== undefined) return comboSetting;
+    }
   }
-  return prompts.global !== null && prompts.global.enabled ? prompts.global : undefined;
+
+  const model = prompts.models[systemPromptModelKey(route.providerId, route.modelId)];
+  const modelSetting = resolveRef(prompts, model, global);
+  if (modelSetting !== undefined) return modelSetting;
+
+  const provider = prompts.providers[route.providerId];
+  const providerSetting = resolveRef(prompts, provider, global);
+  if (providerSetting !== undefined) return providerSetting;
+
+  return global !== null && global.enabled ? global : undefined;
 }
 
 /** Marker text guard so retries never double-inject. */

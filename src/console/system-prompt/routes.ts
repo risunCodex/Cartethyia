@@ -21,13 +21,20 @@ import {
 import {
   EMPTY_TENANT_SYSTEM_PROMPTS,
   PROMPT_MODES,
+  SYSTEM_PROMPT_ALIAS_LIMIT,
+  SYSTEM_PROMPT_COMBO_LIMIT,
   SYSTEM_PROMPT_MODEL_LIMIT,
+  SYSTEM_PROMPT_PRESET_LIMIT,
+  SYSTEM_PROMPT_PRESET_NAME_CAP,
   SYSTEM_PROMPT_PROVIDER_LIMIT,
   SYSTEM_PROMPT_TEXT_CAP_BYTES,
   isPromptSetting,
+  isScopePromptRef,
+  isSystemPromptPreset,
   parseSystemPromptModelKey,
   type PromptSetting,
-  type ProviderPromptEntry,
+  type ScopePromptRef,
+  type SystemPromptPreset,
   type TenantSystemPrompts,
 } from "./contracts";
 
@@ -53,6 +60,44 @@ function validateSetting(value: unknown, scopeLabel: string): PromptSetting {
   return value;
 }
 
+/** Validates one preset. */
+function validatePreset(value: unknown, scopeLabel: string): SystemPromptPreset {
+  if (!isSystemPromptPreset(value)) {
+    throw new ConsoleDomainError("invalid_request", 400, `${scopeLabel} is not a valid preset`);
+  }
+  if (value.name.length > SYSTEM_PROMPT_PRESET_NAME_CAP) {
+    throw new ConsoleDomainError(
+      "invalid_request",
+      400,
+      `${scopeLabel} name exceeds the ${SYSTEM_PROMPT_PRESET_NAME_CAP} character limit`,
+    );
+  }
+  validateSetting(value, scopeLabel);
+  return value;
+}
+
+/** Validates one scope reference; preset ids must exist when provided. */
+function validateScopeRef(
+  value: unknown,
+  scopeLabel: string,
+  presetIds: ReadonlySet<string>,
+): ScopePromptRef {
+  if (!isScopePromptRef(value)) {
+    throw new ConsoleDomainError("invalid_request", 400, `${scopeLabel} is not a valid scope reference`);
+  }
+  if (value.kind === "preset") {
+    if (!presetIds.has(value.presetId)) {
+      throw new ConsoleDomainError("invalid_request", 400, `${scopeLabel} references an unknown preset`);
+    }
+    return value;
+  }
+  if (value.kind === "custom") {
+    validateSetting(value.setting, scopeLabel);
+    return value;
+  }
+  return value;
+}
+
 /** Validates the full PUT body into the stored shape. */
 function validateBody(value: unknown): TenantSystemPrompts {
   if (typeof value !== "object" || value === null) {
@@ -60,8 +105,11 @@ function validateBody(value: unknown): TenantSystemPrompts {
   }
   const body = value as {
     global?: unknown;
+    presets?: unknown;
     providers?: unknown;
     models?: unknown;
+    combos?: unknown;
+    aliases?: unknown;
   };
 
   const global =
@@ -69,59 +117,59 @@ function validateBody(value: unknown): TenantSystemPrompts {
       ? null
       : validateSetting(body.global, "global");
 
-  if (body.providers !== undefined && typeof body.providers !== "object") {
-    throw new ConsoleDomainError("invalid_request", 400, "providers must be an object");
+  if (body.presets !== undefined && typeof body.presets !== "object") {
+    throw new ConsoleDomainError("invalid_request", 400, "presets must be an object");
   }
-  const rawProviders = (body.providers ?? {}) as Record<string, unknown>;
-  const providerIds = Object.keys(rawProviders);
-  if (providerIds.length > SYSTEM_PROMPT_PROVIDER_LIMIT) {
+  const rawPresets = (body.presets ?? {}) as Record<string, unknown>;
+  const presetIds = Object.keys(rawPresets);
+  if (presetIds.length > SYSTEM_PROMPT_PRESET_LIMIT) {
     throw new ConsoleDomainError(
       "invalid_request",
       400,
-      `providers exceeds the ${SYSTEM_PROMPT_PROVIDER_LIMIT} entry limit`,
+      `presets exceeds the ${SYSTEM_PROMPT_PRESET_LIMIT} entry limit`,
     );
   }
-  const providers: Record<string, ProviderPromptEntry> = {};
-  for (const providerId of providerIds) {
-    const entry = rawProviders[providerId];
-    if (typeof entry !== "object" || entry === null) {
-      throw new ConsoleDomainError("invalid_request", 400, `provider ${providerId} entry must be an object`);
-    }
-    const candidate = entry as Partial<ProviderPromptEntry>;
-    if (typeof candidate.followGlobal !== "boolean") {
-      throw new ConsoleDomainError("invalid_request", 400, `provider ${providerId} needs followGlobal`);
-    }
-    if (candidate.followGlobal) {
-      providers[providerId] = { followGlobal: true };
-    } else {
-      providers[providerId] = {
-        followGlobal: false,
-        setting: validateSetting(candidate.setting, `provider ${providerId}`),
-      };
-    }
+  const presets: Record<string, SystemPromptPreset> = {};
+  for (const id of presetIds) {
+    presets[id] = validatePreset(rawPresets[id], `preset ${id}`);
   }
+  const presetIdSet = new Set(presetIds);
 
-  if (body.models !== undefined && typeof body.models !== "object") {
-    throw new ConsoleDomainError("invalid_request", 400, "models must be an object");
-  }
-  const rawModels = (body.models ?? {}) as Record<string, unknown>;
-  const modelKeys = Object.keys(rawModels);
-  if (modelKeys.length > SYSTEM_PROMPT_MODEL_LIMIT) {
-    throw new ConsoleDomainError(
-      "invalid_request",
-      400,
-      `models exceeds the ${SYSTEM_PROMPT_MODEL_LIMIT} entry limit`,
-    );
-  }
-  const models: Record<string, PromptSetting> = {};
-  for (const key of modelKeys) {
+  const readRefMap = (
+    raw: unknown,
+    label: string,
+    limit: number,
+  ): Record<string, ScopePromptRef> => {
+    if (raw !== undefined && typeof raw !== "object") {
+      throw new ConsoleDomainError("invalid_request", 400, `${label} must be an object`);
+    }
+    const entries = (raw ?? {}) as Record<string, unknown>;
+    const keys = Object.keys(entries);
+    if (keys.length > limit) {
+      throw new ConsoleDomainError(
+        "invalid_request",
+        400,
+        `${label} exceeds the ${limit} entry limit`,
+      );
+    }
+    const out: Record<string, ScopePromptRef> = {};
+    for (const key of keys) {
+      out[key] = validateScopeRef(entries[key], `${label} ${key}`, presetIdSet);
+    }
+    return out;
+  };
+
+  const providers = readRefMap(body.providers, "providers", SYSTEM_PROMPT_PROVIDER_LIMIT);
+  const models = readRefMap(body.models, "models", SYSTEM_PROMPT_MODEL_LIMIT);
+  for (const key of Object.keys(models)) {
     if (parseSystemPromptModelKey(key) === null) {
       throw new ConsoleDomainError("invalid_request", 400, `model key ${key} is malformed`);
     }
-    models[key] = validateSetting(rawModels[key], `model ${key}`);
   }
+  const combos = readRefMap(body.combos, "combos", SYSTEM_PROMPT_COMBO_LIMIT);
+  const aliases = readRefMap(body.aliases, "aliases", SYSTEM_PROMPT_ALIAS_LIMIT);
 
-  return { global, providers, models };
+  return { global, presets, providers, models, combos, aliases };
 }
 
 /**
@@ -150,8 +198,11 @@ export function createSystemPromptRoutes(config: SystemPromptRoutesConfig) {
           target: "tenant_system_prompts",
           detail: {
             global: next.global !== null,
+            presets: Object.keys(next.presets).length,
             providers: Object.keys(next.providers).length,
             models: Object.keys(next.models).length,
+            combos: Object.keys(next.combos).length,
+            aliases: Object.keys(next.aliases).length,
           },
         });
         return next;

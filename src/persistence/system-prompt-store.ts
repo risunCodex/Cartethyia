@@ -7,21 +7,44 @@ import { eq } from "drizzle-orm";
 import type { CartethyiaDatabase } from "./db-handle";
 import { tenantSystemPrompts } from "./schema";
 import type {
-  ProviderPromptEntry,
-  PromptSetting,
+  ScopePromptRef,
+  SystemPromptPreset,
   TenantSystemPrompts,
 } from "../console/system-prompt/contracts";
 import {
   EMPTY_TENANT_SYSTEM_PROMPTS,
+  SYSTEM_PROMPT_ALIAS_LIMIT,
+  SYSTEM_PROMPT_COMBO_LIMIT,
   SYSTEM_PROMPT_MODEL_LIMIT,
+  SYSTEM_PROMPT_PRESET_LIMIT,
   SYSTEM_PROMPT_PROVIDER_LIMIT,
   isPromptSetting,
+  isScopePromptRef,
+  isSystemPromptPreset,
   parseSystemPromptModelKey,
 } from "../console/system-prompt/contracts";
 import { bumpSettingsRevision } from "./settings-revision";
 
 /** The stored row, normalized. Absent row reads as the empty configuration. */
 export type StoredTenantSystemPrompts = TenantSystemPrompts;
+
+/**
+ * Normalizes one scope reference value. Accepts the new `{ kind, ... }` shape
+ * and the legacy per-provider entry shape (`{ followGlobal, setting? }`) so a
+ * hand-edited or pre-migration row stays valid. Invalid values become
+ * `undefined` (the caller drops the key).
+ */
+function normalizeScopeRef(value: unknown, legacyProviderEntry?: boolean): ScopePromptRef | undefined {
+  if (isScopePromptRef(value)) return value;
+  if (legacyProviderEntry && typeof value === "object" && value !== null) {
+    const candidate = value as { followGlobal?: unknown; setting?: unknown };
+    if (candidate.followGlobal === true) return { kind: "global" };
+    if (candidate.followGlobal === false && isPromptSetting(candidate.setting)) {
+      return { kind: "custom", setting: candidate.setting };
+    }
+  }
+  return undefined;
+}
 
 /**
  * Reads the tenant's stored configuration, defensively normalized: a
@@ -35,8 +58,11 @@ export async function readTenantSystemPrompts(
   const rows = await db
     .select({
       global: tenantSystemPrompts.global,
+      presets: tenantSystemPrompts.presets,
       providers: tenantSystemPrompts.providers,
       models: tenantSystemPrompts.models,
+      combos: tenantSystemPrompts.combos,
+      aliases: tenantSystemPrompts.aliases,
     })
     .from(tenantSystemPrompts)
     .where(eq(tenantSystemPrompts.tenantId, tenantId))
@@ -44,30 +70,43 @@ export async function readTenantSystemPrompts(
   const row = rows[0];
   if (row === undefined) return EMPTY_TENANT_SYSTEM_PROMPTS;
 
-  const providers: Record<string, ProviderPromptEntry> = {};
-  for (const [providerId, entry] of Object.entries(row.providers ?? {})) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const candidate = entry as Partial<ProviderPromptEntry>;
-    if (typeof candidate.followGlobal !== "boolean") continue;
-    if (candidate.followGlobal === false) {
-      if (!isPromptSetting(candidate.setting)) continue;
-      providers[providerId] = { followGlobal: false, setting: candidate.setting };
-    } else {
-      providers[providerId] = { followGlobal: true };
-    }
+  const presets: Record<string, SystemPromptPreset> = {};
+  for (const [id, preset] of Object.entries(row.presets ?? {})) {
+    if (isSystemPromptPreset(preset) && preset.id === id) presets[id] = preset;
   }
 
-  const models: Record<string, PromptSetting> = {};
-  for (const [key, setting] of Object.entries(row.models ?? {})) {
+  const providers: Record<string, ScopePromptRef> = {};
+  for (const [providerId, value] of Object.entries(row.providers ?? {})) {
+    const ref = normalizeScopeRef(value, true);
+    if (ref !== undefined) providers[providerId] = ref;
+  }
+
+  const models: Record<string, ScopePromptRef> = {};
+  for (const [key, value] of Object.entries(row.models ?? {})) {
     if (parseSystemPromptModelKey(key) === null) continue;
-    if (!isPromptSetting(setting)) continue;
-    models[key] = setting;
+    const ref = normalizeScopeRef(value);
+    if (ref !== undefined) models[key] = ref;
+  }
+
+  const combos: Record<string, ScopePromptRef> = {};
+  for (const [name, value] of Object.entries(row.combos ?? {})) {
+    const ref = normalizeScopeRef(value);
+    if (ref !== undefined) combos[name] = ref;
+  }
+
+  const aliases: Record<string, ScopePromptRef> = {};
+  for (const [name, value] of Object.entries(row.aliases ?? {})) {
+    const ref = normalizeScopeRef(value);
+    if (ref !== undefined) aliases[name] = ref;
   }
 
   return {
     global: row.global !== null && isPromptSetting(row.global) ? row.global : null,
+    presets,
     providers,
     models,
+    combos,
+    aliases,
   };
 }
 
@@ -79,12 +118,18 @@ export async function writeTenantSystemPrompts(
 ): Promise<void> {
   // Keep the row bounded even though the API already enforces the caps: a
   // direct store caller must not be able to plant an unbounded map.
+  const presets = Object.entries(next.presets).slice(0, SYSTEM_PROMPT_PRESET_LIMIT);
   const providers = Object.entries(next.providers).slice(0, SYSTEM_PROMPT_PROVIDER_LIMIT);
   const models = Object.entries(next.models).slice(0, SYSTEM_PROMPT_MODEL_LIMIT);
+  const combos = Object.entries(next.combos).slice(0, SYSTEM_PROMPT_COMBO_LIMIT);
+  const aliases = Object.entries(next.aliases).slice(0, SYSTEM_PROMPT_ALIAS_LIMIT);
   const values = {
     global: next.global,
+    presets: Object.fromEntries(presets),
     providers: Object.fromEntries(providers),
     models: Object.fromEntries(models),
+    combos: Object.fromEntries(combos),
+    aliases: Object.fromEntries(aliases),
     updatedAt: new Date(),
   };
   await db

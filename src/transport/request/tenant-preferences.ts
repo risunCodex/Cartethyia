@@ -133,6 +133,7 @@ export async function applyTenantPreferences(
       providerId: candidate.provider_id,
       modelId: candidate.model_id,
       serviceKind: candidate.service_kind ?? "llm",
+      requestedModel: prepared.plan?.requested_model ?? candidate.model_id,
     });
     if (prefs) {
       // When the routed model is Responses (codex/openai/muse-spark) and the
