@@ -111,10 +111,14 @@ export const DEFAULT_BOUNDS = {
    * the worker sweeps (`runGrowingWaves`, at most 5 concurrent), auth, and
    * readiness.
    *
-   * 20 leaves headroom over that without letting one process hold a large
+   * 16 leaves headroom over that without letting one process hold a large
    * share of the server's `max_connections` (Postgres defaults to 100), which
    * matters because the gateway is designed to run several processes behind
-   * `reusePort` — see `assertPoolFitsServerCapacity`.
+   * `reusePort` — see `assertPoolFitsServerCapacity`. With well-optimized
+   * queries a 16-connection pool sustains a hundred concurrent requests: the
+   * connections are held for microseconds per query, not for the whole
+   * request. If a burst still queues on the pool, fix the query/consumer
+   * that holds connections, rather than raising the ceiling.
    */
-  maxPostgresPoolSize: 8,
+  maxPostgresPoolSize: 16,
 } as const;

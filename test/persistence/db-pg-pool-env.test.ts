@@ -21,7 +21,7 @@ afterEach(() => {
 
 test("poolMaxFromEnv falls back to the default bound", () => {
   delete process.env.DATABASE_POOL_MAX;
-  expect(poolMaxFromEnv()).toBe(8);
+  expect(poolMaxFromEnv()).toBe(16);
 });
 
 test("poolMaxFromEnv rejects non-positive integers", () => {
