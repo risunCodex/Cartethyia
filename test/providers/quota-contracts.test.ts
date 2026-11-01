@@ -32,6 +32,28 @@ describe("absolute quota credit accounting", () => {
       window({ limit: 21_600, used: 21_600, remainingPercent: 0 }),
     ])).toBeCloseTo(58.3);
   });
+
+  test("a zero ceiling is a spent balance, not missing data", () => {
+    expect(totalRemainingCredit([
+      window({ accounting: "pooled", limit: 0, remaining: 0 }),
+    ])).toBe(0);
+    expect(totalRemainingPercent([
+      window({ accounting: "pooled", limit: 0, remaining: 0 }),
+    ])).toBe(0);
+  });
+
+  test("pooled remaining-only windows still contribute to the absolute sum", () => {
+    expect(totalRemainingCredit([
+      window({ accounting: "pooled", remaining: 300 }),
+      window({ accounting: "pooled", remaining: 50 }),
+    ])).toBe(350);
+    // No ceiling, so no percent can be derived from credits; only independent
+    // percentages gate the final percent.
+    expect(totalRemainingPercent([
+      window({ accounting: "pooled", remaining: 300 }),
+      window({ remainingPercent: 40 }),
+    ])).toBe(40);
+  });
 });
 
 describe("percent quota remaining accounting", () => {

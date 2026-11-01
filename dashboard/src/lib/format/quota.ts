@@ -62,6 +62,87 @@ export function formatQuotaRefresh(value: string | null): string {
     : "";
 }
 
+export interface QuotaPillSummary {
+  /** Absolute remaining credits across pooled windows, when any window reports one. */
+  readonly remaining: number;
+  /** Absolute ceiling across pooled windows (sum of limits), when known. */
+  readonly total: number;
+  /** Whether any pooled window reported a usable ceiling+balance. */
+  readonly hasCredits: boolean;
+  /** Lowest remaining percent across independent windows, when reported. */
+  readonly lowestPercent: number | null;
+  /** Display text; null when there is nothing to show. */
+  readonly text: string | null;
+  /** True when the allowance is effectively spent (warn tone). */
+  readonly low: boolean;
+}
+
+/**
+ * Unifies quota aggregation for the account-row pill. This is the single
+ * source of truth for "what does this account have left" — the server-side
+ * totals (`totalRemainingCredit` / `totalRemainingPercent`) and this view must
+ * agree, so both walk the same shapes:
+ *
+ * - pooled windows: credits are summed; a ceiling of 0 with a 0 remaining is a
+ *   genuinely spent balance (renders "0 left"), not "no data";
+ * - independent windows: the lowest remaining percent gates the account;
+ * - a window with only `remaining` (no limit/percent, e.g. Command Code
+ *   credits before a ceiling is known) still contributes to the absolute sum.
+ */
+export function quotaPillSummary(windows: readonly {
+  readonly accounting: "pooled" | "independent";
+  readonly remainingPercent: number | null;
+  readonly remaining?: number | null;
+  readonly used?: number | null;
+  readonly limit?: number | null;
+}[]): QuotaPillSummary {
+  if (windows.length === 0) {
+    return { remaining: 0, total: 0, hasCredits: false, lowestPercent: null, text: null, low: false };
+  }
+  let remaining = 0;
+  let total = 0;
+  let hasCredits = false;
+  let lowestPercent: number | null = null;
+  for (const window of windows) {
+    if (window.accounting === "pooled") {
+      const limit =
+        typeof window.limit === "number" && Number.isFinite(window.limit) ? window.limit : null;
+      let left: number | null = null;
+      if (typeof window.remaining === "number" && Number.isFinite(window.remaining)) {
+        left = window.remaining;
+      } else if (limit !== null && typeof window.used === "number" && Number.isFinite(window.used)) {
+        left = limit - window.used;
+      }
+      // A reported 0/0 is a spent balance, not an absence of data. Only a
+      // window with neither side is skipped.
+      if (left !== null) {
+        remaining += Math.max(0, left);
+        if (limit !== null) total += limit;
+        hasCredits = true;
+      }
+      continue;
+    }
+    if (typeof window.remainingPercent === "number" && Number.isFinite(window.remainingPercent)) {
+      const clamped = Math.min(100, Math.max(0, window.remainingPercent));
+      lowestPercent = lowestPercent === null ? clamped : Math.min(lowestPercent, clamped);
+    }
+  }
+  let displayText: string | null = null;
+  if (hasCredits) {
+    displayText = total > 0 ? `${trimNumber(remaining)} of ${trimNumber(total)}` : `${trimNumber(remaining)} left`;
+  } else if (lowestPercent !== null) {
+    displayText = `${Math.round(lowestPercent)}% left`;
+  }
+  const low = hasCredits
+    ? remaining <= 0 || (lowestPercent ?? 100) <= 10
+    : (lowestPercent ?? 100) <= 10;
+  return { remaining, total, hasCredits, lowestPercent, text: displayText, low };
+}
+
+function trimNumber(value: number): string {
+  return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
 export function friendlyQuotaError(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const lower = raw.toLowerCase();

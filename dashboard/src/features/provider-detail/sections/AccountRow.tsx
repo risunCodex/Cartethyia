@@ -21,7 +21,7 @@ import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Inline } from "../../../components/ui/inline";
 import { Stack } from "../../../components/ui/stack";
-import { formatResetDistance } from "../../../lib/format/quota";
+import { formatResetDistance, quotaPillSummary } from "../../../lib/format/quota";
 import { toast } from "../../../lib/toast";
 import { usePoolHealthEvents, usePoolProviderProbe } from "../../../hooks/network";
 import { EmptyState, LoadingState, ErrorState } from "../../../components/ui/state";
@@ -39,54 +39,21 @@ function credentialExpiryLabel(expiresAt: string | undefined): string | undefine
 /**
  * One chip for pooled credits when available, otherwise the lowest independent
  * quota percent. Sits before the inflight chip so the operator sees allowance
- * before concurrency.
+ * before concurrency. The aggregation lives in `quotaPillSummary` — the same
+ * shapes the server-side totals read, so the pill and the Quota page cannot
+ * drift apart.
  */
 function QuotaPill({
   windows,
 }: {
   readonly windows: readonly QuotaWindow[] | undefined;
 }): ReactNode {
-  if (windows === undefined || windows.length === 0) return null;
-  let remaining = 0;
-  let total = 0;
-  let hasCredits = false;
-  let lowestPercent: number | null = null;
-  for (const window of windows) {
-    const isPooled = window.accounting === "pooled";
-    if (!isPooled) {
-      if (typeof window.remainingPercent === "number" && Number.isFinite(window.remainingPercent)) {
-        lowestPercent =
-          lowestPercent === null ? window.remainingPercent : Math.min(lowestPercent, window.remainingPercent);
-      }
-      continue;
-    }
-    const limit = typeof window.limit === "number" && Number.isFinite(window.limit) ? window.limit : null;
-    const left =
-      typeof window.remaining === "number" && Number.isFinite(window.remaining)
-        ? window.remaining
-        : limit !== null && typeof window.used === "number" && Number.isFinite(window.used)
-          ? limit - window.used
-          : null;
-    if (left !== null && limit !== null) {
-      remaining += Math.max(0, left);
-      total += limit;
-      hasCredits = true;
-    }
-  }
-  let displayText: string | null = null;
-  if (hasCredits) {
-    displayText = `${trimNumber(remaining)} of ${trimNumber(total)}`;
-  } else if (lowestPercent !== null) {
-    displayText = `${Math.round(lowestPercent)}% left`;
-  }
-  if (displayText === null) return null;
-  const low = hasCredits
-    ? remaining <= 0 || (lowestPercent ?? 100) <= 10
-    : (lowestPercent ?? 100) <= 10;
+  const summary = quotaPillSummary(windows ?? []);
+  if (summary.text === null) return null;
   return (
-    <span className="inline-flex items-center gap-2.5 max-w-full px-3.5 py-1 border border-inner-border rounded-chip bg-surface-1 text-text-secondary text-badge leading-normal whitespace-nowrap" data-tone={low ? "warn" : undefined} title={hasCredits ? `${trimNumber(remaining)} credits available of ${trimNumber(total)}` : "Lowest remaining percent across this account's quota windows"}>
+    <span className="inline-flex items-center gap-2.5 max-w-full px-3.5 py-1 border border-inner-border rounded-chip bg-surface-1 text-text-secondary text-badge leading-normal whitespace-nowrap" data-tone={summary.low ? "warn" : undefined} title={summary.hasCredits ? `${trimNumber(summary.remaining)} credits available of ${trimNumber(summary.total)}` : "Lowest remaining percent across this account's quota windows"}>
       <span className="text-text-tertiary text-micro font-semibold uppercase tracking-label">Quota</span>
-      {displayText}
+      {summary.text}
     </span>
   );
 }

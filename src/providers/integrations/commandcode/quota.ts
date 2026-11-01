@@ -72,7 +72,11 @@ function creditWindow(credits: Record<string, unknown>): ProviderQuotaWindow | n
   return {
     kind: "credits",
     label: "Credits",
-    accounting: "independent",
+    // These are credits in one unit that can be spent interchangeably, so
+    // they are pooled like Qoder's plan/granted balances — not independent
+    // rate-limit lanes. The account-row pill and the Quota page both sum
+    // pooled windows, so this must be `pooled` or the balance never renders.
+    accounting: "pooled",
     usedPercent: null,
     remainingPercent: null,
     resetsAt: null,

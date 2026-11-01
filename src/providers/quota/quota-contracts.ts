@@ -58,20 +58,27 @@ export function totalRemainingCredit(
  * independent quota windows, or `null` when neither is reported.
  *
  * Pooled credits are summed before converting to percent, so one exhausted
- * bonus pack cannot hide balance in another. Independent windows keep their
- * own remaining percent and the lowest one gates the account.
+ * bonus pack cannot hide balance in another. A pooled window without a ceiling
+ * (Command Code credits) contributes its absolute remaining to the credit sum
+ * but cannot produce a percent, so it is not counted in the percent ratio.
+ * Independent windows keep their own remaining percent and the lowest one
+ * gates the account.
  */
 export function totalRemainingPercent(
   windows: readonly ProviderQuotaWindow[],
 ): number | null {
   let creditLimit = 0;
   let creditRemaining = 0;
+  let hasPooledLimit = false;
   let independentPercent: number | null = null;
   for (const window of windows) {
     if (window.accounting === "pooled") {
       const balance = creditWindowBalance(window);
       if (balance !== null) {
-        creditLimit += balance.limit;
+        if (balance.limit !== null) {
+          creditLimit += balance.limit;
+          hasPooledLimit = true;
+        }
         creditRemaining += balance.remaining;
       }
       continue;
@@ -85,8 +92,13 @@ export function totalRemainingPercent(
     independentPercent =
       independentPercent === null ? clamped : Math.min(independentPercent, clamped);
   }
-  const creditPercent =
-    creditLimit > 0 ? Math.min(100, Math.max(0, (creditRemaining / creditLimit) * 100)) : null;
+  // A pooled window with a reported ceiling (including a 0 ceiling — a spent
+  // balance) always defines a percent: 0 ceiling means 0% remaining.
+  const creditPercent = hasPooledLimit
+    ? creditLimit > 0
+      ? Math.min(100, Math.max(0, (creditRemaining / creditLimit) * 100))
+      : 0
+    : null;
   if (creditPercent === null) return independentPercent;
   if (independentPercent === null) return creditPercent;
   return Math.min(creditPercent, independentPercent);
@@ -94,20 +106,22 @@ export function totalRemainingPercent(
 
 function creditWindowBalance(
   window: ProviderQuotaWindow,
-): { readonly limit: number; readonly remaining: number } | null {
+): { readonly limit: number | null; readonly remaining: number } | null {
+  // A ceiling of 0 is a spent balance, not an absence of data; only a window
+  // with no remaining figure at all is skipped. `limit` may be null (Command
+  // Code reports credits without a ceiling) — the remaining total still counts.
   const limit =
-    typeof window.limit === "number" && Number.isFinite(window.limit) && window.limit > 0
+    typeof window.limit === "number" && Number.isFinite(window.limit) && window.limit >= 0
       ? window.limit
       : null;
-  if (limit === null) return null;
   let remaining: number | null = null;
   if (typeof window.remaining === "number" && Number.isFinite(window.remaining)) {
     remaining = window.remaining;
-  } else if (typeof window.used === "number" && Number.isFinite(window.used)) {
+  } else if (typeof window.used === "number" && Number.isFinite(window.used) && limit !== null) {
     remaining = limit - window.used;
   }
   if (remaining === null) return null;
-  return { limit, remaining: Math.min(limit, Math.max(0, remaining)) };
+  return { limit, remaining: Math.max(0, remaining) };
 }
 
 const TIMEOUT_MS = 15_000;
