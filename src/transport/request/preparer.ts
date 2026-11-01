@@ -351,14 +351,18 @@ export class ProxyRequestPreparer {
         // `accounts_unavailable` (503), not `capability_unsupported` — a
         // candidate that exists but cannot carry the required capability is
         // evaluated ineligible, and an all-ineligible set reads as "no usable
-        // account". Both mean "try the next, more degraded variant" here. Only
-        // the pristine variant is allowed to fall through on a 503 though: a
-        // genuinely unhealthy account fails every degraded variant too, and
-        // swallowing the 503 would report a misleading 400.
+        // account". Both mean "try the next, more degraded variant" here.
+        // `accounts_unavailable` is swallowed on the pristine variant (so a
+        // genuinely unhealthy pool falls through to a degraded plan) and on any
+        // variant that still carries requirements (a capability the route
+        // lacks, not a dead pool). Only a fully degraded variant — nothing left
+        // to drop — that still refuses means the pool itself is unusable, and
+        // that 503 must surface.
         if (
           error instanceof GatewayError &&
           (error.code === "capability_unsupported" ||
-            (error.code === "accounts_unavailable" && variant.degraded.length === 0))
+            (error.code === "accounts_unavailable" &&
+              (variant.degraded.length === 0 || variant.required.length > 0)))
         ) {
           continue;
         }
