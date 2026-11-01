@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, LoadingState } from "../../components/ui/state"
 import { Inline, CardActions } from "../../components/ui/inline";
 import { ModelPickerModal, type FlatModelEntry } from "../../components/ModelPicker";
 import { SortableList } from "../../components/SortableList";
+import { ScopeInjectionField } from "../../components/ScopeInjectionField";
 import { Stack } from "../../components/ui/stack";
 import { CodeChip } from "../../components/ui/code-chip";
 import { getErrorMessage } from "../../data/api";
@@ -257,6 +258,9 @@ function AliasesSection(): ReactNode {
             title="Select target model"
             multi={false}
           />
+          {editingAlias ? (
+            <ScopeInjectionField kind="alias" name={editingAlias.alias} />
+          ) : null}
         </form>
       </Dialog>
 
@@ -715,6 +719,9 @@ function CombosSection(): ReactNode {
             onValueChange={(v) => setStrategy(v as ComboStrategy)}
             options={COMBO_STRATEGY_OPTIONS}
           />
+          {editingCombo ? (
+            <ScopeInjectionField kind="combo" name={editingCombo.name} />
+          ) : null}
           <Stack gap="6px">
             <div className="flex items-center justify-between">
               <label className="text-caption font-semibold text-text-secondary">

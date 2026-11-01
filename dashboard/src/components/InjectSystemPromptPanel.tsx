@@ -29,6 +29,7 @@ const EMPTY_STATE: TenantSystemPrompts = {
   combos: {},
   aliases: {},
 };
+export { EMPTY_STATE };
 
 function modelKey(providerId: string, modelId: string): string {
   return `${providerId}::${modelId}`;
@@ -57,6 +58,8 @@ function customRef(setting: PromptSetting): ScopePromptRef {
 function presetRef(presetId: string): ScopePromptRef {
   return { kind: "preset", presetId };
 }
+
+export { globalRef, customRef, presetRef, enabledSetting };
 
 /** A searchable select (combobox) for option lists that get long. */
 function SearchableSelect({
@@ -241,7 +244,7 @@ function PromptEditor({
  * global scope itself, "Global" is meaningless (self-reference), so
  * `includeGlobalSource` is turned off and an explicit "Off" entry is offered.
  */
-function ScopeSourcePicker({
+export function ScopeSourcePicker({
   id,
   ref,
   presets,
