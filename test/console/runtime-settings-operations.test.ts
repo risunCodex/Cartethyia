@@ -107,6 +107,34 @@ dbDescribe("operational runtime settings", () => {
     await writeBag({ imageClampMaxBytes: 500 * 1024 * 1024 });
     expect((await store.get(world.tenantId)).imageClampMaxBytes).toBe(100 * 1024 * 1024);
   });
+
+  test("vision handoff models default to empty", async () => {
+    await writeBag({});
+    expect((await store.get(world.tenantId)).visionHandoffModels).toEqual([]);
+  });
+
+  test("vision handoff models round-trip in order", async () => {
+    await writeBag({
+      visionHandoffModels: [
+        "provider-a/vision-1",
+        "provider-b/vision-2",
+        "provider-a/vision-1",
+        "",
+        "  provider-c/vision-3  ",
+      ],
+    });
+    // Trims, de-duplicates, and drops empties while preserving order.
+    expect((await store.get(world.tenantId)).visionHandoffModels).toEqual([
+      "provider-a/vision-1",
+      "provider-b/vision-2",
+      "provider-c/vision-3",
+    ]);
+  });
+
+  test("vision handoff models normalize non-array values to empty", async () => {
+    await writeBag({ visionHandoffModels: "provider-a/vision-1" as unknown as string[] });
+    expect((await store.get(world.tenantId)).visionHandoffModels).toEqual([]);
+  });
 });
 
 /**

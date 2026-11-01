@@ -39,6 +39,7 @@ const REQUEST_KEYS: readonly (keyof UpdateRuntimeSettingsRequest)[] = [
   "upstreamTimeoutSeconds",
   "telemetryWindowMinutes",
   "imageClampMaxBytes",
+  "visionHandoffModels",
 ];
 
 describe("runtimeUpdateBody", () => {
@@ -83,6 +84,17 @@ describe("runtimeUpdateBody", () => {
       expect(Value.Check(runtimeUpdateBody, { [key]: value })).toBe(true);
       expect(Value.Check(runtimeUpdateBody, { [key]: "60" })).toBe(false);
     }
+  });
+
+  test("the vision handoff array accepts an ordered list and rejects non-arrays", () => {
+    expect(
+      Value.Check(runtimeUpdateBody, {
+        visionHandoffModels: ["provider-a/vision-1", "provider-b/vision-2"],
+      }),
+    ).toBe(true);
+    expect(Value.Check(runtimeUpdateBody, { visionHandoffModels: [] })).toBe(true);
+    expect(Value.Check(runtimeUpdateBody, { visionHandoffModels: "provider-a/vision-1" })).toBe(false);
+    expect(Value.Check(runtimeUpdateBody, { visionHandoffModels: [1, 2] })).toBe(false);
   });
 
   test("the separate payload retention override is no longer accepted", () => {

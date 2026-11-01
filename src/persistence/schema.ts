@@ -1254,6 +1254,14 @@ export interface ConsoleSettingsPreferences {
    * the safer direction and the more common need.
    */
   imageClampMaxBytes?: number | null;
+  /**
+   * Ordered list of vision model ids (`provider/model`) used to describe
+   * images when the selected model is not image-capable. The first healthy
+   * model wins; if it fails (cooldown/quota/upstream error), the handoff
+   * falls through to the next entry. Empty/absent = legacy `[image]`
+   * placeholder behavior.
+   */
+  visionHandoffModels?: readonly string[];
 }
 
 export const consoleSettings = pgTable("console_settings", {

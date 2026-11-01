@@ -27,6 +27,8 @@ import type { ByokUpstreamHost } from "../providers/operations/provider-catalog-
 import type { NetworkPoolSelector } from "../network/pool/selector";
 import type { ProxyRequestPreparer } from "../transport/request/preparer";
 import { ProxyRequestStateStore } from "../transport/request/state";
+import { resolveTenantVisionHandoffModels } from "../transport/request/tenant-preferences";
+import { tryVisionHandoff, type VisionHandoffDeps } from "../transport/vision-handoff";
 import { fastPathname } from "../transport/pathname";
 import {
   handleProviderProxyRequest,
@@ -241,6 +243,32 @@ export function createGatewayApp(deps: GatewayAppDeps) {
     deps.mode === "production" ? deps.shutdownCoordinator : undefined,
   );
   deps.runtimeMetricsSampler?.bindInFlight(() => requestStateStore.inFlightCount());
+  // Vision handoff runs as an internal sub-dispatch when the tenant configured
+  // an ordered list of vision models. Wire the preparer's runner here, where
+  // the request state store and the full dispatch dependency surface exist.
+  if (deps.mode === "production") {
+    deps.proxyPreparer.bindVisionHandoff(async (input) => {
+      const models = await resolveTenantVisionHandoffModels(
+        deps.db,
+        input.authorization.tenantId,
+      );
+      if (models.length === 0) return [];
+      const runnerDeps: VisionHandoffDeps = {
+        db: deps.db,
+        stateStore: requestStateStore,
+        proxyPreparer: deps.proxyPreparer,
+        resolveProviderAdapter: deps.resolveProviderAdapter,
+        byokUpstreamHosts: deps.byokUpstreamHosts,
+        networkBindingFactory: deps.networkBindingFactory,
+        snapshotService: deps.snapshotService,
+        telemetryBuffer: deps.telemetryBuffer,
+        resolveOAuthRefresher: deps.resolveOAuthRefresher,
+        oauthRefreshService: deps.oauthRefreshService,
+        poolSelector: deps.poolSelector,
+      };
+      return tryVisionHandoff(runnerDeps, input, models);
+    });
+  }
   // Shutdown ordering: abort in-flight proxy controllers first so the
   // bounded drain observes cancellation and finalizers run before
   // telemetry flush and pool close. The reason is threaded through so the
