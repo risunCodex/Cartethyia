@@ -191,6 +191,10 @@ export interface UsageRequestItem {
   apiKeyId?: string;
   userAgent?: string;
   clientName?: string;
+  /** The proxy pool that carried this request, when one was used. */
+  networkPoolId?: string;
+  /** Operator-facing label of the pool; absent when the pool is gone. */
+  networkPoolLabel?: string;
   estimatedCost?: number;
   /** Provider-billed credits; absent when the upstream reported no credit field. */
   creditUsed?: number;

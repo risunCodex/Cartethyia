@@ -31,7 +31,7 @@ import { gatewayErrorSql } from "./telemetry-status";
  * totals, and the durable usage rollup cannot drift apart — an unknown status
  * must be classified identically in all three.
  */
-const IS_GATEWAY_ERROR_SQL = gatewayErrorSql(telemetryEvents.status, telemetryEvents.httpStatus);
+export const IS_GATEWAY_ERROR_SQL = gatewayErrorSql(telemetryEvents.status, telemetryEvents.httpStatus);
 
 /** One bounded page of events, newest first. */
 export interface EventPage {

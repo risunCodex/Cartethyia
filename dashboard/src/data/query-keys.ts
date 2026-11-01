@@ -54,6 +54,7 @@ export const queryKeys = {
   network: {
     pools: ["console", "network", "pools"] as const,
     poolStrategy: ["console", "network", "pool-strategy"] as const,
+    poolHealthEvents: (poolId: string) => ["console", "network", "pool-health-events", poolId] as const,
   },
   apiKeys: {
     all: ["console", "api-keys"] as const,

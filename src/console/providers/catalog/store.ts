@@ -1,5 +1,5 @@
 // Drizzle-backed provider, account, model, routing, and API-key repositories.
-import { and, asc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { ConsoleDomainError } from "../../shared/errors";
 import { parseCustomProviderId, isBundledProviderId } from "../../../providers/provider-contracts";
 import { providerRateLimitIsIpScoped } from "../../../providers/provider-metadata";
@@ -9,8 +9,8 @@ import { BUNDLED_PROVIDER_MODULES } from "../../../providers/default-registry";
 import { globalOrOwnedBy, ownedByOnly } from "../../../persistence/tenant-scope";
 import { nextSortIndex, reorderSortIndex } from "../../../persistence/sort-order";
 import type { CartethyiaDatabase } from "../../../persistence/db-handle";
-import { buddyTaskLedger, models, providerAccounts, providerOauthStates, providerPoolAccounts, providers, telemetryUsageTotals, tenantDisabledModels } from "../../../persistence/schema";
-import { breakdownTelemetry } from "../../../observability/event-query";
+import { buddyTaskLedger, models, networkPools, providerAccounts, providerOauthStates, providerPoolAccounts, providers, telemetryEvents, telemetryUsageTotals, tenantDisabledModels } from "../../../persistence/schema";
+import { breakdownTelemetry, IS_GATEWAY_ERROR_SQL } from "../../../observability/event-query";
 import type { WireFamily } from "../../../protocol/canonical-model";
 import { listAccountHealthEvents, recoverAccount, deleteAccountHealthEvents, type AccountHealthEventRecord } from "../../../providers/operations/account-health-service";
 import { invalidateCredentialCache } from "../../../providers/operations/provider-credential-service";
@@ -867,6 +867,10 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
    * Pool-as-account rows for one provider. Only providers whose rate limit
    * follows the egress address materialize these; every other provider's pool
    * list stays empty, so real accounts are returned unchanged.
+   *
+   * The pool row is the source of health truth: `provider_pool_accounts`
+   * rows are created at backfill and never mutated, so the surface reads the
+   * owning pool's live status/last-* fields and lives on top of them.
    */
   private async listPoolAccounts(
     tenantId: string,
@@ -883,7 +887,10 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
         ),
       )
       .orderBy(asc(providerPoolAccounts.createdAt), asc(providerPoolAccounts.id));
-    return rows.map((row) => this.mapPoolAccount(row));
+    if (rows.length === 0) return [];
+    const pools = await this.poolsById(tenantId, rows.map((row) => row.networkPoolId));
+    const usage = await this.poolUsage(tenantId, rows.map((row) => row.networkPoolId));
+    return rows.map((row) => this.mapPoolAccount(row, pools.get(row.networkPoolId), usage.get(row.networkPoolId)));
   }
 
   /** Pool-as-account rows across every provider, for tenant-wide listings. */
@@ -895,26 +902,153 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
       .from(providerPoolAccounts)
       .where(eq(providerPoolAccounts.tenantId, tenantId))
       .orderBy(asc(providerPoolAccounts.createdAt), asc(providerPoolAccounts.id));
-    return rows.map((row) => this.mapPoolAccount(row));
+    if (rows.length === 0) return [];
+    const pools = await this.poolsById(tenantId, rows.map((row) => row.networkPoolId));
+    const usage = await this.poolUsage(tenantId, rows.map((row) => row.networkPoolId));
+    return rows.map((row) => this.mapPoolAccount(row, pools.get(row.networkPoolId), usage.get(row.networkPoolId)));
   }
 
-  private mapPoolAccount(row: typeof providerPoolAccounts.$inferSelect): ProviderAccountResponse {
+  /** Selects the owning network pools for a set of pool-account rows. */
+  private async poolsById(
+    tenantId: string,
+    poolIds: readonly string[],
+  ): Promise<Map<string, typeof networkPools.$inferSelect>> {
+    const map = new Map<string, typeof networkPools.$inferSelect>();
+    if (poolIds.length === 0) return map;
+    const rows = await this.db
+      .select()
+      .from(networkPools)
+      .where(
+        and(
+          eq(networkPools.tenantId, tenantId),
+          inArray(networkPools.id, poolIds),
+        ),
+      );
+    for (const row of rows) map.set(row.id, row);
+    return map;
+  }
+
+  /**
+   * Today + lifetime token usage per pool, from telemetry. Pools carry no
+   * rows in `telemetry_usage_totals` (that table only admits account/api_key
+   * identity types), so lifetime here is aggregated from the retained event
+   * window (the same bounded window the usage page reads) rather than from
+   * durable rollups.
+   */
+  private async poolUsage(
+    tenantId: string,
+    poolIds: readonly string[],
+  ): Promise<Map<string, { today: ProviderAccountTokenUsage; allTime: ProviderAccountTokenUsage }>> {
+    const map = new Map<string, { today: ProviderAccountTokenUsage; allTime: ProviderAccountTokenUsage }>();
+    if (poolIds.length === 0) return map;
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const [todayRows, lifetimeRows] = await Promise.all([
+      this.db
+        .select({
+          poolId: telemetryEvents.networkPoolId,
+          requests: sql<number>`count(*)`,
+          errors: sql<number>`sum(case when ${IS_GATEWAY_ERROR_SQL} then 1 else 0 end)`,
+          inputTokens: sql<number>`coalesce(sum(${telemetryEvents.inputTokens}), 0)`,
+          outputTokens: sql<number>`coalesce(sum(${telemetryEvents.outputTokens}), 0)`,
+        })
+        .from(telemetryEvents)
+        .where(
+          and(
+            eq(telemetryEvents.tenantId, tenantId),
+            gte(telemetryEvents.createdAt, todayStart),
+            inArray(telemetryEvents.networkPoolId, poolIds),
+          ),
+        )
+        .groupBy(telemetryEvents.networkPoolId),
+      this.db
+        .select({
+          poolId: telemetryEvents.networkPoolId,
+          requests: sql<number>`count(*)`,
+          errors: sql<number>`sum(case when ${IS_GATEWAY_ERROR_SQL} then 1 else 0 end)`,
+          inputTokens: sql<number>`coalesce(sum(${telemetryEvents.inputTokens}), 0)`,
+          outputTokens: sql<number>`coalesce(sum(${telemetryEvents.outputTokens}), 0)`,
+        })
+        .from(telemetryEvents)
+        .where(
+          and(
+            eq(telemetryEvents.tenantId, tenantId),
+            inArray(telemetryEvents.networkPoolId, poolIds),
+          ),
+        )
+        .groupBy(telemetryEvents.networkPoolId),
+    ]);
+    const toUsage = (row: {
+      readonly requests: number | string | null;
+      readonly errors: number | string | null;
+      readonly inputTokens: number | string | null;
+      readonly outputTokens: number | string | null;
+    }): ProviderAccountTokenUsage => {
+      const inputTokens = Number(row.inputTokens ?? 0);
+      const outputTokens = Number(row.outputTokens ?? 0);
+      return {
+        requests: Number(row.requests ?? 0),
+        errors: Number(row.errors ?? 0),
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+      };
+    };
+    for (const id of poolIds) {
+      const today = todayRows.find((row) => row.poolId === id);
+      const lifetime = lifetimeRows.find((row) => row.poolId === id);
+      map.set(id, {
+        today: today ? toUsage(today) : emptyUsage,
+        allTime: lifetime ? toUsage(lifetime) : emptyUsage,
+      });
+    }
+    return map;
+  }
+
+  private mapPoolAccount(
+    row: typeof providerPoolAccounts.$inferSelect,
+    pool: typeof networkPools.$inferSelect | undefined,
+    usage: { today: ProviderAccountTokenUsage; allTime: ProviderAccountTokenUsage } | undefined,
+  ): ProviderAccountResponse {
     return {
       id: row.id,
       providerId: row.providerId,
       tenantId: row.tenantId,
       label: row.label,
       credentialKind: "none",
-      status: row.status,
-      usageToday: emptyUsage,
-      usageAllTime: emptyUsage,
-      consecutiveFailures: row.consecutiveFailures,
-      ...(row.lastSuccessAt ? { lastSuccessAt: row.lastSuccessAt.toISOString() } : {}),
-      ...(row.lastError ? { lastError: row.lastError } : {}),
-      ...(row.lastErrorCategory ? { lastErrorCategory: row.lastErrorCategory } : {}),
-      ...(row.lastErrorAt ? { lastErrorAt: row.lastErrorAt.toISOString() } : {}),
-      ...(row.cooldownUntil ? { cooldownUntil: row.cooldownUntil.toISOString() } : {}),
-      ...(row.lastRecoveredAt ? { lastRecoveredAt: row.lastRecoveredAt.toISOString() } : {}),
+      // Health truth lives on the owning pool; fall back to the row only when
+      // the pool row is unreachable (deleted cascade would have removed the
+      // account row, so this is defensive).
+      status: pool?.status ?? row.status,
+      usageToday: usage?.today ?? emptyUsage,
+      usageAllTime: usage?.allTime ?? emptyUsage,
+      consecutiveFailures: pool?.consecutiveFailures ?? row.consecutiveFailures,
+      ...(pool?.lastSuccessAt
+        ? { lastSuccessAt: pool.lastSuccessAt.toISOString() }
+        : row.lastSuccessAt
+          ? { lastSuccessAt: row.lastSuccessAt.toISOString() }
+          : {}),
+      ...(pool?.lastError ? { lastError: pool.lastError } : row.lastError ? { lastError: row.lastError } : {}),
+      ...(pool?.lastErrorCategory
+        ? { lastErrorCategory: pool.lastErrorCategory }
+        : row.lastErrorCategory
+          ? { lastErrorCategory: row.lastErrorCategory }
+          : {}),
+      ...(pool?.lastErrorAt
+        ? { lastErrorAt: pool.lastErrorAt.toISOString() }
+        : row.lastErrorAt
+          ? { lastErrorAt: row.lastErrorAt.toISOString() }
+          : {}),
+      ...(pool?.cooldownUntil
+        ? { cooldownUntil: pool.cooldownUntil.toISOString() }
+        : row.cooldownUntil
+          ? { cooldownUntil: row.cooldownUntil.toISOString() }
+          : {}),
+      ...(pool?.lastRecoveredAt
+        ? { lastRecoveredAt: pool.lastRecoveredAt.toISOString() }
+        : row.lastRecoveredAt
+          ? { lastRecoveredAt: row.lastRecoveredAt.toISOString() }
+          : {}),
       createdAt: row.createdAt.toISOString(),
       sortIndex: 0,
       kind: "pool",

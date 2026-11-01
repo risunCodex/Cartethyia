@@ -34,6 +34,34 @@ export function useNetworkPools() {
   });
 }
 
+/** Health/error history for one network pool (used by the pool-account view). */
+export function usePoolHealthEvents(poolId: string | undefined) {
+  return useQuery<PoolHealthEvent[], ApiErrorShape>({
+    queryKey: queryKeys.network.poolHealthEvents(poolId ?? ""),
+    queryFn: (context) =>
+      consoleRequest<PoolHealthEvent[]>(
+        `/routing/pools/${encodeURIComponent(poolId ?? "")}/health-events`,
+        { signal: querySignal(context) },
+      ),
+    enabled: poolId !== undefined,
+  });
+}
+
+/** Runs a provider probe against one pool (used by the pool-account Test action). */
+export function usePoolProviderProbe() {
+  return useMutation<
+    PoolProviderProbeResult,
+    ApiErrorShape,
+    { poolId: string; providerId: string }
+  >({
+    mutationFn: ({ poolId, providerId }) =>
+      consoleRequest<PoolProviderProbeResult>(
+        `/routing/pools/${encodeURIComponent(poolId)}/provider-probe`,
+        { method: "POST", body: JSON.stringify({ providerId }) },
+      ),
+  });
+}
+
 /** Creates a network pool and refreshes the pools list. */
 export function useCreateNetworkPool() {
   const queryClient = useQueryClient();

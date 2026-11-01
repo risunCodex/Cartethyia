@@ -142,6 +142,7 @@ function mapUsageRequestItem(
       : {}),
     ...(event.endpoint ? { endpoint: event.endpoint } : {}),
     ...(event.apiKeyId ? { apiKeyId: event.apiKeyId } : {}),
+    ...(event.networkPoolId ? { networkPoolId: event.networkPoolId } : {}),
     ...(event.userAgent ? { userAgent: event.userAgent } : {}),
     ...(event.userAgent ? { clientName: clientNameFromUserAgent(event.userAgent) } : {}),
     ...(event.clientIp
@@ -761,7 +762,11 @@ export class DrizzleObservabilityStore implements ObservabilityStore {
     const item = mapUsageRequestItem(event, hideClientIp);
     const keyLabel = event.apiKeyId ? keyLabels?.get(event.apiKeyId) : undefined;
     const labeled = keyLabel === undefined ? item : { ...item, apiKeyLabel: keyLabel };
-    const presented = { ...labeled, proxy };
+    const presented = {
+      ...labeled,
+      proxy,
+      ...(event.networkPoolId ? { networkPoolLabel: proxy } : {}),
+    };
     // Filter the payload table directly instead of joining `telemetry_events`
     // only to re-apply the tenant predicate: `telemetry_payloads` carries
     // `tenant_id` itself, so the join added a second table's rows to filter for
