@@ -60,6 +60,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   probe that times out under load now surfaces as a 503 `overloaded` with a
   retry-after hint ("The gateway is overloaded"), while "dependencies are not
   ready" is reserved for real failures (connection refused, migrations missing).
+- **Telemetry window scans and SQLite percentile queries are cheaper.** The
+  usage and health endpoints reuse one combined scan instead of running
+  several, and the SQLite percentile path avoids redundant window materialization.
 - **Postgres pool default raised to 16 (from 8).** Combined with the consumer
   fixes above, a 16-connection ceiling sustains a hundred concurrent requests;
   the production override was removed so the code default governs.
@@ -71,6 +74,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   sites were swept for consistent `{requestId}` inclusion, overlap fixes, and
   warmer wording; deduplicated codes including `route_unavailable`,
   `model_not_allowed`, and `rate_limited`.
+- **Qoder: machine headers do not gate daily credit grants.** The earlier
+  native-identity work was based on a campaign assumption that the operator
+  corrected: identity does not gate credits. The per-account Native Identity
+  dialog and button are removed (the identity seed itself remains for
+  deterministic replay on other surfaces).
+- **Customization presets.** A render-preset dropdown (Off, Pretty, Extreme)
+  plus a low-device switch that forces every glass surface solid; the Extreme
+  preset renders near-solid everywhere with no backdrop read.
 
 ### Fixed
 
