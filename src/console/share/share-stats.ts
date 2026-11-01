@@ -273,17 +273,18 @@ const HOURS_WINDOW = 24;
 /**
  * Cache lifetime for one family's rollup.
  *
- * Matched to the share page's SSE tick, which was the point of the old 2 s
- * value — but at 2 s the cache expired on every tick, so every single push was
- * a full parse of the retained telemetry window. A share page's numbers move
- * when a request does, not every 2 s; 30 s still reads as live (the tick is
- * 30 s), and cuts the parse rate by fifteen versus the old 2 s.
+ * Longer than the SSE tick (30s) so most ticks are served from cache. The
+ * cold-compute path reads the family's telemetry windows (24h chart, 7d IP
+ * ranking), which on a busy family is the single most expensive thing the
+ * share page does; a 5-minute TTL caps that to once per family per 5
+ * minutes while the page still reads as live — KPI numbers move with
+ * traffic, not on a per-minute cadence.
  *
  * Declared here rather than imported from the router so this port does not
- * depend on it. `SHARE_STATS_STREAM_INTERVAL_MS` must be raised with it, or
- * the two drift apart and the cache expires between ticks for no reason.
+ * depend on it. `SHARE_STATS_STREAM_INTERVAL_MS` must stay below it, or the
+ * tick and cache drift apart and every tick bypasses the cache.
  */
-export const SHARE_STATS_CACHE_TTL_SECONDS = 60;
+export const SHARE_STATS_CACHE_TTL_SECONDS = 300;
 
 /**
  * Cache key for one family's rollup. The family is named by its template key
@@ -314,35 +315,16 @@ interface ShareStatsPortDeps {
 }
 
 export function createShareStatsPort(deps: ShareStatsPortDeps): ShareStatsPort {
-  // In-memory read-through cache for deployments without Redis (the embedded
-  // lite backend). The share stream ticks every 30s; without a cache each
-  // tick recomputes the family rollup from telemetry — the repeated full
-  // window scans that appear as CPU/IO spikes. Redis is preferred when
-  // configured (cross-instance sharing); otherwise this Map serves the same
-  // TTL so compute runs at most once per minute per family.
-  const localCache = new Map<string, { at: number; value: Omit<ShareFamilyStats, "recipients"> }>();
   return {
     async getFamilyStats(tenantId, family, recipients, allowedModels) {
       if (family.templateKeyId.length === 0) return emptyStats(recipients);
-      const key = shareFamilyStatsKey(tenantId, family, allowedModels);
-      const compute = () => computeFamilyStatsBody(deps.db, tenantId, family.templateKeyId, allowedModels);
-      if (deps.redis) {
-        const cached = await cachedRead<Omit<ShareFamilyStats, "recipients">>(
-          deps.redis,
-          key,
-          compute,
-          SHARE_STATS_CACHE_TTL_SECONDS,
-        );
-        return { ...cached, recipients };
-      }
-      const now = Date.now();
-      const hit = localCache.get(key);
-      if (hit !== undefined && now - hit.at < SHARE_STATS_CACHE_TTL_SECONDS * 1000) {
-        return { ...hit.value, recipients };
-      }
-      const value = await compute();
-      localCache.set(key, { at: now, value });
-      return { ...value, recipients };
+      const cached = await cachedRead<Omit<ShareFamilyStats, "recipients">>(
+        deps.redis,
+        shareFamilyStatsKey(tenantId, family, allowedModels),
+        () => computeFamilyStatsBody(deps.db, tenantId, family.templateKeyId, allowedModels),
+        SHARE_STATS_CACHE_TTL_SECONDS,
+      );
+      return { ...cached, recipients };
     },
   };
 }

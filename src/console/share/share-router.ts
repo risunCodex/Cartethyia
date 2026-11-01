@@ -34,9 +34,10 @@ const MIN_TOKEN_LENGTH = 20;
 /**
  * Cadence of the share stats SSE snapshot.
  *
- * Half the cache TTL (`SHARE_STATS_CACHE_TTL_SECONDS`, 60 s), so alternate
- * ticks are served entirely from the cache and the compute path runs at most
- * once per minute per family. Short enough to still read as live.
+ * Roughly one tenth of the cache TTL (`SHARE_STATS_CACHE_TTL_SECONDS`, 300
+ * s), so nearly every tick is served from the cache and the cold-compute
+ * path runs at most once per five minutes per family. Short enough to still
+ * read as live.
  */
 const SHARE_STATS_STREAM_INTERVAL_MS = 30_000;
 
