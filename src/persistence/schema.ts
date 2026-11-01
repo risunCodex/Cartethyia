@@ -2,7 +2,7 @@
 import { desc, sql } from "drizzle-orm";
 import {
   bigint, boolean, check, customType, index, integer, jsonb, numeric, pgEnum, pgTable,
-  primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn,
+  primaryKey, text, timestamp, unique, uniqueIndex, uuid, type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 export const TENANT_STATUSES = ["active", "suspended", "deleted"] as const;
@@ -121,7 +121,7 @@ export const networkPoolKind = pgEnum("network_pool_kind", ["http", "https", "so
 
 //  health_events.entity_kind — distinguishes which owning
 // table entity_id/account_id/network_pool_id references.
-export const healthEntityKind = pgEnum("health_entity_kind", ["account", "pool", "pool_account"]);
+export const healthEntityKind = pgEnum("health_entity_kind", ["account", "pool"]);
 
 export const telemetrySourceSurface = pgEnum("telemetry_source_surface", [
   "chat",
@@ -602,7 +602,7 @@ export const providerPoolAccounts = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("provider_pool_accounts_pool_provider_uidx").on(
+    unique("provider_pool_accounts_pool_provider_uidx").on(
       table.networkPoolId,
       table.providerId,
       table.tenantId,

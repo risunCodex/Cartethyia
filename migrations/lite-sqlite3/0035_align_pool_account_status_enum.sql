@@ -1,0 +1,6 @@
+-- SQLite mirror of `full-postgres/0035_align_pool_account_status_enum.sql`.
+--
+-- SQLite has no enum type: `provider_pool_accounts.status` is a `text`
+-- column with a CHECK constraint already (migration 0032), which matches the
+-- shared schema's semantics. Nothing to change here; the file exists so both
+-- backends carry the same numbered migration set.

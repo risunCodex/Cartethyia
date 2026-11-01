@@ -192,7 +192,14 @@ async function main(): Promise<number> {
       const client = clientFor(name);
       await client.connect();
       try {
-        for (const statement of sql) await client.query(statement);
+        for (const statement of sql) {
+          try {
+            await client.query(statement);
+          } catch (error) {
+            console.error(`[check-migrations] statement failed in ${name}: ${String(statement).slice(0, 220)}`);
+            throw error;
+          }
+        }
       } finally {
         await client.end();
       }
