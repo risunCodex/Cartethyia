@@ -83,14 +83,22 @@ export function useRevokeApiKey() {
   });
 }
 
-/** Bans an API key with an operator-chosen reason, then refreshes the list. */
+/** Bans an API key with an operator-chosen reason and optional expiry, then refreshes the list. */
 export function useBanApiKey() {
   const queryClient = useQueryClient();
-  return useMutation<UpdateApiKeyResponse, ApiErrorShape, { keyId: string; reason: string; reasonLabel?: string }>({
-    mutationFn: ({ keyId, reason, reasonLabel }) =>
+  return useMutation<
+    UpdateApiKeyResponse,
+    ApiErrorShape,
+    { keyId: string; reason: string; reasonLabel?: string; minutes?: number | null }
+  >({
+    mutationFn: ({ keyId, reason, reasonLabel, minutes }) =>
       consoleRequest<UpdateApiKeyResponse>(`/api-keys/${encodeURIComponent(keyId)}/ban`, {
         method: "POST",
-        body: JSON.stringify({ reason, ...(reasonLabel === undefined ? {} : { reasonLabel }) }),
+        body: JSON.stringify({
+          reason,
+          ...(reasonLabel === undefined ? {} : { reasonLabel }),
+          ...(minutes === undefined ? {} : { minutes }),
+        }),
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });

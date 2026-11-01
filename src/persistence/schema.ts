@@ -898,6 +898,13 @@ export const apiKeys = pgTable(
     bannedAt: timestamp("banned_at", { withTimezone: true }),
     banReason: text("ban_reason"),
     /**
+     * When the ban lifts on its own, if it is not permanent. `null` means the
+     * ban does not lapse (until an operator unbans it). The auth path treats a
+     * key as banned only while `banned_at` is set and `banned_until` is either
+     * null or in the future — so a timed ban expires without SQL.
+     */
+    bannedUntil: timestamp("banned_until", { withTimezone: true }),
+    /**
      * The tenant's mandatory gateway key. Seeded at first boot whether or not
      * `CARTETHYIA_API_KEY` was configured, and the one key the console refuses
      * to revoke — it may only be rotated. A column rather than a label match,

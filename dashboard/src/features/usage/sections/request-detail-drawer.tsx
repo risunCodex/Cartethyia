@@ -28,6 +28,7 @@ import { useUsageRequestDetail } from "../../../hooks/system";
 import { useTrackedTimeout } from "../../../hooks/use-timeout";
 import { useBanApiKey } from "../../../hooks/api-keys";
 import { API_KEY_BAN_REASONS } from "../../../data/contracts";
+import { BAN_DURATION_CHOICES } from "../../../lib/ban-durations";
 import { formatBytes, formatDuration, formatNumber } from "../../../lib/format/numbers";
 import { formatSpeed, formatUsd } from "./formatters";
 import { errorLabel, statusCode, STATUS_TONE_COLOR } from "./status";
@@ -114,6 +115,7 @@ export function RequestDetailDrawer({
   const banKey = useBanApiKey();
   const [banReasonOpen, setBanReasonOpen] = useState(false);
   const [banReason, setBanReason] = useState<string>(API_KEY_BAN_REASONS[0]!.value);
+  const [banMinutes, setBanMinutes] = useState<number | null>(BAN_DURATION_CHOICES[0]!.minutes);
   const providerAccounts = useProviderAccounts(detail?.providerId);
   const accountLabel = (item: { readonly accountId?: string } | null | undefined): string => {
     const accountId = item?.accountId;
@@ -247,6 +249,16 @@ export function RequestDetailDrawer({
                 onValueChange={(value) => setBanReason(value)}
                 options={API_KEY_BAN_REASONS.map((r) => ({ value: r.value, label: r.label }))}
               />
+              <Select
+                label="Duration"
+                id="request-ban-duration"
+                value={banMinutes === null ? "null" : String(banMinutes)}
+                onValueChange={(value) => setBanMinutes(value === "null" ? null : Number(value))}
+                options={BAN_DURATION_CHOICES.map((choice) => ({
+                  value: choice.minutes === null ? "null" : String(choice.minutes),
+                  label: choice.label,
+                }))}
+              />
               <div className="flex justify-end gap-2">
                 <Button variant="secondary" size="sm" onClick={() => setBanReasonOpen(false)}>
                   Cancel
@@ -261,6 +273,7 @@ export function RequestDetailDrawer({
                         keyId: detail.apiKeyId as string,
                         reason: banReason,
                         reasonLabel: option?.label,
+                        minutes: banMinutes,
                       },
                       {
                         onSuccess: () => {

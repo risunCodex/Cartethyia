@@ -25,10 +25,12 @@ import { compactTokens, limitLabel } from "../lib/format/tokens";
 import { useClipboard } from "../hooks/use-clipboard";
 import { useRuntimeSettings, useUpdateRuntimeSettings } from "../hooks/settings";
 import { PowerOff } from "lucide-react";
-import { AlertTriangle, Ban as BanIcon, Eye } from "lucide-react";
+import { AlertTriangle, Ban as BanIcon, Eye, ShieldOff } from "lucide-react";
 import { Select } from "./ui/select";
 import { API_KEY_BAN_REASONS } from "../data/contracts";
 import type { ApiKeyResponse } from "../data/contracts";
+import { BAN_DURATION_CHOICES } from "../lib/ban-durations";
+import { BannedKeysDialog } from "./BannedKeysDialog";
 import {
   useApiKeys,
   useBanApiKey,
@@ -68,6 +70,8 @@ export function ApiKeysPanel(): ReactNode {
   const [banOpen, setBanOpen] = useState(false);
   const [banKeyId, setBanKeyId] = useState<string>("");
   const [banReason, setBanReason] = useState<string>(API_KEY_BAN_REASONS[0]!.value);
+  const [banMinutes, setBanMinutes] = useState<number | null>(BAN_DURATION_CHOICES[0]!.minutes);
+  const [bansOpen, setBansOpen] = useState(false);
   const [seeReasonTarget, setSeeReasonTarget] = useState<ApiKeyResponse | null>(null);
   const [rotateTarget, setRotateTarget] = useState<ApiKeyResponse | null>(null);
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
@@ -145,11 +149,20 @@ export function ApiKeysPanel(): ReactNode {
               onClick={() => {
                 setBanKeyId(keys[0]?.id ?? "");
                 setBanReason(API_KEY_BAN_REASONS[0]!.value);
+                setBanMinutes(BAN_DURATION_CHOICES[0]!.minutes);
                 setBanOpen(true);
               }}
               icon={<BanIcon size={13} />}
             >
               Ban
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setBansOpen(true)}
+              icon={<ShieldOff size={13} />}
+            >
+              Banned Users
             </Button>
             <Button
               variant="primary"
@@ -485,6 +498,8 @@ export function ApiKeysPanel(): ReactNode {
 
       <ApiKeySecretDialog secret={revealedSecret} onClose={() => setRevealedSecret(null)} />
 
+      {bansOpen ? <BannedKeysDialog keys={keys} onClose={() => setBansOpen(false)} /> : null}
+
       <Dialog
         open={banOpen}
         onClose={() => setBanOpen(false)}
@@ -507,6 +522,7 @@ export function ApiKeysPanel(): ReactNode {
                     keyId: banKeyId,
                     reason: banReason,
                     reasonLabel: reasonOption?.label,
+                    minutes: banMinutes,
                   },
                   {
                     onSuccess: () => {
@@ -539,6 +555,16 @@ export function ApiKeysPanel(): ReactNode {
             value={banReason}
             onValueChange={(value) => setBanReason(value)}
             options={API_KEY_BAN_REASONS.map((r) => ({ value: r.value, label: r.label }))}
+          />
+          <Select
+            label="Duration"
+            id="ban-duration-select"
+            value={banMinutes === null ? "null" : String(banMinutes)}
+            onValueChange={(value) => setBanMinutes(value === "null" ? null : Number(value))}
+            options={BAN_DURATION_CHOICES.map((choice) => ({
+              value: choice.minutes === null ? "null" : String(choice.minutes),
+              label: choice.label,
+            }))}
           />
         </div>
       </Dialog>

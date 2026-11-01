@@ -20,6 +20,8 @@ import type {
   SharedChildrenPageOptions,
 } from "../../persistence/stores/api-key-store";
 import {
+  BAN_DURATION_CHOICES,
+  DEFAULT_BAN_MINUTES,
   generateApiKeySecret,
   isDefaultGatewayApiKey,
   parseSharePopupImage,
@@ -784,6 +786,20 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
       const reason = request.reason.trim();
       if (reason.length === 0)
         throw new ConsoleDomainError("invalid_request", 400, "reason is required");
+      // Parse the duration choice. `null` is permanent; absent defaults to one
+      // hour. Anything not on the offered list is rejected rather than clamped —
+      // clamping would answer a request for 90 days with a week and report
+      // success.
+      const chosenMinutes = request.minutes === undefined ? DEFAULT_BAN_MINUTES : request.minutes;
+      const allowed = new Set(BAN_DURATION_CHOICES.map((choice) => choice.minutes));
+      if (!allowed.has(chosenMinutes)) {
+        throw new ConsoleDomainError(
+          "invalid_request",
+          400,
+          "Unsupported ban duration. Choose one of the offered durations.",
+        );
+      }
+      const bannedUntil = chosenMinutes === null ? null : new Date(Date.now() + chosenMinutes * 60_000);
       const current = await config.store.get(authorized.tenantId, keyId);
       if (!current || current.revokedAt !== undefined)
         throw new ConsoleDomainError("key_not_found", 404, "Key not found");
@@ -793,7 +809,7 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
           409,
           "Ban or revoke this key through its share parent",
         );
-      const banned = await config.store.ban(authorized.tenantId, keyId, reason);
+      const banned = await config.store.ban(authorized.tenantId, keyId, reason, bannedUntil);
       if (!banned) throw new ConsoleDomainError("key_not_found", 404, "Key not found");
       // A banned key must leave the auth cache for every process at once.
       invalidateApiKeyCache();
@@ -801,7 +817,7 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
         access: authorized,
         action: "api_key.banned",
         target: keyId,
-        detail: { reason },
+        detail: { reason, ...(bannedUntil === null ? { permanent: true } : { bannedUntil: bannedUntil.toISOString() }) },
       });
       const record = await config.store.get(authorized.tenantId, keyId);
       if (!record) throw new ConsoleDomainError("key_not_found", 404, "Key not found");
@@ -1004,7 +1020,13 @@ export function createApiKeyRoutes(config: ApiKeyConfig): AnyElysia {
     })
     .post(
       "/:keyId/ban",
-      { body: t.Object({ reason: t.String(), reasonLabel: t.Optional(t.String()) }) },
+      {
+        body: t.Object({
+          reason: t.String(),
+          reasonLabel: t.Optional(t.String()),
+          minutes: t.Optional(t.Union([t.Number({ minimum: 1 }), t.Null()])),
+        }),
+      },
       async ({ request, params, body, set }) => {
         try {
           return await factory.banKey(config.accessResolver(request), params.keyId, body);

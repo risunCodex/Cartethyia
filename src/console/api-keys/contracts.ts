@@ -104,6 +104,8 @@ export interface ApiKeyResponse {
   /** Ban state; see the schema columns for the contract. */
   readonly bannedAt?: string;
   readonly banReason?: string;
+  /** When the ban lifts on its own; absent means permanent. */
+  readonly bannedUntil?: string;
   readonly tokensConsumed: number;
 }
 /** Creation result; plaintext is returned only when a personal key is minted. */
@@ -132,10 +134,32 @@ export const API_KEY_BAN_REASONS: readonly { readonly value: string; readonly la
   { value: "other", label: "Other / custom" },
 ] as const;
 
+/**
+ * Ban durations the console offers, in whole minutes. `null` is permanent.
+ * Mirrored by the dashboard (`dashboard/src/lib/ban-durations.ts`) so the UI
+ * and the API agree on one list.
+ */
+export const BAN_DURATION_CHOICES: readonly { readonly minutes: number | null; readonly label: string }[] = [
+  { minutes: 60, label: "1 hour" },
+  { minutes: 6 * 60, label: "6 hours" },
+  { minutes: 12 * 60, label: "12 hours" },
+  { minutes: 24 * 60, label: "1 day" },
+  { minutes: 7 * 24 * 60, label: "7 days" },
+  { minutes: null, label: "Permanent" },
+];
+
+/** What a bare "ban this key" click uses: the shortest, most reversible choice. */
+export const DEFAULT_BAN_MINUTES: number = 60;
+
 /** Body accepted by the ban endpoint. */
 export interface BanApiKeyRequest {
   readonly reason: string;
   readonly reasonLabel?: string;
+  /**
+   * Ban duration in whole minutes from {@link BAN_DURATION_CHOICES}; `null`
+   * means permanent. Absent = {@link DEFAULT_BAN_MINUTES}.
+   */
+  readonly minutes?: number | null;
 }
 
 /** API-key route dependency boundary. */
@@ -427,6 +451,7 @@ export function sanitizeApiKeyResponse(record: ApiKeyRecord): ApiKeyResponse {
     ...(record.revokedAt === undefined ? {} : { revokedAt: record.revokedAt.toISOString() }),
     ...(record.bannedAt === undefined ? {} : { bannedAt: record.bannedAt.toISOString() }),
     ...(record.banReason === undefined ? {} : { banReason: record.banReason }),
+    ...(record.bannedUntil === undefined ? {} : { bannedUntil: record.bannedUntil.toISOString() }),
     tokensConsumed: record.tokensConsumed,
   };
 }

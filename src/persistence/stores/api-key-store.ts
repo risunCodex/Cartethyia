@@ -1,6 +1,6 @@
 // Persisted API-key store: the console API-key domain and gateway authentication both consume this boundary.
 
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { nextSortIndex, reorderSortIndex, type SortOrderDb } from "../sort-order";
 import { getDbHandle } from "../boot";
 import type { CartethyiaDatabase } from "../db-handle";
@@ -32,6 +32,18 @@ export interface SharedChildrenPage {
   readonly revoked: number;
   /** Family-wide `lifetime_tokens_consumed` sum, independent of the page. */
   readonly consumed: number;
+}
+
+/**
+ * SQL predicate: the key is not under an active ban. A ban is active while
+ * `banned_at` is set AND either `banned_until` is null (permanent) or still in
+ * the future — so a timed ban lapses on its own without a sweep.
+ */
+function notBannedSql(): SQL {
+  return or(
+    isNull(apiKeys.bannedAt),
+    and(isNotNull(apiKeys.bannedUntil), lte(apiKeys.bannedUntil, new Date())),
+  ) as SQL;
 }
 
 /** Persisted API key. Only its one-way hash authenticates; plaintext is never stored. */
@@ -78,6 +90,8 @@ export interface ApiKeyRecord {
   /** Ban state; see the schema column for the contract. */
   readonly bannedAt?: Date;
   readonly banReason?: string;
+  /** When the ban lifts on its own; null means permanent. */
+  readonly bannedUntil?: Date;
   readonly tokensConsumed: number;
 }
 
@@ -133,6 +147,7 @@ export interface ApiKeyPatch
     | "maxChildren"
     | "bannedAt"
     | "banReason"
+    | "bannedUntil"
   > {
   readonly keyHash?: string | null;
   readonly keyEncrypted?: Buffer | null;
@@ -155,6 +170,8 @@ export interface ApiKeyPatch
   /** Ban state; a ban also disables the key, unban clears both columns entirely. */
   readonly bannedAt?: Date | null;
   readonly banReason?: string | null;
+  /** When the ban lifts on its own; null (explicit) means permanent. */
+  readonly bannedUntil?: Date | null;
 }
 
 interface PopupFields {
@@ -256,10 +273,17 @@ export interface ApiKeyStore {
   update(tenantId: string, keyId: string, patch: ApiKeyPatch): Promise<ApiKeyRecord | undefined>;
   revoke(tenantId: string, keyId: string, revokedAt: Date): Promise<boolean>;
   /**
-   * Bans a key: records the operator's reason and disables the key. Returns
-   * false when the key is already revoked (a revoke is terminal).
+   * Bans a key: records the operator's reason and (optionally) an expiry.
+   * `bannedUntil` null means permanent; absent defaults the the caller's
+   * choice. Returns false when the key is already revoked (a revoke is
+   * terminal).
    */
-  ban(tenantId: string, keyId: string, reason: string): Promise<boolean>;
+  ban(
+    tenantId: string,
+    keyId: string,
+    reason: string,
+    bannedUntil?: Date | null,
+  ): Promise<boolean>;
   /** Unbans a key: clears the ban columns entirely — no metadata remains. */
   unban(tenantId: string, keyId: string): Promise<boolean>;
   remove(tenantId: string, keyId: string): Promise<boolean>;
@@ -331,6 +355,7 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
       ...(row.revokedAt ? { revokedAt: row.revokedAt } : {}),
       ...(row.bannedAt ? { bannedAt: row.bannedAt } : {}),
       ...(row.banReason ? { banReason: row.banReason } : {}),
+      ...(row.bannedUntil ? { bannedUntil: row.bannedUntil } : {}),
       tokensConsumed: row.lifetimeTokensConsumed,
     };
   }
@@ -642,11 +667,24 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
     });
   }
 
-  async ban(tenantId: string, keyId: string, reason: string): Promise<boolean> {
+  async ban(
+    tenantId: string,
+    keyId: string,
+    reason: string,
+    bannedUntil?: Date | null,
+  ): Promise<boolean> {
     return this.db.transaction(async (tx) => {
       const rows = await tx
         .update(apiKeys)
-        .set({ bannedAt: new Date(), banReason: reason, enabled: false })
+        .set({
+          bannedAt: new Date(),
+          banReason: reason,
+          // `banned_until` null = permanent. The key stays `enabled` as-is:
+          // the auth path refuses a banned key while `banned_at` is set and
+          // `banned_until` is null or future, so a timed ban lapses on its own
+          // without a sweep flipping `enabled` back.
+          ...(bannedUntil === undefined ? {} : { bannedUntil }),
+        })
         .where(
           and(
             eq(apiKeys.tenantId, tenantId),
@@ -661,11 +699,11 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
 
   async unban(tenantId: string, keyId: string): Promise<boolean> {
     return this.db.transaction(async (tx) => {
-      // Unban clears both ban columns entirely — no tombstone, no leftover
-      // reason. The key returns to its prior enabled state.
+      // Unban clears all three ban columns entirely — no tombstone, no leftover
+      // reason, no stale expiry. The key returns to its prior enabled state.
       const rows = await tx
         .update(apiKeys)
-        .set({ bannedAt: null, banReason: null, enabled: true })
+        .set({ bannedAt: null, banReason: null, bannedUntil: null, enabled: true })
         .where(
           and(
             eq(apiKeys.tenantId, tenantId),
@@ -702,7 +740,7 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
     const rows = await this.db
       .select()
       .from(apiKeys)
-      .where(and(eq(apiKeys.keyHash, hash), eq(apiKeys.enabled, true), isNull(apiKeys.revokedAt), isNull(apiKeys.bannedAt)))
+      .where(and(eq(apiKeys.keyHash, hash), eq(apiKeys.enabled, true), isNull(apiKeys.revokedAt), notBannedSql()))
       .limit(1);
     return rows[0];
   }
@@ -713,7 +751,7 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
     const rows = await this.db
       .select()
       .from(apiKeys)
-      .where(and(eq(apiKeys.id, keyId), eq(apiKeys.enabled, true), isNull(apiKeys.revokedAt), isNull(apiKeys.bannedAt)))
+      .where(and(eq(apiKeys.id, keyId), eq(apiKeys.enabled, true), isNull(apiKeys.revokedAt), notBannedSql()))
       .limit(1);
     return rows[0];
   }
@@ -773,6 +811,7 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
       revokedAt: date("revoked_at"),
       bannedAt: date("banned_at"),
       banReason: text("ban_reason"),
+      bannedUntil: date("banned_until"),
       keyPrefix: text("key_prefix"),
       keyEncrypted: raw["key_encrypted"] ?? null,
       notesTitle: text("notes_title"),

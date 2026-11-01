@@ -79,6 +79,7 @@ test("each backend has matching baseline and incremental migrations", () => {
     "0031_tenant_system_prompts.sql",
     "0032_add_provider_pool_accounts.sql",
     "0033_add_api_key_ban.sql",
+    "0034_add_api_key_ban_until.sql",
   ];
   expect(postgres).toEqual(expected);
   expect(sqlite).toEqual(expected);
