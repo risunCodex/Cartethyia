@@ -76,7 +76,9 @@ function validatePreset(value: unknown, scopeLabel: string): SystemPromptPreset 
   return value;
 }
 
-/** Validates one scope reference; preset ids must exist when provided. */
+/** Validates one scope reference; a preset id that does not exist is
+ * neutralized to `off` rather than rejected, so deleting a preset does not
+ * block saving a configuration that still references it. */
 function validateScopeRef(
   value: unknown,
   scopeLabel: string,
@@ -87,7 +89,7 @@ function validateScopeRef(
   }
   if (value.kind === "preset") {
     if (!presetIds.has(value.presetId)) {
-      throw new ConsoleDomainError("invalid_request", 400, `${scopeLabel} references an unknown preset`);
+      return { kind: "off" };
     }
     return value;
   }

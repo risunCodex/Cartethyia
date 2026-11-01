@@ -15,7 +15,7 @@ import { ProviderIcon } from "./ProviderIcon";
 import { useProviderModels, useProviders } from "../hooks/providers";
 import { useModelAliases, useModelCombos } from "../hooks/routing";
 import { useSystemPrompt, useUpdateSystemPrompt } from "../hooks/system-prompt";
-import { mergeBuiltinPresets } from "../data/builtin-prompts";
+import { mergeBuiltinPresets, BUILTIN_PRESET_BY_ID } from "../data/builtin-prompts";
 import { toast } from "../lib/toast";
 import { getErrorMessage } from "../data/api";
 import { isWrappedInjectionProvider } from "../../../src/console/system-prompt/contracts";
@@ -429,6 +429,9 @@ function PresetSection({
                     <Badge tone={preset.enabled ? "ok" : "default"} dot>
                       {preset.enabled ? "Active" : "Off"}
                     </Badge>
+                    {BUILTIN_PRESET_BY_ID[preset.id] !== undefined ? (
+                      <Badge tone="info">Built-in</Badge>
+                    ) : null}
                   </div>
                   <p className="mt-1 text-badge text-text-tertiary">
                     {preset.mode === "override" ? "Override" : "Append"} · {preset.text.length.toLocaleString()} chars
@@ -441,8 +444,12 @@ function PresetSection({
                     onChange={(next) => upsert({ ...preset, enabled: next })}
                     aria-label={`Toggle preset ${preset.name}`}
                   />
-                  <Button variant="ghost" size="icon" icon={<Pencil size={14} />} aria-label={`Edit preset ${preset.name}`} onClick={() => setEditing(preset)} />
-                  <Button variant="ghost" size="icon" icon={<Trash2 size={14} />} aria-label={`Delete preset ${preset.name}`} onClick={() => setConfirmDelete(preset)} />
+                  {BUILTIN_PRESET_BY_ID[preset.id] === undefined ? (
+                    <>
+                      <Button variant="ghost" size="icon" icon={<Pencil size={14} />} aria-label={`Edit preset ${preset.name}`} onClick={() => setEditing(preset)} />
+                      <Button variant="ghost" size="icon" icon={<Trash2 size={14} />} aria-label={`Delete preset ${preset.name}`} onClick={() => setConfirmDelete(preset)} />
+                    </>
+                  ) : null}
                 </div>
               </div>
               <p className="mt-2 line-clamp-2 whitespace-pre-wrap break-words text-badge leading-normal text-text-secondary">
