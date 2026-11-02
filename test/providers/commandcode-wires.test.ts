@@ -155,8 +155,8 @@ describe("commandcode static catalog", () => {
   test("every row dispatches to the CLI generate surface", () => {
     // The reference client sends all generation to `/alpha/generate` and does
     // not vary the path by the wire a model row declares, so no row may point
-    // at a `/provider/v1/<wire>` route. The wire family still decides how the
-    // body is shaped — only the endpoint is shared.
+    // at a `/provider/v1/<wire>` route. Catalog wire metadata does not change
+    // the proprietary CLI request or its NDJSON response.
     const paths = new Set(COMMANDCODE_MODELS.map((m) => m.endpointPath));
     expect(paths).toEqual(new Set([COMMANDCODE_GENERATE_PATH]));
   });

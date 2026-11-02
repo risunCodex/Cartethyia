@@ -22,6 +22,22 @@ providers and models.
 Do not invent capabilities, pricing, limits, or availability when upstream is
 silent. A catalog row is not proof that a model answers.
 
+## Commandcode Go and ZCode Start Plan
+
+- Go extends `commandcode`; generation uses `/alpha/generate` with the CLI
+  envelope and NDJSON, while discovery remains on the Provider API catalog.
+  Billing reads the organization from whoami before credits/subscriptions;
+  purchased/free balances are not capped by the monthly allowance.
+- `zcode-start` is distinct from the regular `zcode` Coding Plan. Preserve the
+  bearer login JWT, identity headers and three-block prompt fingerprint.
+- Start Plan grants carry exact `modelIds` from upstream `capabilities` and
+  `startsAt`; alternative live grants can serve the same model, but spent or
+  future grants never disable siblings or fund requests prematurely.
+- Gift claims require an explicit manual action or the default-off daily
+  opt-in. Codes0/1003/3007 mean claimed/already-claimed/CAPTCHA; unreadable
+  outcomes are errors, mixed results partial. Clear persisted and cached quota
+  after new grants. Never turn a claim failure into account auth invalidation.
+
 ## OAuth and account flows
 
 Redirect URIs must exactly match the allowlist. Refresh-only, device, browser,

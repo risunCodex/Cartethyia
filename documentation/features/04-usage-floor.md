@@ -34,6 +34,10 @@ before selection and admission:
 - No usable quota reading is unknown, not zero. It does not cross a configured
   floor, so the account remains eligible rather than being rejected on missing
   data.
+- A model-scoped grant only gates its listed model IDs. Alternative grants for
+  that model are usable when any live grant exceeds the floor; a spent sibling
+  model's grant does not exclude this candidate. Future or expired grants do
+  not fund requests. Account-wide windows still constrain every candidate.
 
 When a candidate is excluded, the router can try another account that serves
 the same model. If no candidate remains, the normal routing failure path

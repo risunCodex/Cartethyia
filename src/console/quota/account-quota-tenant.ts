@@ -14,6 +14,7 @@ import {
   getCachedQuotaEntries,
   getCachedQuotaEntry,
   invalidateQuotaCache,
+  invalidateQuotaCacheForAccount,
 } from "../../providers/quota/cache";
 import { readQuotaSnapshot, readQuotaSnapshots } from "../../providers/quota/snapshot";
 import {
@@ -49,6 +50,8 @@ import {
   type QoderNativeIdentityStore,
 } from "../../providers/integrations/qoder/qoder-native-identity-store";
 import { buddyAccountUid } from "../../providers/integrations/buddy/buddy-oauth-shared";
+import { claimZcodeGifts, type ZcodeGiftResult } from "../../providers/integrations/zcode-start-plan/gifts";
+import { ZCODE_START_PLAN_PROVIDER_ID } from "../../providers/integrations/zcode-start-plan/provider";
 import {
   supportsAccountReset,
   consumeAccountResetCredit,
@@ -993,6 +996,75 @@ export function registerAccountQuotaTenantRoutes(
           streakDays: result.streakDays,
         },
         message: checkinStateMessage(result),
+      };
+    })
+    // Gift grants are an explicit action, not a side effect of a quota read.
+    .post("/accounts/:id/claim-gifts", async ({ request, params, set }) => {
+      const access = requireTenantScope(accessResolver(request), "dashboard:write");
+      const rows = await db
+        .select()
+        .from(providerAccounts)
+        .where(
+          and(eq(providerAccounts.id, params.id), eq(providerAccounts.tenantId, access.tenantId)),
+        )
+        .limit(1);
+      const account = rows[0];
+      if (!account) {
+        set.status = 404;
+        return { error: `Account ${params.id} not found`, code: "not_found" };
+      }
+      if (account.providerId !== ZCODE_START_PLAN_PROVIDER_ID) {
+        set.status = 400;
+        return {
+          error: `Gift plans are only claimable for ${ZCODE_START_PLAN_PROVIDER_ID}`,
+          code: "gifts_unsupported",
+        };
+      }
+      let result: ZcodeGiftResult;
+      try {
+        const credential = await refreshDeps.resolveCredential(account.providerId as ProviderId, account.id);
+        const fetcher = networkBindingFactory
+          ? await dailyCheckinEgressForPass({ db, networkBindingFactory })(account.id, access.tenantId)
+          : globalThis.fetch;
+        result = await claimZcodeGifts({ accountId: account.id, credential, fetcher });
+      } catch {
+        set.status = 502;
+        return {
+          ok: false, status: 502,
+          data: { id: account.id, state: "error", claimed: [], detail: "Gift claim request failed" },
+          message: "Gift claim request failed", code: "gift_claim_failed",
+        };
+      }
+      if (result.claimed.length > 0) {
+        // Cold readers must not resurrect the balance from before the grant.
+        await db.update(providerAccounts).set({ quotaSnapshot: null }).where(
+          and(eq(providerAccounts.id, account.id), eq(providerAccounts.tenantId, access.tenantId)),
+        );
+        await invalidateQuotaCacheForAccount(account.id, redis);
+        await snapshotInvalidator?.invalidate();
+      }
+      if (result.state === "error") {
+        set.status = 502;
+        return {
+          ok: false,
+          status: 502,
+          data: { id: account.id, ...result },
+          message: result.detail ?? "Gift claim failed",
+          code: "gift_claim_failed",
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        data: { id: account.id, ...result },
+        message:
+          result.state === "nothing"
+            ? "No gift plan to claim"
+            : result.state === "claimed"
+              ? `Claimed ${result.claimed.join(", ")}`
+              : result.state === "already_claimed"
+                ? "Every gift plan was claimed before"
+                : (result.detail ?? "Claim it in the ZCode app"),
       };
     })
     .post("/accounts/:id/activity-report", async ({ request, params, set }) => {

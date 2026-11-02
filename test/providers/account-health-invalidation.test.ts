@@ -138,6 +138,55 @@ describe("model cooldown route snapshot invalidation", () => {
     // array form treats the whole string as one key.
     expect(row[0]?.modelCooldowns).toHaveProperty(["deepseek-v4.1-flash"]);
   });
+
+  test("ZCode ended trial cools only its model and preserves account eligibility", async () => {
+    const trial = await createWorld({ modelId: "glm-5.3", extraModels: ["glm-5.3-flash"] });
+    try {
+      await reportAttemptOutcome(getDb(), {
+        accountId: trial.accountId,
+        modelId: trial.modelId,
+        error: new GatewayError("invalid_request", 400,
+          "ZCode has no active limited quota for GLM-5.3-Trial", {}, "upstream"),
+        evidence: { origin: "upstream", scope: "provider", providerId: "zcode-start", statusCode: 400 },
+      });
+      const rows = await getDb().select({
+        status: providerAccounts.status, cooldownUntil: providerAccounts.cooldownUntil,
+        modelCooldowns: providerAccounts.modelCooldowns,
+      }).from(providerAccounts).where(eq(providerAccounts.id, trial.accountId));
+      expect(rows[0]?.status).toBe("active");
+      expect(rows[0]?.cooldownUntil).toBeNull();
+      const cooldowns = rows[0]?.modelCooldowns as Record<string, string>;
+      expect(Date.parse(cooldowns[trial.modelId] ?? "")).toBeGreaterThan(Date.now());
+      expect(cooldowns["glm-5.3-flash"]).toBeUndefined();
+    } finally {
+      await trial.cleanup();
+    }
+  });
+
+  test("Commandcode MODEL_NOT_IN_PLAN leaves the Go account active for other models", async () => {
+    const world = await createWorld({ modelId: "claude-haiku-4-5-20251001", extraModels: ["xiaomi/mimo-v2.6-flash"] });
+    try {
+      await reportAttemptOutcome(getDb(), {
+        accountId: world.accountId, modelId: world.modelId,
+        error: new GatewayError("authentication_failed", 403,
+          "MODEL_NOT_IN_PLAN: Claude Haiku 4.5 available in Pro and above plans or extra on demand usage",
+          { providerId: "commandcode", providerCode: "FORBIDDEN", credentialEvidence: true }, "upstream"),
+        evidence: { origin: "upstream", scope: "account", providerId: "commandcode", providerCode: "FORBIDDEN", statusCode: 403, credentialEvidence: true },
+      });
+      const rows = await getDb().select({
+        status: providerAccounts.status, cooldownUntil: providerAccounts.cooldownUntil,
+        modelCooldowns: providerAccounts.modelCooldowns, category: providerAccounts.lastErrorCategory,
+      }).from(providerAccounts).where(eq(providerAccounts.id, world.accountId));
+      expect(rows[0]?.status).toBe("active");
+      expect(rows[0]?.cooldownUntil).toBeNull();
+      expect(rows[0]?.category).toBe("model_unreachable");
+      const cooldowns = rows[0]?.modelCooldowns as Record<string, string>;
+      expect(Date.parse(cooldowns[world.modelId] ?? "")).toBeGreaterThan(Date.now());
+      expect(cooldowns["xiaomi/mimo-v2.6-flash"]).toBeUndefined();
+    } finally {
+      await world.cleanup();
+    }
+  });
 });
 
 describe("a queued upstream is capacity, not a dead credential", () => {

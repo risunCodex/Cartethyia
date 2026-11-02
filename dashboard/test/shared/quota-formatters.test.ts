@@ -31,6 +31,7 @@ import {
   friendlyQuotaError,
   paginateQuotaWindows,
   quotaBarTone,
+  quotaPillSummary,
   QUOTA_WINDOWS_PER_PAGE,
 } from "../../src/lib/format/quota";
 
@@ -691,5 +692,31 @@ describe("accountIdentity", () => {
       primary: "me@example.com",
       secondary: "Unnamed account",
     });
+  });
+});
+
+describe("quotaPillSummary grant and credit balances", () => {
+  test("uncapped purchased/free credits add to monthly credits without inventing a ceiling", () => {
+    const summary = quotaPillSummary([
+      { accounting: "pooled", remainingPercent: 20, remaining: 20, used: 80, limit: 100 },
+      { accounting: "pooled", remainingPercent: null, remaining: 150, limit: null },
+    ]);
+    expect(summary.remaining).toBe(170);
+    expect(summary.hasCredits).toBe(true);
+    expect(summary.text).toBe("170 left");
+    expect(summary.low).toBe(false);
+  });
+
+  test("future balances never fund a pill or hide live quota", () => {
+    const startsAt = fromNow(DAY);
+    const future = [
+      { accounting: "pooled" as const, remainingPercent: 100, remaining: 100, limit: 100, startsAt },
+      { accounting: "independent" as const, remainingPercent: 100, startsAt },
+    ];
+    expect(quotaPillSummary(future).text).toBeNull();
+    expect(quotaPillSummary([
+      ...future,
+      { accounting: "independent", remainingPercent: 30 },
+    ]).text).toBe("30% left");
   });
 });

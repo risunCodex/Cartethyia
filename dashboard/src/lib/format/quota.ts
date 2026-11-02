@@ -3,6 +3,11 @@ export interface QuotaBarTone {
   text: string;
 }
 
+/** Future entitlements are visible, but are not available quota yet. */
+export function quotaWindowNotStarted(window: { readonly startsAt?: string | null }): boolean {
+  return Boolean(window.startsAt && new Date(window.startsAt).getTime() > Date.now());
+}
+
 export function formatResetDistance(value: string | null, recurring = true): string {
   if (!value) return "";
   const remaining = new Date(value).getTime() - Date.now();
@@ -67,7 +72,7 @@ export interface QuotaPillSummary {
   readonly remaining: number;
   /** Absolute ceiling across pooled windows (sum of limits), when known. */
   readonly total: number;
-  /** Whether any pooled window reported a usable ceiling+balance. */
+  /** Whether any pooled window reported a usable balance. */
   readonly hasCredits: boolean;
   /** Lowest remaining percent across independent windows, when reported. */
   readonly lowestPercent: number | null;
@@ -95,6 +100,7 @@ export function quotaPillSummary(windows: readonly {
   readonly remaining?: number | null;
   readonly used?: number | null;
   readonly limit?: number | null;
+  readonly startsAt?: string | null;
 }[]): QuotaPillSummary {
   if (windows.length === 0) {
     return { remaining: 0, total: 0, hasCredits: false, lowestPercent: null, text: null, low: false };
@@ -102,8 +108,10 @@ export function quotaPillSummary(windows: readonly {
   let remaining = 0;
   let total = 0;
   let hasCredits = false;
+  let hasUnknownLimit = false;
   let lowestPercent: number | null = null;
   for (const window of windows) {
+    if (quotaWindowNotStarted(window)) continue;
     if (window.accounting === "pooled") {
       const limit =
         typeof window.limit === "number" && Number.isFinite(window.limit) ? window.limit : null;
@@ -118,6 +126,7 @@ export function quotaPillSummary(windows: readonly {
       if (left !== null) {
         remaining += Math.max(0, left);
         if (limit !== null) total += limit;
+        else hasUnknownLimit = true;
         hasCredits = true;
       }
       continue;
@@ -129,7 +138,7 @@ export function quotaPillSummary(windows: readonly {
   }
   let displayText: string | null = null;
   if (hasCredits) {
-    displayText = total > 0 ? `${trimNumber(remaining)} of ${trimNumber(total)}` : `${trimNumber(remaining)} left`;
+    displayText = total > 0 && !hasUnknownLimit ? `${trimNumber(remaining)} of ${trimNumber(total)}` : `${trimNumber(remaining)} left`;
   } else if (lowestPercent !== null) {
     displayText = `${Math.round(lowestPercent)}% left`;
   }

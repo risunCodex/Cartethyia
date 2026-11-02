@@ -8,6 +8,26 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- ZCode Start Plan as a separate `zcode-start` provider with device sign-in,
+  JWT import, model-scoped quota grants and activation/expiry times. Manual
+  gift claims distinguish claimed, already-claimed, CAPTCHA, partial and failed
+  outcomes. Daily automatic claims are off unless explicitly enabled with
+  `CARTETHYIA_ZCODE_AUTO_CLAIM=true` and skip disabled/cooling accounts.
+
+### Fixed
+
+- Commandcode Go uses the CLI generation envelope and NDJSON stream. Streamed
+  responses preserve buffered text, selected model identity and typed aborts.
+  Billing uses the account's organization and reports monthly credits,
+  purchased/free balances, five-hour/weekly limits and reset times separately.
+  A model entitlement refusal rests that model, not the valid account.
+- Spent or future Start Plan grants do not block unrelated models or fund
+  requests before activation. Claims refresh both cached and persisted quota.
+
 ## [2.7.5] - 2026-11-02
 
 ### Added
