@@ -50,6 +50,15 @@ all work with fully populated `input`.
 **Status.** Upstream/model known issue; not a Cartethyia bug. Monitor: if the
 model stops emitting `{}`, revisit the workaround.
 
+**Verification update (2026-11-02).** Re-tested with the `aisdk:` ai-sdk
+packages against `cb/deepseek-v4.1-flash` (cb/ds41) on the local gateway
+(`:12800`): a full 4-turn session on the **Anthropic wire**
+(`aisdk:@ai-sdk/anthropic`) ran native tools (`glob`, `read`, `write`) and
+shell (`dir`, `Get-Location; Write-Output; Get-Content`) — every call carried
+full arguments, no empty `input: {}` reproduced. Same result on the chat
+(`openai-compatible`) and Responses (`openai`) wires. The `{}` miss remains
+intermittent/upstream-specific rather than a stable property of this model.
+
 ---
 
 ## 2. Intermittent "Encrypted reasoning must remain a string artifact" on Responses surface
@@ -71,6 +80,13 @@ The failure is intermittent and appears to be a client/opencode quirk with the
 
 **Status.** opencode/client quirk; not a Cartethyia bug. Monitor: if it
 persists on later opencode versions, revisit.
+
+**Verification update (2026-11-02).** Re-tested the Responses surface with the
+`aisdk:@ai-sdk/openai` package against `cb/deepseek-v4.1-flash` on the local
+gateway: a full 4-turn session (glob/read/write/shell, one session) completed
+with no `Encrypted reasoning must remain a string artifact` error. The
+intermittent quirk did not reproduce in this session; keep monitoring on longer
+multi-turn flows.
 
 ---
 
