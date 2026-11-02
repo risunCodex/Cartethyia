@@ -59,6 +59,7 @@ export async function seedBundledModels(
           // Same three-valued rule for the inverse: the provider's directory
           // states the tier, so the flag is carried rather than derived.
           freeTier: definition.freeTier ?? null,
+          dialect: definition.dialect ?? null,
           source: "builtin",
           sourceUpdatedAt: now,
           enabled: true,
@@ -88,6 +89,7 @@ export async function seedBundledModels(
       cost: sql`excluded.cost`,
       proOnly: sql`excluded.pro_only`,
       freeTier: sql`excluded.free_tier`,
+      dialect: sql`excluded.dialect`,
       source: sql`'builtin'`,
       sourceUpdatedAt: sql`excluded.source_updated_at`,
     },

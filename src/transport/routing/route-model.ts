@@ -14,6 +14,8 @@ export interface RouteCandidate {
   readonly provider_id: string;
   readonly model_id: string;
   readonly wire_family: WireFamily;
+  /** Explicit wire dialect (from `models.dialect`), when set. Absent = resolver fallback. */
+  readonly dialect?: string;
   /**
    * Protocol shape of the model. `llm` (the default) flows through the
    * canonical surface pipeline; a non-`llm` model is dispatched by its native

@@ -461,6 +461,12 @@ export const models = pgTable(
      * provider did not state it, which is not the same as billed.
      */
     freeTier: boolean("free_tier"),
+    /**
+     * Explicit wire dialect for this row (nullable). Absent = resolver
+     * fallback (heuristic + family default). See
+     * `src/protocol/translation/dialect/`.
+     */
+    dialect: text("dialect"),
   },
   (table) => [
     uniqueIndex("models_provider_model_route_uidx").on(

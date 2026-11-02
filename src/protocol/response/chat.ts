@@ -16,6 +16,8 @@ import {
   parseOmpToolCallMarkup,
   type OmpTextToolCall,
 } from "./omp-tool-call-markup";
+import type { DialectPolicy } from "../translation/dialect/types";
+import { QwenToolCallScanner } from "../translation/dialect/qwen";
 
 
 export function mapChatStopReason(
@@ -237,10 +239,12 @@ export async function* decodeChatSseStream(
   body: ReadableStream<Uint8Array>,
   request: CanonicalRequest,
   signal?: AbortSignal,
+  options?: { readonly dialectPolicy?: DialectPolicy },
 ): AsyncIterable<CanonicalEvent> {
   let seq = 1;
   let finishReason: unknown;
   let rawUsage: Record<string, unknown> | undefined;
+  const inbandDialect = options?.dialectPolicy?.inband;
   // Last seen tool-call id (and name) per wire index. OpenAI streams the id
   // (and name) only on the first fragment of each call; later fragments carry
   // just `function.arguments`. Without this memory every continuation fragment
@@ -269,7 +273,13 @@ export async function* decodeChatSseStream(
   const reasoningMarkup =
     (request.tools?.length ?? 0) > 0 ? new OmpToolCallMarkupParser(declaredToolNames) : undefined;
   const dsmlMarkup =
-    (request.tools?.length ?? 0) > 0 ? new DsmlToolCallParser(declaredToolNames) : undefined;
+    (request.tools?.length ?? 0) > 0 && inbandDialect !== "qwen"
+      ? new DsmlToolCallParser(declaredToolNames)
+      : undefined;
+  const qwenMarkup =
+    (request.tools?.length ?? 0) > 0 && inbandDialect === "qwen"
+      ? new QwenToolCallScanner(declaredToolNames)
+      : undefined;
   yield {
     type: "response_start",
     sequence_number: seq++,
@@ -315,7 +325,7 @@ export async function* decodeChatSseStream(
           const raw = delta["content"] as string;
           const markup = contentMarkup?.push(raw);
           if (markup !== undefined) recoveredMarkupCalls.push(...markup.calls);
-          const recovered = dsmlMarkup?.push(markup?.text ?? raw);
+          const recovered = (qwenMarkup ?? dsmlMarkup)?.push(markup?.text ?? raw);
           const visible = recovered?.text ?? markup?.text ?? raw;
           const split = think.push(visible);
           if (split.reasoning.length > 0) {
@@ -500,7 +510,7 @@ export async function* decodeChatSseStream(
       }
     }
   }
-  const dsmlMarkupTail = dsmlMarkup?.flush();
+  const dsmlMarkupTail = (qwenMarkup ?? dsmlMarkup)?.flush();
   if (dsmlMarkupTail !== undefined) {
     if (dsmlMarkupTail.text.length > 0) {
       const split = think.push(dsmlMarkupTail.text);

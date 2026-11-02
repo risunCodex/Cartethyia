@@ -261,6 +261,8 @@ export interface ProviderDispatchTarget {
   readonly endpoint_path: string;
   readonly output_limit?: number | null;
   readonly capabilities: Readonly<Record<string, boolean>>;
+  /** Explicit wire dialect (from `models.dialect`), when set. Absent = resolver fallback. */
+  readonly dialect?: string;
 }
 
 /** Provider adapter boundary: canonical request/events in, no public HTTP routes. */

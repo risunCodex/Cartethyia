@@ -13,6 +13,8 @@ import {
 import { applyRouteUserAgent, type ProviderDispatchTarget, type ProviderId, type ProviderDispatchContext } from "../provider-contracts";
 import { BaseProviderAdapter } from "./base-adapter";
 import { encodeWireRequest, decodeWireResponse, decodeWireStream } from "../../protocol/registry";
+import { resolveDialect } from "../../protocol/translation/dialect/resolver";
+import type { DialectPolicy } from "../../protocol/translation/dialect/types";
 import { postUpstreamJson } from "../../protocol/upstream/post-json";
 import { GATEWAY_USER_AGENT } from "../operations/gateway-user-agent";
 import { resolvePromptCacheKey } from "../operations/session-resolution";
@@ -213,6 +215,12 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
     const wireFamily = candidate.wire_family;
     const effectiveRequest = this.config.prepareRequest?.(request) ?? request;
     const promptCacheKey = resolvePromptCacheKey(effectiveRequest, context);
+    const dialectPolicy: DialectPolicy = resolveDialect(
+      candidate.model_id,
+      candidate.provider_id,
+      wireFamily,
+      candidate.dialect,
+    );
     const payload = await encodeWireRequest(wireFamily, effectiveRequest, {
       supportsPromptCaching: this.config.supports_prompt_caching !== false,
       ...(promptCacheKey === undefined ? {} : { promptCacheKey }),
@@ -223,6 +231,7 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
       ...(context.image_clamp_max_bytes === undefined
         ? {}
         : { maxBytesOverride: context.image_clamp_max_bytes }),
+      dialectPolicy,
     });
     if (
       wireFamily !== "messages" &&
@@ -373,7 +382,10 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
           "upstream",
         );
       }
-      yield* decodeWireStream(wireFamily, res.body, request, { signal: context.abort_signal });
+      yield* decodeWireStream(wireFamily, res.body, request, {
+        signal: context.abort_signal,
+        dialectPolicy: resolveDialect(candidate.model_id, candidate.provider_id, wireFamily, candidate.dialect),
+      });
     } else {
       // A streaming request answered with a non-SSE body is a provider
       // protocol violation, and the body is often an error envelope or a

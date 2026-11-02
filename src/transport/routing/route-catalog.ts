@@ -246,6 +246,7 @@ interface MergedModelRow {
   providerId: string;
   modelId: string;
   wireFamily: WireFamily;
+  dialect?: string | null;
   serviceKind: ServiceKind;
   endpointPath: string;
   modalities: unknown;
@@ -270,6 +271,7 @@ function mergeModelCatalog(
       providerId: row.providerId,
       modelId: row.modelId,
       wireFamily: row.wireFamily as WireFamily,
+      ...(row.dialect === null ? {} : { dialect: row.dialect }),
       serviceKind: row.serviceKind as ServiceKind,
       endpointPath: row.endpointPath,
       modalities: row.modalities,
@@ -309,6 +311,7 @@ const MODEL_COLUMNS = {
   providerId: models.providerId,
   modelId: models.modelId,
   wireFamily: models.wireFamily,
+  dialect: models.dialect,
   serviceKind: models.serviceKind,
   endpointPath: models.endpointPath,
   modalities: models.modalities,
@@ -721,6 +724,7 @@ class RouteCatalogRepository {
                 provider_id: model.providerId,
                 model_id: model.modelId,
                 wire_family: model.wireFamily as WireFamily,
+                ...(model.dialect == null ? {} : { dialect: model.dialect }),
                 service_kind: model.serviceKind,
                 endpoint: model.endpointPath,
                 ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
@@ -761,6 +765,7 @@ class RouteCatalogRepository {
                 provider_id: model.providerId,
                 model_id: model.modelId,
                 wire_family: model.wireFamily as WireFamily,
+                ...(model.dialect == null ? {} : { dialect: model.dialect }),
                 service_kind: model.serviceKind,
                 endpoint: model.endpointPath,
                 ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
@@ -790,6 +795,7 @@ class RouteCatalogRepository {
           provider_id: model.providerId,
           model_id: model.modelId,
           wire_family: model.wireFamily as WireFamily,
+          ...(model.dialect == null ? {} : { dialect: model.dialect }),
           service_kind: model.serviceKind,
           endpoint: model.endpointPath,
           ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
@@ -833,6 +839,7 @@ class RouteCatalogRepository {
           provider_id: model.providerId,
           model_id: model.modelId,
           wire_family: model.wireFamily as WireFamily,
+          ...(model.dialect == null ? {} : { dialect: model.dialect }),
           service_kind: model.serviceKind,
           endpoint: model.endpointPath,
           ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),

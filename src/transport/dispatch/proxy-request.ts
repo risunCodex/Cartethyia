@@ -240,6 +240,7 @@ export async function handleProviderProxyRequest(
         ...(candidate.output_limit == null ? {} : { output_limit: candidate.output_limit }),
         capabilities: candidate.capability_profile,
         user_agent: candidate.user_agent,
+        ...(candidate.dialect === undefined ? {} : { dialect: candidate.dialect }),
       };
       const candidateRequest =
         candidate.model_id === dispatchRequest.model

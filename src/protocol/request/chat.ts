@@ -8,6 +8,8 @@ import { isWebSearchTool } from "../../protocol/translation/search";
 import { pickWireSupportedControls } from "../../protocol/translation/capabilities";
 import { normalizeWireMaxTokens } from "../../protocol/translation/normalize";
 import { resolveWireMaxTokens } from "../../protocol/translation/quirks";
+import { DEFAULT_DIALECT_POLICIES } from "../../protocol/translation/dialect/rules";
+import type { DialectPolicy } from "../../protocol/translation/dialect/types";
 import {
   clampReasoningEffort,
   resolveSupportedReasoningEfforts,
@@ -16,6 +18,9 @@ import { isClaudeBillingHeaderText, resolveImageSource } from "../codecs";
 import { resolvePromptCacheKey } from "../../providers/operations/session-resolution";
 import { reasoningEffortFromIntent } from "../../protocol/reasoning";
 import { parseChatResponseToEvents, decodeChatSseStream } from "../response/chat";
+
+/** Fallback when no resolved policy is supplied — today's exact behavior. */
+const DEFAULT_CHAT_DIALECT_POLICY: DialectPolicy = DEFAULT_DIALECT_POLICIES.openai;
 
 /**
  * OpenAI `input_audio.format` accepts only the discrete ids `wav`/`mp3`, never a
@@ -182,15 +187,29 @@ export function canonicalToChatPayload(
     readonly tokenLimitField?: "max_tokens" | "max_completion_tokens";
     readonly maxOutputTokens?: number;
     readonly promptCacheKey?: string;
+    readonly dialectPolicy?: DialectPolicy;
   } = {},
 ): Record<string, unknown> {
+  const policy = options.dialectPolicy ?? DEFAULT_CHAT_DIALECT_POLICY;
   const supportsPromptCaching = options.supportsPromptCaching ?? true;
-  const tokenLimitField = options.tokenLimitField ?? "max_tokens";
+  const tokenLimitField = options.tokenLimitField ?? policy.maxTokensField;
+  const reasoningField = policy.reasoningContentField;
+  const carryReasoning = (has: boolean, text: string): Record<string, unknown> =>
+    has && reasoningField !== undefined ? { [reasoningField]: text } : {};
   const messages: Array<Record<string, unknown>> = [];
+  const systemTexts: string[] = [];
   if (request.system?.length) {
     for (const p of request.system) {
-      if (p.kind === "text" && !isClaudeBillingHeaderText(p.text))
-        messages.push({ role: "system", content: p.text });
+      if (p.kind === "text" && !isClaudeBillingHeaderText(p.text)) systemTexts.push(p.text);
+    }
+  }
+  if (systemTexts.length > 0) {
+    if (policy.supportsMultipleSystemMessages) {
+      for (const text of systemTexts) messages.push({ role: "system", content: text });
+    } else {
+      // Strict chat templates (Qwen Portal / Alibaba / MiniMax) accept a single
+      // system message; join the canonical system parts into one.
+      messages.push({ role: "system", content: systemTexts.join("\n") });
     }
   }
   if (request.instructions?.length) {
@@ -217,6 +236,12 @@ export function canonicalToChatPayload(
         (c): c is Extract<typeof c, { kind: "text" }> => c.kind === "text",
       );
       const content = textParts.length ? textParts.map((c) => c.text).join("\n") : null;
+      // DeepSeek V4 requires the assistant content field to be present on a
+      // tool-call turn; a null content would be rejected verbatim.
+      const effectiveContent =
+        policy.requiresAssistantContentForToolCalls && (content === null || content.length === 0)
+          ? ""
+          : content;
       // Reasoning must survive on a tool-call turn, not just on plain assistant
       // turns. Providers in thinking mode require the previous turn's reasoning
       // to be replayed, and the tool-call turn is exactly where a thinking
@@ -237,9 +262,9 @@ export function canonicalToChatPayload(
       const hasReasoning = m.content.some((c) => c.kind === "reasoning");
       messages.push({
         role: "assistant",
-        content,
+        content: effectiveContent,
         tool_calls: toolCalls,
-        ...(hasReasoning ? { reasoning_content: reasoningContent } : {}),
+        ...carryReasoning(hasReasoning, reasoningContent),
       });
     } else if (m.role === "tool") {
       for (const p of m.content) {
@@ -332,9 +357,7 @@ export function canonicalToChatPayload(
         messages.push({
           role: m.role,
           content: parts,
-          ...(m.role === "assistant" && hasReasoning
-            ? { reasoning_content: reasoningContent }
-            : {}),
+          ...carryReasoning(m.role === "assistant" && hasReasoning, reasoningContent),
         });
       } else {
         // A user turn whose toolResult parts were all folded out above has
@@ -374,7 +397,7 @@ export function canonicalToChatPayload(
             messages.push({
               role: "assistant",
               content: "",
-              reasoning_content: reasoningContent,
+              ...carryReasoning(true, reasoningContent),
             });
             continue;
           }
@@ -401,9 +424,7 @@ export function canonicalToChatPayload(
         messages.push({
           role: m.role,
           content,
-          ...(m.role === "assistant" && hasReasoning
-            ? { reasoning_content: reasoningContent }
-            : {}),
+          ...carryReasoning(m.role === "assistant" && hasReasoning, reasoningContent),
         });
       }
     }
@@ -458,7 +479,7 @@ export function canonicalToChatPayload(
       };
     });
   }
-  if (request.tool_choice) {
+  if (request.tool_choice && policy.supportsToolChoice) {
     if (typeof request.tool_choice === "object" && request.tool_choice.type === "allowed_tools") {
       payload["tool_choice"] = {
         type: "allowed_tools",
@@ -489,6 +510,11 @@ export function canonicalToChatPayload(
       resolveSupportedReasoningEfforts(request.model, "chat"),
     );
     if (effort !== undefined) payload["reasoning_effort"] = effort;
+    // Qwen chat templates select thinking with `enable_thinking` (plus optional
+    // `thinking_budget`) instead of `reasoning_effort`.
+    if (policy.thinkingFormat === "qwen" && effort !== undefined) {
+      payload["enable_thinking"] = true;
+    }
   }
   // Stream controls the caller asked for are forwarded upstream so a
   // pass-through provider can honor them (the local encoder honors them too).

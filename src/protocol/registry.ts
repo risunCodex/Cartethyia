@@ -1,4 +1,5 @@
 import type { CanonicalEvent, CanonicalRequest, WireFamily } from "./canonical-model";
+import type { DialectPolicy } from "./translation/dialect/types";
 
 export interface CodecContext {
   readonly isOAuth?: boolean;
@@ -13,6 +14,11 @@ export interface CodecContext {
    * deployment default; only wire encoders that clamp images read it.
    */
   readonly maxBytesOverride?: number;
+  /**
+   * Resolved wire dialect (see `translation/dialect`). Absent = the codec's
+   * own default behavior (today's exact bytes).
+   */
+  readonly dialectPolicy?: DialectPolicy;
 }
 
 /**
@@ -27,7 +33,11 @@ type CodecModule =
       readonly family: "messages";
       readonly encodeWireRequest: (
         request: CanonicalRequest,
-        options?: { isOAuth?: boolean },
+        options?: {
+          readonly isOAuth?: boolean;
+          readonly maxBytesOverride?: number;
+          readonly dialectPolicy?: DialectPolicy;
+        },
       ) => Record<string, unknown>;
       readonly decodeWireResponse: (
         json: Record<string, unknown>,
@@ -48,6 +58,7 @@ type CodecModule =
           readonly supportsPromptCaching?: boolean;
           readonly tokenLimitField?: "max_tokens" | "max_completion_tokens";
           readonly promptCacheKey?: string;
+          readonly dialectPolicy?: DialectPolicy;
         },
       ) => Record<string, unknown>;
       readonly decodeWireResponse: (
@@ -58,6 +69,7 @@ type CodecModule =
         body: ReadableStream<Uint8Array>,
         request: CanonicalRequest,
         signal?: AbortSignal,
+        options?: { readonly dialectPolicy?: DialectPolicy },
       ) => AsyncIterable<CanonicalEvent>;
     }
   | {
@@ -67,6 +79,7 @@ type CodecModule =
         options?: {
           readonly supportsPromptCaching?: boolean;
           readonly promptCacheKey?: string;
+          readonly dialectPolicy?: DialectPolicy;
         },
       ) => Record<string, unknown>;
       readonly decodeWireResponse: (
@@ -148,6 +161,7 @@ export async function encodeWireRequest(
       ...(context?.maxBytesOverride === undefined
         ? {}
         : { maxBytesOverride: context.maxBytesOverride }),
+      ...(context?.dialectPolicy === undefined ? {} : { dialectPolicy: context.dialectPolicy }),
     });
   }
   if (codec.family === "chat") {
@@ -164,6 +178,7 @@ export async function encodeWireRequest(
       ...(context?.promptCacheKey === undefined
         ? {}
         : { promptCacheKey: context.promptCacheKey }),
+      ...(context?.dialectPolicy === undefined ? {} : { dialectPolicy: context.dialectPolicy }),
     });
   }
   return codec.encodeWireRequest(request, {
@@ -173,6 +188,7 @@ export async function encodeWireRequest(
     ...(context?.promptCacheKey === undefined
       ? {}
       : { promptCacheKey: context.promptCacheKey }),
+    ...(context?.dialectPolicy === undefined ? {} : { dialectPolicy: context.dialectPolicy }),
   });
 }
 
@@ -204,6 +220,12 @@ export function decodeWireStream(
       // The Anthropic decoder does not take the canonical request: it rebuilds
       // its state from the SSE frames alone.
       yield* codec.decodeWireStream(body, context?.signal, context?.isOAuth ?? false);
+      return;
+    }
+    if (codec.family === "chat") {
+      yield* codec.decodeWireStream(body, request, context?.signal, {
+        ...(context?.dialectPolicy === undefined ? {} : { dialectPolicy: context.dialectPolicy }),
+      });
       return;
     }
     yield* codec.decodeWireStream(body, request, context?.signal);

@@ -9,6 +9,7 @@
  * back to the prebuilt base catalog; capability does not — see `defineModel`.
  */
 import type { ServiceKind, WireFamily } from "../protocol/canonical-model";
+import type { DialectId } from "../protocol/translation/dialect/types";
 import { modelsDevCatalog } from "./discovery/models-dev-catalog";
 
 /** Billing metadata for one provider model. */
@@ -55,6 +56,11 @@ export interface ModelDefinition {
   readonly reasoningEfforts?: readonly string[];
   readonly toolCall: boolean;
   readonly cost: ModelCostDefinition;
+  /**
+   * Explicit wire dialect for this row. Absent = resolver fallback (heuristic
+   * + family default) — see `src/protocol/translation/dialect/`.
+   */
+  readonly dialect?: DialectId;
   /**
    * Whether the provider serves this row on a free plan tier.
    *
@@ -186,6 +192,8 @@ export interface ModelHelperRow {
   readonly freeTier?: boolean;
   /** Whether the provider refuses this row on a free plan. See `ModelDefinition.proOnly`. */
   readonly proOnly?: boolean;
+  /** Explicit wire dialect override for this row. See `ModelDefinition.dialect`. */
+  readonly dialect?: DialectId;
 }
 
 function defaultEndpoint(wireFamily: ModelDefinition["wireFamily"]): string {
@@ -287,6 +295,7 @@ export function defineModel(row: ModelHelperRow): ModelDefinition {
     cost,
     ...(row.freeTier === undefined ? {} : { freeTier: row.freeTier }),
     ...(row.proOnly === undefined ? {} : { proOnly: row.proOnly }),
+    ...(row.dialect === undefined ? {} : { dialect: row.dialect }),
     ...(limitsEstimated ? { limitsEstimated: true } : {}),
   };
 }
