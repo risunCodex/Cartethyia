@@ -12,6 +12,7 @@ import {
 } from "../../../transport/failure-policy";
 import { GatewayError } from "../../../protocol/gateway-error";
 import { resolveImageSource } from "../../../protocol/codecs";
+import { reasoningEffortFromIntent } from "../../../protocol/reasoning";
 import type {
   CanonicalEvent,
   CanonicalRequest,
@@ -28,7 +29,7 @@ import type { ModelDefinition } from "../../provider-model-definition";
 import { parseQoderOAuthState } from "./qoder-oauth";
 import { getQoderVersion } from "../../operations/client-versions";
 import { abortGatewayError, createUpstreamDeadlineLifecycle } from "../../operations/upstream-deadline";
-import { qoderMachineOs } from "../../operations/cli-platform";
+import { qoderMachineOs, qoderMachineHostname } from "../../operations/cli-platform";
 import { qoderIdeChatUrl, qoderInferenceCandidates, QODER_CHAT_PATH, QODER_REALMS, type QoderRealm } from "./qoder-realm";
 import {
   QODER_CN_MODEL_CONFIGS,
@@ -459,9 +460,26 @@ function qoderEnvelopeMessage(rec: Record<string, unknown>): string {
 function qoderEnvelopeToFrames(data: string): Array<{ event: string | null; data: string }> {
   if (data === "[DONE]") return [{ event: null, data: "[DONE]" }];
   let envelope: unknown;
+  // The IDE surface sometimes embeds literal newlines inside JSON string
+  // values (e.g. the raw_usage event carries keys like
+  // `"data_policy_preferre\n\nnd_count"`). Those bytes are not valid JSON, so
+  // the first parse fails; when it does, salvage the event by escaping the
+  // raw newlines inside string values and parse again. The repaired text is
+  // also what the direct-chunk branch hands to the chunk parser below, so its
+  // own `JSON.parse` succeeds too.
+  let repaired = data;
   try {
     envelope = JSON.parse(data);
   } catch {
+    const attempted = escapeJsonRawNewlines(data);
+    if (attempted !== data) {
+      try {
+        envelope = JSON.parse(attempted);
+        repaired = attempted;
+      } catch {
+        envelope = undefined;
+      }
+    }
   }
   if (typeof envelope !== "object" || envelope === null || Array.isArray(envelope)) return [];
   const rec = envelope as Record<string, unknown>;
@@ -505,9 +523,59 @@ function qoderEnvelopeToFrames(data: string): Array<{ event: string | null; data
   if (body === "[DONE]") return [{ event: null, data: "[DONE]" }];
   if (typeof body === "string") return [{ event: null, data: body.replace(/\r?\n/g, "") }];
   // Direct OpenAI chunk (IDE surface): no envelope body, but a `choices` array
-  // is present. Pass the raw data through so the chunk parser sees it.
-  if (Array.isArray(rec["choices"])) return [{ event: null, data }];
+  // is present. Pass the (repaired) raw data through so the chunk parser sees
+  // it.
+  if (Array.isArray(rec["choices"])) return [{ event: null, data: repaired }];
   return [];
+}
+
+/**
+ * Escapes raw newline bytes that appear inside JSON string values.
+ *
+ * The IDE surface emits `data:` events whose JSON payload contains literal
+ * newlines inside strings (the terminal `raw_usage` event carries keys like
+ * `"data_policy_preferre\n\nnd_count"`). `JSON.parse` rejects those bytes, so
+ * before parsing we rewrite each raw `\n` found inside a string to the two
+ * characters `\n`. Bytes outside strings (whitespace, structural separators)
+ * are left untouched.
+ */
+function escapeJsonRawNewlines(data: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < data.length; i += 1) {
+    const ch = data[i]!;
+    if (inString) {
+      if (escaped) {
+        out += ch;
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        out += ch;
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+        out += ch;
+        continue;
+      }
+      if (ch === "\n" || ch === "\r") {
+        out += "\\n";
+        continue;
+      }
+      out += ch;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
 }
 
 function qoderStableHash(prefix: string, ...parts: string[]): string {
@@ -910,14 +978,26 @@ export function buildQoderRequest(
   const latestUserText = typeof latestUserMessage?.["content"] === "string" ? (latestUserMessage["content"] as string) : "";
   const maxTokens = qoderRequestedMaxTokens(request, modelConfig);
   const reasoning = modelConfig.is_reasoning === true;
+  // 1:1 with the IDE worker's `FTn` legacy builder, which sends reasoning
+  // effort as a top-level camelCase field (`reasoningEffort`), derived from
+  // the canonical intent when one is present. Omitted entirely when the
+  // caller asked for no reasoning, matching the reference's conditional send.
+  const reasoningEffort = reasoningEffortFromIntent(request.reasoning);
   const sessionId = qoderStableHash("qoder-session", auth.userId, modelId);
   const recordId = qoderStableRecordId(modelId, allMessages, maxTokens);
   return {
+    // 1:1 with the IDE worker's `FTn` legacy request builder, which always
+    // sends a top-level `model` equal to the resolved roster key (falling
+    // back to "auto" only when no key is known). The upstream honours
+    // `model_config.key` for actual dispatch and echoes a fixed "auto" in
+    // stream chunks, but the field is part of the wire shape the IDE sends.
+    model: modelId,
     request_id: randomUUID(),
     request_set_id: recordId,
     chat_record_id: recordId,
     session_id: sessionId,
     stream: true,
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
     ...(MODERN_PROFILE.emptyAliyunUserType ? { aliyun_user_type: "" } : {}),
     chat_task: "FREE_INPUT",
     is_reply: true,
@@ -1023,7 +1103,16 @@ export function buildQoderIdeRequest(
   };
 }
 
-/** Identity headers for the modern model-server surface (plain bearer). */
+/**
+ * Identity headers for the modern model-server surface (plain bearer).
+ *
+ * Mirrors the desktop IDE's `openResponse` exactly: the IDE sends the five
+ * OpenAI-surface headers (Authorization, Content-Type, Accept, X-Request-ID,
+ * X-Session-ID) and the global client-identity interceptor adds Cosy-Version,
+ * Cosy-ClientType, Cosy-MachineOS, and Cosy-MachineHostname (for infer-sse
+ * requests). It does NOT send Cosy-MachineId / Cosy-MachineToken /
+ * Cosy-MachineType on this surface, so neither do we.
+ */
 function qoderIdeHeaders(auth: QoderAuth, version: string): Record<string, string> {
   return {
     Authorization: `Bearer ${auth.securityOauthToken}`,
@@ -1034,10 +1123,7 @@ function qoderIdeHeaders(auth: QoderAuth, version: string): Record<string, strin
     "Cosy-Version": version,
     "Cosy-ClientType": "5",
     "Cosy-MachineOS": qoderMachineOs(),
-    "Cosy-MachineHostname": "DESKTOP-QODER",
-    "Cosy-MachineId": auth.machineId,
-    "Cosy-MachineToken": auth.machineId,
-    "Cosy-MachineType": "5",
+    "Cosy-MachineHostname": qoderMachineHostname(),
   };
 }
 
@@ -1055,6 +1141,24 @@ async function callQoderIde(
     body: JSON.stringify(body),
     signal,
   });
+}
+
+/**
+ * True when the modern model-server surface refused the request on entitlement
+ * grounds, meaning a legacy-surface fallback is worth trying.
+ *
+ * The upstream's refusal envelope is `{"code":116,"error":"quota exceeded"}`
+ * on HTTP 402. The IDE's own error set classifies 116 as a quota/entitlement
+ * failure (not an auth error), and the gRPC surface reports the same code as
+ * status 13. Only these are fallback-class; a 401/403 or a model-level error
+ * means the same refusal would happen on the legacy surface, so the dispatch
+ * should surface the modern error rather than wrap it in a fallback.
+ */
+function qoderIdeEntitlementRefused(response: Response): boolean {
+  // The upstream answers the modern surface with HTTP 402 + `{"code":116}` for
+  // free-tier accounts. Status alone is the signal; the body is left intact for
+  // `mapUpstreamHttpError` to surface if the fallback also fails.
+  return response.status === 402;
 }
 
 // Stream transformation — decode SSE, unwrap COSY envelope, map OpenAI chat chunks to CanonicalEvent
@@ -1356,10 +1460,17 @@ interface QoderAdapterOptions {
    * Which chat surface to dispatch on.
    *
    * `ide` (default) uses the modern model-server surface
-   * (`/model/v1/chat/completions`, plain bearer, OpenAI-shaped chunks): it
-   * streams immediately. The legacy `cosy` surface (`/algo/.../agent_chat_generation`)
-   * answers `10605 isQueued` and parks requests in a server queue, so it is a
-   * fallback, not a default.
+   * (`/model/v1/chat/completions`) — the wire the IDE/QoderWake actually
+   * speaks, echoes the real model key, and carries 1M context + xhigh
+   * reasoning. When that surface answers an entitlement refusal (HTTP 402 /
+   * `{"code":116,"error":"quota exceeded"}`, seen on free-tier accounts),
+   * dispatch falls back to the legacy COSY surface
+   * (`/algo/.../agent_chat_generation`), which streams with the same
+   * credential. Live verification (2026-11-02): the modern surface answers
+   * 116 for free-tier accounts that stream fine over COSY, while serial
+   * accounts stream on the modern surface with the real model echoed.
+   *
+   * `cosy` forces only the legacy surface (the pre-fallback behavior).
    */
   readonly surface?: "ide" | "cosy";
 }
@@ -1448,19 +1559,26 @@ class QoderAdapter implements ProviderAdapter {
       // a CN credential to `*.qoder.sh` is refused outright. The host order
       // follows the token kind: job tokens (`jt-...`) belong on `api2`, which
       // is the only intl host that serves them (`api3` answers "Login expired").
-      const url =
-        candidate.endpoint_path && candidate.endpoint_path.startsWith("http")
-          ? candidate.endpoint_path
-          : this.surface === "ide"
-            ? qoderIdeChatUrl(this.realm)
-            : `${qoderInferenceCandidates(this.realm, auth.securityOauthToken)[0] ?? ""}${QODER_CHAT_PATH}`;
 
-      // The modern IDE surface streams immediately and needs no COSY signing;
-      // the legacy COSY surface is kept as an explicit fallback.
-      const response =
-        this.surface === "ide"
-          ? await callQoderIde(url, buildQoderIdeRequest(modelId, request, modelConfig, auth, this.realm, version), auth, lifecycle.signal, fetcher, version)
-          : await callQoder(url, buildQoderRequest(modelId, request, modelConfig, auth, this.realm), modelId, auth, lifecycle.signal, fetcher, version);
+      // The modern `ide` surface streams immediately, needs no COSY signing,
+      // and echoes the real model key — it is the default. When it refuses the
+      // account on entitlement grounds (HTTP 402 / code 116, seen on free-tier
+      // accounts), fall back to the legacy COSY surface, which streams with the
+      // same credential. A non-entitlement failure (401/403/model error) is
+      // surfaced as-is: it would fail the same way on the legacy surface.
+      const ideUrl = candidate.endpoint_path?.startsWith("http") ? candidate.endpoint_path : qoderIdeChatUrl(this.realm);
+      const cosyUrl = candidate.endpoint_path?.startsWith("http")
+        ? candidate.endpoint_path
+        : `${qoderInferenceCandidates(this.realm, auth.securityOauthToken)[0] ?? ""}${QODER_CHAT_PATH}`;
+      const ideRequest = () =>
+        callQoderIde(ideUrl, buildQoderIdeRequest(modelId, request, modelConfig, auth, this.realm, version), auth, lifecycle.signal, fetcher, version);
+      const cosyRequest = () =>
+        callQoder(cosyUrl, buildQoderRequest(modelId, request, modelConfig, auth, this.realm), modelId, auth, lifecycle.signal, fetcher, version);
+      let response =
+        this.surface === "ide" ? await ideRequest() : await cosyRequest();
+      if (!response.ok && this.surface === "ide" && qoderIdeEntitlementRefused(response)) {
+        response = await cosyRequest();
+      }
       if (!response.ok) throw await mapUpstreamHttpError(response, "qoder");
       if (!response.body) throw new GatewayError("platform_unavailable", 502, "Qoder returned empty body (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
       // Headers arrived: the pre-stream deadline has served its purpose.

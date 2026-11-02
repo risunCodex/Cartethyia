@@ -26,6 +26,7 @@ or foundational notes stay at this root.
 | `opencode/` | OpenCode free-tier wire/gate/sentinel + egress/TLS measurements (merged), desktop 2.2.5 binary evidence | 2 files |
 | `codebuddy/` | CodeBuddy intl chat dispatch headers + Turing device identity/binding (incl. archived reverse note) | 3 files |
 | `cursor/` | Cursor Run protocol + entitlement | 1 file |
+| `grok/` | Grok Build CLI 1.0.70 binary unpack — endpoint, headers, payload, quota | 1 file |
 
 ## Root notes
 
@@ -81,3 +82,9 @@ or foundational notes stay at this root.
 | Date | Note |
 |---|---|
 | 2026-10-20 | [Run protocol + entitlement evidence](cursor/2026-10-20-cursor-run-protocol.md) |
+
+## Grok findings (`grok/`)
+
+| Date | Note |
+|---|---|
+| 2026-11-02 | [Grok Build CLI 1.0.70 binary unpack — endpoint, headers, payload, quota](grok/2026-11-02-grok-build-1.0.70-unpack.md) |

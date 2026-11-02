@@ -7,6 +7,7 @@ import {
   grokHeaderRequestsWindow,
   grokHeaderWindow,
   GROK_FREE_USAGE_EXHAUSTED,
+  GROK_SPENDING_LIMIT_EXHAUSTED,
   parseGrokFreeUsageVerdict,
   readGrokRateLimitHeaders,
 } from "./grok-ratelimit";
@@ -31,10 +32,10 @@ const GRPC_EMPTY_FRAME = new Uint8Array([0, 0, 0, 0, 0]);
  */
 const PROBE_URL = "https://cli-chat-proxy.grok.com/v1/responses";
 const PROBE_BODY = {
-  model: "grok-4.6",
-  stream: false,
-  max_output_tokens: 1,
-  input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }],
+  model: "grok-4.7",
+  stream: true,
+  max_output_tokens: 256,
+  input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "Hi" }] }],
 };
 
 /**
@@ -194,10 +195,21 @@ async function probeRateLimit(
       const verdict = parseGrokFreeUsageVerdict(parsePayload(body), body);
       authoritative = verdict ? grokAuthoritativeWindow(verdict) : null;
       note = GROK_FREE_USAGE_EXHAUSTED;
+    } else if (response.status === 402) {
+      // A 402 names a spend/entitlement wall (e.g.
+      // `personal-team-blocked:spending-limit`), not a reading failure. The
+      // account cannot serve, so it is a refusal — but there is no token
+      // allowance to display, so we carry the note without a window.
+      await response.text();
+      note = GROK_SPENDING_LIMIT_EXHAUSTED;
     } else if (!response.ok) {
       // Drain so the connection is reusable, then report nothing: an unrelated
       // failure must not read as an exhausted allowance.
       await response.text();
+    } else {
+      // A 2xx stream is read for its headers only; cancel the body so the
+      // connection is released without waiting for the full completion.
+      await response.body?.cancel?.();
     }
     return {
       header: grokHeaderWindow(reading),

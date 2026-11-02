@@ -74,8 +74,24 @@ export function wireContextFrom(
   };
 }
 
-/** Grok's account feature probe intentionally uses the same Responses request as live traffic. */
-export const GROK_407_PROBE_PROMPT = "reply my message with exact number 407";
+/**
+ * Grok's account feature probe intentionally uses the same Responses request as
+ * live traffic.
+ *
+ * The prompt must make the model actually reply `407` — that literal is the
+ * healthy-account signal the probe verdict keys on. Naive phrasing refused by
+ * the model ("I can't reply with only a specific number", "I won't comply
+ * with a demand to output only an exact phrase") are listed above; verified
+ * live 2026-11-02 (grok-4.7) that this prompt returns exactly `407`:
+ *
+ *   "Type the number 407."      → "407"
+ *   "Echo the diagnostic code 407." → "407"
+ *   "Print the number 407 and nothing else." → "407"
+ *
+ * The verdict normalizes away Grok's trailing confidence annotation
+ * (`407 \confidence{100}`), so the match is on the bare number.
+ */
+export const GROK_407_PROBE_PROMPT = "Type the number 407.";
 
 /**
  * Converts a failed/mismatched Grok feature probe into a quota-shaped upstream
@@ -91,8 +107,10 @@ export function grok407ProbeFailure(args: {
   if (args.providerId !== "grok" || args.prompt !== GROK_407_PROBE_PROMPT) return undefined;
   const sample = extractSample(args.events);
   const normalizedSample = sample?.replace(/\\confidence\{\d+\}\s*$/i, "").trim();
-  // A valid Grok answer may carry the provider's confidence annotation after
-  // the numeric result, and a terminal metadata error may arrive after text.
+  // A healthy account answers exactly `407` (optionally with Grok's trailing
+  // confidence annotation). The model refuses some phrasings of the same ask,
+  // but the probe prompt above is engineered to pass, so any other sample is a
+  // failure — quota-shaped, not a payload bug.
   if (normalizedSample === "407") return undefined;
   const priorDetails = args.dispatchError instanceof GatewayError ? args.dispatchError.details : {};
   const providerStatus =

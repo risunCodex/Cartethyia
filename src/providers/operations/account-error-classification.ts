@@ -883,6 +883,7 @@ export function classifyAccountError(
       // keeps serving its other models.
       providerCode === "112" ||
       providerCode === "110" ||
+      providerCode === "116" ||
       providerCode === "insufficient_quota" ||
       providerCode === "quota_exceeded" ||
       providerCode === "subscription:free-usage-exhausted" ||
@@ -1541,11 +1542,21 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
       const grokFreeTier =
         s.providerCode === "subscription:free-usage-exhausted" ||
         s.providerCode.startsWith("subscription:") ||
+        // A 402 spend/entitlement wall (`personal-team-blocked:spending-limit`,
+        // "out of credits") is the same verdict: the account cannot serve until
+        // the operator tops up or upgrades. The default 1h fallback re-dialled
+        // it every hour inside a window that will not clear on its own.
+        s.providerCode.includes("spending") ||
+        s.providerCode.includes("credits") ||
         s.lower.includes("free-usage") ||
         s.lower.includes("free usage") ||
         s.lower.includes("included free usage") ||
         s.lower.includes("rolling 24-hour") ||
-        s.lower.includes("rolling 24 hour");
+        s.lower.includes("rolling 24 hour") ||
+        s.lower.includes("spending limit") ||
+        s.lower.includes("out of credits") ||
+        s.lower.includes("run out of credits") ||
+        s.lower.includes("need a grok subscription");
       const buddyCreditsExhausted =
         s.providerCode === "14018" || s.lower.includes("credits exhausted");
       const cooldownMs = grokFreeTier

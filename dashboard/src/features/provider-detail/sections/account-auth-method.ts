@@ -15,7 +15,7 @@ export function authMethodPill(authMethod: string | undefined): AccountAuthMetho
   switch (authMethod) {
     case "google":
     case "github":
-      return { label: "Social", tone: "default" };
+      return { label: "Social", tone: "accent" };
     case "builder-id":
     case "idc":
       return { label: "OIDC", tone: "default" };

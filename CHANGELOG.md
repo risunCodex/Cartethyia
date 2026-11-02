@@ -12,6 +12,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Grok request compression (zstd) and richer Responses fields.** The Grok
+  adapter now sends the request body zstd-compressed with
+  `Content-Encoding: zstd` (matching the Grok Build CLI), and the accepted
+  field set is widened to the Responses session/linkage fields
+  (`previous_response_id`, `conversation`, `stream_options`,
+  `prompt_cache_retention`, `moderation`, `user`, …) plus the hosted tool set
+  (`web_search`, `x_search`, `image_generation`, `collections_search`,
+  `file_search`, `code_execution`, `code_interpreter`, `mcp`, `shell`,
+  `tool_search`) — anything else normalizes to a flat `function` tool.
+  Discovery no longer keeps a process-global model cache: the per-account
+  catalog can differ by plan, so account B's sync no longer clobbers account
+  A's limits/reasoning menus. Grok quota probe now uses a streamed
+  `grok-4.7` probe prompt engineered to produce the literal `407` signal
+  ("Type the number 407."), and a `402` spend/entitlement wall is classified
+  as `spending-limit` instead of a reading failure.
 - **System Prompt presets and per-modal/provider references.** A tenant can save
   reusable system-prompt presets and reference them per model, per provider, or
   globally. Combos/aliases inject the preset for their requested model (its own
@@ -40,6 +55,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **Qoder dispatch defaults to the modern `/model/v1` surface with a legacy
+  COSY fallback.** The adapter now tries the IDE wire (`/model/v1/chat/completions`)
+  first — it echoes the real model key and carries 1M context + `xhigh`
+  reasoning — and automatically falls back to the legacy COSY surface only when
+  the modern surface answers an entitlement refusal (HTTP 402 / `{"code":116}`,
+  seen on free-tier accounts). A 401/403/model error is surfaced as-is and is
+  not masked by a legacy retry. `surface: "cosy"` remains as an explicit
+  force-legacy option. The legacy body is now 1:1 with the IDE worker: top-level
+  `model` (roster key) and `reasoningEffort` (camelCase, mapped from canonical
+  intent) are sent alongside `model_config.max_input_tokens` for the widest
+  discovered window.
+- **Qoder device login matches the desktop IDE byte-for-byte.** The PKCE
+  verifier now uses the IDE's own alphabet (`A-Za-z0-9-._~`, 43–128 chars), the
+  nonce is a full UUID, the client id is always sent (intl `e883ade2-…`, CN
+  `e93fe488-…`), and the machine id defaults to the platform hardware id
+  (Windows `MachineGuid`, macOS `IOPlatformUUID`, Linux `/etc/machine-id`) with
+  `. `machine_id`/`machine_token` override via device-flow parameters to reuse an
+  IDE-held device identity. Qoder token refresh now works through the working
+  deviceToken endpoint (`POST /api/v1/deviceToken/refresh`) instead of throwing
+  "no refresh grant".
+- **Qoder client identity matches the IDE build.** `cosy-machineos` is derived
+  from the runtime arch/OS (not a fixed macOS string), `cosy-machinehostname` is
+  normalized to the IDE's header-safe form, and the COSY version pins the IDE's
+  `1.1.80` (not the newer CLI's).
 - **Routing prefers accounts with remaining credit, free tier to any account.**
   Within the same rank group, the gateway now orders accounts with remaining
   pooled credit first, then unknown-quota accounts, then known-zero last. A
@@ -51,6 +90,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Dashboard: device-code login button renamed "Device OIDC" → "Device
+  Code".** The provider-detail account action now labels the RFC 8628
+  device flow correctly; the social pill (Google/GitHub) again renders in
+  the accent tone.
+- **SSE decoder no longer splits JSON on literal blank lines inside string
+  values.** Qoder's IDE surface emits terminal `raw_usage` events whose keys
+  contain literal newline bytes (e.g. `"time_of_\nscheduler"`). A blank line
+  inside a string was treated as an event boundary, splitting the JSON and
+  dropping the terminal finish reason/usage. The decoder now only treats a
+  blank line as a boundary when the accumulated payload is a complete JSON
+  value (bracket-depth scan that skips strings).
+- **Qoder 116 is classified as account-scoped quota, not platform fault.**
+  The account-error classifier now treats code `116` (quota exceeded, seen on
+  free-tier accounts hitting the modern surface) like `110`/`112`: the model
+  cools while the account keeps serving its other models.
 - **Qoder umid bridge binaries are made executable before running.** The
   `umidpack` runtime-info files ship without the exec bit (git mode 100644)
   and nothing else in the delivery path set it, so fresh Linux/macOS installs —

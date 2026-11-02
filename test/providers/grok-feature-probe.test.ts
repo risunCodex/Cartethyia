@@ -19,6 +19,17 @@ function textEvent(text: string): readonly CanonicalEvent[] {
 }
 
 describe("Grok 407 feature probe", () => {
+  test("accepts a bare 407", () => {
+    expect(
+      grok407ProbeFailure({
+        providerId: "grok",
+        prompt: GROK_407_PROBE_PROMPT,
+        events: textEvent("407"),
+        dispatchError: undefined,
+      }),
+    ).toBeUndefined();
+  });
+
   test("accepts 407 with Grok confidence metadata and a terminal error", () => {
     expect(
       grok407ProbeFailure({
@@ -43,6 +54,22 @@ describe("Grok 407 feature probe", () => {
     expect(failure?.details.providerCode).toBe("subscription:free-usage-exhausted");
     expect(failure?.details.providerStatus).toBe(202);
     expect(failure?.details.upstreamStatus).toBe(202);
+  });
+
+  test("parks a refusal (not exactly 407) for the same quota window", () => {
+    const failure = grok407ProbeFailure({
+      providerId: "grok",
+      prompt: GROK_407_PROBE_PROMPT,
+      events: textEvent("I can't reply with only a specific number."),
+      dispatchError: undefined,
+    });
+
+    if (failure === undefined) throw new Error("expected Grok feature failure");
+    const policy = classifyUpstreamFailure(failure);
+    const classification = classifyAccountError(failure, { ...policy, providerId: "grok" });
+    expect(failure.code).toBe("quota_exceeded");
+    expect(failure.details.providerCode).toBe("subscription:free-usage-exhausted");
+    expect(classification.cooldownMs).toBe(24 * 60 * 60 * 1000);
   });
 
   test("parks any other failed feature probe for the same quota window", () => {

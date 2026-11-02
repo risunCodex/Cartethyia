@@ -37,6 +37,9 @@ const HEADER_RESET_TOKENS = "x-ratelimit-reset-tokens";
 /** The upstream code that carries the authoritative free-usage allowance. */
 export const GROK_FREE_USAGE_EXHAUSTED = "subscription:free-usage-exhausted";
 
+/** A spend/entitlement wall code (402) — the account cannot serve. */
+export const GROK_SPENDING_LIMIT_EXHAUSTED = "spending-limit";
+
 /** Kinds, so the view can tell an indicator from a verdict. */
 export const GROK_HEADER_WINDOW_KIND = "grok:cli-header";
 export const GROK_HEADER_REQUESTS_WINDOW_KIND = "grok:cli-header-requests";

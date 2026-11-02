@@ -242,7 +242,12 @@ export const VERSION_SOURCES = {
   },
   qoder: {
     key: "qoder",
-    fallback: "1.1.81",
+    // The desktop IDE hardcodes its COSY_VERSION as "1.1.80" (`S9` in the
+    // unpacked worker bundle); the model-server surface sees this value, so
+    // the gateway presents the same build the IDE ships. Discovery (npm
+    // `@qoder-ai/qodercli/latest`) may report a newer CLI, but the CLI and
+    // IDE are different products — the chat surface identity is the IDE's.
+    fallback: "1.1.80",
     sources: [
       {
         url: "https://registry.npmjs.org/@qoder-ai/qodercli/latest",
