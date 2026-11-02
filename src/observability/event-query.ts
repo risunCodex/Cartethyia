@@ -19,7 +19,6 @@
  */
 import { and, desc, eq, gte, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { resolveDbMode } from "../persistence/db-mode";
 import type { CartethyiaDatabase } from "../persistence/db-handle";
 import { apiKeys, telemetryEvents, telemetryUsageTotals } from "../persistence/schema";
 import type { TelemetryEventRecord } from "./event-log";
@@ -230,8 +229,7 @@ function isPostgres(db: CartethyiaDatabase): boolean {
   const dialect = (db as unknown as { dialect?: unknown }).dialect;
   if (dialect instanceof PgDialect) return true;
   const name = (dialect as { constructor?: { name?: string } } | undefined)?.constructor?.name;
-  if (name === "PostgresDialect" || name === "PgDialect") return true;
-  return resolveDbMode() !== "lite";
+  return name === "PostgresDialect" || name === "PgDialect";
 }
 
 /**
