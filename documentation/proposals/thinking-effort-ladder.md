@@ -1,6 +1,6 @@
 # Proposal — Effort & Thinking Ladder (desain ulang, pola oh-my-pi)
 
-**Status:** draft, siap dibaca & diputuskan (belum diimplementasikan).
+**Status:** finalized — keputusan final di §6, siap implementasi (belum diimplementasikan).
 **Tanggal:** 2026-11-02
 **Scope:** protocol / routing / provider-catalog / dialect layer (backend). Dashboard & schema tidak tersentuh kecuali tercatat.
 **Referensi:** audit `oh-my-pi` (`packages/catalog/src/effort.ts`, `model-thinking.ts`, `compat/resolve.ts`, `compat/axes.ts`, `compat/rules/classes/*.kdl`) — output lengkap di catatan sesi ini.
@@ -152,7 +152,10 @@ export function clampThinkingLevelForModel(
 }
 ```
 
-- Menggantikan `clampReasoningEffort` di semua codec (API lama di-keep sebagai thin wrapper selama migrasi, lalu dihapus).
+- Menggantikan `clampReasoningEffort` di semua codec. Sesuai aturan cutover repo
+  (tanpa alias/forwarding shim), `clampReasoningEffort` dan
+  `resolveSupportedReasoningEfforts` **dihapus langsung** dan semua caller
+  dimigrasi dalam satu change.
 - `requiresEffort === true` & requested off/omitted → clamp **naik** ke `defaultLevel ?? efforts[0]` (mirip OMP `normalizeMandatoryReasoningOptions`).
 
 ### 3.4 Budget = milik model, bukan global
@@ -181,7 +184,7 @@ export function clampThinkingLevelForModel(
 | Tipe baru | `src/protocol/translation/dialect/types.ts` (`ThinkingConfig`, `ThinkingControlMode`) |
 | Resolver ladder | `src/protocol/translation/dialect/thinking-ladder.ts` (baru), `rules.ts` (rule table) |
 | Clamp canonical | `src/protocol/translation/dialect/model-thinking.ts` (baru) |
-| Thinking lama | `src/protocol/translation/thinking.ts` (`resolveSupportedReasoningEfforts` → thin wrapper; `claudeUsesAdaptiveThinking` dihapus; `LEVEL_TO_BUDGET` jadi fallback) |
+| Thinking lama | `src/protocol/translation/thinking.ts` (`resolveSupportedReasoningEfforts` & `clampReasoningEffort` dihapus, caller dimigrasi; `claudeUsesAdaptiveThinking` dihapus; `LEVEL_TO_BUDGET` jadi fallback) |
 | Reasoning helper | `src/protocol/reasoning.ts` (`applyDeepSeekReasoning`, `geminiThinkingOutputFloor`, `clampedEffortOutputFloor` dirapikan; `reasoningEffortFromIntent` pakai effortBudgets) |
 | Codec | `src/protocol/request/chat.ts`, `messages.ts`, `responses.ts`, `gemini.ts` — baca `CodecContext.thinking`, clamp sekali |
 | Registry | `src/protocol/registry.ts` — tambah `CodecContext.thinking` |
@@ -209,11 +212,27 @@ export function clampThinkingLevelForModel(
 
 ---
 
-## 6. Pertanyaan terbuka (dengan rekomendasi)
+## 6. Keputusan final (dfinalkan 2026-11-02)
 
-1. **Lokasi `ThinkingConfig`:** di `ModelDefinition`/catalog (persisted) vs murni rule table runtime? Rekomendasi: **rule table + `ModelDefinition.thinking?` opsional** — ini mengikuti pola `dialect` yang sudah ada dan menghindari migration.
-2. **Nama & API lama:** simpan `clampReasoningEffort`/`resolveSupportedReasoningEfforts` sebagai deprecated wrapper selama 1 rilis? Rekomendasi: **ya, g anti-pattern cutover; tapi maksimal 1 rilis lalu hapus** (sesuai aturan repo).
-3. **Scoping fase:** mulai dari `chat`+`responses`+`messages` sekaligus (tiga codec sama-sama memakai clamp), atau bertahap? Rekomendasi: **sekali jalan** karena perubahan inti di satu tempat (ladder table + clamp + context).
-4. **Output floor:** jadikan `ThinkingConfig` method (vertical) vs helper terpisah? Rekomendasi: **helper `outputFloorFor` di `model-thinking.ts`** — tak perlu mengubah bentuk ThinkingConfig, cukup tabel nilai.
-5. **Relasi `thinkingFormat` dialect vs `mode`:** apakah `thinkingFormat` dihapus dan diganti `mode`? Rekomendasi: **pertahankan keduanya tapi satu arah** — `thinkingFormat` (wire dialek) → `mode` (transport) via map di `resolveThinkingForModel`; jangan duplikasi.
-6. **Telemetry:** tambah field `applied_effort`/`requested_effort` di telemetry? Rekomendasi: **nanti** — bisa diukur dari payload capture; tambah kolom hanya bila operasional meminta.
+1. **Lokasi `ThinkingConfig`: rule table + `ModelDefinition.thinking?` opsional.**
+   `reasoningEfforts` yang sudah ada tetap menjadi sumber "declared"; `thinking`
+   disimpan sebagai field opsional di `ModelDefinition` (compile-time), bukan
+   kolom DB. Tidak ada migration di fase 1. Operator override per-row (dashboard)
+   menyusul hanya bila diminta.
+2. **API lama: hapus langsung, tanpa wrapper.** Sesuai aturan repo (cutover tanpa
+   alias/forwarding shim): `clampReasoningEffort` & `resolveSupportedReasoningEfforts`
+   dihapus, semua caller dimigrasi ke `clampThinkingLevelForModel` /
+   `resolveThinkingForModel` dalam satu change.
+3. **Scope: sekali jalan** — `chat` + `responses` + `messages` + `gemini` sekaligus,
+   karena inti berubah di satu tempat (rule table + clamp + `CodecContext.thinking`);
+   golden payload melindungi regresi.
+4. **Output floor: helper murni** `outputFloorFor(thinking, requested, applied, modelOutputLimit)`
+   di `model-thinking.ts`, disusun dari `effortBudgets`/rule table (bukan
+   `BUDDY_LEVEL_RANK` global). `ThinkingConfig` tetap data type, bukan class.
+5. **`thinkingFormat` vs `mode`: pertahankan keduanya, satu arah.** `thinkingFormat`
+   (dialek wire) milik `DialectPolicy`; `mode` (transport) milik `ThinkingConfig`.
+   Dua resolver berbeda (`resolveDialect`, `resolveThinkingForModel`) membaca sumber
+   rule yang sama, tanpa duplikasi; mapping diikat di tabel rule.
+6. **Telemetry: fase 1 tanpa kolom baru.** Saat clamp mengubah effort → log
+   `warn` + payload capture. Fase 2 opsional: kolom nullable
+   `requested_effort`/`applied_effort` hanya bila operasional meminta.
