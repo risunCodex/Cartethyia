@@ -150,8 +150,11 @@ bun run start
 `bun setup` creates config, selects Lite/Full and a port, checks PostgreSQL
 when Full is selected, and checks Redis only when configured. It does not
 install PostgreSQL or start the gateway. `bun run start` requires the compiled
-binary from `bun run build`. Development uses `bun run dev` or
-`bun run dev:watch`; the dashboard development server listens on 5173 (with an
+binary from `bun run build`. Development uses `bun run dev` (alias for
+`bun run dev:watch`), which runs the stack behind a holding proxy and watches
+source, SQL migrations, and dependency manifests — any change restarts the
+full stack in place (a new/edited migration re-runs at boot, a manifest change
+reinstalls deps). The dashboard development server listens on 5173 (with an
 automatic fallback to 1931 or DASHBOARD_PORT if occupied) and proxies to the
 configured gateway port.
 

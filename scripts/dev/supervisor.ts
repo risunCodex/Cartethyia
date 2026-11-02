@@ -11,14 +11,16 @@
  *
  * Keys (TTY): CTRL+R = restart the stack in place · CTRL+C = quit everything.
  *
- * Watch (new `dev:watch` mode): source changes hot-reload as usual, but two
+ * Watch (new `dev:watch` mode): source changes hot-reload as usual, but some
  * changes cannot be hot-applied — a new/edited SQL migration (runs only at
- * boot) and a dependency manifest change (bun.lock/package.json). This
- * supervisor polls both cheaply (DEV_WATCH_MS, default 3000) and, when it
- * detects one, reinstalls deps (`bun install --linker isolated --frozen-lockfile`)
- * and restarts the stack in place, so `bun run dev:watch` is the only command
- * you ever re-run. Set DEV_WATCH_MS=0 to disable polling and keep CTRL+R-only
- * behavior.
+ * boot), a dependency manifest change (bun.lock/package.json), and any code
+ * whose state lives outside the module Bun swaps (boot sequence, workers,
+ * in-memory registries). This supervisor polls the source roots plus both
+ * manifests cheaply (DEV_WATCH_MS, default 3000) and, when it detects a
+ * change, reinstalls deps (`bun install --linker isolated --frozen-lockfile`)
+ * when the manifest moved, and restarts the stack in place otherwise — so
+ * `bun run dev:watch` is the only command you ever re-run. Set
+ * DEV_WATCH_MS=0 to disable polling and keep CTRL+R-only behavior.
  *
  * Env:
  *   DEV_PROXY_PORT     public port the proxy binds   (default PORT env or 12800)
@@ -29,6 +31,7 @@
  */
 
 import type { Subprocess } from "bun";
+import { Glob } from "bun";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -70,6 +73,13 @@ const WATCH_MS = watchMsEnv();
 const MIGRATIONS_DIR = join(process.cwd(), "migrations", "full-postgres");
 const DEPENDENCY_FILES = ["package.json", "bun.lock"] as const;
 
+/** Source roots whose edits trigger a full stack restart. */
+const SOURCE_GLOB_PATTERNS = [
+  "src/**/*.{ts,tsx,js,jsx}",
+  "scripts/**/*.{ts,tsx,js,jsx,cjs,mjs}",
+  "dashboard/src/**/*.{ts,tsx,js,jsx,css,html}",
+] as const;
+
 /** Latest mtime (ms) across the two load-bearing manifests, or 0 if none. */
 async function manifestStamp(): Promise<number> {
   let latest = 0;
@@ -96,6 +106,30 @@ async function migrationStamp(): Promise<number> {
     }
   } catch {
     // No migrations dir yet; nothing to watch.
+  }
+  return latest;
+}
+
+/**
+ * Latest mtime (ms) across the source roots that need a full restart.
+ *
+ * Bun's `--hot` reload swaps only the module that changed, which is not a
+ * restart: boot-time state (workers, registries, scheduler leases) is never
+ * rebuilt. The supervisor watches the same roots and restarts the whole stack
+ * when any of them moves.
+ */
+async function sourceStamp(): Promise<number> {
+  let latest = 0;
+  for (const pattern of SOURCE_GLOB_PATTERNS) {
+    const glob = new Glob(pattern);
+    for await (const file of glob.scan({ cwd: process.cwd(), onlyFiles: true })) {
+      try {
+        const mtime = (await stat(join(process.cwd(), file))).mtimeMs;
+        if (mtime > latest) latest = mtime;
+      } catch {
+        // File deleted mid-scan; not a change we need to act on.
+      }
+    }
   }
   return latest;
 }
@@ -128,6 +162,7 @@ async function reinstallDependencies(): Promise<void> {
 async function watchOnce(): Promise<void> {
   const manifest = await manifestStamp();
   const migrations = await migrationStamp();
+  const sources = await sourceStamp();
   if (manifest > manifestBaseline) {
     manifestBaseline = manifest;
     await reinstallDependencies();
@@ -137,11 +172,18 @@ async function watchOnce(): Promise<void> {
     migrationBaseline = migrations;
     console.log("[dev] migration files changed — restarting to re-run them…");
     await restart();
+    return;
+  }
+  if (sources > sourceBaseline) {
+    sourceBaseline = sources;
+    console.log("[dev] source files changed — restarting the stack…");
+    await restart();
   }
 }
 
 let manifestBaseline = 0;
 let migrationBaseline = 0;
+let sourceBaseline = 0;
 
 function childArgv(): string[] {
   const override = process.env.DEV_SUPERVISOR_CMD;
@@ -307,7 +349,8 @@ if (WATCH_MS > 0) {
   void (async () => {
     manifestBaseline = await manifestStamp();
     migrationBaseline = await migrationStamp();
-    console.log(`[dev] watching deps + migrations every ${WATCH_MS}ms`);
+    sourceBaseline = await sourceStamp();
+    console.log(`[dev] watching deps + migrations + source every ${WATCH_MS}ms`);
     for (;;) {
       await Bun.sleep(WATCH_MS);
       await watchOnce();

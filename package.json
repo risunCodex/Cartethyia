@@ -39,7 +39,7 @@
     "bun": ">=1.4.0"
   },
   "scripts": {
-    "dev": "bun run dev:stack",
+    "dev": "bun run dev:watch",
     "dev:watch": "bun run scripts/dev/supervisor.ts",
     "test": "bun run scripts/test/run.ts",
     "build": "bun run scripts/build/build.ts",
@@ -53,7 +53,7 @@
     "typecheck": "tsc --noEmit",
     "test:watch": "bun run scripts/test/run.ts --watch",
     "test-db:up": "docker compose -f docker-compose.test.yml up -d --wait postgres-test",
-    "dev:backend": "bun run --hot src/main.ts",
+    "dev:backend": "bun run src/main.ts",
     "dev:console-auth": "bun run scripts/test/console-session.ts",
     "dev:visual-baseline": "bun run scripts/test/visual-baseline.ts",
     "build:binary": "bun run scripts/build/compile.ts",

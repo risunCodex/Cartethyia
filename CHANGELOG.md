@@ -12,6 +12,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`bun run dev` now restarts the full stack on any source change.** The
+  dev supervisor (`scripts/dev/supervisor.ts`) previously hot-reloaded via
+  Bun's `--hot`, which swaps only the changed module — boot-time state
+  (workers, registries, scheduler leases) was never rebuilt. `dev` now runs
+  the supervisor, which watches the source roots (`src/`, `scripts/`,
+  `dashboard/src/`), SQL migrations, and dependency manifests every
+  `DEV_WATCH_MS` (default 3000 ms) and restarts the whole stack in place
+  behind the holding proxy. Manifest changes reinstall deps with the lockfile
+  frozen; migration changes re-run at boot. `DEV_WATCH_MS=0` disables
+  polling and keeps the CTRL+R-only behavior.
 - **Grok request compression (zstd) and richer Responses fields.** The Grok
   adapter now sends the request body zstd-compressed with
   `Content-Encoding: zstd` (matching the Grok Build CLI), and the accepted
