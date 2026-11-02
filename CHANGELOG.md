@@ -82,6 +82,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   from the runtime arch/OS (not a fixed macOS string), `cosy-machinehostname` is
   normalized to the IDE's header-safe form, and the COSY version pins the IDE's
   `1.1.80` (not the newer CLI's).
+- **Qoder browser-session PAT claimer.** New probe
+  `scripts/provider-probing/qoder/qoder-browser-pat-claimer.ts` lists, creates,
+  and revokes Personal Access Tokens (`pt-…`) from the Qoder web console using
+  an exported browser session cookie (Netscape cookies.txt). It handles the
+  console's CSRF double-submit pair (`window.csrfToken` + the
+  `qoder_csrf_token` cookie), caps expiry at the console's 1-year maximum, and
+  writes the minted PAT only to `--out` — never to stdout. This provides the
+  durable identity path: a PAT is exchanged by the adapter into a per-request
+  job token, versus the device token the OAuth flow issues.
 - **Routing prefers accounts with remaining credit, free tier to any account.**
   Within the same rank group, the gateway now orders accounts with remaining
   pooled credit first, then unknown-quota accounts, then known-zero last. A

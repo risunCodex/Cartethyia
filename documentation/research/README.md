@@ -45,6 +45,7 @@ or foundational notes stay at this root.
 | 2026-10-29 | [Credits, claims & identity (incl. 1 Nov deep-dive)](qoder/2026-10-29-qoder-credits-claims-identity.md) |
 | 2026-11-01 | [Chat wire verification (plugin + IDE surface)](qoder/2026-11-01-qoder-chat-wire-verification.md) |
 | 2026-11-01 | [JetBrains plugin endpoint & service map](qoder/2026-11-01-qoder-jetbrains-plugin-endpoint-map.md) |
+| 2026-11-02 | [Web-console PAT surface (browser session, CSRF)](qoder/2026-11-02-qoder-web-console-pat-surface.md) |
 
 ## Copilot findings (`copilot/`)
 
