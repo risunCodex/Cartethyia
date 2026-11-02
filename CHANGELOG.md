@@ -117,6 +117,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   The account-error classifier now treats code `116` (quota exceeded, seen on
   free-tier accounts hitting the modern surface) like `110`/`112`: the model
   cools while the account keeps serving its other models.
+- **Qoder PAT accounts now report quota.** The quota collector sent a raw PAT
+  (`pt-…`) as the bearer to `/api/v2/quota/usage`, which the business API
+  rejects with 401 `TOKEN_EXPIRE` — so a PAT account showed no balance. The
+  collector now exchanges a PAT for a job token (`jt-…`) first (device tokens
+  are used directly), mirroring dispatch. Verified live 2026-11-02: the
+  `that sepa` account now reads its `addOnQuota` (100 granted credits) instead
+  of an unreadable body.
 - **Qoder umid bridge binaries are made executable before running.** The
   `umidpack` runtime-info files ship without the exec bit (git mode 100644)
   and nothing else in the delivery path set it, so fresh Linux/macOS installs —
