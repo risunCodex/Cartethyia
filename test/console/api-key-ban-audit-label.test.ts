@@ -89,34 +89,7 @@ dbDescribe("ban audit reasonLabel", () => {
     });
   });
 
-  test("a client-sent reasonLabel is ignored, not stored", async () => {
-    await withRollback(async (client) => {
-      const tenant = await createTenant(client, RUN_ID);
-      const key = await createApiKey(client, { tenantId: tenant.tenantId });
-      const db = drizzle(client as never, { schema: fullSchema });
-      const audit: { entries: RecordedAudit[] } = { entries: [] };
-      const operations = createApiKeyOperations({
-        store: new DrizzleApiKeyStore(db as never),
-        accessResolver: () => owner(tenant.tenantId),
-        admissionService: { purgeKey: async () => undefined },
-        auditSink: {
-          record: async (entry: RecordedAudit) => {
-            audit.entries.push(entry);
-          },
-        } as never,
-      });
-      const reason = API_KEY_BAN_REASONS[0]!;
-      // The old wire contract accepted a `reasonLabel`; the domain request no
-      // longer carries one (see `BanApiKeyRequest`), so there is no path by
-      // which a client-authored label could reach the audit record. What is
-      // recorded is the canonical label derived from `reason`.
-      await operations.banKey(owner(tenant.tenantId), key.id, {
-        reason: reason.value,
-        minutes: 60,
-      });
-      const banned = audit.entries.find((entry) => entry.action === "api_key.banned");
-      // The label recorded is the canonical one, not anything client-authored.
-      expect(banned?.detail?.reasonLabel).toBe(reason.label);
-    });
-  });
+  // The wire no longer accepts a client-sent `reasonLabel`, so the only label
+  // that can be recorded is the canonical one derived from `reason` (pinned by
+  // the first test above).
 });

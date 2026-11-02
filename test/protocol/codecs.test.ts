@@ -8,8 +8,9 @@
  * what each one refuses or rewrites, not around the happy path:
  *
  * - `normalizeAnthropicToolCallId` must fit Anthropic's `^[a-zA-Z0-9_-]{1,64}$`
- *   and keep distinct calls distinct. Both halves are tested; the second half has
- *   a `test.failing`.
+ *   and keep distinct calls distinct. Both halves are pinned by passing tests:
+ *   distinct raws never collapse to one id, and repeated occurrences of one raw
+ *   each get their own id.
  * - `sanitizeSchemaForAnthropic` drops keywords a strict upstream rejects, and
  *   rebuilds `required` from the surviving properties.
  * - `filterProviderCustomHeaders` is the only gate on operator-supplied outbound
@@ -182,8 +183,8 @@ describe("normalizeAnthropicToolCallId — the wire contract", () => {
     // The consequence is worth naming: every two-code-unit non-ASCII id collapses
     // to the same `"__"`, and every three-unit one to `"___"`. So two DIFFERENT
     // emoji ids are indistinguishable after normalization. That is the same
-    // collision class as the `test.failing` defect below (distinct raws collapsing
-    // to one id) and is covered by it rather than reported twice.
+    // collision class the dedup ledger pins (distinct raws collapsing to one id)
+    // and is covered by it rather than reported twice.
     expect(normalizeAnthropicToolCallId("🦊")).toBe("__");
     expect(normalizeAnthropicToolCallId("🐱")).toBe("__");
     expect(normalizeAnthropicToolCallId("🦊")).toBe(normalizeAnthropicToolCallId("🐱"));

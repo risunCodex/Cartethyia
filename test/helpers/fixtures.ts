@@ -461,21 +461,3 @@ export async function createWorld(options: CreateWorldOptions = {}): Promise<Gat
     client.release();
   }
 }
-
-/**
- * Reads telemetry rows a request produced, scoped to the run.
- *
- * Telemetry is written asynchronously by the batch buffer, so a suite calls
- * `gateway.telemetryBuffer.flush()` first; this helper only owns the query so
- * the column list stays in one place.
- */
-export async function readTelemetry(
-  tenantId: string,
-): Promise<readonly Record<string, unknown>[]> {
-  // Per-request events are written to the file log, not the table.
-  const { readTelemetryEvents } = await import("../../src/observability/event-log");
-  const events = await readTelemetryEvents();
-  return events
-    .filter((event) => event.tenantId === tenantId)
-    .map((event) => ({ ...event }));
-}

@@ -328,33 +328,16 @@ describe("isAddressAllowed — the policy overrides", () => {
   });
 
   /**
-   * KNOWN DEFECT — a CIDR with a trailing slash and no prefix length opens the
-   * SSRF guard to every IPv4 address, including the cloud metadata endpoint.
+   * Blank/exotic CIDR prefixes are refused — this defect is closed.
    *
-   * `cidrContains` (`src/network/ssrf.ts:67`) destructures `cidr.split("/")`
-   * into `[network, prefixText]` and then does `const prefix = Number(prefixText)`.
-   * `Number("")` is `0`, and `""` is not `undefined`, so the
-   * `prefixText === undefined` guard does not fire. With `prefix = 0` the
-   * function returns `ipv4Number(address) >>> 32 === ipv4Number(network) >>> 32`,
-   * which is `0 === 0` for every IPv4 address. One malformed entry therefore
-   * admits *every* IPv4 destination.
-   *
-   * Reachable impact: `resolveSsrfPolicy` (`src/config/network.ts`) reads this list
-   * verbatim from `CARTETHYIA_ALLOWED_NETWORKS` through `readList`, which splits
-   * on commas and trims but validates nothing. An operator writing
-   * `CARTETHYIA_ALLOWED_NETWORKS=10.0.0.0/` — a truncated paste, or the prefix
-   * left off — gets a guard that accepts `169.254.169.254` (the instance
-   * metadata service) plus every private range the guard exists to refuse, with
-   * no warning at startup. The failure is silent and fail-open, which is the
-   * wrong direction for a security boundary.
-   *
-   * The neighbouring malformed shapes are handled correctly, which is what makes
-   * this an oversight rather than a design choice: `10.0.0.0/abc` parses to
-   * `NaN` and is refused, and `10.0.0.0` with no slash has
-   * `prefixText === undefined` and is refused.
-   *
-   * Written with `test.failing` so it flips to a failure the moment the prefix is
-   * validated, which is the signal to drop the marker and keep the assertion.
+   * `cidrContains` (`src/network/ssrf.ts`) now delegates to `cidrContainsAddress`
+   * with `requirePrefix: true` (`src/network/ip-utils.ts`), which reads the
+   * prefix as a trimmed run of digits. A blank or exotic zero spelling
+   * (`""`, `" "`, `"-0"`, `"+0"`, `"0x0"`, `"0b0"`, `"0o0"`, `"0.0"`) is
+   * refused outright, so a truncated or mistyped entry fails closed — it can no
+   * longer coerce to /0 and admit every IPv4 destination, including the cloud
+   * metadata endpoint `169.254.169.254`. The passing assertions below pin that
+   * closed state.
    */
   test("a CIDR with an empty prefix length does not admit every IPv4 address", () => {
     const policy: SsrfPolicy = { allowedNetworks: ["10.0.0.0/"] };
@@ -365,9 +348,9 @@ describe("isAddressAllowed — the policy overrides", () => {
   });
 
   test("the malformed entry admits nothing at all", () => {
-    // Was the `test.failing`'s complement, recording that the entry admitted every
-    // IPv4 address. Now inverted: a malformed prefix is refused outright rather
-    // than narrowed, so the guard fails closed in both directions.
+    // The complement of the closed blank-prefix defect above: a malformed prefix
+    // is refused outright rather than narrowed, so the guard fails closed in
+    // both directions.
     //
     // The discriminators are PRIVATE addresses: `169.254.169.254` (link-local) and
     // `172.16.0.1` are refused unless the CIDR admitted them, whereas a public

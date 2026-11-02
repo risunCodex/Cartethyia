@@ -43,16 +43,9 @@ describe("ensureMaxTokensForThinking — budget handling", () => {
   test("an impossible budget under the OAuth ceiling throws a typed 400", () => {
     const ceiling = WIRE_TOKEN_BOUNDS["messages"]?.oauthCeiling ?? Number.MAX_SAFE_INTEGER;
     // budget 100_000 + buffer 1024 > 64_000 ceiling → local rejection, not a clamp.
-    expect(() => ensureMaxTokensForThinking(64_000, 100_000, ceiling)).toThrow(GatewayError);
-    try {
-      ensureMaxTokensForThinking(64_000, 100_000, ceiling);
-      throw new Error("expected GatewayError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(GatewayError);
-      if (error instanceof GatewayError) {
-        expect(error.status).toBe(400);
-      }
-    }
+    const reserve = () => ensureMaxTokensForThinking(64_000, 100_000, ceiling);
+    expect(reserve).toThrow(GatewayError);
+    expect(reserve).toThrow(expect.objectContaining({ status: 400 }));
   });
 });
 
@@ -69,17 +62,9 @@ function thinkingRequest(budgetTokens: number): CanonicalRequest {
 
 describe("encode-level: OAuth thinking budget over the wire ceiling is a local 400", () => {
   test("reasoning.budget_tokens 100_000 with OAuth rejects before upstream", () => {
-    expect(() =>
-      canonicalToClaudeMessagesPayload(thinkingRequest(100_000), { isOAuth: true }),
-    ).toThrow(GatewayError);
-    try {
+    const encode = () =>
       canonicalToClaudeMessagesPayload(thinkingRequest(100_000), { isOAuth: true });
-      throw new Error("expected GatewayError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(GatewayError);
-      if (error instanceof GatewayError) {
-        expect(error.status).toBe(400);
-      }
-    }
+    expect(encode).toThrow(GatewayError);
+    expect(encode).toThrow(expect.objectContaining({ status: 400 }));
   });
 });

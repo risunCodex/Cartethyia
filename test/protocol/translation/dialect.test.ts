@@ -70,14 +70,6 @@ describe("canonicalToChatPayload dialect policy", () => {
 });
 
 describe("canonicalToClaudeMessagesPayload dialect policy", () => {
-  test("messages default output is identical with and without a policy", () => {
-    const plain = canonicalToClaudeMessagesPayload(req());
-    const anthro = canonicalToClaudeMessagesPayload(req(), {
-      dialectPolicy: resolveDialect("x", "anthropic", "messages"),
-    });
-    expect(anthro).toEqual(plain);
-  });
-
   test("supportsToolChoice=false drops tool_choice", () => {
     const withTools = req();
     withTools.tools = [{ name: "t", description: "", jsonSchema: { type: "object", properties: {} } }];

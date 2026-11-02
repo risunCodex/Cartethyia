@@ -84,9 +84,7 @@ describe("the route table", () => {
     // Opaque, because Anthropic's count body carries `messages` and no
     // `max_tokens`, while `MessagesAdapter.matchesBodyShape` requires
     // `max_tokens`. Letting it reach surface detection finds no adapter, so the
-    // request fails for a field this endpoint does not use — and the strike
-    // stage would then plan and reserve admission a second time on the chat path
-    // for a call that generates nothing and is not billed.
+    // request fails for a field this endpoint does not use.
     expect(isJsonProxyRoutePath(TOKEN_COUNT_PATH)).toBe(true);
     expect(isOpaqueBodyRoute(TOKEN_COUNT_PATH)).toBe(true);
   });
@@ -199,7 +197,6 @@ describe("readIngressBody — paths that are not read", () => {
     // because the consequence is real: an unknown `/v1/...` request has its body
     // buffered (and size-checked) before the router produces its 404.
     return expect(readIngressBody(request("/v1/models", "{}"))).resolves.toEqual({});
-    return expect(readIngressBody(request("/v1/unknown", "{}"))).resolves.toEqual({});
   });
 
   test("the route table decides the CONTENT-TYPE policy, not whether a read happens", () => {

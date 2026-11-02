@@ -1,5 +1,5 @@
 /**
- * The usage chart endpoint (`/api/usage/range`).
+ * The usage chart endpoint (`/console/api/system/usage/chart?period=24h`).
  *
  * The "Requests" series counts completions per bucket; the "Cached" series
  * counts the cached share of the prompt, not all input. This pins both series

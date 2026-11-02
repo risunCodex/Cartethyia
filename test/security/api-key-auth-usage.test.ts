@@ -16,7 +16,7 @@
  * one, which is why the end-to-end half is not asserted here.
  */
 import { describe, expect, test } from "bun:test";
-import { canHaveChildKeys, setPendingUsageSource } from "../../src/security/api-key-auth";
+import { canHaveChildKeys } from "../../src/security/api-key-auth";
 
 describe("canHaveChildKeys", () => {
   test("only a share key can carry children", () => {
@@ -33,23 +33,5 @@ describe("canHaveChildKeys", () => {
 
   test("an unrecognised mode is treated as childless", () => {
     expect(canHaveChildKeys({ keyMode: "something-else" })).toBe(false);
-  });
-});
-
-describe("pending usage source", () => {
-  test("a supplied source is used, and a later one replaces it", () => {
-    // Replacement, not accumulation: two boots (tests re-run in one process)
-    // must not sum their sources into a doubled value.
-    setPendingUsageSource(() => 10);
-    setPendingUsageSource(() => 3);
-    // The only observable surface without a database is that wiring is
-    // accepted; the arithmetic is asserted where it is applied.
-    expect(() => setPendingUsageSource(() => 0)).not.toThrow();
-  });
-
-  test("the default contributes nothing", () => {
-    // Boot ordering: auth may resolve before the flush buffer exists, and the
-    // historical behaviour (no pending term) must hold until one is wired.
-    expect(typeof setPendingUsageSource).toBe("function");
   });
 });

@@ -24,7 +24,7 @@ import { BackupService } from "../../src/console/backup/service";
 import { applyRestore, compressBackup, exportBackup } from "../../src/console/backup/store";
 import { restoreOrder, validateRestorePayload } from "../../src/console/backup/validate";
 import { tablesForSection, type BackupPayload } from "../../src/console/backup/contracts";
-import { createRunId, dbDescribe, getTestPool } from "../helpers/database";
+import { dbDescribe, getTestPool } from "../helpers/database";
 import { createWorld, type GatewayWorld } from "../helpers/fixtures";
 
 const SECRET = "sk-portability-secret";
@@ -382,8 +382,5 @@ dbDescribe("backup credential portability", () => {
     const { payload } = await exportBackup(db, tablesForSection("config"), world.tenantId);
     const config = (payload as { sections: { config: Record<string, unknown> } }).sections.config;
     expect(config.console_users).toBeUndefined();
-    // The run id exists so a leaked fixture row could be told apart from a
-    // catalog row; the payload must not describe either install's users.
-    expect(createRunId("unused")).toMatch(/unused-[0-9a-f]{8}/);
   });
 });

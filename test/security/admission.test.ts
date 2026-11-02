@@ -507,26 +507,17 @@ describe("InMemoryAdmissionCounterStore — lifetime seeding", () => {
   });
 
   /**
-   * KNOWN DEFECT — the fresh lifetime read is issued even when there is no
-   * lifetime counter to seed.
+   * The fresh lifetime read is guarded by the lifetime-budget check — this
+   * defect is closed.
    *
-   * `AdmissionReserveRequest.freshLifetimeConsumed`'s doc comment states the
-   * contract: "This callback is invoked *only when the store is about to create
-   * the counter* … The hot path — an existing counter — never calls it."
-   * `RedisAdmissionCounterStore` honours it with an explicit
-   * `request.lifetimeBudget != null` guard before it reads.
-   * `InMemoryAdmissionCounterStore.reserve` has no such guard: it awaits the
-   * callback first and only afterwards discovers it has no key to write the
-   * value to, so the result is discarded.
-   *
-   * Reachable impact: this store is the implementation used whenever Redis is
-   * absent (`runtime/dependencies.ts` picks it for single-instance mode). The
-   * callback wired there is not free — it runs `findActiveById` plus
-   * `sumChildrenConsumed`, two Postgres round trips — so a key with no lifetime
-   * budget pays both on every admitted request, for a value nothing consumes.
-   *
-   * Written with `test.failing` so it flips to a failure the moment the guard
-   * is added, which is the signal to drop the marker and keep the assertion.
+   * `InMemoryAdmissionCounterStore.reserve` used to await
+   * `freshLifetimeConsumed` unconditionally and only afterwards discover it had
+   * no lifetime key to write to — so a key with no lifetime budget paid the
+   * callback's cost on every admitted request for a value nothing consumed. The
+   * guard now matches the Redis store (`request.lifetimeBudget != null &&
+   * request.freshLifetimeConsumed`), so the callback is consulted only when a
+   * lifetime counter is about to be created. The passing assertion below pins
+   * the closed state.
    */
   test("the fresh reader is not called when no lifetime budget is set", async () => {
     // The guard this pins: the callback is consulted only when a lifetime budget
@@ -549,8 +540,8 @@ describe("InMemoryAdmissionCounterStore — lifetime seeding", () => {
   });
 
   test("the fresh reader IS called when a lifetime budget is set", async () => {
-    // The other half of the same contract, so the `test.failing` above cannot
-    // be satisfied by disabling the callback outright.
+    // The other half of the same contract, so the guard cannot be satisfied by
+    // disabling the callback outright.
     const store = new InMemoryAdmissionCounterStore();
     let reads = 0;
     await store.reserve(

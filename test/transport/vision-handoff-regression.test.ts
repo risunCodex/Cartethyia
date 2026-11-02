@@ -118,12 +118,6 @@ dbDescribe("vision handoff regression", () => {
       },
       { token: world.token },
     );
-    if (response.status !== 200) {
-      // eslint-disable-next-line no-console
-      console.log("TOOLS_IMAGE_STATUS", response.status);
-      // eslint-disable-next-line no-console
-      console.log("TOOLS_IMAGE_BODY", await response.text());
-    }
     expect(response.status).toBe(200);
     expect(gateway.adapters.get(vision.providerId)!.dispatches.length).toBe(visionBefore + 1);
     const main = gateway.adapters.get(world.providerId)!.dispatches.at(-1)!;

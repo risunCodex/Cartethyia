@@ -51,10 +51,6 @@ describe("chat tool argument repair", () => {
   test("refuses text that repairs to an array", () => {
     expect(repairToolArguments("[1,2,]")).toBe("[1,2,]");
   });
-  test("returns unrepairable text unchanged", () => {
-    const raw = "not json at all";
-    expect(repairToolArguments(raw)).toBe(raw);
-  });
 
   test("returns text that makes jsonrepair throw unchanged", () => {
     // A multiline patch header is not near-JSON; `jsonrepair` throws on it

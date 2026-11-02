@@ -56,36 +56,18 @@ describe("computeTokensPerSec — no measurement", () => {
     }
   });
 
-  /**
-   * KNOWN DEFECT — a `NaN` output-token count produces a `NaN` speed.
-   *
-   * The guard is `outputTokens === undefined || outputTokens <= 0`. `NaN`
-   * fails both halves (`NaN <= 0` is false), so it passes through and the
-   * division yields `NaN`. The value then reaches the telemetry row and the
-   * Requests table, where `NaN` renders as a literal `NaN tok/s`.
-   *
-   * Reachable whenever a provider reports a non-numeric completion count — a
-   * malformed `usage` block, or arithmetic over an unparsed string — which is
-   * exactly the case where a wrong number is least welcome, because the row
-   * that produced it is the one an operator is investigating.
-   *
-   * The correct guard is `!Number.isFinite(outputTokens)`, matching what the
-   * module already does for `latencyMs` (where `NaN` correctly returns
-   * `undefined`). Written with `test.failing` so the fix flips it to a failure.
-   */
+  // A `NaN` output-token count used to produce a `NaN` speed (the old guard
+  // `outputTokens <= 0` fails for `NaN`), reaching the telemetry row and the
+  // Requests table as a literal "NaN tok/s". The guard is now
+  // `!Number.isFinite(outputTokens)`, so it reports no measurement.
   test("a NaN output-token count reports no measurement", () => {
     expect(computeTokensPerSec({ outputTokens: Number.NaN, latencyMs: 1000 })).toBeUndefined();
   });
 
-  /**
-   * KNOWN DEFECT — an infinite latency reports a speed of `0`.
-   *
-   * `latencyMs > 0` is true for `Infinity`, so the division runs and produces
-   * `0`. A zero speed reads as "the model produced nothing", which is a
-   * different and more alarming claim than "the latency was not measurable".
-   *
-   * Written with `test.failing` so the fix flips it to a failure.
-   */
+  // An infinite latency used to report a speed of `0` (`latencyMs > 0` holds
+  // for `Infinity`), reading as "the model produced nothing" rather than "the
+  // latency was not measurable". The finite-latency guard now returns
+  // `undefined`.
   test("an infinite latency reports no measurement", () => {
     expect(
       computeTokensPerSec({ outputTokens: 100, latencyMs: Number.POSITIVE_INFINITY }),

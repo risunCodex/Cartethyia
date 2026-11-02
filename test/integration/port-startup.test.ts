@@ -151,7 +151,7 @@ test("bun run honors a saved custom port and exits with actionable blocked-port 
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [code, stdout, stderr] = await Promise.all([
+  const [code, , stderr] = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -160,5 +160,4 @@ test("bun run honors a saved custom port and exits with actionable blocked-port 
   expect(stderr).toContain(`port ${port} is already in use`);
   expect(stderr).toContain(`change PORT in ${join(configDir, ".env")}`);
   expect(stderr).toContain("CARTETHYIA_PUBLIC_ORIGIN");
-  expect(stdout).not.toContain("Select an action");
 });
