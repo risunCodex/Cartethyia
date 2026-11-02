@@ -349,8 +349,8 @@ const DSH_MINIMAL_PATTERN = buddyTemplatePattern("You are a helpful software eng
 const DSH_DIRECT_PATTERN = buddyTemplatePattern("You are DeepSeek Harness");
 const DSH_WEB_GUI_PATTERN = buddyTemplatePattern("DeepSeek Harness Web GUI");
 
-/** The identity DSH role prompts are rewritten to; matches the donor gateway. */
-const DSH_WORKBUDDY_IDENTITY = "You are WorkBuddy, a powerful AI assistant";
+/** The identity DSH role prompts are rewritten to; neutral and minimal. */
+const DSH_WORKBUDDY_IDENTITY = "You are a helpful assistant";
 
 /**
  * Rewrites DeepSeek Harness role identities in one message's text back to the

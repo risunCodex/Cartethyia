@@ -48,8 +48,7 @@ function isAgentPromptText(text: string): boolean {
   );
 }
 
-const CODEBUDDY_CN_NEUTRAL_PROMPT =
-  "You are a helpful AI assistant that helps with software engineering tasks.";
+const CODEBUDDY_CN_NEUTRAL_PROMPT = "You are a helpful assistant.";
 
 function flattenContent(content: unknown): string {
   if (typeof content === "string") return content;

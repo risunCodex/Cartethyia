@@ -272,10 +272,10 @@ describe("buddy wrapped append", () => {
       { role: "system", content: "caller system" },
       { role: "user", content: "hi" },
     ];
-    applyBuddySystemPrompt(messages, "You are CodeBuddy Code.", "tenant directive");
+    applyBuddySystemPrompt(messages, "You are a helpful assistant.", "tenant directive");
     expect(messages[0]?.["role"]).toBe("system");
     const content = String(messages[0]?.["content"]);
-    expect(content.startsWith("You are CodeBuddy Code.")).toBe(true);
+    expect(content.startsWith("You are a helpful assistant.")).toBe(true);
     expect(content).toContain(SYSTEM_PROMPT_WRAPPER_PREFIX);
     expect(content).toContain("tenant directive");
     expect(content).toContain(SYSTEM_PROMPT_WRAPPER_SUFFIX);
@@ -287,7 +287,7 @@ describe("buddy wrapped append", () => {
 
   test("no tenant text → prompt unchanged", () => {
     const messages: Array<Record<string, unknown>> = [{ role: "user", content: "hi" }];
-    applyBuddySystemPrompt(messages, "You are CodeBuddy Code.");
-    expect(messages[0]?.["content"]).toBe("You are CodeBuddy Code.");
+    applyBuddySystemPrompt(messages, "You are a helpful assistant.");
+    expect(messages[0]?.["content"]).toBe("You are a helpful assistant.");
   });
 });

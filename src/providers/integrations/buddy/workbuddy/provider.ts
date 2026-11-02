@@ -56,15 +56,11 @@ export const WORKBUDDY_BASE_URL = providerBaseUrl("workbuddy");
  * channel"`. So this prompt is a wire contract, not merely a product choice —
  * see the sibling in `codebuddy.ts`.
  *
- * The text is WorkBuddy's own leading prompt, matching what the official client
- * (and the donor gateway's `prepend` prompt mode) sends, so a proxied request
- * carries the real client's identity instead of a neutral stand-in. A previous
- * neutral persona was accepted but diverged from every request the official
- * desktop client emits.
+ * The text is deliberately neutral: a simple helpful-assistant persona with no
+ * client/CLI branding, kept minimal so it reads naturally to any model and
+ * does not advertise a channel identity upstream.
  */
-export const WORKBUDDY_SYSTEM_PROMPT =
-  "You are WorkBuddy, a powerful AI assistant.\n\n" +
-  "Your main goal is to follow the USER's instructions at each message, denoted by the <user_query> tag.";
+export const WORKBUDDY_SYSTEM_PROMPT = "You are a helpful assistant.";
 
 /**
  * Reconstructs generic function declarations when a later tool-history turn
