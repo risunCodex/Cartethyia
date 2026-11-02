@@ -104,6 +104,16 @@ afterward — a reverse session is not entitled to change the installed build.
 Qoder's gateway signature turned out to hash the *content-length string*, a
 shape no amount of guessing would have yielded (method and findings in
 [`documentation/archive/research/11-Qoder-30-10-2026-trial-activity-claims.md`](../../documentation/archive/research/11-Qoder-30-10-2026-trial-activity-claims.md)).
+- **Capture a native/CLI client's TLS with a real MITM proxy.** For a Rust or
+  native binary, prepending a wrapper is impossible and `AWS_ENDPOINT_URL` is
+  unreliable — run it through mitmproxy with its CA trusted in the Windows root
+  store, and extract flows to UTF-8 files. Proven recipe and pitfalls in
+  [`references/capturing-client-https-traffic.md`](references/capturing-client-https-traffic.md).
+  It yielded the Kiro CLI's exact path (`POST https://runtime.us-east-1.kiro.dev/`
+  root, not `/generateAssistantResponse`), headers (`aws-sdk-rust/1.6.0 …
+  app/AmazonQ-For-CLI`, `x-amzn-codewhisperer-optout: false`,
+  `x-kiro-attempt`), and the camelCase `conversationState` body — facts the
+  string scan had gotten wrong.
 
 Keep an evidence ledger: question, source and version, observed result, and
 what is still unknown. Turn only the verified rows into a Cartethyia change,

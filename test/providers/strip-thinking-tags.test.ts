@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { stripThinkingTags } from "../../src/providers/integrations/xiaomi-mimo/think-stream";
+import { stripThinkingTags } from "../../src/protocol/think-split";
 
 /**
  * The reasoning path on `chat.ts` forwards `reasoning_content` through to the
@@ -21,11 +21,15 @@ describe("stripThinkingTags — the reasoning path's defence against upstream do
     expect(stripThinkingTags("<thinking>a</thinking><think>b</think>")).toBe("ab");
   });
 
-  test("drops a stray closing tag with no opener", () => {
-    // An upstream that lost the opening tag before it committed the reasoning
-    // field still leaves the closer behind, and reading it as literal text is
-    // just as bad as reading a paired block.
-    expect(stripThinkingTags("step one</think>")).toBe("step one");
+  test("keeps a stray closing tag that has no opener", () => {
+    // An unpaired closing tag is the subject of the answer — a model reciting
+    // the syntax — not markup that leaked. Swallowing it silently rewrote the
+    // answer, which is a class of poisoning in its own right.
+    expect(stripThinkingTags("step one</think>")).toBe("step one</think>");
+  });
+
+  test("keeps an opening tag whose close never arrived", () => {
+    expect(stripThinkingTags("see <think> syntax")).toBe("see <think> syntax");
   });
 
   test("drops an open tag that carries attributes", () => {
@@ -35,7 +39,6 @@ describe("stripThinkingTags — the reasoning path's defence against upstream do
   test("drops whitespace inside the closing tag", () => {
     expect(stripThinkingTags("<think>inside</think >")).toBe("inside");
   });
-
   test("leaves a value with no tag characters untouched (no allocation)", () => {
     const value = "plain reasoning text, no tags at all";
     expect(stripThinkingTags(value)).toBe(value);

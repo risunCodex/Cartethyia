@@ -84,8 +84,9 @@ frames. Observed event types (structured JSON):
 
 | Event | Payload shape | Meaning |
 | --- | --- | --- |
+| `initial-response` | `{"conversationId":""}` | first frame; empty conversation id |
 | `assistantResponseEvent` | `{"content":"…","modelId":"auto"}` | one text delta (can be a token or several tokens) |
-| `reasoningContentEvent` | `{"signature":"…","text":"…"}` | reasoning signature + text |
+| `reasoningContentEvent` | `{"redactedContent":"…"}` | **envelope only, not text**: base64 → `.KTR~~<base64url-JSON>` → `{"encryptionRegion":null,"mintedAtMs":…,"modelHash":"…","slots":[],"v":1}`. Reasoning text is never exposed on the wire |
 | `metadataEvent` | `{"stopReason":"END_TURN"}` | terminal stop reason |
 | `contextUsageEvent` | `{"contextUsagePercentage":0.413}` | % of the model's context window in use |
 | `meteringEvent` | `{"unit":"credit","unitPlural":"credits","usage":0.0155}` | billed credits |
@@ -122,6 +123,8 @@ An adapter cannot detect prompt-cache hits from the Kiro runtime stream.
 | `management/List-Available-Profiles` | `403 User is not authorized to access this feature.` | Builder-ID cannot list profiles (as the adapter docs state) |
 | `runtime/generateAssistantResponse` (valid token) | not invoked | — |
 | OAuth browser PKCE (Builder-ID) | exchange + refresh HTTP 200 | full login flow works against `oidc.{region}.amazonaws.com` |
+| CLI real hit — `runtime.us-east-1.kiro.dev/generateAssistantResponse` with User-Agent `Kiro-CLI/2.37.0` | `200`, EventStream, text `pong`, stop `END_TURN` | the CLI's chat surface is the SAME runtime service as the IDE, not a separate `app.kiro.dev` KAS ACP endpoint |
+| CLI real hit (captured via mitmproxy, 2026-11-02) — actual wire | `POST https://runtime.us-east-1.kiro.dev/` (root path; IDE uses `/generateAssistantResponse`), UA `aws-sdk-rust/1.6.0 … app/AmazonQ-For-CLI` (Rust SDK, not `Kiro-CLI`), `x-amzn-codewhisperer-optout: false` (IDE sends `true`), `x-kiro-attempt: 1;max=3`, `accept: */*` (not eventstream) | the CLI's client is a Rust codegen client; it shares the service/JSON shape with the IDE but differs in path, UA, optout, and a few headers |
 
 ### Key findings
 
@@ -136,6 +139,41 @@ An adapter cannot detect prompt-cache hits from the Kiro runtime stream.
    auth (the 400 was profileArn), but it is not what the client sends.
 4. Management requests must NOT carry the runtime-only headers
    (`x-amzn-kiro-agent-mode`, `x-amzn-codewhisperer-optout`).
+5. **There is no separate public KAS ACP HTTP endpoint.** Direct HTTP to
+   `app.kiro.dev` (bare or `/router/mavis-control-plane`) answers `403 Bearer
+   token authentication requires a resolvable operation`; `gamma.app.kiro.dev`
+   answers `401` with an Amazon Midway/mwinit corporate-auth page (internal
+   build host). The 2.37.0 CLI binary embeds the same AWS SDK codegen clients
+   as the IDE — `amzn_codewhisperer_streaming_client`
+   (`AmazonCodeWhispererStreamingService.GenerateAssistantResponse`) and
+   `amzn_codewhisperer_client` (`AmazonCodeWhispererService.*`) — and
+   `mavis-control-plane` is the embedded v3 engine's LOCAL service name (ACP
+   over stdio/WebSocket, `_kiro.dev/*` extensions). A CLI chat hit is the same
+   `/generateAssistantResponse` runtime surface with the CLI User-Agent,
+   verified live (row above).
+6. **CLI body is camelCase, not snake_case.** Despite the binary containing
+   snake_case struct names (`conversation_state`, `profile_arn`), the captured
+   request body is the same camelCase awsJson1_0 shape as the IDE:
+   `{conversationState:{conversationId,history,currentMessage,chatTriggerType,
+   agentTaskType}, profileArn}`. Delta vs the adapter's builder: the CLI sends
+   `profileArn` in the body (no `x-amzn-kiro-profile-arn` header), omits
+   `rootConversationId`/`agentContinuationId`, and adds
+   `currentMessage.userInputMessage.userInputMessageContext.envState`
+   (`operatingSystem`, `currentWorkingDirectory`) plus `tools[]` on the current
+   turn. `origin: "AI_EDITOR"` and `modelId` are present on the current
+   message, exactly like the adapter.
+7. **There is no OpenAI/Messages surface.** The CLI binary has no
+   `chat/completions`, `chatcmpl`, `api.openai`, `x-api-key`, or
+   `/v1/messages` (Anthropic) strings; `No completions available` is LSP
+   completions, and `OpenAI Whisper` is only the voice ASR model download.
+   The chat wire is exclusively `conversationState` → AWS EventStream.
+8. **Captured GenerateAssistantResponse stream shape (prompt-long run):**
+   599 frames: `initial-response` ×1, `assistantResponseEvent` ×594,
+   `reasoningContentEvent` ×1, `metadataEvent` ×1, `contextUsageEvent` ×1,
+   `meteringEvent` ×1; `stopReason=END_TURN`; `contextUsagePercentage=1.96`;
+   metering `usage=0.219` credits. No per-chunk `id`/`object`/`created`/
+   `model`/`choices`/`usage` fields — those are OpenAI SSE concepts, absent
+   here.
 
 The live model list (Builder-ID, us-east-1): `auto` (1M/64K),
 `claude-sonnet-4.5` (200K/64K), `claude-haiku-4.5` (200K/64K),

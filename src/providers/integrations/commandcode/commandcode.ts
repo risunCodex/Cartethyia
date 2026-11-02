@@ -19,7 +19,7 @@ import type { ModelDefinition } from "../../provider-model-definition";
 import {
   getCommandCodeVersion,
 } from "../../operations/client-versions";
-import { MimoThinkSplitter } from "../xiaomi-mimo/think-stream";
+import { ThinkSplitter } from "../../../protocol/think-split";
 export const COMMANDCODE_PROVIDER_ID = "commandcode" as const;
 export const COMMANDCODE_BASE_URL = providerBaseUrl("commandcode");
 /**
@@ -426,7 +426,7 @@ export async function headers(sessionId: string, token: string): Promise<Record<
 }
 
 
-type StreamState = { toolIndexById: Map<string, number>; nextToolIndex: number; finishReason: string | undefined; usage: Record<string, unknown> | undefined; think: MimoThinkSplitter };
+type StreamState = { toolIndexById: Map<string, number>; nextToolIndex: number; finishReason: string | undefined; usage: Record<string, unknown> | undefined; think: ThinkSplitter };
 
 export function ccMapFinishReason(reason: string): CanonicalStopReason {
   return reason === "length" ? "length" : reason === "tool_calls" ? "tool_use" : reason === "content_filter" ? "content_filter" : "stop";
@@ -550,7 +550,7 @@ export function transformLine(line: string, state: StreamState, seqBase: number)
 export async function* transformNdjson(body: ReadableStream<Uint8Array>, signal: AbortSignal): AsyncIterable<CanonicalEvent> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  const state: StreamState = { toolIndexById: new Map(), nextToolIndex: 0, finishReason: undefined, usage: undefined, think: new MimoThinkSplitter() };
+  const state: StreamState = { toolIndexById: new Map(), nextToolIndex: 0, finishReason: undefined, usage: undefined, think: new ThinkSplitter() };
   let buffer = "";
   let hasTerminal = false;
   let seq = 1;

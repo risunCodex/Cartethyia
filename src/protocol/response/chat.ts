@@ -9,7 +9,7 @@ import { gatewayErrorFromStreamError } from "../stream-error-frames";
 import { mergeResponsesUsage } from "./responses";
 import { usageFromProvider, readReasoningText } from "../../providers/provider-usage";
 import { createToolEmitLedger } from "../tool-identity";
-import { MimoThinkSplitter, stripThinkingTags } from "../../providers/integrations/xiaomi-mimo/think-stream";
+import { ThinkSplitter, stripThinkingTags } from "../think-split";
 import { DsmlToolCallParser, parseDsmlToolCalls } from "./dsml";
 import {
   OmpToolCallMarkupParser,
@@ -87,7 +87,7 @@ export function parseChatResponseToEvents(
         : undefined;
     const visible = recovered === undefined ? contentWithoutMarkup : recovered.text;
     if (typeof visible === "string" && visible.includes("<think")) {
-      const think = new MimoThinkSplitter();
+      const think = new ThinkSplitter();
       const split = think.push(visible);
       const rest = think.flush();
       const reasoning = `${split.reasoning}${rest.reasoning}`;
@@ -257,11 +257,11 @@ export async function* decodeChatSseStream(
   const recoveredMarkupCalls: OmpTextToolCall[] = [];
   // Single emission ledger: one entry per logical call.
   const ledger = createToolEmitLedger();
-  const think = new MimoThinkSplitter();
+  const think = new ThinkSplitter();
   // Separate splitter for the reasoning channel: `reasoning_content` is its own
   // stream, and interleaving it into the answer splitter would let a tag in one
   // channel swallow the other's text.
-  const reasoningThink = new MimoThinkSplitter();
+  const reasoningThink = new ThinkSplitter();
   const declaredToolNames = declaredToolNamesForRequest(request);
   const callableToolNames = callableToolNamesForRequest(request);
   const contentMarkup =

@@ -59,7 +59,7 @@ const DEFAULT_PROFILE_ARNS: Record<string, string> = {
   social: "arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK",
 };
 
-interface KiroAuth {
+export interface KiroAuth {
   readonly accessToken: string;
   readonly authMethod: string;
   readonly region: string;
@@ -67,7 +67,7 @@ interface KiroAuth {
   readonly profileArn: string;
 }
 
-function authFromAccount(account: ExportedAccount): KiroAuth {
+export function authFromAccount(account: ExportedAccount): KiroAuth {
   const authState = account.authState as Record<string, unknown> | null | undefined;
   const authMethod = typeof authState?.authMethod === "string" ? authState.authMethod : "api_key";
   const region = typeof authState?.region === "string" ? authState.region : "us-east-1";
@@ -93,7 +93,7 @@ function authFromAccount(account: ExportedAccount): KiroAuth {
   };
 }
 
-function baseHeaders(auth: KiroAuth): Record<string, string> {
+export function baseHeaders(auth: KiroAuth): Record<string, string> {
   const headers: Record<string, string> = {
     authorization: `Bearer ${auth.accessToken}`,
     connection: "close",
@@ -131,7 +131,7 @@ function managementHeaders(auth: KiroAuth, operation: string): Record<string, st
  * `x-amzn-codewhisperer-optout`, `x-amzn-kiro-profile-arn` (when a profile is
  * resolved), and `accept: application/vnd.amazon.eventstream`.
  */
-function runtimeHeaders(auth: KiroAuth): Record<string, string> {
+export function runtimeHeaders(auth: KiroAuth): Record<string, string> {
   const headers: Record<string, string> = {
     ...baseHeaders(auth),
     "content-type": "application/x-amz-json-1.0",
@@ -145,7 +145,7 @@ function runtimeHeaders(auth: KiroAuth): Record<string, string> {
   return headers;
 }
 
-async function listModels(auth: KiroAuth, opts: { readonly out?: string } = {}): Promise<readonly string[] | null> {
+export async function listModels(auth: KiroAuth, opts: { readonly out?: string } = {}): Promise<readonly string[] | null> {
   const query = new URLSearchParams({ origin: "AI_EDITOR" });
   if (auth.profileArn.length > 0) query.set("profileArn", auth.profileArn);
   const url = `https://management.${auth.region}.kiro.dev/List-Available-Models?${query.toString()}`;
@@ -183,14 +183,18 @@ async function listModels(auth: KiroAuth, opts: { readonly out?: string } = {}):
   }
 }
 
-async function probeGeneration(auth: KiroAuth, model: string): Promise<void> {
+export async function probeGeneration(
+  auth: KiroAuth,
+  model: string,
+  opts: { readonly userAgent?: string; readonly message?: string; readonly timeoutMs?: number } = {},
+): Promise<void> {
   const url = `https://runtime.${auth.region}.kiro.dev/generateAssistantResponse`;
   const built = buildKiroWireRequest(
     {
       model,
       stream: true,
       source_surface: "chat",
-      messages: [{ role: "user", content: [{ kind: "text", text: "ping" }] }],
+      messages: [{ role: "user", content: [{ kind: "text", text: opts.message ?? "ping" }] }],
       generation_controls: {},
     },
     { conversationId: randomUUID(), modelId: model, profileArn: auth.profileArn },
@@ -201,9 +205,13 @@ async function probeGeneration(auth: KiroAuth, model: string): Promise<void> {
   }
   const body = JSON.stringify({ ...built.value.payload, agentMode: "vibe" });
   const headers: Record<string, string> = runtimeHeaders(auth);
+  if (opts.userAgent !== undefined && opts.userAgent.length > 0) {
+    headers["user-agent"] = opts.userAgent;
+    headers["x-amz-user-agent"] = opts.userAgent;
+  }
 
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 30_000);
+  const timer = setTimeout(() => ac.abort(), opts.timeoutMs ?? 30_000);
   try {
     const response = await fetch(url, { method: "POST", headers, body, signal: ac.signal });
     console.log(`[runtime (${model})] status=${response.status}`);
@@ -280,59 +288,61 @@ async function probeGeneration(auth: KiroAuth, model: string): Promise<void> {
   }
 }
 
-const { values } = parseArgs({
-  options: {
-    creds: { type: "string" },
-    model: { type: "string", default: "auto" },
-    all: { type: "boolean", default: false },
-    models: { type: "boolean", default: false },
-    out: { type: "string" },
-    label: { type: "string" },
-    index: { type: "string" },
-    timeout: { type: "string", default: "30000" },
-  },
-});
+if (import.meta.main) {
+  const { values } = parseArgs({
+    options: {
+      creds: { type: "string" },
+      model: { type: "string", default: "auto" },
+      all: { type: "boolean", default: false },
+      models: { type: "boolean", default: false },
+      out: { type: "string" },
+      label: { type: "string" },
+      index: { type: "string" },
+      timeout: { type: "string", default: "30000" },
+    },
+  });
 
-const credsPath = values.creds;
-if (credsPath === undefined) throw new Error("--creds <path> is required");
+  const credsPath = values.creds;
+  if (credsPath === undefined) throw new Error("--creds <path> is required");
 
-const accounts = readAccountsFile(credsPath);
-const account = pickAccount(accounts, {
-  providerId: "kiro",
-  ...(values.label !== undefined ? { label: values.label } : {}),
-  ...(values.index !== undefined ? { index: Number(values.index) } : {}),
-});
-const auth = authFromAccount(account);
+  const accounts = readAccountsFile(credsPath);
+  const account = pickAccount(accounts, {
+    providerId: "kiro",
+    ...(values.label !== undefined ? { label: values.label } : {}),
+    ...(values.index !== undefined ? { index: Number(values.index) } : {}),
+  });
+  const auth = authFromAccount(account);
 
-console.log(
-  `account=${account.label ?? "?"} (${account.providerId ?? "?"}/${account.credentialKind ?? "?"}) ` +
-    `token=${maskSecret(auth.accessToken)} region=${auth.region} authMethod=${auth.authMethod} ` +
-    `machineId=${maskUuid(auth.machineId)}`,
-);
+  console.log(
+    `account=${account.label ?? "?"} (${account.providerId ?? "?"}/${account.credentialKind ?? "?"}) ` +
+      `token=${maskSecret(auth.accessToken)} region=${auth.region} authMethod=${auth.authMethod} ` +
+      `machineId=${maskUuid(auth.machineId)}`,
+  );
 
-if (values.models) {
-  try {
-    await listModels(auth, { ...(values.out !== undefined ? { out: values.out } : {}) });
-  } catch (error) {
-    console.log(`[models] ERROR ${error instanceof Error ? error.message : String(error)}`);
+  if (values.models) {
+    try {
+      await listModels(auth, { ...(values.out !== undefined ? { out: values.out } : {}) });
+    } catch (error) {
+      console.log(`[models] ERROR ${error instanceof Error ? error.message : String(error)}`);
+    }
+    process.exit(0);
   }
-  process.exit(0);
-}
 
-let models: readonly string[];
-if (values.all) {
-  const live = await listModels(auth).catch(() => null);
-  models = live && live.length > 0 ? live : ["auto"];
-  if (live === null || live.length === 0) {
-    console.log("[--all] live model list unavailable — falling back to [auto]");
+  let models: readonly string[];
+  if (values.all) {
+    const live = await listModels(auth).catch(() => null);
+    models = live && live.length > 0 ? live : ["auto"];
+    if (live === null || live.length === 0) {
+      console.log("[--all] live model list unavailable — falling back to [auto]");
+    }
+  } else {
+    models = [values.model as string];
   }
-} else {
-  models = [values.model as string];
-}
-for (const model of models) {
-  try {
-    await probeGeneration(auth, model);
-  } catch (error) {
-    console.log(`[model ${model}] ERROR ${error instanceof Error ? error.message : String(error)}`);
+  for (const model of models) {
+    try {
+      await probeGeneration(auth, model);
+    } catch (error) {
+      console.log(`[model ${model}] ERROR ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
