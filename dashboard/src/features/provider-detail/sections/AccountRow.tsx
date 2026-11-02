@@ -27,6 +27,7 @@ import { usePoolHealthEvents, usePoolProviderProbe } from "../../../hooks/networ
 import { EmptyState, LoadingState, ErrorState } from "../../../components/ui/state";
 import type { ProviderAccountResponse } from "../../../data/contracts";
 import { AccountStatusBadge } from "./AccountStatusBadge";
+import { authMethodPill } from "./account-auth-method";
 
 function credentialExpiryLabel(expiresAt: string | undefined): string | undefined {
   if (expiresAt === undefined) return undefined;
@@ -303,6 +304,22 @@ export function AccountRow({
                     Pool
                   </span>
                 ) : null}
+                {(() => {
+                  const pill = authMethodPill(account.authMethod);
+                  if (pill === null) return null;
+                  return (
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 border rounded-tiny text-micro font-bold uppercase tracking-label ${
+                        pill.tone === "accent"
+                          ? "border-accent bg-accent-soft text-accent"
+                          : "border-inner-border bg-surface-1 text-text-secondary"
+                      }`}
+                      title={`Signed in via ${pill.label}`}
+                    >
+                      {pill.label}
+                    </span>
+                  );
+                })()}
                 <button
                   type="button"
                   className="shrink-0 grid place-items-center w-10 h-10 p-0 border-0 bg-transparent text-text-tertiary cursor-pointer rounded-tiny hover:bg-inner-border hover:text-text-primary"

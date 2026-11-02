@@ -243,6 +243,11 @@ export function ApiKeysPanel(): ReactNode {
                     <span className="inline-flex items-center gap-2.5 px-3.5 py-1 border border-inner-border rounded-chip bg-surface-1 text-text-secondary text-badge leading-normal whitespace-nowrap max-medium:justify-between">
                       <span className="text-text-tertiary text-micro font-semibold uppercase tracking-label">Concurrent</span>
                       {limitLabel(key.maxConcurrentRequests)}
+                      {key.keyMode === "share" ? (
+                        <span className="font-semibold text-text-tertiary" title={key.concurrencyScope === "per_key" ? "Each recipient key has its own concurrency cap and counter." : "All recipients share one concurrency cap and counter."}>
+                          {key.concurrencyScope === "per_key" ? "· per key" : "· family"}
+                        </span>
+                      ) : null}
                     </span>
                     <span className="inline-flex items-center gap-2.5 px-3.5 py-1 border border-inner-border rounded-chip bg-surface-1 text-text-secondary text-badge leading-normal whitespace-nowrap max-medium:justify-between">
                       <span className="text-text-tertiary text-micro font-semibold uppercase tracking-label">{key.modelAccessMode === "blacklist" ? "Blocked" : "Models"}</span>

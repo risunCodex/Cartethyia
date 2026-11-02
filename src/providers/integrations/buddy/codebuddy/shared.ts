@@ -3,7 +3,15 @@ import type { CanonicalRequest } from "../../../../protocol/canonical-model";
 import type { ProviderDispatchContext, ProviderDispatchTarget, ProviderId } from "../../../provider-contracts";
 import { resolveInboundSessionId } from "../../../operations/session-resolution";
 import { buddyConversationHeaders } from "../buddy-conversation-headers";
-import { buddyEnterprise, buddyUserId, resolveBuddyDeviceBinding, resolveBuddyIdentity } from "../buddy-identity";
+import {
+  buddyAgentPurpose,
+  buddyEnterprise,
+  buddyOAuthIdentityHeaders,
+  buddyPrivateData,
+  buddyUserId,
+  resolveBuddyDeviceBinding,
+  resolveBuddyIdentity,
+} from "../buddy-identity";
 import { buildCodeBuddyUserAgent, getCodeBuddyCnVersion, getCodeBuddyVersion } from "../../../operations/client-versions";
 import { buddyDeviceTokenHeaders } from "../workbuddy/shared";
 import { CODEBUDDY_TURING_CONFIG } from "../turing-device-token";
@@ -40,6 +48,13 @@ export async function codebuddyHeaders(
     ...(conversationId === undefined ? {} : { conversationId }),
   });
   if (resolveBuddyIdentity(context, cliIdentity) === "cli") {
+    const purpose = buddyAgentPurpose(context, request);
+    // Root/parent conversation context is forwarded only when the caller
+    // actually supplied it — the reference emits these conditionally for
+    // subagent/root chains and never invents them.
+    const inbound = context?.request_headers;
+    const rootRequestId = inbound?.["x-root-request-id"]?.trim();
+    const parentConversationId = inbound?.["x-parent-conversation-id"]?.trim();
     return {
       // The CLI sends `Accept: application/json` and no device token. It keeps
       // the request-shape markers (`X-Requested-With`, `X-CodeBuddy-Request`)
@@ -55,19 +70,24 @@ export async function codebuddyHeaders(
       "X-Domain": codebuddyDomain(variant),
       "x-requested-with": "XMLHttpRequest",
       "x-codebuddy-request": "1",
-      // The conversation purpose the reference client states. Not required —
-      // verified against the live API that a request succeeds without it — but
-      // it is part of the client's real request, and matching the client is the
-      // defence against a channel check tightening later.
-      "X-Agent-Purpose": "conversation",
+      ...(purpose === undefined ? {} : { "X-Agent-Purpose": purpose }),
       ...conversation,
+      ...(rootRequestId === undefined ? {} : { "X-Root-Request-ID": rootRequestId }),
+      ...(parentConversationId === undefined
+        ? {}
+        : { "X-Parent-Conversation-ID": parentConversationId }),
       ...buddyCliTraceHeaders(conversation),
+      // The CLI's OAuth identity family: X-User-Id from the JWT sub plus the
+      // base64 X-Userinfo envelope when identity fields exist.
+      ...buddyOAuthIdentityHeaders(context),
       ...buddyCliHeaders({
         userId: buddyUserId(context),
         enterpriseId: buddyEnterprise(context),
+        privateData: buddyPrivateData(context),
       }),
     };
   }
+  const purpose = buddyAgentPurpose(context, request);
   return {
     accept: "text/event-stream",
     "User-Agent": ua,
@@ -81,9 +101,10 @@ export async function codebuddyHeaders(
     "X-Domain": codebuddyDomain(variant),
     "x-requested-with": "XMLHttpRequest",
     "x-codebuddy-request": "1",
-    // Same value the CLI branch sends, for the same reason: part of the
-    // client's real request, harmless when the channel check does not read it.
-    "X-Agent-Purpose": "conversation",
+    // The effective agent purpose, matching the reference's dynamic value.
+    // The reference does not invent `conversation`; it sends the purpose only
+    // when one exists.
+    ...(purpose === undefined ? {} : { "X-Agent-Purpose": purpose }),
     // Same family WorkBuddy sends: the upstream's channel check reads the
     // turn-level aggregation key, and a chat request without it is refused for a
     // missing conversation id.

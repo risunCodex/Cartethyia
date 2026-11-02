@@ -1,9 +1,9 @@
-// Kiro (CodeWhisperer) quota.
+// Kiro (Kiro Control Plane) quota.
 //
-// Billing lives on two hosts and the right one depends on how the account
-// authenticates: an API key or enterprise token is served by the Amazon
-// surfaces, while the interactive families are answered by either. The
-// endpoints are tried in order and the first usable answer wins.
+// Billing lives on the Kiro control-plane (management) service — in the
+// 1.4.62 build `GetUsageLimits` is `GET /Get-Usage-Limits` on
+// `https://management.{region}.kiro.dev`. The legacy `codewhisperer.*` /
+// `q.*` AWS usage surfaces are no longer used.
 //
 // The account's region and profile matter here for the same reason they matter
 // at dispatch: the request is scoped to them, and an account-bound credential
@@ -15,7 +15,6 @@
 // device here and another at dispatch is the shape this gateway exists to avoid.
 
 import type {
-  FetchLike,
   ProviderQuotaResult,
   ProviderQuotaWindow,
 } from "../../quota/quota-contracts";
@@ -35,6 +34,16 @@ import {
 } from "../../operations/client-versions";
 import { machineIdForAuthState } from "./kiro-machine-id";
 import { resolveKiroProfileArn } from "./kiro-profile";
+import { KIRO_MANAGEMENT_HOST_TEMPLATE } from "./kiro-catalog";
+
+/**
+ * The fetcher shape this module needs: a plain callable. `FetchLike` from the
+ * quota contracts is the global `typeof fetch` (which carries extra callable
+ * properties like `preconnect`), and the OAuth client passes its narrower
+ * structural `FetchLike` here — so accept the common callable shape instead of
+ * either full type.
+ */
+type KiroFetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 /** AWS region shape, checked before a region is interpolated into a URL. */
 const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
@@ -72,13 +81,13 @@ function usageHeaders(credential: string, auth: KiroQuotaAuth): Record<string, s
     connection: "close",
     "amz-sdk-request": "attempt=1; max=1",
     "amz-sdk-invocation-id": crypto.randomUUID(),
-    "x-amzn-kiro-agent-mode": "vibe",
-    "x-amzn-codewhisperer-optout": "true",
     "x-amz-user-agent": buildKiroAmzUserAgent(version, auth.machineId),
     "user-agent": buildKiroRuntimeUserAgent(version, auth.machineId),
+    "x-kiro-machineid": auth.machineId,
   };
-  if (auth.authMethod === "api_key") headers["tokentype"] = "API_KEY";
-  else if (auth.authMethod === "external_idp") headers["tokentype"] = "EXTERNAL_IDP";
+  if (auth.authMethod === "api_key") headers["TokenType"] = "API_KEY";
+  else if (auth.authMethod === "external_idp") headers["TokenType"] = "EXTERNAL_IDP";
+  else if (auth.authMethod === "idc") headers["TokenType"] = "SSO_OIDC";
   return headers;
 }
 
@@ -127,11 +136,18 @@ function parseUsage(payload: unknown): ProviderQuotaResult {
     }
   }
   const subscription = record(root["subscriptionInfo"]);
+  // The bundle asks with `isEmailRequired: true`, and the upstream then reports
+  // the account's email in `userInfo.email`. That is the only identity a social/
+  // imported token exposes (the access token itself is opaque, not a JWT), so it
+  // becomes the suggested account label for the refresh sweep to adopt.
+  const userInfo = record(root["userInfo"]);
+  const email = text(userInfo?.["email"]);
   return {
     source: "kiro",
     plan: text(subscription?.["subscriptionTitle"]) ?? "Kiro",
     windows,
     error: null,
+    ...(email === null ? {} : { accountLabel: email }),
   };
 }
 
@@ -144,7 +160,7 @@ function parseUsage(payload: unknown): ProviderQuotaResult {
  */
 export async function fetchKiroQuota(
   credential: string,
-  fetcher: FetchLike,
+  fetcher: KiroFetchLike,
   context?: QuotaCollectionContext,
 ): Promise<ProviderQuotaResult> {
   const token = credential.trim();
@@ -156,43 +172,18 @@ export async function fetchKiroQuota(
     origin: "AI_EDITOR",
     resourceType: "AGENTIC_REQUEST",
   });
-  const usageBody = JSON.stringify({
-    origin: "AI_EDITOR",
-    ...(auth.profileArn.length > 0 ? { profileArn: auth.profileArn } : {}),
-    resourceType: "AGENTIC_REQUEST",
-  });
+  // The 1.4.62 client sends the profile in the query (`GetUsageLimitsCommand`
+  // with `{origin, profileArn, resourceType, isEmailRequired}`). Without it the
+  // upstream answers 400 `Invalid profileArn.` — and there is no POST surface;
+  // the legacy `codewhisperer.*`/`q.*` AWS usage paths are gone.
+  if (auth.profileArn.length > 0) query.set("profileArn", auth.profileArn);
 
-  // Which surface answers depends on the account's auth family. The profile
-  // travels in the POST body only: the GET form rejects it in the query with
-  // `400`, which is what a freshly imported account was failing its test on.
+  const managementHost = KIRO_MANAGEMENT_HOST_TEMPLATE.replace("{region}", auth.region);
   const attempts: readonly { readonly name: string; readonly run: () => Promise<Response> }[] = [
     {
-      name: "codewhisperer-get",
+      name: "management-get",
       run: () =>
-        fetcher(`https://codewhisperer.us-east-1.amazonaws.com/getUsageLimits?${query.toString()}`, {
-          method: "GET",
-          headers,
-          signal: AbortSignal.timeout(15_000),
-        }),
-    },
-    {
-      name: "codewhisperer-post",
-      run: () =>
-        fetcher("https://codewhisperer.us-east-1.amazonaws.com", {
-          method: "POST",
-          headers: {
-            ...headers,
-            "content-type": "application/x-amz-json-1.0",
-            "x-amz-target": "AmazonCodeWhispererService.GetUsageLimits",
-          },
-          body: usageBody,
-          signal: AbortSignal.timeout(15_000),
-        }),
-    },
-    {
-      name: "q-get",
-      run: () =>
-        fetcher(`https://q.${auth.region}.amazonaws.com/getUsageLimits?${query.toString()}`, {
+        fetcher(`${managementHost}/Get-Usage-Limits?${query.toString()}`, {
           method: "GET",
           headers,
           signal: AbortSignal.timeout(15_000),

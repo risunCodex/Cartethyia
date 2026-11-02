@@ -30,5 +30,5 @@ The generated-mint path (deterministic SHA-256 tokens shaped like the bridge
 output) is not excluded from daily CREDITS claims: same-account controls
 showed that machine headers do not gate an existing grant. The bridge remains
 useful when another surface needs a stable native identity. See
-[`12-Qoder-30-10-2026-umid-and-identity-findings.md`](../../documentation/archive/research/12-Qoder-30-10-2026-umid-and-identity-findings.md)
+[`documentation/research/qoder/2026-10-29-qoder-credits-claims-identity.md`](../../documentation/research/qoder/2026-10-29-qoder-credits-claims-identity.md)
 for the full record.

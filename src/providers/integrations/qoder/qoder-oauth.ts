@@ -8,14 +8,16 @@
  * the same endpoints as the upstream client.
  *
  * The issued token is used directly at dispatch: `dt-...` tokens skip the
- * PAT→jobToken exchange. There is no working refresh grant —
- * the upstream refresh endpoint answers 403 for this flow — so no refresher
- * is registered and the token is used exactly as issued until the operator
- * re-runs login. The account's Qoder user id and machine id travel in
- * `auth_state`, because the token itself carries neither and every dispatch
- * needs both for COSY signing.
+ * PAT→jobToken exchange. Refresh uses the deviceToken refresh endpoint
+ * (`POST /api/v1/deviceToken/refresh` with `{refresh_token, machine_id,
+ * machine_token}`), verified live 2026-11-02 — it returns a fresh `dt-…`
+ * and a rotated `drt-…`. The account's Qoder user id and machine id travel
+ * in `auth_state`, because the token itself carries neither and every
+ * dispatch needs both for COSY signing.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { QODER_REALMS, type QoderRealm } from "./qoder-realm";
 import {
   base64UrlEncode,
@@ -28,7 +30,7 @@ import type {
   OAuthDeviceStartResult,
   OAuthExchangeResult,
 } from "../../authentication/oauth-flow-store";
-import type { OAuthTokenRefreshResult } from "../../authentication/oauth-refresh-service";
+import type { OAuthTokenRefreshResult, OAuthRefreshContext } from "../../authentication/oauth-refresh-service";
 import { OAuthDeviceFlow } from "../../authentication/oauth-device-flow";
 
 /** One Qoder account profile, as much of it as the gateway uses. */
@@ -221,6 +223,76 @@ function parseDeviceState(value: string | undefined): QoderDeviceState | undefin
   return { verifier, machineId };
 }
 
+/**
+ * Random PKCE verifier in the exact alphabet the desktop IDE uses.
+ *
+ * The IDE's `startDeviceFlow` draws the verifier from
+ * `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~` (43–128
+ * chars). Using the same alphabet keeps the login byte-for-byte identical to
+ * the desktop client, which the approval server may use to fingerprint the
+ * requesting client.
+ */
+function qoderIdeVerifier(): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+  const length = 43 + Math.floor(Math.random() * 86);
+  const bytes = randomBytes(length);
+  let out = "";
+  for (let i = 0; i < length; i += 1) {
+    out += alphabet[bytes[i]! % alphabet.length];
+  }
+  return out;
+}
+
+/**
+ * The hardware machine id the desktop IDE reports for the device flow.
+ *
+ * The IDE's `getMachineId` is platform-hardware-derived: Windows reads
+ * `MachineGuid` from `HKLM\SOFTWARE\Microsoft\Cryptography`, macOS reads the
+ * `IOPlatformUUID` from IORegistry, Linux reads `/etc/machine-id`. The device
+ * login sends it as `machine_id`, and the upstream correlates the approved
+ * device to the account. A random UUID instead registers a different device,
+ * which is the observable difference between an IDE login that chats and a
+ * gateway login that is refused with quota errors.
+ *
+ * Returns the hardware id when it can be read, else `""` so callers fall back
+ * to a random UUID exactly like the IDE does on an unreadable machine.
+ */
+export function qoderHardwareMachineId(): string {
+  try {
+    if (process.platform === "win32") {
+      const out = execSync('reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid', {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 5000,
+      });
+      const m = /MachineGuid\s+REG_SZ\s+([0-9a-fA-F-]+)/.exec(out);
+      return m?.[1]?.trim() ?? "";
+    }
+    if (process.platform === "darwin") {
+      const out = execSync("ioreg -rd1 -c IOPlatformExpertDevice", {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 5000,
+      });
+      const m = /"IOPlatformUUID"\s*=\s*"([^"]+)"/.exec(out);
+      return m?.[1]?.trim() ?? "";
+    }
+    if (process.platform === "linux") {
+      for (const p of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
+        try {
+          const v = readFileSync(p, "utf8").trim();
+          if (v) return v;
+        } catch {
+          // try the next candidate
+        }
+      }
+    }
+  } catch {
+    // fall through to the caller's random fallback
+  }
+  return "";
+}
+
 export class QoderOAuthClient extends OAuthDeviceFlow {
   override readonly supportsDeviceCode = true;
   override readonly supportsBrowserCode = false;
@@ -254,25 +326,35 @@ export class QoderOAuthClient extends OAuthDeviceFlow {
   override async startDeviceAuth(
     _context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDeviceStartResult> {
-    const verifier = base64UrlEncode(randomBytes(32));
+    // 1:1 with the desktop IDE device flow (unpacked worker `startDeviceFlow`):
+    // the verifier is random from the IDE's own alphabet (`A-Za-z0-9-._~`,
+    // 43–128 chars), the challenge is PKCE S256, the nonce is a full UUID
+    // (dashes included), and the client id is ALWAYS sent — intl uses the
+    // same id the realm table carries, CN uses its own. Sending no client id
+    // (or stripping the UUID dashes) makes the approval screen classify the
+    // device differently and can produce an account the model server later
+    // refuses with quota/entitlement errors.
+    //
+    // The machine id defaults to the hardware id (same source the IDE reads),
+    // but an operator may pass `machine_id`/`machine_token` through
+    // `context.parameters` to reuse a device identity the IDE already holds
+    // (e.g. `aicoding.loginMachineIdentity.v1.qoder.local`) — the upstream
+    // correlates the approved device to the account, so matching the IDE's
+    // device is how a gateway login chats on the same account the IDE does.
+    const overrideMachineId = nonEmptyTrimmedString(_context?.parameters?.["machine_id"]);
+    const overrideMachineToken = nonEmptyTrimmedString(_context?.parameters?.["machine_token"]);
+    const verifier = qoderIdeVerifier();
     const challenge = base64UrlEncode(createHash("sha256").update(verifier).digest());
-    // CN carries a dashed nonce and additionally states the client id and
-    // native redirect; intl stays on the 32-hex nonce and the two params it
-    // has always sent. Both shapes are upstream fact from the donor, and only
-    // the CN branch is new, so the working intl URL is untouched.
-    const nonce = this.realm === "cn" ? randomUUID() : randomUUID().replaceAll("-", "");
-    const machineId = randomUUID();
+    const nonce = randomUUID();
+    const machineId = overrideMachineId ?? (qoderHardwareMachineId() || randomUUID());
     const params = new URLSearchParams({
       challenge,
       challenge_method: "S256",
-      machine_id: machineId,
       nonce,
+      machine_id: machineId,
+      client_id: QODER_REALMS[this.realm].clientId,
     });
-    if (this.realm === "cn") {
-      const config = QODER_REALMS.cn;
-      params.set("client_id", config.clientId);
-      params.set("redirect_uri", config.redirectUri);
-    }
+    if (overrideMachineToken !== undefined) params.set("machine_token", overrideMachineToken);
     return {
       verificationUri: `${qoderOAuthUrls(this.realm).loginUrl}?${params.toString()}`,
       // This flow shows no user code: approval happens against the
@@ -395,10 +477,64 @@ export class QoderOAuthClient extends OAuthDeviceFlow {
   }
 
   override async refresh(
-    _refreshToken: string,
-    _signal?: AbortSignal,
+    refreshToken: string,
+    signal?: AbortSignal,
+    context?: OAuthRefreshContext,
   ): Promise<OAuthTokenRefreshResult> {
-    throw new Error("Qoder does not support token refresh; sign in again");
+    // The deviceToken refresh endpoint is the one working refresh grant for this
+    // flow (verified live 2026-11-02: POST /api/v1/deviceToken/refresh with
+    // `{refresh_token, machine_id, machine_token}` returns 200 with a fresh
+    // `device_token` + rotated `refresh_token`). The abstract OAuth refresh
+    // endpoint answers 403 for this flow, so we post to the deviceToken one.
+    const authState = record(context?.auth_state);
+    const machineId = authState === undefined ? undefined : nonEmptyTrimmedString(authState.machineId);
+    if (machineId === undefined) {
+      throw new Error("Qoder refresh requires auth_state.machineId");
+    }
+    const response = await this.fetchFn(
+      `${qoderOAuthUrls(this.realm).deviceTokenUrl}/refresh`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          "user-agent": "Go-http-client/2.0",
+        },
+        body: JSON.stringify({
+          refresh_token: refreshToken,
+          machine_id: machineId,
+          machine_token: machineId,
+        }),
+        ...(signal === undefined ? {} : { signal }),
+      },
+    );
+    const raw = await response.text();
+    let payload: unknown;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      throw new Error(`Qoder token refresh returned invalid JSON (${response.status})`);
+    }
+    if (!response.ok) {
+      const message = record(payload);
+      throw new Error(
+        nonEmptyTrimmedString(message?.message) ??
+          nonEmptyTrimmedString(message?.errorMessage) ??
+          `Qoder token refresh failed (${response.status})`,
+      );
+    }
+    const body = record(payload);
+    const deviceToken = body === undefined ? undefined : nonEmptyTrimmedString(body.device_token);
+    if (deviceToken === undefined) {
+      throw new Error("Qoder token refresh response omitted device_token");
+    }
+    const nextRefresh = nonEmptyTrimmedString(body?.refresh_token);
+    const expiresAt = new Date(parseQoderExpiry(body?.expires_at, body?.expires_in));
+    return {
+      access: deviceToken,
+      ...(nextRefresh === undefined ? {} : { refresh: nextRefresh }),
+      expiresAt,
+    };
   }
 }
 

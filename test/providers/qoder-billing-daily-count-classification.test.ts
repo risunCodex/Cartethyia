@@ -1,45 +1,73 @@
 /**
- * Qoder's `110` "Billing daily count exceeded" must cool the account as quota,
- * never invalidate the credential.
+ * Qoder's quota verdicts — `110` "Billing daily count exceeded" and the
+ * exhausted-quota 499 close — must cool the *model*, never the account.
  *
- * `{"code":"110","message":"Billing daily count exceeded"}` is a spend/limit
- * verdict — the daily billing allowance is exhausted — not an auth one. The
- * status wrapper (often 403) used to fall through to the generic credential
- * arm, so a healthy account was parked as `auth_invalidated` / "Re-login
- * required" and an operator was sent to re-authenticate a credential that was
- * never rejected. The same principle applies to any unmapped numeric provider
- * code: never invalidate on unknown codes — cooldown is the safe default.
+ * One model's spend cap does not drain another: cooling the whole account as
+ * `quota_exhausted` parks every other model on it, the exact symptom reported.
+ * The classifier must produce a model-scoped verdict (`model_unreachable`,
+ * mutating so the writer writes `modelCooldowns[modelId]`), and stay
+ * non-mutating when no model is known so an unknown-pair refusal never parks
+ * the account either. The window is a full day — the provider's own daily
+ * billing window — never the generic 1h fallback, which let the pair
+ * re-enter rotation inside the window it was closed for.
  */
 import { expect, test } from "bun:test";
 import { classifyAccountError } from "../../src/providers/operations/account-health-service";
 import { classifyUpstreamError } from "../../src/transport/failure-policy";
-import { GatewayError } from "../../src/protocol/gateway-error";
 
 const BILLING_DAILY = '{"code":"110","message":"Billing daily count exceeded"}';
 const UPSTREAM = { origin: "upstream" as const, scope: "account" as const };
+const ONE_DAY = 24 * 60 * 60 * 1000;
 
-test("Qoder code-110 billing-limit refusals classify as quota cooldown", () => {
+test("Qoder code-110 billing-limit refusals cool the model, not the account", () => {
   const classification = classifyAccountError(new Error(BILLING_DAILY), {
     ...UPSTREAM,
     providerId: "qoder",
     providerCode: "110",
     statusCode: 403,
-    credentialEvidence: true,
+    modelId: "deepseek-v4.1-flash",
   });
-  expect(classification.category).toBe("quota_exhausted");
+  expect(classification.category).toBe("model_unreachable");
   expect(classification.status).toBe("cooldown");
+  expect(classification.cooldownMs).toBe(ONE_DAY);
+  // Mutating = the writer records `modelCooldowns[modelId]` and leaves the
+  // account routable for its other models.
+  expect(classification.mutatesAccount).toBe(true);
   expect(classification.category).not.toBe("auth_invalidated");
 });
 
-test("Qoder code-110 is never credential invalidation", () => {
+test("Qoder code-110 is never credential invalidation, with or without a model", () => {
+  expect(
+    classifyAccountError(new Error(BILLING_DAILY), {
+      ...UPSTREAM,
+      providerId: "qoder",
+      providerCode: "110",
+      statusCode: 401,
+      credentialEvidence: true,
+      modelId: "deepseek-v4.1-flash",
+    }).category,
+  ).not.toBe("auth_invalidated");
+  expect(
+    classifyAccountError(new Error(BILLING_DAILY), {
+      ...UPSTREAM,
+      providerId: "qoder",
+      providerCode: "110",
+      statusCode: 401,
+      credentialEvidence: true,
+    }).category,
+  ).not.toBe("auth_invalidated");
+});
+
+test("Qoder code-110 without a model id never parks the account", () => {
   const classification = classifyAccountError(new Error(BILLING_DAILY), {
     ...UPSTREAM,
     providerId: "qoder",
     providerCode: "110",
-    statusCode: 401,
-    credentialEvidence: true,
+    statusCode: 403,
   });
-  expect(classification.category).not.toBe("auth_invalidated");
+  expect(classification.category).toBe("model_unreachable");
+  expect(classification.status).toBe("cooldown");
+  expect(classification.mutatesAccount).toBe(false);
 });
 
 test("the billing phrase is recognised even when the numeric code is not parsed", () => {
@@ -48,9 +76,11 @@ test("the billing phrase is recognised even when the numeric code is not parsed"
     ...UPSTREAM,
     providerId: "qoder",
     statusCode: 403,
+    modelId: "auto",
   });
-  expect(classification.category).toBe("quota_exhausted");
+  expect(classification.category).toBe("model_unreachable");
   expect(classification.status).toBe("cooldown");
+  expect(classification.mutatesAccount).toBe(true);
 });
 
 test("upstream classification maps code 110 to quota, not auth", () => {
@@ -59,25 +89,36 @@ test("upstream classification maps code 110 to quota, not auth", () => {
   expect(classification.credentialEvidence).toBeUndefined();
 });
 
-test("Qoder upstream 499 classifies as quota cooldown, not transport", () => {
+test("Qoder upstream 499 with a model cools the pair for a day", () => {
+  const classification = classifyAccountError(new Error("Qoder stream closed"), {
+    ...UPSTREAM,
+    providerId: "qoder",
+    statusCode: 499,
+    modelId: "deepseek-v4.1-flash",
+  });
+  expect(classification.category).toBe("model_unreachable");
+  expect(classification.status).toBe("cooldown");
+  expect(classification.cooldownMs).toBe(ONE_DAY);
+  expect(classification.mutatesAccount).toBe(true);
+});
+
+test("Qoder upstream 499 without a model id never parks the account", () => {
   const classification = classifyAccountError(new Error("Qoder stream closed"), {
     ...UPSTREAM,
     providerId: "qoder",
     statusCode: 499,
   });
-  expect(classification.category).toBe("quota_exhausted");
-  expect(classification.status).toBe("cooldown");
-  expect(classification.cooldownMs).toBeGreaterThan(0);
-  expect(classification.mutatesAccount).toBe(true);
+  expect(classification.category).toBe("model_unreachable");
+  expect(classification.mutatesAccount).toBe(false);
 });
 
-test("Qoder 499 does not classify for other providers", () => {
+test("Qoder 499 does not classify as quota for other providers", () => {
   const classification = classifyAccountError(new Error("stream closed"), {
     ...UPSTREAM,
     providerId: "openai",
     statusCode: 499,
   });
-  expect(classification.category).not.toBe("quota_exhausted");
+  expect(classification.category).not.toBe("model_unreachable");
 });
 
 test("an unknown numeric provider code never invalidates the credential", () => {
@@ -94,14 +135,7 @@ test("an unknown numeric provider code never invalidates the credential", () => 
 });
 
 test("textual auth rejection still invalidates the credential", () => {
-  const error = new GatewayError(
-    "authentication_failed" as never,
-    403,
-    "invalid api key",
-    {} as never,
-    "upstream" as never,
-  );
-  const classification = classifyAccountError(error, {
+  const classification = classifyAccountError(new Error("invalid api key"), {
     origin: "upstream",
     scope: "account",
     providerId: "qoder",

@@ -1317,4 +1317,32 @@ describe("decodeChatSseStream — Inferhub ag/* model quirks", () => {
     );
     expect(reasoning).toHaveLength(0);
   });
+
+  test("reasoning_summary object and reasoning_text keys are read as reasoning", async () => {
+    // GitHub Copilot's GPT-6-Luna (and other OpenAI-compatible upstreams) send
+    // reasoning deltas under keys other than `reasoning_content`, sometimes as
+    // objects rather than plain strings. The decoder must surface them as
+    // reasoning events instead of silently dropping them.
+    const events = await collect(
+      sseStream(
+        frame({ choices: [{ delta: { reasoning_summary: { summary: "planning" } }, finish_reason: null, index: 0 }] }) +
+          frame({ choices: [{ delta: { reasoning_text: "thinking hard" }, finish_reason: null, index: 0 }] }) +
+          frame({ choices: [{ delta: { content: "answer" }, finish_reason: "stop", index: 0 }] }) +
+          frame("[DONE]"),
+      ),
+    );
+
+    const reasoning = events.filter(
+      (event): event is Extract<CanonicalEvent, { type: "content_delta" }> =>
+        event.type === "content_delta" && event.content.kind === "reasoning",
+    );
+    const summaries = reasoning.map((event) => (event.content as { summary?: string }).summary ?? "");
+    expect(summaries.join("|")).toContain("planning");
+    expect(summaries.join("|")).toContain("thinking hard");
+    const texts = events.filter(
+      (event): event is Extract<CanonicalEvent, { type: "content_delta" }> =>
+        event.type === "content_delta" && event.content.kind === "text",
+    );
+    expect(texts.map((event) => (event.content as { text?: string }).text)).toEqual(["answer"]);
+  });
 });

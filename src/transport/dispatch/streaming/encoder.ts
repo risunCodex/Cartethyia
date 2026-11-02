@@ -12,7 +12,7 @@
 import type { CanonicalEvent, SourceSurface, UsageRecord } from "../../../protocol/canonical-model";
 import { canonicalTerminal } from "../../../protocol/codecs";
 import { reasoningTextOf } from "../../../protocol/reasoning-text";
-import { MimoThinkSplitter } from "../../../providers/integrations/xiaomi-mimo/think-stream";
+import { ThinkSplitter } from "../../../protocol/think-split";
 import { createDispatchStreamEncoder, type DispatchStreamEncoder } from "../stream-bridge";
 import { THINKING_LOOP_MARKER, ThinkingLoopDetector } from "./thinking-loop";
 
@@ -93,10 +93,11 @@ export class StreamEventPipeline {
    */
   private readonly diagnosticsCaptureMode: "none" | "metadata" | "full";
   private readonly streamEncoder: DispatchStreamEncoder;
-  // One splitter per stream: a thinking tag can straddle two provider chunks,
-  // and the text/idle bookkeeping below must see the split result, not the raw
-  // tagged chunk.
-  private readonly thinkSplitter = new MimoThinkSplitter();
+  // One splitter per stream, kept purely as a feeder for the loop guard: it
+  // reports the content currently inside an open `<think>` span so a runaway
+  // chain-of-thought is caught even when the provider wrote it into the text
+  // stream. It never re-routes the emitted events — text is forwarded verbatim.
+  private readonly thinkSplitter = new ThinkSplitter();
   /**
    * Content-level loop guard. A model that degenerates into a repeated
    * chain-of-thought keeps sending bytes, so the stall timeout — which fires
@@ -259,26 +260,17 @@ export class StreamEventPipeline {
     // `loopDetected`, so this only matters for an event already in flight;
     // dropping it is the alternative to throwing mid-stream.
     if (this.loopDetector.detected) return false;
-    // The one place every surface shares. A provider that writes its reasoning
-    // into the answer as `<think>…</think>` had that text forwarded verbatim:
-    // the chat wire happened to split it in its own decoder, so chat looked
-    // right while messages and responses — and any other provider wire whose
-    // text carries the tags — showed the raw reasoning as the answer.
+    // Text is forwarded verbatim: inline thinking tags are a per-provider
+    // decoder concern, not a universal one. Splitting them here for every
+    // surface misclassified literal `<think>` in an answer as reasoning — the
+    // answer vanished into the thinking pane and the poisoned history stopped
+    // follow-up turns. The loop guard still watches reasoning a provider puts
+    // inside an open `<think>` span, without reclassifying the answer.
     if (event.type === "content_delta" && event.content.kind === "text") {
+      const enqueued = this.enqueueOne(event, controller);
       const split = this.thinkSplitter.push(event.content.text);
-      let enqueued = false;
-      if (split.reasoning.length > 0) {
-        const reasoningEvent: CanonicalEvent = {
-          ...event,
-          content: { kind: "reasoning", payload: null, summary: split.reasoning },
-        };
-        enqueued = this.enqueueOne(reasoningEvent, controller) || enqueued;
-        if (this.guardReasoning(split.reasoning, controller)) return enqueued;
-      }
-      if (split.text.length > 0) {
-        enqueued =
-          this.enqueueOne({ ...event, content: { kind: "text", text: split.text } }, controller) ||
-          enqueued;
+      if (split.pendingReasoning.length > 0) {
+        if (this.guardReasoning(split.pendingReasoning, controller)) return true;
       }
       return enqueued;
     }
@@ -290,31 +282,8 @@ export class StreamEventPipeline {
       this.guardReasoning(reasoningTextOf(event.content) ?? "", controller);
       return enqueued;
     }
-    // Text held back for a tag that never completed must be released *before*
-    // the terminal: a content event after it is rejected by the surface
-    // encoders, and the tail of the answer would be lost instead.
     if (event.type === "terminal") {
-      const rest = this.thinkSplitter.flush();
-      if (rest.reasoning.length > 0) {
-        this.enqueueOne(
-          {
-            type: "content_delta",
-            sequence_number: event.sequence_number,
-            content: { kind: "reasoning", payload: null, summary: rest.reasoning },
-          },
-          controller,
-        );
-      }
-      if (rest.text.length > 0) {
-        this.enqueueOne(
-          {
-            type: "content_delta",
-            sequence_number: event.sequence_number,
-            content: { kind: "text", text: rest.text },
-          },
-          controller,
-        );
-      }
+      return this.enqueueOne(event, controller);
     }
     return this.enqueueOne(event, controller);
   }
@@ -335,29 +304,6 @@ export class StreamEventPipeline {
   ): boolean {
     const reason = text.length > 0 ? this.loopDetector.push(text) : undefined;
     if (reason === undefined) return false;
-    // Flush before the terminal: content after it is rejected by the surface
-    // encoders, and the held-back text would be lost.
-    const rest = this.thinkSplitter.flush();
-    if (rest.reasoning.length > 0) {
-      this.enqueueOne(
-        {
-          type: "content_delta",
-          sequence_number: this.lastSequenceNumber + 1,
-          content: { kind: "reasoning", payload: null, summary: rest.reasoning },
-        },
-        controller,
-      );
-    }
-    if (rest.text.length > 0) {
-      this.enqueueOne(
-        {
-          type: "content_delta",
-          sequence_number: this.lastSequenceNumber + 1,
-          content: { kind: "text", text: rest.text },
-        },
-        controller,
-      );
-    }
     this.enqueueOne(
       canonicalTerminal({
         sequenceNumber: this.lastSequenceNumber + 1,

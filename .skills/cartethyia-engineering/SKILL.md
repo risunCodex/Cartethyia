@@ -17,6 +17,7 @@ Entry point for repo work. Most tasks belong to a focused skill — pick it firs
 | What a model can do — vision, tools, reasoning, free tier — and proving it | `cartethyia-provider-catalog` → `references/capabilities.md` |
 | Remove a bundled provider and its leftover global row | `cartethyia-provider-catalog` → `references/provider-removal.md` |
 | Understand undocumented behavior by tracing this repo's own code | `cartethyia-reverse-engineering` |
+| Write a decision-ready implementation proposal (audit first, format, links) | `cartethyia-engineering-proposal` |
 | Image generation wires, catalog rows, and account entitlement | `cartethyia-provider-catalog` |
 | Account health, cooldown class, pool selection, retries, leases | `cartethyia-health-routing` |
 | Add/change a `src/console/` domain; contract→store→dashboard mirror | `cartethyia-console-api` |

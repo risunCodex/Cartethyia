@@ -35,15 +35,25 @@ export const GROK_BASE_URL = providerBaseUrl("grok");
 export const GROK_CLIENT_IDENTIFIER = "grok-shell" as const;
 export const GROK_TOKEN_AUTH = "xai-grok-cli" as const;
 
+/**
+ * Tool types the Grok Build proxy accepts verbatim (hosted tools). Verified
+ * live 2026-11-02: a `web_search_preview` (OpenAI Responses spelling) was
+ * rejected with `tools[0].type: unknown variant, expected one of function,
+ * web_search, x_search, image_generation, collections_search, file_search,
+ * code_execution, code_interpreter, mcp, shell, tool_search`. Anything not in
+ * this set is normalized to a flat `function` tool instead.
+ */
 const GROK_HOSTED_TOOLS = new Set([
   "web_search",
   "x_search",
-  "web_search_preview",
-  "file_search",
   "image_generation",
+  "collections_search",
+  "file_search",
+  "code_execution",
   "code_interpreter",
   "mcp",
-  "local_shell",
+  "shell",
+  "tool_search",
 ]);
 const GROK_ALLOWED_FIELDS = new Set([
   "model",
@@ -62,6 +72,24 @@ const GROK_ALLOWED_FIELDS = new Set([
   "text",
   "metadata",
   "prompt_cache_key",
+  // Session/response linkage fields — verified in the 1.0.70 binary's
+  // `struct Response with 31 elements` / `struct Conversation with 1 element`
+  // (OpenAI Responses shape). Without them a fresh request cannot reference
+  // earlier turns, and the proxy treats each call as a brand-new session.
+  "previous_response_id",
+  "conversation",
+  // Extra Responses fields the binary accepts; harmless and useful for parity.
+  "background",
+  "truncation",
+  "max_tool_calls",
+  "stream_options",
+  "prompt_cache_retention",
+  "top_logprobs",
+  "moderation",
+  "safety_identifier",
+  "prompt",
+  "context_management",
+  "user",
 ]);
 const GROK_SERVER_ID = /^(rs|fc|resp|msg)_/i;
 const GROK_NATIVE_ID = /^(rs|msg|fc)_[0-9a-f-]{20,}$/i;
@@ -166,7 +194,7 @@ export async function fetchGrokModels(
         authorization: `Bearer ${options.credential}`,
         "x-xai-token-auth": GROK_TOKEN_AUTH,
         "x-grok-client-identifier": GROK_CLIENT_IDENTIFIER,
-        "x-grok-client-mode": "headless",
+        "x-grok-client-mode": "Desktop",
         "x-grok-client-version": getGrokVersion(),
         "user-agent": buildGrokUserAgent(),
         accept: "application/json",
@@ -177,8 +205,6 @@ export async function fetchGrokModels(
     const entries = modelEntries(await response.json());
     if (entries === null) return null;
     const models = new Map<string, ModelDefinition>();
-    const profiles = new Map<string, ModelDefinition>();
-    const defaultEfforts = new Map<string, ReasoningEffortLevel>();
     for (const raw of entries) {
       const entry = raw as GrokModelCatalogEntry;
       const metadata = isRecord(entry._meta) ? entry._meta : undefined;
@@ -197,7 +223,6 @@ export async function fetchGrokModels(
           max: 10_000_000,
         }) ?? reference?.outputLimit ?? 64_000;
       const menu = parseGrokReasoningMenu(entry.reasoning_efforts ?? entry.reasoningEfforts);
-      const metadataEffort = normalizeEffort(entry.reasoning_effort ?? entry.reasoningEffort);
       const supportsReasoning =
         entry.supports_reasoning_effort ?? entry.supportsReasoningEffort;
       const reasoning =
@@ -217,18 +242,15 @@ export async function fetchGrokModels(
         cost: modelsDevCatalog.costFor(GROK_PROVIDER_ID, id),
       };
       models.set(id, model);
-      profiles.set(id.toLowerCase(), model);
-      if (metadataEffort !== undefined) defaultEfforts.set(id.toLowerCase(), metadataEffort);
     }
     if (models.size === 0) return null;
-    discoveredModels.clear();
-    for (const [id, model] of profiles) discoveredModels.set(id, model);
-    // Replace discovered defaults, retaining the static defaults as fallback
-    // only for catalog ids absent from this upstream response.
-    for (const id of defaultGrokEfforts.keys()) {
-      if (profiles.has(id)) defaultGrokEfforts.delete(id);
-    }
-    for (const [id, effort] of defaultEfforts) defaultGrokEfforts.set(id, effort);
+    // Deliberately no module-global cache here. Discovery results are persisted
+    // to the DB (source=discovered) by the probing service; a process-global
+    // `discoveredModels` map was clobbered by whichever account synced last —
+    // the per-account catalog can differ by plan, so account B's sync replaced
+    // account A's limits/reasoning menus for the whole process. Dispatch reads
+    // the static `GROK_MODELS` fallback (which is verified accurate against the
+    // live `/v1/models`), and the DB rows feed routing.
     return [...models.values()].sort((a, b) => a.modelId.localeCompare(b.modelId));
   } catch {
     return null;
@@ -245,28 +267,29 @@ export async function fetchGrokModels(
  * a model is effort-capable exactly when it is a served model that the catalog
  * declares as reasoning-capable. Suffixed variants of a served model (e.g.
  * `grok-4.6-high`) inherit that capability, matching the previous prefix rule.
+ *
+ * There is intentionally no discovered/cached map here: the static catalog is
+ * the single source for dispatch-time limits and reasoning, so a per-account
+ * catalog can never clobber another account's model behavior (see
+ * `fetchGrokModels`).
  */
-const discoveredModels = new Map<string, ModelDefinition>();
-const defaultGrokEfforts = new Map<string, ReasoningEffortLevel>([
-  ["grok-4.7", "high"],
-  ["grok-4.5", "high"],
-  ["grok-4.6", "high"],
-]);
-
 function grokModelDefinition(modelId: string): ModelDefinition | undefined {
   const normalized = modelId.toLowerCase();
-  return (
-    discoveredModels.get(normalized) ??
-    GROK_MODELS.find((model) => model.modelId.toLowerCase() === normalized)
-  );
+  return GROK_MODELS.find((model) => model.modelId.toLowerCase() === normalized);
 }
+
+const GROK_STATIC_DEFAULT_EFFORTS: Readonly<Record<string, ReasoningEffortLevel>> = {
+  "grok-4.7": "high",
+  "grok-4.5": "high",
+  "grok-4.6": "high",
+};
 
 function grokDefaultEffort(modelId: string): ReasoningEffortLevel | undefined {
   const exact = modelId.toLowerCase();
-  const discovered = defaultGrokEfforts.get(exact);
-  if (discovered !== undefined) return discovered;
-  for (const [id, effort] of defaultGrokEfforts) {
-    if (exact === id || exact.startsWith(`${id}-`)) return effort;
+  const exactDefault = GROK_STATIC_DEFAULT_EFFORTS[exact];
+  if (exactDefault !== undefined) return exactDefault;
+  for (const [id, effort] of Object.entries(GROK_STATIC_DEFAULT_EFFORTS)) {
+    if (exact.startsWith(`${id}-`)) return effort;
   }
   return undefined;
 }
@@ -300,14 +323,24 @@ async function grokHeaders(
     "x-xai-token-auth": GROK_TOKEN_AUTH,
     "x-grok-client-identifier": GROK_CLIENT_IDENTIFIER,
     "x-grok-client-version": version,
-    "x-grok-client-mode": "headless",
+    // Client-mode enum recovered from the 1.0.70 binary: Generic, GrokTUI,
+    // GrokWeb, NebulaExtension, GrokPager, Desktop. We present as `Desktop`
+    // (the desktop-app surface) — all values are accepted by the proxy, and
+    // `Desktop` is the closest 1:1 match to a hosted/BYOK runtime.
+    "x-grok-client-mode": "Desktop",
     "x-authenticateresponse": "authenticate-response",
     "user-agent": buildGrokUserAgent(version),
     "x-grok-agent-id": agentId,
     "x-grok-req-id": randomUUID(),
   };
-  // The auth store retains the display label, not xAI's upstream user ID, so
-  // do not substitute a local account or tenant id in identity headers.
+  // The real CLI's sampler header builder stamps the upstream user id on every
+  // request when it is known (xai-grok-sampler client.rs). The OAuth flow
+  // already persisted it as `auth_state.userId` from `/v1/user`; sending it
+  // makes our wire match the first-party client 1:1. It is an upstream
+  // identity, not a local account/tenant id — never substitute those.
+  const authState = isRecord(context.credential.auth_state) ? context.credential.auth_state : undefined;
+  const userId = typeof authState?.userId === "string" ? authState.userId.trim() : "";
+  if (userId.length > 0) headers["x-grok-user-id"] = userId;
   if (candidate?.model_id) {
     headers["x-grok-model-override"] = candidate.model_id;
   }
@@ -347,6 +380,12 @@ function normalizeInput(input: unknown): unknown {
   // request/preparer, which runs for every route including grok) plus the
   // factory Responses payload path — wire-side pairing filters duplicated
   // that logic and are deleted.
+  //
+  // The proxy is stateless: the model sees ONLY what is in `input`, so the
+  // full conversation history must survive to it (verified live 2026-11-02 —
+  // a turn 2 with the same session id but no history loses the turn 1
+  // context). We therefore never drop message items; only server-scoped id
+  // hygiene is applied.
   return input.filter((item) => {
     if (typeof item === "string") return !GROK_SERVER_ID.test(item);
     if (!item || typeof item !== "object" || Array.isArray(item)) return false;
@@ -493,19 +532,30 @@ function normalizeGrokPayload(
   if (cacheKey !== undefined && typeof payload.prompt_cache_key !== "string")
     payload.prompt_cache_key = cacheKey.slice(0, 512);
 
+  // The Grok Build proxy does NOT persist responses: a `previous_response_id`
+  // (even from a real `response.id` of an earlier turn, with `store:true`)
+  // returns 404 "Previous response cannot be found" — verified live
+  // 2026-11-02. The proxy is stateless; continuity comes only from the full
+  // `input` history, so referencing a previous response id can never succeed
+  // and would fail the whole request. Drop it here.
+  delete payload.previous_response_id;
+
   for (const key of Object.keys(payload)) {
     if (!GROK_ALLOWED_FIELDS.has(key)) delete payload[key];
   }
 }
 
 
-const GrokConfig = withBearerAuthentication({
+export const GrokConfig = withBearerAuthentication({
   provider_id: GROK_PROVIDER_ID,
   base_url: GROK_BASE_URL,
   endpoint_paths_by_wire_family: { responses: "/v1/responses" },
   extra_headers: { accept: "text/event-stream", "accept-encoding": "identity" },
   buildExtraHeaders: grokHeaders,
   prePayload: normalizeGrokPayload,
+  // The real CLI compresses the request body with zstd (sampler
+  // `request_compression`); stamp the matching Content-Encoding and compress.
+  request_compression: "zstd",
 });
 
 /**

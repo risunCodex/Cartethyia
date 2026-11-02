@@ -66,8 +66,8 @@ describe("GitHub Copilot request context", () => {
   test("adds initiator, image, and stable correlation headers only to inference requests", async () => {
     const userRequest = await capture(baseRequest);
     expect(userRequest.headers.get("x-github-api-version")).toBe("2026-08-01");
-    expect(userRequest.headers.get("editor-version")).toBe("vscode/1.142.0");
-    expect(userRequest.headers.get("editor-plugin-version")).toBe("copilot-chat/0.70.0");
+    expect(userRequest.headers.get("editor-version")).toBe("vscode/1.144.0");
+    expect(userRequest.headers.get("editor-plugin-version")).toBe("copilot-chat/0.72.0");
     expect(userRequest.headers.get("editor-device-id")).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
@@ -75,8 +75,12 @@ describe("GitHub Copilot request context", () => {
     expect(userRequest.headers.get("copilot-vision-request")).toBeNull();
     expect(userRequest.headers.get("x-request-id")).toBe("gateway-request-123");
     expect(userRequest.headers.get("x-agent-task-id")).toBe("gateway-request-123");
+    expect(userRequest.headers.get("x-interaction-id")).toBe("gateway-request-123");
+    expect(userRequest.headers.get("x-vscode-user-agent-library-version")).toBe("vscode-chat/0.72.0");
     expect(userRequest.headers.get("openai-intent")).toBe("conversation-agent");
     expect(userRequest.headers.get("x-interaction-type")).toBe("conversation-agent");
+    // anthropic-beta is scoped to the Messages wire only.
+    expect(userRequest.headers.get("anthropic-beta")).toBeNull();
 
     const agentRequest = await capture({
       ...baseRequest,
@@ -114,6 +118,57 @@ describe("GitHub Copilot request context", () => {
   test("does not invent a context tier on the chat body", async () => {
     const captured = await capture(baseRequest);
     expect(captured.body.contextTier).toBeUndefined();
+  });
+
+  test("adds anthropic-beta only on the Messages wire", async () => {
+    const messagesCandidate = {
+      provider_id: "github",
+      model_id: "claude-opus-5.5",
+      wire_family: "messages",
+      endpoint_path: "/v1/messages",
+      capabilities: {},
+    } as unknown as ProviderDispatchTarget;
+    let capturedMessages: CapturedRequest | undefined;
+    const outboundFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      capturedMessages = {
+        headers: new Headers(init?.headers),
+        body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+      };
+      return new Response(JSON.stringify({
+        id: "msg_1",
+        type: "message",
+        role: "assistant",
+        model: "claude-opus-5.5",
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }), { headers: { "content-type": "application/json" } });
+    }) as unknown as ProviderDispatchContext["outbound_fetch"];
+    const stream = githubAdapter.dispatch(baseRequest, messagesCandidate, {
+      credential: {
+        provider_id: "github",
+        credential_kind: "oauth",
+        secret: new TextEncoder().encode(JSON.stringify({
+          access: "copilot-access",
+          apiHost: "copilot.example",
+          github: "account-a",
+        })),
+      },
+      deadline: Date.now() + 30_000,
+      abort_signal: new AbortController().signal,
+      outbound_fetch: outboundFetch,
+      request_id: "gateway-request-456",
+    } as unknown as ProviderDispatchContext);
+    try {
+      for await (const _event of stream) void _event;
+    } catch {
+      // Captured request is the assertion.
+    }
+    expect(capturedMessages).toBeDefined();
+    expect(capturedMessages!.headers.get("anthropic-beta")).toBe(
+      "interleaved-thinking-2025-05-14",
+    );
+    expect(capturedMessages!.headers.get("x-interaction-id")).toBe("gateway-request-456");
   });
 
   test("caps a reasoning effort above high at high", async () => {

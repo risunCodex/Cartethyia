@@ -3,7 +3,6 @@ import type { ApiErrorShape } from "../data/api";
 import type {
   PromptMode,
   PromptSetting,
-  ProviderPromptEntry,
   TenantSystemPrompts,
 } from "../../../src/console/system-prompt/contracts";
 import { queryKeys } from "../data/query-keys";
@@ -49,4 +48,4 @@ export function useClearSystemPrompt() {
   });
 }
 
-export type { PromptMode, PromptSetting, ProviderPromptEntry, TenantSystemPrompts };
+export type { PromptMode, PromptSetting, TenantSystemPrompts };

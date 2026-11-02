@@ -1,12 +1,13 @@
 import { GatewayError } from "../../protocol/gateway-error";
-import type { CanonicalRequest, ServiceKind } from "../../protocol/canonical-model";
+import type { CanonicalRequest, ServiceKind, ContentPart } from "../../protocol/canonical-model";
 import { toolResultParts } from "../../protocol/canonical-model";
 import type { ApiKeyAdmissionService } from "../../security/admission/service";
+import type { VisionHandoffCall, VisionHandoffResult } from "../vision-handoff";
 import type { CallerIdentity } from "../../security/access-control";
 import type { RouteCandidate as RouteCandidate, InMemoryRouteSnapshotService, RoutePlan } from "../routing/route-model";
 import type { RouteContinuationAffinity } from "../routing/route-model";
 import { resolveAliasTarget, type RoutingEngine } from "../routing/router";
-import { projectForRoute, routeCapabilitiesFor } from "../../protocol/translation/capabilities";
+import { projectForRoute, routeCapabilitiesFor, deriveRequiredCapabilities } from "../../protocol/translation/capabilities";
 import type { RequiredCapability } from "../../protocol/translation/capabilities";
 import { isModelAllowed, type ResolvedApiKey } from "../../security/api-key-auth";
 import { allowsCliToolMappings } from "../../security/cli-client-fingerprint";
@@ -34,6 +35,40 @@ function requestNeedsToolRepair(request: CanonicalRequest): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Replaces every image part (or its `[image]` degradation placeholder) in the
+ * request with a single text part carrying the vision-handoff description.
+ * Returns `null` when the request has neither image parts nor placeholders.
+ * Only user-message parts are replaced; system/tool-result images are left
+ * untouched.
+ */
+export function replaceImagePartsWithText(
+  request: CanonicalRequest,
+  description: string,
+): CanonicalRequest | null {
+  const strip = (parts: readonly ContentPart[]): readonly ContentPart[] => {
+    const hasImage = parts.some(
+      (part) => part.kind === "image" || (part.kind === "text" && part.text === "[image]"),
+    );
+    if (!hasImage) return parts;
+    return parts.flatMap((part): ContentPart[] =>
+      part.kind === "image" || (part.kind === "text" && part.text === "[image]")
+        ? [{ kind: "text", text: description }]
+        : [part],
+    );
+  };
+  const nextMessages = request.messages.map((message) =>
+    message.role === "user"
+      ? { ...message, content: strip(message.content) }
+      : message,
+  );
+  const unchangedMessages = nextMessages.every(
+    (message, i) => message === request.messages[i],
+  );
+  if (unchangedMessages) return null;
+  return { ...request, messages: nextMessages };
 }
 
 /** Prefix of a provider-continuation tool-call id the gateway itself minted. */
@@ -122,6 +157,46 @@ export function resolveContinuationAffinity(
   return undefined;
 }
 
+/**
+ * True when every continuation call id this request carries is answered by a
+ * matching `toolCall` block in the same conversation — i.e. the request is a
+ * complete replay, not a tail continuation still owed to a live Run.
+ */
+function isCompleteContinuationReplay(request: CanonicalRequest, ids: readonly string[]): boolean {
+  const calledIds = new Set<string>();
+  for (const message of request.messages) {
+    for (const part of message.content) {
+      if (part.kind === "toolCall") calledIds.add(part.call_id);
+    }
+  }
+  return ids.every((id) => calledIds.has(id));
+}
+
+/**
+ * Resolves a request's pending tool results to the one account that owns them,
+ * with rebaseability computed from the conversation shape.
+ *
+ * A hard pin is only safe when the request is still owed to a live Run. But an
+ * account that has since become unroutable (quota exhausted, cooling) must not
+ * turn a complete replay into a hard 400: the whole recorded conversation is
+ * present, so the router may fall through to normal routing and the Cursor
+ * adapter rebases it into a fresh Run on whichever account serves the model.
+ * That is what makes switching provider/model mid-conversation work.
+ */
+export function resolveContinuationAffinityWithRebase(
+  request: CanonicalRequest,
+  authorization: ResolvedApiKey,
+): RouteContinuationAffinity | undefined {
+  const affinity = resolveContinuationAffinity(request, authorization);
+  if (affinity === undefined) return undefined;
+  const ids = continuationCallIds(request);
+  if (affinity.rebaseable) return affinity;
+  return {
+    ...affinity,
+    rebaseable: isCompleteContinuationReplay(request, ids),
+  };
+}
+
 /** Looks up one pending call across every provider that records continuations. */
 function lookupPendingCall(
   callId: string,
@@ -177,7 +252,21 @@ export interface ProxyRequestPreparerDeps {
 }
 
 export class ProxyRequestPreparer {
+  /**
+   * Vision-handoff runner, injected by boot once the request state store and
+   * the full dispatch dependency surface exist. Absent (or when the feature is
+   * not configured) means the legacy `[image]` placeholder path.
+   */
+  #runVisionHandoff: ((input: VisionHandoffCall) => Promise<readonly VisionHandoffResult[]>) | undefined;
+
   constructor(private readonly deps: ProxyRequestPreparerDeps) {}
+
+  /** Injects the vision-handoff runner (called once from boot wiring). */
+  bindVisionHandoff(
+    runner: (input: VisionHandoffCall) => Promise<readonly VisionHandoffResult[]>,
+  ): void {
+    this.#runVisionHandoff = runner;
+  }
 
   async prepare(input: {
     readonly canonicalRequest: CanonicalRequest;
@@ -186,6 +275,8 @@ export class ProxyRequestPreparer {
     readonly signal?: AbortSignal;
     /** Inbound `User-Agent`; gates remote CLI remaps so short slots stay tool-local. */
     readonly clientUserAgent?: string;
+    /** Suppresses nested vision handoff; internal sub-requests set this. */
+    readonly disableVisionHandoff?: boolean;
   }): Promise<PreparedProxyRequest> {
     const { canonicalRequest: initialRequest, authorization, signal } = input;
     if (signal?.aborted)
@@ -266,7 +357,7 @@ export class ProxyRequestPreparer {
     // degradation could narrow the candidate set past it. This is also the
     // point where a mismatched or expired call id becomes a 400 the caller can
     // act on, instead of a dispatch that silently starts a new upstream turn.
-    const continuationAffinity = resolveContinuationAffinity(request, authorization);
+    const continuationAffinity = resolveContinuationAffinityWithRebase(requestWithAttachments, authorization);
     // Capability-aware routing: derive requirements BEFORE planning so the
     // router filters candidates against snapshot profiles. When nothing
     // supports the full request, degrade (same greedy order) and re-plan
@@ -296,8 +387,100 @@ export class ProxyRequestPreparer {
           continuationAffinity,
         );
       } catch (error) {
-        if (error instanceof GatewayError && error.code === "capability_unsupported") continue;
+        // `plan()` collapses "no candidate supports this capability" into
+        // `accounts_unavailable` (503), not `capability_unsupported` — a
+        // candidate that exists but cannot carry the required capability is
+        // evaluated ineligible, and an all-ineligible set reads as "no usable
+        // account". Both mean "try the next, more degraded variant" here.
+        // `accounts_unavailable` is swallowed on the pristine variant (so a
+        // genuinely unhealthy pool falls through to a degraded plan) and on any
+        // variant that still carries requirements (a capability the route
+        // lacks, not a dead pool). Only a fully degraded variant — nothing left
+        // to drop — that still refuses means the pool itself is unusable, and
+        // that 503 must surface.
+        if (
+          error instanceof GatewayError &&
+          (error.code === "capability_unsupported" ||
+            (error.code === "accounts_unavailable" &&
+              (variant.degraded.length === 0 || variant.required.length > 0)))
+        ) {
+          continue;
+        }
         throw error;
+      }
+      // Vision handoff: when the winning route cannot carry images (the image
+      // capability was degraded), try to describe the images with a configured
+      // vision model and plan the resulting text-only request instead. This
+      // only runs when the selected model is NOT image-capable — a vision route
+      // that plans without degradation keeps the real image. The handoff is
+      // best-effort; any failure keeps the legacy `[image]` placeholder plan.
+      if (
+        variant.degraded.includes("image") &&
+        input.disableVisionHandoff !== true &&
+        this.#runVisionHandoff !== undefined
+      ) {
+        try {
+          const handedOff = await this.#runVisionHandoff({
+            canonicalRequest: requestWithAttachments,
+            authorization,
+            deadlineMs: input.deadlineMs,
+            ...(input.signal === undefined ? {} : { signal: input.signal }),
+            ...(input.clientUserAgent === undefined ? {} : { clientUserAgent: input.clientUserAgent }),
+          });
+          if (handedOff.length > 0) {
+            const description = handedOff.map((result) => result.description).join("\n");
+            // Replace on the already-degraded variant so earlier degradations
+            // (tools, reasoning, …) survive alongside the handoff — a chain
+            // variant carries them, and rewriting from the pristine request
+            // would reintroduce capabilities the winning route lacks.
+            const replaced = replaceImagePartsWithText(variant.request, description);
+            if (replaced !== null) {
+              const requiredAfter = deriveRequiredCapabilities(replaced);
+              try {
+                const handoffPlan = await this.deps.routingEngine.plan(
+                  request.model,
+                  snapshot,
+                  authorization.tenantId,
+                  requiredAfter,
+                  allowCliMappings,
+                  authorization.cliMappingOwnerId ?? authorization.id,
+                  continuationAffinity,
+                );
+                plan = handoffPlan;
+                variantRequest = replaced;
+                degraded = [
+                  ...degraded,
+                  ...variant.degraded.filter(
+                    (cap) => cap !== "image" && !degraded.includes(cap),
+                  ),
+                ];
+                break;
+              } catch (error) {
+                if (
+                  error instanceof GatewayError &&
+                  (error.code === "capability_unsupported" ||
+                    error.code === "accounts_unavailable")
+                ) {
+                  // Re-plan failed without the image requirement; keep the
+                  // degraded `[image]` plan captured above. `accounts_unavailable`
+                  // is also swallowed: the text-only re-plan can be refused for
+                  // the same health/pool reasons the original plan was, and the
+                  // parent request must never fail because a best-effort
+                  // handoff could not be re-planned.
+                } else {
+                  throw error;
+                }
+              }
+            }
+          }
+        } catch (error) {
+          // Best-effort only: a handoff failure never fails the parent request.
+          log.warn("[vision-handoff] handoff failed; falling back to [image] placeholder", {
+            model: request.model,
+            tenantId: authorization.tenantId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
       variantRequest = variant.request;
       degraded = [...degraded, ...variant.degraded.filter((cap) => !degraded.includes(cap))];

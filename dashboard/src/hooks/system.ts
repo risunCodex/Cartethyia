@@ -113,8 +113,11 @@ export function useSessionUser() {
   });
 }
 
-/** Loads current system health and refreshes it on the dashboard cadence. */
-export function useSystemHealth() {
+/** Loads current system health; refreshes only while the caller asks it to.
+ * Defaults to a single fetch that is cached by react-query — the shell reads
+ * the version from the same cache, and a consumer that wants live readings
+ * (the notifications popover) passes `refetchInterval` while it is open. */
+export function useSystemHealth(options?: { enabled?: boolean; refetchInterval?: number | false }) {
   return useQuery({
     queryKey: queryKeys.system.health,
     queryFn: (context) =>
@@ -122,7 +125,8 @@ export function useSystemHealth() {
         assertSystemHealth,
       ),
     ...DASHBOARD_QUERY_OPTIONS,
-    refetchInterval: POLL.status,
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }
 

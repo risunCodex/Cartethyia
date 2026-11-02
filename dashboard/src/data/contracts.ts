@@ -125,10 +125,11 @@ export type {
   ApiKeyResponse,
   CreateApiKeyResponse,
   UpdateApiKeyResponse,
+  ConcurrencyScope,
   BanApiKeyRequest,
   ShareKeyResponse,
 } from "../../../src/console/api-keys/contracts";
-export { API_KEY_BAN_REASONS } from "../../../src/console/api-keys/contracts";
+export { API_KEY_BAN_REASONS } from "../../../src/console/api-keys/ban-constants";
 
 import type { SharedKeySummary } from "../../../src/console/share/share-usage";
 

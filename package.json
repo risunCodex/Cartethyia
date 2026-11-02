@@ -1,6 +1,6 @@
 {
   "name": "cartethyia",
-  "version": "2.7.4",
+  "version": "2.7.5",
   "description": "A powerful, self-hosted reverse proxy for OpenAI- and Anthropic-compatible AI clients, powered by native Bun and Elysia. It serves both protocols from a single server, routes every model across any configured provider, and translates requests and responses in real time — streaming and prompt caching included. Underneath it runs a full delivery engine: per-account health tracking, quota and cooldown enforcement, automatic failover across pools and providers, usage accounting, and telemetry. Point OpenCode, Cline, Claude Code, Codex, or any compatible client at Cartethyia and it keeps its native protocol while the gateway absorbs every provider-specific difference behind it. Runs on embedded SQLite or external PostgreSQL with optional Redis coordination, ships as a global CLI with a system-tray console, and needs only Bun 1.4+ alongside Node.js/npm.",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -39,7 +39,7 @@
     "bun": ">=1.4.0"
   },
   "scripts": {
-    "dev": "bun run dev:stack",
+    "dev": "bun run dev:watch",
     "dev:watch": "bun run scripts/dev/supervisor.ts",
     "test": "bun run scripts/test/run.ts",
     "build": "bun run scripts/build/build.ts",
@@ -47,15 +47,13 @@
     "setup": "bun run scripts/cli/setup.ts",
     "start": "bun run scripts/cli/main.ts start",
     "doctor": "bun run scripts/cli/doctor.ts",
-    "probe:egress": "bun run scripts/tools/probe-egress.ts",
-    "probe:qoder": "bun run scripts/provider-probing/qoder/probe-qoder.ts",
     "restart": "bun run scripts/build/restart.ts",
     "build:aot": "bun run scripts/build/aot.ts",
     "dev:stack": "concurrently -n BACKEND,DASHBOARD -c cyan,magenta --kill-others-on-fail \"bun run dev:backend\" \"bun run dashboard:dev\"",
     "typecheck": "tsc --noEmit",
     "test:watch": "bun run scripts/test/run.ts --watch",
     "test-db:up": "docker compose -f docker-compose.test.yml up -d --wait postgres-test",
-    "dev:backend": "bun run --hot src/main.ts",
+    "dev:backend": "bun run src/main.ts",
     "dev:console-auth": "bun run scripts/test/console-session.ts",
     "dev:visual-baseline": "bun run scripts/test/visual-baseline.ts",
     "build:binary": "bun run scripts/build/compile.ts",

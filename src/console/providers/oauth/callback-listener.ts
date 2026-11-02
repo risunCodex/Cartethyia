@@ -64,7 +64,14 @@ export interface OAuthCallbackCompleter {
     providerId: string,
     code: string,
     state: string,
-  ): Promise<{ readonly ok: boolean; readonly message: string }>;
+    /** Extra query params the callback carried (e.g. Kiro's `login_option`). */
+    callbackParams?: Readonly<Record<string, string>>,
+  ): Promise<{
+    readonly ok: boolean;
+    readonly message: string;
+    readonly redirectUrl?: string;
+    readonly continueState?: string;
+  }>;
 }
 
 /** Minimal `Bun.serve` surface this module depends on. */
@@ -92,7 +99,10 @@ const DEFAULT_TTL_MS = 900_000;
 
 interface RegisteredFlow {
   readonly providerId: string;
+  /** Paths this flow's callback may arrive on (e.g. Kiro serves both `/oauth/callback` and `/signin/callback`). */
+  readonly paths: readonly string[];
   readonly timer: ReturnType<typeof setTimeout>;
+  inFlight: boolean;
 }
 
 interface PortListener {
@@ -134,15 +144,28 @@ export class OAuthCallbackListener {
     if (endpoint === undefined) return false;
     const existing = this.#ports.get(endpoint.port);
     if (existing !== undefined) {
-      this.#remember(existing, state, providerId);
+      this.#remember(existing, state, providerId, this.#callbackPaths(endpoint.path));
       return true;
     }
     const servers = this.#bind(endpoint);
     const listener: PortListener = { port: endpoint.port, servers, flows: new Map() };
     this.#ports.set(endpoint.port, listener);
-    this.#remember(listener, state, providerId);
+    this.#remember(listener, state, providerId, this.#callbackPaths(endpoint.path));
     log.info(`[oauth] callback listener bound on 127.0.0.1:${endpoint.port}${endpoint.path}`);
     return true;
+  }
+
+  /**
+   * The paths one login may deliver its callback on. Kiro's portal is observed
+   * (unpacked IDE 1.4.62) to redirect to both `/oauth/callback` and
+   * `/signin/callback`; binding only the advertised path left a redirect to the
+   * other one hitting a 404 and the login hanging. Other providers neither
+   * register nor expect `/signin/callback`, so adding it is harmless.
+   */
+  #callbackPaths(advertised: string): readonly string[] {
+    return advertised === "/signin/callback"
+      ? [advertised]
+      : [advertised, "/signin/callback"];
   }
 
   /** Drops a flow and frees its port when nothing else is waiting on it. */
@@ -152,6 +175,25 @@ export class OAuthCallbackListener {
     const listener = this.#ports.get(endpoint.port);
     if (listener === undefined) return;
     this.#forget(endpoint.port, listener, state);
+  }
+
+  /**
+   * Re-registers an existing flow state under a new callback state.
+   *
+   * Kiro's two-phase portal login starts a second authorization leg with a
+   * *fresh* state (the IDE mints a new UUID for the IdC authorize step), so
+   * the loopback listener must retain the pending flow under that second
+   * state too — otherwise the phase-2 callback answers "OAuth session not
+   * found or expired" even though the flow is still alive.
+   */
+  track(redirectUri: string, state: string, newState: string): void {
+    const endpoint = loopbackCallbackEndpoint(redirectUri);
+    if (endpoint === undefined) return;
+    const listener = this.#ports.get(endpoint.port);
+    if (listener === undefined) return;
+    const flow = listener.flows.get(state);
+    if (flow === undefined) return;
+    this.#remember(listener, newState, flow.providerId, flow.paths);
   }
 
   /**
@@ -182,7 +224,7 @@ export class OAuthCallbackListener {
     }
   }
 
-  #remember(listener: PortListener, state: string, providerId: string): void {
+  #remember(listener: PortListener, state: string, providerId: string, paths: readonly string[]): void {
     const previous = listener.flows.get(state);
     if (previous !== undefined) clearTimeout(previous.timer);
     const timer = setTimeout(() => {
@@ -190,7 +232,7 @@ export class OAuthCallbackListener {
     }, this.#ttlMs);
     // A pending login must not hold the process open on its own.
     (timer as unknown as { unref?: () => void }).unref?.();
-    listener.flows.set(state, { providerId, timer });
+    listener.flows.set(state, { providerId, paths, timer, inFlight: false });
   }
 
   #forget(port: number, listener: PortListener, state: string): void {
@@ -250,9 +292,6 @@ export class OAuthCallbackListener {
     endpoint: LoopbackCallbackEndpoint,
   ): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname !== endpoint.path) {
-      return new Response("Not found", { status: 404 });
-    }
     const listener = this.#ports.get(endpoint.port);
     if (listener === undefined) {
       return new Response("OAuth session not found or expired.", { status: 400 });
@@ -278,7 +317,7 @@ export class OAuthCallbackListener {
         { status: 400, headers: { "content-type": "text/html; charset=utf-8" } },
       );
     }
-    if (code.length === 0) {
+    if (code.length === 0 && !url.searchParams.has("login_option")) {
       return new Response("Missing authorization code.", { status: 400 });
     }
     // `state` is the correlation key and the replay guard. An authorization
@@ -297,14 +336,45 @@ export class OAuthCallbackListener {
     if (matched === undefined) {
       return new Response("OAuth session not found or expired.", { status: 400 });
     }
-    // Claim the flow before awaiting: a browser that retries the redirect must
-    // not start a second exchange with a code that is already being spent.
+    // Some providers (Kiro's portal) can land the callback on any of several
+    // registered paths — `/oauth/callback` or `/signin/callback`. Accept the
+    // path the flow registered for, not only the advertised default.
+    if (!matched.paths.includes(url.pathname)) {
+      return new Response("Not found", { status: 404 });
+    }
+    if (matched.inFlight) {
+      return new Response("OAuth callback is already being processed.", { status: 409 });
+    }
+    // Claim while the exchange is in flight. A multi-step flow (Kiro OIDC) may
+    // return a redirect and reuse this listener/state for its next callback.
+    matched.inFlight = true;
     const matchedState = state.length > 0 ? state : this.#stateOf(listener, matched);
-    if (matchedState !== undefined) this.#forget(endpoint.port, listener, matchedState);
-    let result: { ok: boolean; message: string };
+    let result: {
+      ok: boolean;
+      message: string;
+      redirectUrl?: string;
+      continueState?: string;
+    };
+    // Some authorization servers (Kiro's portal) append provider-specific query
+    // params — `login_option` names the social/enterprise family that approved.
+    // The exchange needs them to rebuild the exact redirect URI the portal saw,
+    // and the OIDC families carry `issuer_url`/`idc_region`/`client_id`/`scopes`
+    // that the continuation flow needs. Forward every param other than the ones
+    // this handler already consumed.
+    const callbackParams: Record<string, string> = {};
+    for (const [key, value] of url.searchParams) {
+      if (key === "code" || key === "state" || key === "error" || key === "error_description") continue;
+      callbackParams[key] = value;
+    }
     try {
-      result = await this.#completer.complete(matched.providerId, code, state);
+      result = await this.#completer.complete(
+        matched.providerId,
+        code,
+        state,
+        Object.keys(callbackParams).length > 0 ? callbackParams : undefined,
+      );
     } catch (failure) {
+      if (matchedState !== undefined) this.#forget(endpoint.port, listener, matchedState);
       const message = failure instanceof Error ? failure.message : "OAuth login failed";
       log.error(`[oauth] callback completion failed for ${matched.providerId}: ${message}`);
       return new Response(
@@ -312,6 +382,18 @@ export class OAuthCallbackListener {
         { status: 500, headers: { "content-type": "text/html; charset=utf-8" } },
       );
     }
+    if (result.redirectUrl !== undefined) {
+      // Phase 1 of a two-phase login (Kiro OIDC): the flow is still pending, so
+      // continue by sending the browser to the phase-2 authorize URL. The phase-2
+      // authorize URL carries a fresh state (`continueState`), which the completer
+      // already registered under — keep the current matcher alive for it.
+      matched.inFlight = false;
+      return new Response(null, {
+        status: 302,
+        headers: { location: result.redirectUrl },
+      });
+    }
+    if (matchedState !== undefined) this.#forget(endpoint.port, listener, matchedState);
     if (!result.ok) {
       return new Response(
         `<!doctype html><html><body><p>OAuth login failed: ${escapeHtml(result.message)}</p></body></html>`,

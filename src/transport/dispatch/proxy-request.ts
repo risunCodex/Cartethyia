@@ -135,6 +135,7 @@ export async function handleProviderProxyRequest(
         {
           providerId: candidateForPrompt.provider_id,
           modelId: candidateForPrompt.model_id,
+          requestedModel: prepared.plan?.requested_model ?? candidateForPrompt.model_id,
         },
       )?.text
     : undefined;

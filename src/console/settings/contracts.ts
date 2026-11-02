@@ -53,6 +53,12 @@ export interface RuntimeSettingsResponse {
   readonly telemetryWindowMinutes: number | null;
   /** Per-tenant inline attachment ceiling in bytes; null means deployment default. */
   readonly imageClampMaxBytes: number | null;
+  /**
+   * Ordered vision-model ids used to describe images when the selected model
+   * is not image-capable. Empty means the legacy `[image]` placeholder is
+   * used instead.
+   */
+  readonly visionHandoffModels: readonly string[];
   readonly updatedAt: string;
   /*
    * What each `null` actually resolves to, in the same units the row stores.
@@ -130,6 +136,9 @@ export type PonyTailLevel = (typeof PONYTAIL_LEVELS)[number];
 /** RTK prune strength accepted by the runtime-settings PATCH. */
 export type RtkLevel = (typeof RTK_LEVELS)[number];
 
+/** Upper bound on the number of ordered vision-handoff models. */
+export const VISION_HANDOFF_MAX_MODELS = 8;
+
 export function createRuntimeSettingsOperations(deps: RuntimeSettingsConfig) {
   const operations = {
     async get(access: AccessDecision | undefined): Promise<RuntimeSettingsResponse> {
@@ -177,6 +186,23 @@ export function createRuntimeSettingsOperations(deps: RuntimeSettingsConfig) {
         }
         if (patch.rtkPruneLevel !== undefined && !RTK_LEVELS.includes(patch.rtkPruneLevel)) {
           throw new ConsoleDomainError("invalid_request", 400, "Invalid rtkPruneLevel");
+        }
+        if (patch.visionHandoffModels !== undefined) {
+          if (!Array.isArray(patch.visionHandoffModels)) {
+            throw new ConsoleDomainError("invalid_request", 400, "visionHandoffModels must be an array of model ids");
+          }
+          if (patch.visionHandoffModels.length > VISION_HANDOFF_MAX_MODELS) {
+            throw new ConsoleDomainError(
+              "invalid_request",
+              400,
+              `visionHandoffModels may list at most ${VISION_HANDOFF_MAX_MODELS} models`,
+            );
+          }
+          for (const model of patch.visionHandoffModels) {
+            if (typeof model !== "string" || model.trim().length === 0) {
+              throw new ConsoleDomainError("invalid_request", 400, "visionHandoffModels entries must be non-empty model ids");
+            }
+          }
         }
         const updated = await deps.store.update(a.tenantId, patch);
         await deps.auditSink?.record({
@@ -245,4 +271,5 @@ export const runtimeUpdateBody = t.Object({
   imageClampMaxBytes: t.Optional(
     t.Union([t.Null(), t.Number({ minimum: 64 * 1024, maximum: 100 * 1024 * 1024 })]),
   ),
+  visionHandoffModels: t.Optional(t.Array(t.String())),
 });

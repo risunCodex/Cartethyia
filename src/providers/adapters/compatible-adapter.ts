@@ -90,6 +90,14 @@ export interface OpenAICompatibleAdapterConfig {
    */
   readonly credential_forwarding?: "account" | "never";
   /**
+   * Body encoding for the upstream POST. `"json"` (default) sends the plain
+   * JSON string. `"zstd"` compresses the JSON with `Bun.zstdCompressSync` and
+   * stamps `Content-Encoding: zstd` — the Grok Build CLI does this via its
+   * sampler (`request_compression.rs`), and the proxy accepts it (verified
+   * live 2026-11-02). Falls back to plain JSON if the runtime lacks zstd.
+   */
+  readonly request_compression?: "json" | "zstd";
+  /**
    * Stamps `user-agent: Cartethyia/<version>` on every dispatch. Explicit
    * opt-in per provider spec — never a default — so first-party cloaking
    * (Codex, Claude Code) is untouched.
@@ -188,6 +196,10 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
       // serving the stale pinned fallback on the first dispatch.
       Object.assign(headers, await this.config.buildExtraHeaders(context, request, candidate));
     }
+    // The compression header must match the body actually sent. It is stamped
+    // here — alongside the other request headers — so auth/proxy layers see the
+    // final shape before the transport runs.
+    if (this.config.request_compression === "zstd") headers["content-encoding"] = "zstd";
     Object.assign(headers, filterProviderCustomHeaders(context.credential.custom_headers));
     applyRouteUserAgent(headers, context.credential, context.user_agent);
     return headers;
@@ -283,6 +295,11 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
       payload as Record<string, unknown>,
       context,
       outboundFetch,
+      // zstd body encoding: matches the Grok Build CLI's
+      // `request_compression` (zstd with a JSON fallback when unavailable).
+      this.config.request_compression === "zstd" && typeof Bun?.zstdCompressSync === "function"
+        ? (p) => Bun.zstdCompressSync(Buffer.from(JSON.stringify(p))) as Uint8Array<ArrayBuffer>
+        : undefined,
     );
     upstream.release();
     return upstream.res;

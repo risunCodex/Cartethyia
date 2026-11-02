@@ -1,10 +1,15 @@
 /**
- * Thinking tags a provider writes into its *answer* text.
+ * Canonical pipeline text forwarding.
  *
- * The chat wire splits `…` in its own decoder, so chat looked correct
- * while messages and responses — and every other provider wire whose text
- * carries the tags — forwarded the raw reasoning to the client as the answer.
- * The sweep now lives in the canonical pipeline every surface shares.
+ * Thinking tags in a provider's answer text are a per-provider decoder concern
+ * (MiMo Studio, CommandCode, the chat wire's own splitter), not a universal
+ * one. When the pipeline split `<think>` spans for every surface, a literal
+ * `<think>` in an answer — docs, a code sample, a model reciting the syntax —
+ * was silently converted into reasoning: the answer vanished into the thinking
+ * pane, and the poisoned history stopped follow-up turns.
+ *
+ * The pipeline now forwards text verbatim. The loop guard still watches the
+ * full text stream, so a runaway is caught however it arrives.
  */
 import { describe, expect, test } from "bun:test";
 import type { CanonicalEvent } from "../../src/protocol/canonical-model";
@@ -31,29 +36,6 @@ function recorded(pipe: StreamEventPipeline): CanonicalEvent[] {
   return Array.isArray(transcript) ? (transcript as CanonicalEvent[]) : [];
 }
 
-function contentKinds(events: CanonicalEvent[]): string[] {
-  const kinds: string[] = [];
-  for (const event of events) {
-    if (event.type === "content_delta") kinds.push(event.content.kind);
-  }
-  return kinds;
-}
-
-function textOf(events: CanonicalEvent[]): string | undefined {
-  for (const event of events) {
-    if (event.type === "content_delta" && event.content.kind === "text") return event.content.text;
-  }
-  return undefined;
-}
-
-function summaryOf(events: CanonicalEvent[]): string | undefined {
-  for (const event of events) {
-    if (event.type === "content_delta" && event.content.kind === "reasoning")
-      return event.content.summary;
-  }
-  return undefined;
-}
-
 function allTextOf(events: CanonicalEvent[]): string {
   return events
     .filter((event) => event.type === "content_delta" && event.content.kind === "text")
@@ -61,37 +43,40 @@ function allTextOf(events: CanonicalEvent[]): string {
     .join("");
 }
 
-describe("canonical thinking sweep", () => {
-  test("splits an inline think span out of the answer text", () => {
+function reasoningCount(events: CanonicalEvent[]): number {
+  return events.filter(
+    (event) => event.type === "content_delta" && event.content.kind === "reasoning",
+  ).length;
+}
+
+describe("canonical text forwarding", () => {
+  test("forwards an inline think span verbatim instead of converting it to reasoning", () => {
     const pipe = pipeline();
     pipe.enqueueEvent(textDelta("<think>secret plan</think>Hello", 1), controller);
 
     const events = recorded(pipe);
-    expect(contentKinds(events)).toEqual(["reasoning", "text"]);
-    expect(summaryOf(events)).toBe("secret plan");
-    expect(textOf(events)).toBe("Hello");
+    expect(reasoningCount(events)).toBe(0);
+    expect(allTextOf(events)).toBe("<think>secret plan</think>Hello");
   });
 
-  test("drops a stray closing tag that has no opener", () => {
+  test("keeps a stray closing tag in the answer", () => {
     const pipe = pipeline();
     pipe.enqueueEvent(textDelta("done</think>", 1), controller);
 
-    expect(textOf(recorded(pipe))).toBe("done");
+    expect(allTextOf(recorded(pipe))).toBe("done</think>");
   });
 
-  test("holds a tag split across two chunks and never leaks its bytes", () => {
+  test("a tag split across two chunks stays one text event", () => {
     const pipe = pipeline();
     pipe.enqueueEvent(textDelta("<thi", 1), controller);
     pipe.enqueueEvent(textDelta("nk>a</think>b", 2), controller);
 
     const events = recorded(pipe);
-    expect(contentKinds(events)).toEqual(["reasoning", "text"]);
-    expect(summaryOf(events)).toBe("a");
-    expect(textOf(events)).toBe("b");
-    expect(pipe.clientResponseText).not.toContain("think");
+    expect(reasoningCount(events)).toBe(0);
+    expect(allTextOf(events)).toBe("<think>a</think>b");
   });
 
-  test("releases held-back answer text before the terminal", () => {
+  test("text still precedes the terminal", () => {
     const pipe = pipeline();
     pipe.enqueueEvent(textDelta("tail</thi", 1), controller);
     pipe.enqueueEvent(
@@ -100,25 +85,19 @@ describe("canonical thinking sweep", () => {
     );
 
     const events = recorded(pipe);
-    expect(textOf(events)).toBe("tail");
-    // The released text precedes the terminal: a content event after it is
-    // rejected by the surface encoders.
+    expect(allTextOf(events)).toBe("tail</thi");
     expect(events.findIndex((event) => event.type === "terminal")).toBeGreaterThan(
       events.findIndex((event) => event.type === "content_delta"),
     );
   });
 
   test("a literal think tag inside a code fence survives in the answer", () => {
-    // Finding 5: an answer that mentions the tag literally (docs, a code
-    // sample) had its tail swallowed into reasoning by a splitter, so the
-    // client saw only the text before the tag. Pinned at the pipeline every
-    // surface shares so the loss cannot come back per-surface.
     const pipe = pipeline();
     const answer = "Use `<think>` inside a fence to enable reasoning.";
     pipe.enqueueEvent(textDelta(answer, 1), controller);
 
     const events = recorded(pipe);
     expect(allTextOf(events)).toBe(answer);
-    expect(summaryOf(events)).toBeUndefined();
+    expect(reasoningCount(events)).toBe(0);
   });
 });

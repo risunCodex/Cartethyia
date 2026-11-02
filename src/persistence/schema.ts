@@ -4,6 +4,20 @@ import {
   bigint, boolean, check, customType, index, integer, jsonb, numeric, pgEnum, pgTable,
   primaryKey, text, timestamp, unique, uniqueIndex, uuid, type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import type { ProviderQuotaResult } from "../providers/quota/quota-contracts";
+
+/**
+ * The persisted copy of one account's last successful quota read.
+ *
+ * Survives process restarts, which the in-process quota cache does not — so a
+ * cold page open can render the last known balance immediately while the sweep
+ * refreshes it. Stored only on success; a failed fetch leaves the previous
+ * snapshot in place.
+ */
+export interface ProviderQuotaResultSnapshot {
+  readonly quota: ProviderQuotaResult;
+  readonly fetchedAt: string;
+}
 
 export const TENANT_STATUSES = ["active", "suspended", "deleted"] as const;
 export type TenantStatus = (typeof TENANT_STATUSES)[number];
@@ -295,6 +309,18 @@ export const providerAccounts = pgTable("provider_accounts", {
    * to an account that may well be refused.
    */
   quotaPlan: text("quota_plan"),
+  /**
+   * The last successful quota read for this account, as a JSON snapshot.
+   *
+   * Persisted rather than left only in the quota cache: that cache is a short
+   * in-process TTL and empty on a cold start, so right after a restart the
+   * console would show no balance for every account until the sweep re-read
+   * them. The row survives the restart, so a cold page open renders the last
+   * known numbers immediately (and the sweep refreshes them). Only a
+   * *successful* read is stored — a failed fetch leaves the previous snapshot
+   * in place, mirroring the plan column's behaviour.
+   */
+  quotaSnapshot: jsonb("quota_snapshot").$type<ProviderQuotaResultSnapshot | null>(),
 
   /**
    * Qoder native machine identity bound to this account, as one JSON object
@@ -423,7 +449,7 @@ export const models = pgTable(
      * that predicts access — `credits` and `vendor` were both measured against
      * real dispatches and neither correlates. Only the refusal itself is a
      * signal, so the answer has to be recorded. See
-     * `.skills/cartethyia-reverse-engineering/references/codebuddy-dispatch-headers.md`.
+     * `documentation/research/codebuddy/2026-10-19-codebuddy-chat-dispatch-headers.md`.
      */
     proOnly: boolean("pro_only"),
     /**
@@ -820,6 +846,10 @@ export type ApiKeyMode = (typeof API_KEY_MODES)[number];
 export const API_KEY_MODEL_ACCESS_MODES = ["whitelist", "blacklist"] as const;
 export type ApiKeyModelAccessMode = (typeof API_KEY_MODEL_ACCESS_MODES)[number];
 
+/** Share-template concurrency scope — see `apiKeys.concurrencyScope`. */
+export const API_KEY_CONCURRENCY_SCOPES = ["family", "per_key"] as const;
+export type ApiKeyConcurrencyScope = (typeof API_KEY_CONCURRENCY_SCOPES)[number];
+
 /**
  * Inbound `/v1/*` keys never store plaintext secrets. Personal keys carry an
  * authentication hash; share templates carry policy and child keys point back
@@ -858,6 +888,24 @@ export const apiKeys = pgTable(
       .notNull()
       .default(0),
     maxConcurrentRequests: integer("max_concurrent_requests"),
+    /**
+     * How `maxConcurrentRequests` applies to a share family:
+     *
+     * - `family` (default) — one cap across the whole family: every recipient
+     *   key shares the same admission counter and budget, so 20 means 20
+     *   concurrent requests across all children of the template.
+     * - `per_key` — each recipient key gets its own independent concurrent
+     *   window and cap. The cap is copied from the template to each child at
+     *   issue time (children carry their own `maxConcurrentRequests`), and a
+     *   child's admission identity is its own id, not the parent's.
+     *
+     * Only meaningful for `share` keys; personal keys always use their own
+     * per-key cap.
+     */
+    concurrencyScope: text("concurrency_scope")
+      .$type<ApiKeyConcurrencyScope>()
+      .notNull()
+      .default("family"),
     /**
      * Slot cap for a share template: the maximum number of concurrently
      * active child keys it may mint. `null` = unlimited (legacy behavior).
@@ -1232,6 +1280,14 @@ export interface ConsoleSettingsPreferences {
    * the safer direction and the more common need.
    */
   imageClampMaxBytes?: number | null;
+  /**
+   * Ordered list of vision model ids (`provider/model`) used to describe
+   * images when the selected model is not image-capable. The first healthy
+   * model wins; if it fails (cooldown/quota/upstream error), the handoff
+   * falls through to the next entry. Empty/absent = legacy `[image]`
+   * placeholder behavior.
+   */
+  visionHandoffModels?: readonly string[];
 }
 
 export const consoleSettings = pgTable("console_settings", {
@@ -1242,21 +1298,33 @@ export const consoleSettings = pgTable("console_settings", {
 
 // Tenant-scoped system prompt injection (append/override). One row per
 // tenant; `global` NULL means never configured, distinct from an explicit
-// disabled setting. Providers/models are JSON object maps keyed by
-// providerId and `providerId::modelId` respectively — see
-// `src/console/system-prompt/contracts.ts` for the value shapes and the
-// resolution rules implemented by the dispatch-path transform.
+// disabled setting. Providers/models/combos/aliases are JSON object maps
+// keyed by providerId, `providerId::modelId`, combo name, and alias name
+// respectively — see `src/console/system-prompt/contracts.ts` for the value
+// shapes and the resolution rules implemented by the dispatch-path transform.
 export const tenantSystemPrompts = pgTable("tenant_system_prompts", {
   tenantId: tenantRefPrimaryKey(),
-  global: jsonb("global").$type<import("../console/system-prompt/contracts").PromptSetting | null>(),
+  global: jsonb("global").$type<import("../console/system-prompt/contracts").ScopePromptRef | null>(),
+  presets: jsonb("presets")
+    .notNull()
+    .default({})
+    .$type<Record<string, import("../console/system-prompt/contracts").SystemPromptPreset>>(),
   providers: jsonb("providers")
     .notNull()
     .default({})
-    .$type<Record<string, import("../console/system-prompt/contracts").ProviderPromptEntry>>(),
+    .$type<Record<string, import("../console/system-prompt/contracts").ScopePromptRef>>(),
   models: jsonb("models")
     .notNull()
     .default({})
-    .$type<Record<string, import("../console/system-prompt/contracts").PromptSetting>>(),
+    .$type<Record<string, import("../console/system-prompt/contracts").ScopePromptRef>>(),
+  combos: jsonb("combos")
+    .notNull()
+    .default({})
+    .$type<Record<string, import("../console/system-prompt/contracts").ScopePromptRef>>(),
+  aliases: jsonb("aliases")
+    .notNull()
+    .default({})
+    .$type<Record<string, import("../console/system-prompt/contracts").ScopePromptRef>>(),
   updatedAt: updatedAtColumn(),
 });
 
@@ -1471,6 +1539,22 @@ export const telemetryEvents = pgTable(
     index("telemetry_events_tenant_account_created_idx").on(
       table.tenantId,
       table.accountId,
+      table.createdAt,
+    ),
+    // Provider usage matrix + `breakdownTelemetry("provider")`: equality on
+    // `provider_id`, range+aggregate on `created_at`. Was served by the
+    // tenant-range index, which scanned every event in the window for one
+    // provider's card.
+    index("telemetry_events_tenant_provider_created_idx").on(
+      table.tenantId,
+      table.providerId,
+      table.createdAt,
+    ),
+    // `breakdownTelemetry("model")` (top-model lists): equality on
+    // `requested_model`, range+aggregate on `created_at`.
+    index("telemetry_events_tenant_model_created_idx").on(
+      table.tenantId,
+      table.requestedModel,
       table.createdAt,
     ),
     /**

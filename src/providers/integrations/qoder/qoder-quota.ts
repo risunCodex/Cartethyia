@@ -1,8 +1,10 @@
 // Qoder quota.
 //
-// `GET /api/v2/quota/usage` on the **openapi** host, with a plain bearer token
-// — no COSY signature on this surface, which is the one place the business API
-// differs from inference.
+// `GET /api/v2/quota/usage` on the **openapi** host, with a bearer token — no
+// COSY signature on this surface, which is the one place the business API
+// differs from inference. Device tokens (`dt-…`) are used directly; a PAT
+// (`pt-…`) is exchanged for a job token (`jt-…`) first, because the business
+// API rejects a raw PAT with 401 `TOKEN_EXPIRE`.
 //
 // The response carries two quota objects and they are not interchangeable:
 //
@@ -36,6 +38,7 @@ import {
 import type { QuotaCollectionContext } from "../../quota/quota-support";
 import { log } from "../../../observability/logger";
 import { QODER_REALMS, type QoderRealm } from "./qoder-realm";
+import { isQoderPat, resolveQoderAuth } from "./qoder";
 
 /** Paths on the realm's openapi host. */
 const QUOTA_PATH = "/api/v2/quota/usage";
@@ -103,11 +106,28 @@ export async function fetchQoderQuota(
 
   let payload: unknown;
   try {
+    // A PAT (`pt-…`) is not an active bearer on the business API: it is a
+    // minted credential that must be exchanged for a short-lived job token
+    // (`jt-…`) first. Verified live 2026-11-02: a raw `pt-…` bearer answers
+    // 401 `TOKEN_EXPIRE` while the exchanged `jt-…` answers 200. Device
+    // tokens (`dt-…`) are used directly. A failed exchange — expired/revoked
+    // PAT — is an unreadable balance, not an error that cools the account.
+    let bearer = credential;
+    if (isQoderPat(credential)) {
+      const auth = await resolveQoderAuth({
+        secret: credential,
+        authState: raw,
+        signal: AbortSignal.timeout(15_000),
+        fetcher,
+        realm,
+      });
+      bearer = auth.securityOauthToken;
+    }
     const response = await fetcher(url, {
       method: "GET",
       headers: {
         accept: "application/json",
-        authorization: `Bearer ${credential}`,
+        authorization: `Bearer ${bearer}`,
         "user-agent": config.userAgent,
       },
     });

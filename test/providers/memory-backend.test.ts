@@ -45,6 +45,17 @@ describe("InMemoryOAuthFlowStore", () => {
     await expect(store.consumePending("s1")).resolves.toBeUndefined();
   });
 
+  test("peekPending reads without consuming", async () => {
+    const store = new InMemoryOAuthFlowStore();
+    await store.savePending("s1", pending("s1"));
+    // Peek twice: both see the flow, and it stays available after.
+    expect((await store.peekPending("s1"))?.codeVerifier).toBe("verifier-s1");
+    expect((await store.peekPending("s1"))?.codeVerifier).toBe("verifier-s1");
+    // Still consumable afterwards.
+    expect((await store.consumePending("s1"))?.codeVerifier).toBe("verifier-s1");
+    await expect(store.peekPending("s1")).resolves.toBeUndefined();
+  });
+
   test("provider pointer follows last-write-wins and clears on consume", async () => {
     const store = new InMemoryOAuthFlowStore();
     await store.savePending("old", pending("old"));

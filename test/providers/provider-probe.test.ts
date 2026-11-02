@@ -33,9 +33,10 @@ describe("provider probe", () => {
   test("it carries the adapter's own identity headers", async () => {
     const probe = await buildProviderProbeRequest("opencode");
     const headers = probe?.headers ?? {};
-    // Without the session headers and the anonymous bearer the gate refuses a
-    // healthy address, which would read as "this proxy is blocked".
-    expect(headers["authorization"]).toBe("Bearer public");
+    // The free-tier gate accepts a dispatch with no Authorization (verified
+    // live 2026-11-02: the same captured flow answers 200 with and without
+    // the anonymous `Bearer public` sentinel), so the probe sends none.
+    expect(headers["authorization"]).toBeUndefined();
     expect(headers["x-opencode-client"]).toBeDefined();
     expect(headers["x-opencode-session"]).toBeDefined();
     expect(headers["user-agent"]).toContain("opencode/");
@@ -54,8 +55,9 @@ describe("provider probe", () => {
     expect(body.stream).toBe(true);
     // The gate reads tool membership *and* each recognised definition; a probe
     // without the set is refused on a healthy address, and so is one carrying
-    // a stub. Thirteen is the CLI's own tool-name set.
-    expect(body.tools?.length).toBe(13);
+    // a stub. Eleven is the real 2.2.0 CLI's own tool-name set (captured
+    // verbatim — see `FREE_AGENT_TOOL_NAMES`).
+    expect(body.tools?.length).toBe(11);
     const names = (body.tools ?? []).map((tool) => tool.function?.name);
     expect(names).toContain("shell");
     expect(names).toContain("read");

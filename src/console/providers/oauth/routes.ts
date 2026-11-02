@@ -7,6 +7,7 @@ import type { OAuthDevicePollResponse } from "../catalog/contracts";
 import { providerJwtVerification } from "../../../providers/provider-metadata";
 import type { ProviderRegistry } from "../../../providers/provider-registry";
 import { browserAuthorizeRedirectUri } from "../../../config/providers";
+import { KiroOidcPendingError } from "../../../providers/integrations/kiro/kiro-oauth";
 import { log } from "../../../observability/logger";
 import { GatewayError } from "../../../protocol/gateway-error";
 import { Elysia, t, type AnyElysia } from "elysia";
@@ -215,6 +216,17 @@ async function requireClient(
 export interface OAuthCompleteOutcome {
   readonly ok: boolean;
   readonly message: string;
+  /**
+   * When set, the exchange is not finished: the browser must be redirected to
+   * this URL to continue (Kiro's OIDC families need a second authorization
+   * leg after the portal callback).
+   */
+  readonly redirectUrl?: string;
+  /**
+   * New callback state the phase-2 authorize URL carries (Kiro mints a fresh
+   * state for the IdC leg; the console retains the pending flow under it).
+   */
+  readonly continueState?: string;
 }
 
 /**
@@ -231,29 +243,41 @@ export async function completeLogin(
   providerId: string,
   code: string,
   state: string,
+  callbackParams?: Readonly<Record<string, string>>,
 ): Promise<OAuthCompleteOutcome> {
   // An empty `state` means the authorization server does not echo one
   // (OpenRouter omits it from the callback entirely); correlate by provider in
   // that case, and by state otherwise so the stronger check stays in force
   // wherever the server supports it.
+  //
+  // The flow is peeked, not consumed, until the exchange succeeds: consuming
+  // first means a failed exchange (a transient upstream blip, a paste that
+  // missed a parameter) burns the state and every retry answers "unknown or
+  // expired state". The state is deleted only after the account persists.
   const flow = state
-    ? await config.oauthFlowStore.consumePending(state)
+    ? await config.oauthFlowStore.peekPending(state)
     : await config.oauthFlowStore.consumePendingByProvider(providerId);
   if (!flow || flow.providerId !== providerId) {
     return { ok: false, message: "unknown or expired state" };
   }
-  // The flow is spent, so its listener registration has nothing left to wait
-  // for; releasing it here keeps a manual paste from leaving the port bound.
-  // Stateless callbacks arrive with `""`, which matches no filed state —
-  // release by provider so the OpenRouter port does not linger until TTL.
-  if (state.length > 0) config.callbackListener.release(flow.redirectUri, state);
-  else config.callbackListener.releaseProvider(flow.redirectUri, providerId);
+  // Release the listener registration for this flow. The pending state itself
+  // stays available so a manual re-paste can retry the exchange. The release is
+  // deferred until after the exchange for two-phase flows: Kiro's OIDC portal
+  // callback (phase 1) must keep the loopback listener alive so the second
+  // authorization leg can land on it.
   const client = await requireClient(config.providerRegistry, providerId);
   if (!client.exchangeCode) {
     return { ok: false, message: "provider does not support browser authorization" };
   }
+  const releaseListener = () => {
+    if (state.length > 0) config.callbackListener.release(flow.redirectUri, state);
+    else config.callbackListener.releaseProvider(flow.redirectUri, providerId);
+  };
   try {
-    const result = await client.exchangeCode(code, flow.codeVerifier, flow.redirectUri, state);
+    const result = await client.exchangeCode(code, flow.codeVerifier, flow.redirectUri, state, {
+      ...(callbackParams === undefined ? {} : { parameters: callbackParams }),
+      ...(flow.providerState === undefined ? {} : { providerState: flow.providerState }),
+    });
     const tokenCheck = await validateIssuedAccessToken(
       result.access,
       providerJwtVerification(providerId),
@@ -270,9 +294,44 @@ export async function completeLogin(
       label: result.accountLabel ?? flow.accountLabel,
       ...result,
     });
+    // The exchange succeeded and the account is persisted; now the flow is
+    // spent. Consuming it here (peeked above) frees the state and the provider
+    // pointer so a replayed callback cannot re-create the account.
+    releaseListener();
+    if (state.length > 0) await config.oauthFlowStore.consumePending(state);
+    else await config.oauthFlowStore.consumePendingByProvider(providerId);
     await config.snapshotInvalidator?.invalidate();
     return { ok: true, message: `${providerId} account connected. You may close this tab.` };
   } catch (error) {
+    // Kiro's OIDC families: the portal callback carries no code — only
+    // `login_option` + issuer/region. The client responded with the second-leg
+    // authorize URL plus a fresh PKCE verifier and the OIDC registration.
+    // Rewrite the pending flow so phase 2 exchanges against that verifier, keep
+    // the listener alive, and tell the caller to redirect the browser there.
+    if (error instanceof KiroOidcPendingError) {
+      // Phase 1 of Kiro's OIDC portal login: the portal callback carried no
+      // code — only `login_option` + issuer/region. The client answered with the
+      // phase-2 authorize URL, a fresh PKCE verifier, and the OIDC client
+      // registration. Mirror the 1.4.62 IDE: the second leg uses a *new* state
+      // (not the portal's), so mint it here, keep the pending flow reachable
+      // under both states, and tell the caller which state to expect back.
+      const continueState = error.continueState;
+      if (state.length > 0 && continueState.length > 0) {
+        await config.oauthFlowStore.savePending(continueState, {
+          ...flow,
+          codeVerifier: error.codeVerifier,
+          providerState: error.providerState,
+        });
+        config.callbackListener.track(flow.redirectUri, state, continueState);
+      }
+      return {
+        ok: false,
+        message: error.message,
+        redirectUrl: error.authorizeUrl,
+        continueState,
+      };
+    }
+    releaseListener();
     // Upstream token-endpoint bodies can echo credentials or sensitive
     // diagnostics — the browser gets a generic failure; the bounded detail
     // stays server-side in the console log.
@@ -437,8 +496,15 @@ export function createOAuthLoginOperations(config: OAuthLoginConfig) {
         code: string,
         state: string,
         wantsJson = false,
+        callbackParams?: Readonly<Record<string, string>>,
       ): Promise<Response> {
-        const outcome = await completeLogin(config, providerId, code, state);
+        const outcome = await completeLogin(config, providerId, code, state, callbackParams);
+        if (outcome.redirectUrl !== undefined) {
+          return new Response(null, {
+            status: 302,
+            headers: { location: outcome.redirectUrl },
+          });
+        }
         return outcome.ok ? successPage(providerId, wantsJson) : failurePage(outcome.message, wantsJson);
       },
     async handleCallbackError(
@@ -670,7 +736,14 @@ export function createOAuthLoginRoutes(config: OAuthLoginConfig): AnyElysia {
       // `state` is absent for authorization servers that do not echo it
       // (OpenRouter). The flow is then correlated by provider instead — one
       // browser login is in flight per provider at a time.
-      return factory.handleCallback(params.providerId, code, state, wantsJson);
+      const loginOption = typeof query["login_option"] === "string" ? query["login_option"] : undefined;
+      return factory.handleCallback(
+        params.providerId,
+        code,
+        state,
+        wantsJson,
+        loginOption === undefined ? undefined : { login_option: loginOption },
+      );
     })
     .post(
       "/:providerId/oauth/device/start",

@@ -11,7 +11,7 @@ import { generateShareSlug, hashShareToken } from "../../persistence/stores/shar
 import type { AccessDecision } from "../../security/access-control";
 import { ConsoleDomainError, errorResponse, requireTenantScope } from "../shared/errors";
 import { literalUnion } from "../shared/elysia-schema";
-import { API_KEY_MODES, API_KEY_MODEL_ACCESS_MODES, type ShareLinkKind } from "../../persistence/schema";
+import { API_KEY_MODES, API_KEY_MODEL_ACCESS_MODES, API_KEY_CONCURRENCY_SCOPES, type ShareLinkKind } from "../../persistence/schema";
 import type { ApiKeyConfig, ApiKeyResponse, BanApiKeyRequest, UpdateApiKeyResponse } from "./contracts";
 import type {
   ApiKeyPatch,
@@ -187,6 +187,7 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
         ...(request.monthlyTokenLimit == null ? {} : { monthlyTokenLimit: request.monthlyTokenLimit }),
         ...(request.lifetimeTokenBudget == null ? {} : { lifetimeTokenBudget: request.lifetimeTokenBudget }),
         ...(request.maxConcurrentRequests == null ? {} : { maxConcurrentRequests: request.maxConcurrentRequests }),
+        ...(request.concurrencyScope !== undefined ? { concurrencyScope: request.concurrencyScope } : {}),
         ...(request.maxChildren == null ? {} : { maxChildren: request.maxChildren }),
         ...(request.modelPrefix === undefined ? {} : { modelPrefix: request.modelPrefix }),
         modelAccessMode: request.modelAccessMode ?? "whitelist",
@@ -322,6 +323,7 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
         ...(patchRequest.monthlyTokenLimit === undefined ? {} : { monthlyTokenLimit: patchRequest.monthlyTokenLimit }),
         ...(patchRequest.lifetimeTokenBudget === undefined ? {} : { lifetimeTokenBudget: patchRequest.lifetimeTokenBudget }),
         ...(patchRequest.maxConcurrentRequests === undefined ? {} : { maxConcurrentRequests: patchRequest.maxConcurrentRequests }),
+        ...(patchRequest.concurrencyScope !== undefined ? { concurrencyScope: patchRequest.concurrencyScope } : {}),
         ...(patchRequest.maxChildren === undefined ? {} : { maxChildren: patchRequest.maxChildren }),
         ...(patchRequest.modelPrefix === undefined ? {} : { modelPrefix: patchRequest.modelPrefix }),
         ...(patchRequest.modelAccessMode === undefined ? {} : { modelAccessMode: patchRequest.modelAccessMode }),
@@ -858,6 +860,7 @@ const apiKeyBody = t.Object({
   monthlyTokenLimit: t.Optional(t.Union([t.Number(), t.Null()])),
   lifetimeTokenBudget: t.Optional(t.Union([t.Number(), t.Null()])),
   maxConcurrentRequests: t.Optional(t.Union([t.Number(), t.Null()])),
+  concurrencyScope: t.Optional(literalUnion(API_KEY_CONCURRENCY_SCOPES)),
   modelPrefix: t.Optional(t.String()),
   modelAccessMode: t.Optional(literalUnion(API_KEY_MODEL_ACCESS_MODES)),
   modelList: t.Optional(t.Array(t.String())),

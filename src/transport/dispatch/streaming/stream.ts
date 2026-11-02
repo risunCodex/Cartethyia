@@ -228,7 +228,11 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
       if (!isWrappedInjectionProvider(candidate.provider_id)) return {};
       const text = resolveTenantSystemPrompt(
         await readTenantSystemPromptsForDispatch(deps.db, prepared.authorization.snapshot.tenant_id),
-        { providerId: candidate.provider_id, modelId: candidate.model_id },
+        {
+          providerId: candidate.provider_id,
+          modelId: candidate.model_id,
+          requestedModel: prepared.plan?.requested_model ?? candidate.model_id,
+        },
       )?.text;
       return text === undefined ? {} : { tenantSystemPrompt: text };
     })()),

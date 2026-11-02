@@ -1,4 +1,4 @@
-// Kiro (CodeWhisperer) adapter.
+// Kiro (CodeWhisperer / Kiro Runtime) adapter.
 //
 // Kiro does not speak a chat-shaped protocol: a request is a `conversationState`
 // ledger, and the answer is an AWS EventStream binary frame sequence. The
@@ -7,19 +7,21 @@
 //
 // Two upstream behaviours drive the header and endpoint logic:
 //
-//  * There is exactly one generation surface, `q.{region}.amazonaws.com`. The
-//    `codewhisperer.*` host and the vendor's own path-style gateway are
-//    not what the real client talks to, and reaching for them is actively
-//    harmful: an account that has just been refused would immediately probe two
-//    other service entries with the same token, which is the shape of credential
-//    probing rather than of a client retrying. A refusal is reported, never
-//    replayed onto another host.
+//  * There is exactly one generation surface, `https://runtime.{region}.kiro.dev`
+//    (the Kiro runtime service). The legacy `q.{region}.amazonaws.com` /
+//    `codewhisperer.*` AWS hosts are what older Kiro builds used; the 1.4.62
+//    IDE ships `KiroRuntimeService` clients against the runtime host, and
+//    reaching for the legacy hosts is actively harmful: an account that has
+//    just been refused would immediately probe other service entries with the
+//    same token, which is the shape of credential probing rather than of a
+//    client retrying. A refusal is reported, never replayed onto another host.
 //  * Every request carries a device identity (`KiroIDE-{version}-{machineId}`
-//    in the User-Agent) and closes its connection. A connection reused across
-//    accounts lets one TCP session carry several tokens that each claim to be a
-//    different machine — the strongest possible evidence of sharing. An account
-//    whose machine id cannot be derived is refused rather than dispatched with a
-//    constant or a per-request random value.
+//    in the User-Agent and `x-kiro-machineid` as a header) and closes its
+//    connection. A connection reused across accounts lets one TCP session carry
+//    several tokens that each claim to be a different machine — the strongest
+//    possible evidence of sharing. An account whose machine id cannot be
+//    derived is refused rather than dispatched with a constant or a per-request
+//    random value.
 //
 // The profile ARN is never manufactured: an account that resolved none sends
 // none. The shared placeholder belongs to the vendor's own account and the
@@ -27,6 +29,7 @@
 
 import type {
   CanonicalEvent,
+  CanonicalMessage,
   CanonicalRequest,
   CanonicalStopReason,
   UsageRecord,
@@ -48,9 +51,10 @@ import {
   type KiroWireRequest,
 } from "./kiro-request";
 import { machineIdForAuthState } from "./kiro-machine-id";
+import { estimateKiroSessionCache } from "./kiro-cache";
 import { resolveKiroProfileArn } from "./kiro-profile";
-import { kiroContextWindow } from "./kiro-catalog";
-import { resolveInboundSessionId, resolvePromptCacheKey } from "../../operations/session-resolution";
+import { kiroContextWindow, KIRO_GENERATE_PATH, KIRO_RUNTIME_HOST_TEMPLATE } from "./kiro-catalog";
+import { resolveInboundSessionId } from "../../operations/session-resolution";
 import { KiroStreamDecoder, isKiroTruncationReason, type KiroUsage } from "./kiro-stream";
 
 /** Provider id this adapter registers under. */
@@ -122,35 +126,6 @@ function resolveKiroConversationId(
 }
 
 /**
- * The field the upstream keys its prompt cache on.
- *
- * A stable `conversationId` is not enough: the upstream ignores `cache_control`
- * entirely unless `metadata.user_id` is present, and then recomputes the whole
- * prompt on every turn. The value follows the shape the real client sends, and
- * its session id is the same one the conversation already uses, so turns of one
- * conversation hit and a different conversation does not.
- */
-function withKiroCacheKey(
-  payload: Record<string, unknown>,
-  request: CanonicalRequest,
-  context: ProviderDispatchContext,
-): Record<string, unknown> {
-  const existing = (payload.metadata as { user_id?: unknown } | undefined)?.user_id;
-  if (typeof existing === "string" && existing.length > 0) return payload;
-  const sessionId = resolvePromptCacheKey(request, context) ?? resolveKiroConversationId(request, context);
-  return {
-    ...payload,
-    metadata: {
-      user_id: JSON.stringify({
-        device_id: resolveAccountMachineId(context),
-        account_uuid: "",
-        session_id: sessionId,
-      }),
-    },
-  };
-}
-
-/**
  * The profile ARN this request carries, or `""` when it carries none.
  *
  * The generation surface is profile-scoped and refuses the field's absence
@@ -191,8 +166,29 @@ function safeRegion(authState: KiroAuthState | undefined): string {
  * replayed onto another service entry.
  */
 export function kiroEndpoint(authState: KiroAuthState | undefined): string {
-  return `https://q.${safeRegion(authState)}.amazonaws.com/generateAssistantResponse`;
+  const host = KIRO_RUNTIME_HOST_TEMPLATE.replace("{region}", safeRegion(authState));
+  return `${host}${KIRO_GENERATE_PATH}`;
 }
+
+/**
+ * AWS JSON 1.0 target for the runtime generation operation. The service name
+ * and operation are what the 1.4.62 client sends in `x-amz-target` (it is a
+ * Smithy `awsJson1_0` client with serviceTarget `KiroRuntimeService`).
+ */
+export const KIRO_RUNTIME_AWS_JSON_TARGET = "KiroRuntimeService.GenerateAssistantResponse" as const;
+
+/**
+ * Maps an auth method onto the `TokenType` header the 1.4.62 client sends.
+ *
+ * Observed map (`qje`): `api_key → API_KEY`, `external_idp → EXTERNAL_IDP`,
+ * `idc → SSO_OIDC`, `machine_token → KIRO_MACHINE_TOKEN`. Google/GitHub/
+ * Builder-ID sessions send no `TokenType` header.
+ */
+const KIRO_TOKEN_TYPE: Readonly<Record<string, string>> = {
+  api_key: "API_KEY",
+  external_idp: "EXTERNAL_IDP",
+  idc: "SSO_OIDC",
+};
 
 /**
  * Builds the request headers.
@@ -206,37 +202,37 @@ export function kiroEndpoint(authState: KiroAuthState | undefined): string {
  *  * `x-amzn-codewhisperer-optout` — the observed client opts out of data
  *    collection on every generation request.
  *  * `x-amzn-kiro-agent-mode` — the agent mode the observed client declares.
- *  * `tokentype` — an API key or enterprise token is rejected as an OAuth access
- *    token unless it is labelled as one.
+ *  * `TokenType` — an API key or enterprise token is labelled so the upstream
+ *    can tell it apart from an OAuth access token.
  */
 export function kiroHeaders(
   secret: string,
   authState: KiroAuthState | undefined,
   machineId: string,
+  agentMode: string,
 ): Record<string, string> {
   const authMethod = authState?.authMethod;
   const version = getKiroVersion();
   const headers: Record<string, string> = {
-    "content-type": "application/json",
+    "content-type": "application/x-amz-json-1.0",
     accept: KIRO_STREAM_ACCEPT,
     connection: "close",
+    "x-amz-target": KIRO_RUNTIME_AWS_JSON_TARGET,
     "x-amzn-codewhisperer-optout": "true",
-    "x-amzn-kiro-agent-mode": "spec",
+    "x-amzn-kiro-agent-mode": agentMode,
+    "x-kiro-machineid": machineId,
     "amz-sdk-request": "attempt=1; max=3",
     "amz-sdk-invocation-id": crypto.randomUUID(),
     "user-agent": buildKiroUserAgent(version, machineId),
     "x-amz-user-agent": buildKiroAmzUserAgent(version, machineId),
     authorization: `Bearer ${secret}`,
   };
-  if (authMethod === "api_key") {
-    headers["tokentype"] = "API_KEY";
-  } else if (authMethod === "external_idp") {
-    headers["tokentype"] = "EXTERNAL_IDP";
-  } else {
-    headers["x-amz-sso-bearer"] = secret;
+  const tokenType = authMethod === undefined ? undefined : KIRO_TOKEN_TYPE[authMethod];
+  if (tokenType !== undefined) {
+    headers["TokenType"] = tokenType;
   }
   if (authState?.profileArn !== undefined && authState.profileArn.length > 0) {
-    headers["x-amzn-codewhisperer-profile-arn"] = authState.profileArn;
+    headers["x-amzn-kiro-profile-arn"] = authState.profileArn;
   }
   return headers;
 }
@@ -257,11 +253,17 @@ export function kiroHeaders(
  * estimate: the upstream never says how long its own answer was, so the emitted
  * text is counted at the usual ~4 characters per token.
  */
-function kiroUsage(usage: KiroUsage, modelId: string, outputText: string): UsageRecord {
+function kiroUsage(
+  usage: KiroUsage,
+  modelId: string,
+  outputText: string,
+  messages?: readonly CanonicalMessage[],
+  sessionId?: string,
+): UsageRecord {
   const cacheRead = usage.cacheReadTokens ?? 0;
   const cacheWrite = usage.cacheWriteTokens ?? 0;
   const [input, output] = kiroTokenCounts(usage, modelId, outputText);
-  return {
+  const record: UsageRecord = {
     input_tokens: input,
     cached_input_tokens: cacheRead > 0 ? cacheRead : "unavailable",
     cache_write_tokens: cacheWrite > 0 ? cacheWrite : "unavailable",
@@ -275,6 +277,9 @@ function kiroUsage(usage: KiroUsage, modelId: string, outputText: string): Usage
     total_tokens: input + output,
     ...(usage.credits === undefined ? {} : { credit_used: usage.credits }),
   };
+  // The runtime never reports cache hits; close the gap with our own history.
+  // A genuine ( >0) report conserves the complete record.
+  return estimateKiroSessionCache(record, sessionId, messages);
 }
 
 /**
@@ -370,6 +375,7 @@ class KiroAdapter implements ProviderAdapter {
         : (request.reasoning?.budget_tokens ?? kiroThinkingBudgetForEffort(requestedEffort));
     const built = buildKiroWireRequest(request, {
       conversationId: resolveKiroConversationId(request, context),
+      rootConversationId: resolveKiroConversationId(request, context),
       modelId,
       profileArn: resolveProfileArn(context),
       ...(effortPath === undefined || effort === undefined ? {} : { effortPath, effort }),
@@ -386,7 +392,8 @@ class KiroAdapter implements ProviderAdapter {
       );
     }
     const fetchFn = (context.outbound_fetch as unknown as typeof fetch | undefined) ?? this.#fetch;
-    const body = JSON.stringify(withKiroCacheKey(built.value.payload, request, context));
+    const builtPayload = { ...built.value.payload, agentMode: "vibe" };
+    const body = JSON.stringify(builtPayload);
     const machineId = resolveAccountMachineId(context);
     const response = await this.#send(
       fetchFn,
@@ -403,7 +410,7 @@ class KiroAdapter implements ProviderAdapter {
       }, "upstream");
     }
 
-    yield* this.#stream(response.body, built.value, request);
+    yield* this.#stream(response.body, built.value, request, context);
   }
 
   /**
@@ -427,7 +434,7 @@ class KiroAdapter implements ProviderAdapter {
     try {
       response = await fetchFn(url, {
         method: "POST",
-        headers: kiroHeaders(secret, authState, machineId),
+        headers: kiroHeaders(secret, authState, machineId, "vibe"),
         body,
         signal: context.abort_signal,
       });
@@ -460,6 +467,7 @@ class KiroAdapter implements ProviderAdapter {
     stream: ReadableStream<Uint8Array>,
     built: KiroWireRequest,
     request: CanonicalRequest,
+    context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
     const decoder = new KiroStreamDecoder();
     const reader = stream.getReader();
@@ -593,7 +601,7 @@ class KiroAdapter implements ProviderAdapter {
       reader.releaseLock();
     }
 
-    const finalUsage = kiroUsage(usage, request.model, outputText);
+    const finalUsage = kiroUsage(usage, request.model, outputText, request.messages, resolveKiroConversationId(request, context));
     yield {
       type: "usage",
       sequence_number: sequence++,

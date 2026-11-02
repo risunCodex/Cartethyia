@@ -296,6 +296,7 @@ export function createShareRouter(options: ShareRouterOptions): AnyElysia {
         oneTimeLimit: row.lifetimeTokenBudget,
         requestsPerMinute: row.requestsPerMinute,
         maxConcurrentRequests: row.maxConcurrentRequests,
+        concurrencyScope: row.concurrencyScope ?? "family",
         modelPrefix: row.modelPrefix,
         models,
         modelInfo,

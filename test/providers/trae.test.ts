@@ -565,6 +565,26 @@ describe("trae Agent tool streams", () => {
     expect(g.status).toBe(429);
   });
 
+  test("an upstream 4013 region refusal keeps its provider code for the classifier", async () => {
+    // `4013 "AI service is not available in the current region now."` is a
+    // durable region verdict — the classifier must turn it into a hard account
+    // cooldown, so the adapter must surface it with the provider code intact
+    // rather than as a bare platform fault.
+    let thrown: unknown;
+    try {
+      await agentEvents([
+        { event: "error", data: { code: 4013, message: "AI service is not available in the current region now." } },
+      ]);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(GatewayError);
+    const g = thrown as GatewayError;
+    expect(g.code).toBe("platform_unavailable");
+    expect(g.details.providerCode).toBe("4013");
+    expect(g.details.providerId).toBe("trae");
+  });
+
   test("an error object in a frame body is classified too", async () => {
     // HTTP 200 frames can carry `{"code":1001,"message":"…"}` directly in the
     // body instead of a named `error` event — same verdict required.

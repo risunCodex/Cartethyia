@@ -30,11 +30,19 @@ describe("Qoder device flow start", () => {
     const started = await client.startDeviceAuth();
     expect(started.verificationUri.startsWith("https://qoder.com/device/selectAccounts?")).toBe(true);
     expect(started.verificationUri).toContain("challenge_method=S256");
-    expect(started.deviceAuthId.length).toBeGreaterThan(0);
+    // 1:1 with the desktop IDE: the client id is always present and the nonce
+    // is a full UUID (dashes included), not a dash-stripped hex string.
+    expect(started.verificationUri).toContain("client_id=e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb");
+    const nonceMatch = /nonce=([0-9a-f-]{36})/.exec(started.verificationUri);
+    expect(nonceMatch).not.toBeNull();
+    expect(nonceMatch![1]!).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(started.deviceAuthId).toBe(nonceMatch![1]!);
     expect(started.userCode).toBe("");
     const state = JSON.parse(started.providerState ?? "{}") as Record<string, unknown>;
     expect(typeof state.verifier).toBe("string");
     expect(typeof state.machineId).toBe("string");
+    // The verifier comes from the IDE's own alphabet (no base64 `+`/`/`).
+    expect(state.verifier).toMatch(/^[A-Za-z0-9-._~]{43,128}$/);
   });
 });
 

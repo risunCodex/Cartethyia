@@ -108,6 +108,27 @@ export async function resolveTenantImageClampMaxBytes(
 }
 
 /**
+ * The tenant's ordered vision-handoff model list, or `[]` when none is
+ * configured (legacy `[image]` placeholder behavior). Read through the shared
+ * revision-keyed preference reader; a settings outage yields an empty list,
+ * which is the safe direction (handoff is an upgrade, never a prerequisite).
+ */
+export async function resolveTenantVisionHandoffModels(
+  db: CartethyiaDatabase,
+  tenantId: string | undefined,
+): Promise<readonly string[]> {
+  if (tenantId === undefined) return [];
+  try {
+    const prefs = await preferencesReaderFor(db).readPreferences(tenantId);
+    const models = prefs?.visionHandoffModels;
+    if (!Array.isArray(models)) return [];
+    return models.filter((model): model is string => typeof model === "string" && model.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Applies request shaping owned by tenant preferences and deployment config:
  * thinking normalization and the Responses reasoning summary override.
  * Failure is non-fatal.
@@ -133,6 +154,7 @@ export async function applyTenantPreferences(
       providerId: candidate.provider_id,
       modelId: candidate.model_id,
       serviceKind: candidate.service_kind ?? "llm",
+      requestedModel: prepared.plan?.requested_model ?? candidate.model_id,
     });
     if (prefs) {
       // When the routed model is Responses (codex/openai/muse-spark) and the

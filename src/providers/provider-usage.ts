@@ -436,28 +436,47 @@ export function usageToMessagesWire(usage: UsageRecord | undefined): Record<stri
  * and event shapes — only the key lookup lives here, so a new upstream key
  * is added once and every reader picks it up.
  */
-export const REASONING_TEXT_KEYS: readonly string[] = ["reasoning_content", "reasoning"];
+export const REASONING_TEXT_KEYS: readonly string[] = [
+  "reasoning_content",
+  "reasoning",
+  "reasoning_summary",
+  "reasoning_summary_text",
+  "reasoning_text",
+];
+
+/**
+ * Extracts readable text from one reasoning value. Accepts a plain string and
+ * the object shapes upstreams use for reasoning deltas: `{text}`,
+ * `{summary}`, `{delta}` (Responses-style), or an array of parts.
+ */
+function reasoningTextValue(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    let text = "";
+    for (const part of value) {
+      const piece = reasoningTextValue(part);
+      if (piece !== undefined) text += piece;
+    }
+    return text.length > 0 ? text : undefined;
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  const rec = value as Record<string, unknown>;
+  for (const key of ["text", "summary", "delta", "content"]) {
+    const piece = reasoningTextValue(rec[key]);
+    if (piece !== undefined) return piece;
+  }
+  return undefined;
+}
 
 /** First string found under a known reasoning-text key, or undefined. */
 export function readReasoningText(source: Record<string, unknown>): string | undefined {
   for (const key of REASONING_TEXT_KEYS) {
-    const value = source[key];
-    if (typeof value === "string") return value;
+    const text = reasoningTextValue(source[key]);
+    if (text !== undefined) return text;
   }
   // Qwen/MiniMax-family `reasoning_details[]` parts carrying text fragments.
-  const details = source["reasoning_details"];
-  if (Array.isArray(details)) {
-    const text = details
-      .map((part) =>
-        typeof part === "string"
-          ? part
-          : typeof (part as Record<string, unknown>)?.["text"] === "string"
-            ? ((part as Record<string, unknown>)["text"] as string)
-            : "",
-      )
-      .join("");
-    if (text.length > 0) return text;
-  }
+  const details = reasoningTextValue(source["reasoning_details"]);
+  if (details !== undefined) return details;
   return undefined;
 }
 

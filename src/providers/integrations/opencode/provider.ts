@@ -151,17 +151,6 @@ export function isFreeTierZenModel(modelId: string): boolean {
 }
 
 /**
- * The anonymous credential the free tier accepts.
- *
- * Captured from a real client dispatch and confirmed live 2026-10-14: without
- * it a free-model request is refused with 403 `FreeTierError` even when every
- * other field is byte-exact, and with it the same request returns 200. It is a
- * sentinel the upstream recognizes, not a secret — but it is a credential
- * value, so it lives here rather than in the shared fingerprint.
- */
-const ANONYMOUS_ZEN_BEARER = "public";
-
-/**
  * The `Accept` a free-tier dispatch advertises.
  *
  * What OpenCode 2.x's AI SDK puts on the wire, and what the reference gateway
@@ -184,9 +173,10 @@ function opencodeDesktopHeaders(
       context.request_headers?.["x-opencode-project"],
       context.request_headers?.["x-opencode-session-id"],
     ),
-    // The gate reads the anonymous sentinel: a free dispatch with no
-    // Authorization is refused regardless of headers, tools, or session shape.
-    ...(freeModel ? { authorization: `Bearer ${ANONYMOUS_ZEN_BEARER}` } : {}),
+    // The free-tier gate accepts dispatches with no `Authorization` at all
+    // (verified live 2026-11-02: the same captured flow answers 200 both with
+    // `Bearer public` and with no auth header, as long as the body/session
+    // fingerprint is valid). No anonymous sentinel is sent.
     // The free-tier gate refuses non-streaming dispatches with 403
     // FreeTierError, so free models always advertise SSE regardless of the
     // client's own Accept; billed models keep the JSON default. The value is
@@ -211,27 +201,28 @@ function opencodeDesktopHeaders(
  * `ToolDefinition`s — every wire codec serializes them, no per-wire patching.
  */
 /**
- * Every tool the free-tier gate recognises, in the order the client declares
- * them, with the client's own description and schema.
+ * Every tool the free-tier gate recognises, in the order the real 2.2.0
+ * client declares them on the wire (mitm capture 2026-11-02, flow 4), with
+ * the client's own description and schema.
  *
  * The gate compares a recognised tool's definition, not just its name: a stub
  * carrying the right name is refused. These are therefore verbatim captures —
- * see `./tool-definitions` for provenance.
+ * see `./tool-definitions` for provenance. A real dispatch carries exactly
+ * these 11 tools (the binary's full `UPt` registry has 14, but the build
+ * agent sends only these).
  */
 const FREE_AGENT_TOOL_NAMES_ORDERED: readonly string[] = [
-  "shell",
+  "edit",
   "glob",
-  "read",
   "grep",
+  "read",
+  "shell",
+  "skill",
+  "subagent",
   "webfetch",
   "websearch",
   "write",
-  "edit",
-  "subagent",
   "execute",
-  "patch",
-  "question",
-  "skill",
 ];
 
 /**
@@ -268,6 +259,8 @@ function ensureFreeAgentRequest(request: CanonicalRequest): CanonicalRequest {
       name,
       description: definition?.description ?? name,
       jsonSchema: (definition?.parameters ?? FREE_AGENT_TOOL_SCHEMA) as ToolDefinition["jsonSchema"],
+      // The real client marks every declared tool strict:false on the wire.
+      strict: false,
     };
   });
   if (missing.length === 0) return request;

@@ -16,7 +16,20 @@ import { type FetchLike, type ProviderQuotaResult } from "./quota-contracts";
 import type { ProviderId } from "../provider-contracts";
 import type { ProviderRegistry } from "../provider-registry";
 import { GLOBAL_QUOTA_LENS, setCachedQuota } from "./cache";
+import { persistQuotaSnapshot } from "./snapshot";
 import { asJsonbRecord } from "../../shared/coerce";
+import { KIRO_DEFAULT_LABELS } from "../integrations/kiro/kiro-oauth";
+
+/**
+ * The stock Kiro fallback labels as a SQL literal list. Built once from the
+ * canonical set (`KIRO_DEFAULT_LABELS`) and escaped for the single-quote SQL
+ * literal; the values are compile-time constants, so this fragment is static.
+ */
+const KIRO_DEFAULT_LABEL_IN = sql.raw(
+  [...KIRO_DEFAULT_LABELS]
+    .map((label) => `'${label.replace(/'/g, "''")}'`)
+    .join(", "),
+);
 
 /** Why an account quota refresh failed; `null` means the fetch succeeded. */
 export type QuotaRefreshFailureCode = "missing_credential" | "quota_fetch_failed";
@@ -399,6 +412,15 @@ async function runQuotaRefresh(
       log.warn(`[quota] failed to record plan for account=${target.accountId}`, error as Error);
     }
   }
+  // Persist the whole successful read, not just the plan. The row survives a
+  // restart that empties the in-process cache, so a cold console open renders
+  // the last known balance instead of nothing (and the sweep refreshes it). A
+  // failed fetch leaves the previous snapshot in place — same reasoning as the
+  // plan column: failure is evidence about the network/credential, not that
+  // the account's balance changed.
+  if (quota.error === null) {
+    await persistQuotaSnapshot(deps.db, target.accountId, quota);
+  }
   // A quota surface that names the account adopts the identity — but only over
   // a default label. An operator's custom rename is never overwritten, and the
   // CASE keeps the read and the write in one statement so a concurrent rename
@@ -416,6 +438,7 @@ async function runQuotaRefresh(
           label: sql`CASE
             WHEN lower(trim(${providerAccounts.label})) = lower(trim(${providerAccounts.providerId})) THEN ${quota.accountLabel}
             WHEN ${providerAccounts.label} LIKE '%|%' THEN ${quota.accountLabel}
+            WHEN ${providerAccounts.label} IN (${KIRO_DEFAULT_LABEL_IN}) THEN ${quota.accountLabel}
             ELSE ${providerAccounts.label}
           END`,
         })

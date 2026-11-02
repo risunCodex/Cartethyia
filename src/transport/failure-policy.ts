@@ -656,6 +656,12 @@ const QUOTA_ERROR_IDENTIFIERS: ReadonlySet<string> = new Set([
   // it is a spend/limit verdict, never an auth one, so it must classify as
   // quota (a cooldown) instead of `auth_invalidated`.
   "110",
+  // Qoder also reports quota exhaustion as `{"code":116,"error":"quota
+  // exceeded"}` (seen on the IDE model-server surface with a 499/stream
+  // close). The 499 special-case below already treats qoder 499 as quota;
+  // naming the code here makes any status that carries it classify as quota
+  // instead of `invalid_request`/`authentication_failed`.
+  "116",
   // InferHub publishes its own vocabulary in `error.code`. The two 403s below
   // are deliberate absences: `account_blocked` means the account was blocked
   // (an auth/entitlement verdict, not a spend limit) and

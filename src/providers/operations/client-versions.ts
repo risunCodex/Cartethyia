@@ -200,7 +200,7 @@ async function githubReleaseVersion(response: Response): Promise<string | null> 
  * The discovery source below only supplies the *IDE* version that follows the
  * `KiroIDE` device marker.
  */
-const KIRO_RUNTIME_SDK_VERSION = "1.0.39";
+const KIRO_RUNTIME_SDK_VERSION = "1.0.44";
 
 /**
  * AWS SSO OIDC SDK version stamped into login and token-refresh User-Agents.
@@ -242,7 +242,12 @@ export const VERSION_SOURCES = {
   },
   qoder: {
     key: "qoder",
-    fallback: "1.1.81",
+    // The desktop IDE hardcodes its COSY_VERSION as "1.1.80" (`S9` in the
+    // unpacked worker bundle); the model-server surface sees this value, so
+    // the gateway presents the same build the IDE ships. Discovery (npm
+    // `@qoder-ai/qodercli/latest`) may report a newer CLI, but the CLI and
+    // IDE are different products — the chat surface identity is the IDE's.
+    fallback: "1.1.80",
     sources: [
       {
         url: "https://registry.npmjs.org/@qoder-ai/qodercli/latest",
@@ -254,7 +259,9 @@ export const VERSION_SOURCES = {
     key: "opencode",
     // The v1 package (`opencode-ai`) stopped at 1.18. The v2 line publishes
     // under `@opencode/cli`, and this feed is what its own installer reads.
-    fallback: "2.2.2",
+    // Fallback = the current latest release; raise it whenever the package
+    // moves so a cold process does not present a stale client build.
+    fallback: "2.2.5",
     minVersion: "2.0.0",
     sources: [{ url: "https://opencode.ai/update/api/latest/cli/npm" }],
   },

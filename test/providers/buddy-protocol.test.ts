@@ -175,12 +175,23 @@ describe("Buddy upstream protocol alignment", () => {
     expect(payload["max_tokens"]).toBe(64_000);
   });
 
-  test("`auto` stays `auto` on the international roster", () => {
-    // `default-model` was removed from the catalog, so rewriting `auto` onto
-    // it would send clients to an id that is no longer served.
+  test("intl `auto` resolves to the intl backend-selected id (`default-model`)", () => {
+    // Live CLI session logs send `model=default-model` for the intl auto path,
+    // and `default-model` is a served catalog row. The rewrite is what makes
+    // eligibility, cooldowns and the catalog all key on one id.
     const viaAuto: Record<string, unknown> = { model: "auto", messages: [] };
     buddyPrePayloadCommon(viaAuto, request, "intl");
-    expect(viaAuto["model"]).toBe("auto");
+    expect(viaAuto["model"]).toBe("default-model");
+  });
+
+  test("injects `cache_retention` (long) and honors the disable-caching env", () => {
+    const payload: Record<string, unknown> = { model: "hy3", messages: [] };
+    buddyPrePayloadCommon(payload, request, "intl");
+    expect(payload["cache_retention"]).toBe("long");
+    // A caller-supplied value is never overwritten.
+    const explicit: Record<string, unknown> = { model: "hy3", messages: [], cache_retention: "short" };
+    buddyPrePayloadCommon(explicit, request, "intl");
+    expect(explicit["cache_retention"]).toBe("short");
   });
 
   test("CN `auto` resolves to the CN backend-selected id, not the intl one", () => {

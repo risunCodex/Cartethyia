@@ -15,6 +15,7 @@ import {
   RTK_LEVELS,
   TELEMETRY_PAYLOAD_DEPTHS,
   TELEMETRY_PAYLOAD_MODES,
+  VISION_HANDOFF_MAX_MODELS,
   type PonyTailLevel,
   type ResponsesReasoningSummary,
   type RtkLevel,
@@ -115,6 +116,22 @@ function normalizeConcurrencyTolerance(value: unknown): number | null {
   return normalizeBoundedNumber(value, 0, 1024);
 }
 
+/** Ordered vision-handoff models: non-empty strings, trimmed, de-duplicated. */
+function normalizeVisionHandoffModels(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const model = entry.trim();
+    if (model.length === 0 || seen.has(model)) continue;
+    seen.add(model);
+    out.push(model);
+    if (out.length >= VISION_HANDOFF_MAX_MODELS) break;
+  }
+  return out;
+}
+
 function mapRuntimeSettingsRow(
   row: typeof consoleSettings.$inferSelect | undefined,
   redisBackend: RedisBackend,
@@ -148,6 +165,7 @@ function mapRuntimeSettingsRow(
     upstreamTimeoutSeconds: normalizeUpstreamTimeoutSeconds(prefs.upstreamTimeoutSeconds),
     telemetryWindowMinutes: normalizeTelemetryWindowMinutes(prefs.telemetryWindowMinutes),
     imageClampMaxBytes: normalizeImageClampMaxBytes(prefs.imageClampMaxBytes),
+    visionHandoffModels: normalizeVisionHandoffModels(prefs.visionHandoffModels),
     updatedAt,
     /*
      * Resolved at request time, not at module load: all four come from env the
@@ -211,6 +229,8 @@ export class DrizzleRuntimeSettingsStore implements RuntimeSettingsStore {
       );
     if (patch.imageClampMaxBytes !== undefined)
       patchPrefs.imageClampMaxBytes = normalizeImageClampMaxBytes(patch.imageClampMaxBytes);
+    if (patch.visionHandoffModels !== undefined)
+      patchPrefs.visionHandoffModels = normalizeVisionHandoffModels(patch.visionHandoffModels);
 
     const rows = await this.db
       .insert(consoleSettings)

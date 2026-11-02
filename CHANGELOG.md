@@ -8,6 +8,290 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.7.5] - 2026-11-02
+
+### Added
+
+- **Quota windows are filtered by the requested model family.** Providers that
+  report separate quota per model family (Antigravity: Gemini vs Claude/GPT;
+  Grok: per-product buckets) no longer block every model when one family is
+  exhausted. A candidate's quota windows are filtered to the ones that apply
+  to the dispatched model before the usage floor / exhausted-window check, so
+  a Claude-exhausted account still routes Gemini requests (the false 429 that
+  used to fire is gone). The filter is provider-specific and falls back to all
+  windows for providers without per-family quotas.
+- **`bun run dev` now restarts the full stack on any source change.** The
+  dev supervisor (`scripts/dev/supervisor.ts`) previously hot-reloaded via
+  Bun's `--hot`, which swaps only the changed module — boot-time state
+  (workers, registries, scheduler leases) was never rebuilt. `dev` now runs
+  the supervisor, which watches the source roots (`src/`, `scripts/`,
+  `dashboard/src/`), SQL migrations, and dependency manifests every
+  `DEV_WATCH_MS` (default 3000 ms) and restarts the whole stack in place
+  behind the holding proxy. Manifest changes reinstall deps with the lockfile
+  frozen; migration changes re-run at boot. `DEV_WATCH_MS=0` disables
+  polling and keeps the CTRL+R-only behavior.
+- **Grok request compression (zstd) and richer Responses fields.** The Grok
+  adapter now sends the request body zstd-compressed with
+  `Content-Encoding: zstd` (matching the Grok Build CLI), and the accepted
+  field set is widened to the Responses session/linkage fields
+  (`previous_response_id`, `conversation`, `stream_options`,
+  `prompt_cache_retention`, `moderation`, `user`, …) plus the hosted tool set
+  (`web_search`, `x_search`, `image_generation`, `collections_search`,
+  `file_search`, `code_execution`, `code_interpreter`, `mcp`, `shell`,
+  `tool_search`) — anything else normalizes to a flat `function` tool.
+  Discovery no longer keeps a process-global model cache: the per-account
+  catalog can differ by plan, so account B's sync no longer clobbers account
+  A's limits/reasoning menus. Grok quota probe now uses a streamed
+  `grok-4.7` probe prompt engineered to produce the literal `407` signal
+  ("Type the number 407."), and a `402` spend/entitlement wall is classified
+  as `spending-limit` instead of a reading failure.
+- **System Prompt presets and per-modal/provider references.** A tenant can save
+  reusable system-prompt presets and reference them per model, per provider, or
+  globally. Combos/aliases inject the preset for their requested model (its own
+  preset, or the global fallback). The Inject System Prompt panel exposes preset
+  cards, add/remove, and a multi-preset picker; disabling a preset no longer
+  clears its text — a separate Clear button does.
+- **Share-template concurrency scope: global or per key.** A share template's
+  "Concurrent" limit is now explicit. `family` (default) keeps today's behavior —
+  one shared admission counter and cap across every recipient of the template.
+  `per_key` copies the cap onto each child at issue, so every recipient gets its
+  own limit; a per-key child with no cap is unlimited on its own slot. Migration
+  `0037` adds `api_keys.concurrency_scope` for both dialects. The API key form
+  and the share page show the active scope.
+- **Vision adapter: hand images to a configured vision model instead of a
+  `[image]` placeholder.** When a request carries images but the selected model
+  is not image-capable, the gateway now forwards the image to an ordered list of
+  configured vision models (global setting `visionHandoffModels`), asks the
+  image *contents* — no chat history — and injects the description as text into
+  the original model's request. The original model still answers; only the image
+  travels. If a listed vision model is unhealthy (cooldown, quota, upstream
+  error), the handoff falls through to the next model on the list. If no vision
+  model succeeds or none is configured, the request falls back to the legacy
+  `[image]` placeholder and never fails because of the handoff. Config lives in
+  the runtime Settings (global per tenant), no migration required; the Settings
+  page gains a "Vision handoff models" card with multi-select, ordered picks.
+
+### Changed
+
+- **Qoder dispatch defaults to the modern `/model/v1` surface with a legacy
+  COSY fallback.** The adapter now tries the IDE wire (`/model/v1/chat/completions`)
+  first — it echoes the real model key and carries 1M context + `xhigh`
+  reasoning — and automatically falls back to the legacy COSY surface only when
+  the modern surface answers an entitlement refusal (HTTP 402 / `{"code":116}`,
+  seen on free-tier accounts) **and** the dispatched model is a free-tier row
+  (`is_free: true`). For a billed model the same 402/116 is genuine quota
+  exhaustion (Qoder's daily exhaustion / cooldown run on a 1-day cycle) and
+  surfaces as-is, so the exhausted state is never masked by a fallback. A
+  401/403/model error is surfaced as-is and is not masked by a legacy retry.
+  `surface: "cosy"` remains as an explicit force-legacy option. The legacy body
+  is now 1:1 with the IDE worker: top-level `model` (roster key) and
+  `reasoningEffort` (camelCase, mapped from canonical intent) are sent alongside
+  `model_config.max_input_tokens` for the widest discovered window.
+- **Qoder device login matches the desktop IDE byte-for-byte.** The PKCE
+  verifier now uses the IDE's own alphabet (`A-Za-z0-9-._~`, 43–128 chars), the
+  nonce is a full UUID, the client id is always sent (intl `e883ade2-…`, CN
+  `e93fe488-…`), and the machine id defaults to the platform hardware id
+  (Windows `MachineGuid`, macOS `IOPlatformUUID`, Linux `/etc/machine-id`) with
+  `. `machine_id`/`machine_token` override via device-flow parameters to reuse an
+  IDE-held device identity. Qoder token refresh now works through the working
+  deviceToken endpoint (`POST /api/v1/deviceToken/refresh`) instead of throwing
+  "no refresh grant".
+- **Qoder client identity matches the IDE build.** `cosy-machineos` is derived
+  from the runtime arch/OS (not a fixed macOS string), `cosy-machinehostname` is
+  normalized to the IDE's header-safe form, and the COSY version pins the IDE's
+  `1.1.80` (not the newer CLI's).
+- **Qoder browser-session PAT claimer.** New probe
+  `scripts/provider-probing/qoder/qoder-browser-pat-claimer.ts` lists, creates,
+  and revokes Personal Access Tokens (`pt-…`) from the Qoder web console using
+  an exported browser session cookie (Netscape cookies.txt). It handles the
+  console's CSRF double-submit pair (`window.csrfToken` + the
+  `qoder_csrf_token` cookie), caps expiry at the console's 1-year maximum, and
+  writes the minted PAT only to `--out` — never to stdout. This provides the
+  durable identity path: a PAT is exchanged by the adapter into a per-request
+  job token, versus the device token the OAuth flow issues.
+- **Routing prefers accounts with remaining credit, free tier to any account.**
+  Within the same rank group, the gateway now orders accounts with remaining
+  pooled credit first, then unknown-quota accounts, then known-zero last. A
+  model the provider marks as free (`free_tier`) is exempt: it may land on any
+  account regardless of credit balance. The rule applies to every provider —
+  Qoder included — because both signals are already per-candidate. The rank
+  (fresh → slow → cooling → saturated) remains the primary sort key; credit only
+  breaks ties inside one rank.
+
+### Fixed
+
+- **Postgres traffic telemetry no longer falls back to SQLite SQL.** The
+  dialect check (`isPostgres`) reported Postgres for any handle whenever the
+  process env was `CARTETHYIA_DB_MODE=full`, so a SQLite handle received
+  SQLite bucket/percentile expressions (`strftime`, `::` casts) and every
+  canonical telemetry read (chart buckets, summary percentiles, provider usage
+  matrix) failed with `unrecognized token: ":"` under a full-mode process. The
+  dialect is now the only authority (`instanceof PgDialect` plus the
+  constructor-name check — both survive minification); the env fallback is
+  gone. A regression test builds a SQLite handle while the process mode is
+  full and asserts the SQLite branch still runs.
+- **Postgres usage flush no longer emits a duplicate `VALUES` alias.** The
+  source subquery already carries its alias (`AS v(id, delta)`), and the
+  statement template appended another `v`, producing `... AS v(id, delta) v`
+  — a syntax error that silently stopped
+  `api_keys.lifetime_tokens_consumed` from ever advancing (the lifetime budget
+  reader then saw a frozen number). The source is now named once per dialect:
+  SQLite keeps the trailing alias, Postgres keeps its own.
+- **A quota-cache miss no longer erases stamped quota windows.** The
+  model-family filter routed `applyUsageFloorToCandidate` through
+  `filterCandidateQuotaWindows(cached?.quota.windows ?? [], candidate)`, so a
+  cache miss became an empty array that overwrote the candidate's carried
+  `quota_windows` (violating the miss-must-not-erase-stamp invariant). The
+  filter now runs only when a reading exists; a miss leaves the candidate's
+  windows untouched.
+- **CodeBuddy/WorkBuddy adapters close the eight wire gaps found by unpacking
+  the CodeBuddy CLI 2.179.2.** The reference CLI's chat request is the
+  authority, and the gateway now matches it:
+  - `cache_retention` is injected on every buddy chat body (`long` by default;
+    `short` when `CODEBUDDY_DISABLE_PROMPT_CACHING_1H` is set).
+  - `X-Agent-Purpose` is no longer hardcoded to `conversation`; it is sent
+    only when a purpose exists (`person_agent` under `PERSONAL_AGENT_ROLE`, or
+    the inbound `x-agent-purpose` header).
+  - `X-Private-Data` is no longer sent as a constant `false`; it is emitted
+    only when the dispatch is actually private (`auth_state.privateData`).
+  - The OAuth identity family is now sent: `X-User-Id` prefers the JWT `sub`
+    over the internal account id, and `X-Userinfo` (base64 `{uin, owner_uin?,
+    id_source?, token_source?}`), `X-Auth-Method`, and `X-Id-Source` are added
+    when their identity fields exist.
+  - `X-Root-Request-ID` and `X-Parent-Conversation-ID` are forwarded only when
+    the caller supplies them (subagent/root chains).
+  - The `x-stainless-*` fingerprint is no longer sent on CLI chat — the CLI's
+    chat transport is axios, not the OpenAI Node SDK. The desktop identity is
+    unchanged.
+  - The intl `auto` alias now resolves to `default-model` (confirmed from live
+    CLI session logs), matching the CN `auto` → `default` behavior.
+- **GitHub Copilot adapter closes the Messages-wire and capability gaps found
+  by auditing the official Copilot Chat 0.72.0 extension (VS Code 1.144).**
+  - Discovery now routes `/v1/messages`-only rows (the premium Claude family)
+    to the native Messages wire instead of dropping them, and prefers chat
+    when a row supports both.
+  - `reasoning_effort` ladders from `/models` are carried onto the model
+    definition, so clamping honors the model's real effort list
+    (`claude-fable-*` declares `max`) instead of the provider-wide `high` cap.
+  - Upstream `token_prices` (per-1M-token rates) now feed the model cost so
+    the real per-account price is shown.
+  - Headers were bumped to the current extension identity (`GitHubCopilotChat/0.72.0`,
+    `vscode/1.144.0`) and `x-interaction-id`,
+    `x-vscode-user-agent-library-version`, and `anthropic-beta`
+    (`interleaved-thinking-2025-05-14`, Messages wire only) are now sent.
+  - Model exclusions were pruned: `kimi-k3-base`, `kimi-k3-copilot`, and the
+    `mai-code-1-flash-*` family are now available (the `gpt-5.6-luna` family
+    stays excluded — it is not routable).
+- **Responses wire requests a detailed reasoning summary by default when
+  reasoning effort is set.** GitHub Copilot's `gpt-6-luna` (and similar
+  Responses-only reasoning models) only stream `response.reasoning_summary_text.delta`
+  when the request body asks for a summary (`reasoning.summary`); when the
+  caller requested an effort but expressed no summary preference, the encoder
+  sent `effort` alone, so the reasoning summary that exists upstream never
+  reached the client. The encoder now defaults to `summary: "detailed"` when
+  effort is set (an explicit `summary`/`summary_mode` still wins). Verified
+  live against Copilot's `/auto` → `/responses` path.
+- **Provider list/detail and Usage pages no longer scan the whole telemetry
+  window.** Three heavy DB reads were behind the slow page loads:
+  - `listAccounts`/`listAllAccounts` read **today's** per-account usage via
+    `breakdownTelemetry("account")`, which scanned every of today's events and
+    capped at 100 groups — so accounts past the cap silently read as "no usage
+    today". The read is now scoped to the accounts on the page
+    (`(tenant_id, account_id, created_at)` range), so one page costs one
+    index-only scan, no top-N ceiling.
+  - The provider usage matrix (`providerUsageMatrix`) and `usageBy`/top-model
+    breakdowns filtered on `tenant_id` + `created_at` alone; new indexes
+    `telemetry_events_tenant_provider_created_idx` and
+    `telemetry_events_tenant_model_created_idx` (migration 0039) make the
+    per-provider/per-model cards index-only range scans instead of window
+    scans.
+  - Usage analytics read-through TTL raised from 10s to 30s, so the dashboard's
+    5–10s polls hit Redis (or the in-process fallback) and answer with a
+    `304` instead of recomputing the window aggregates on every poll.
+  - The provider list and flat model picker only need "which providers have
+    accounts" and active-account counts; they were paying for full per-account
+    usage/inflight/pool derivation via `listAllAccounts`. A new lightweight
+    `listAllAccountSummaries` (provider id + status only) serves both, so
+    opening the Providers page no longer triggers every account's usage read.
+- **Cursor continuation rebases when the pinned account becomes unroutable.**
+  A tool result pinned to a Cursor account that had since cooled (quota
+  exhausted) refused with a hard 400 "no longer routable", so a complete
+  conversation replay could not switch to another provider/model. The router
+  now treats a rebaseable continuation as a fallthrough: when the pinned
+  account is blocked but the request replays the whole conversation, the plan
+  falls back to normal routing and the adapter starts a fresh Run on an
+  eligible account with the recorded history.
+- **Chat reasoning deltas under `reasoning_summary`/`reasoning_text` (and
+  object shapes) are surfaced.** The chat SSE decoder only read plain-string
+  `reasoning_content`/`reasoning`, so upstreams like GitHub Copilot's
+  GPT-6-Luna, which emit reasoning under other keys (sometimes as
+  `{summary}`/`{text}` objects), silently dropped it. `readReasoningText`
+  now accepts `reasoning_summary`, `reasoning_summary_text`,
+  `reasoning_text`, and object/array shapes, so reasoning reaches the client.
+- **Trae free-tier quota (`4008`) is a 1-day model cooldown.** It fell to
+  the generic quota arm (1h account-wide fallback), so the account re-entered
+  rotation inside Trae's daily reset window and reproduced the refusal every
+  few minutes — the "cooldown not holding" report. It is now classified as a
+  model-scoped `model_unreachable` backoff of 24h (Trae's quota resets
+  daily), so a model stays parked for the day instead of flapping, and the
+  account keeps serving its other models.
+- **Dashboard: device-code login button renamed "Device OIDC" → "Device
+  Code".** The provider-detail account action now labels the RFC 8628
+  device flow correctly; the social pill (Google/GitHub) again renders in
+  the accent tone.
+- **SSE decoder no longer splits JSON on literal blank lines inside string
+  values.** Qoder's IDE surface emits terminal `raw_usage` events whose keys
+  contain literal newline bytes (e.g. `"time_of_\nscheduler"`). A blank line
+  inside a string was treated as an event boundary, splitting the JSON and
+  dropping the terminal finish reason/usage. The decoder now only treats a
+  blank line as a boundary when the accumulated payload is a complete JSON
+  value (bracket-depth scan that skips strings).
+- **Qoder 116 is classified as account-scoped quota, not platform fault.**
+  The account-error classifier now treats code `116` (quota exceeded, seen on
+  free-tier accounts hitting the modern surface) like `110`/`112`: the model
+  cools while the account keeps serving its other models.
+- **Qoder PAT accounts now report quota.** The quota collector sent a raw PAT
+  (`pt-…`) as the bearer to `/api/v2/quota/usage`, which the business API
+  rejects with 401 `TOKEN_EXPIRE` — so a PAT account showed no balance. The
+  collector now exchanges a PAT for a job token (`jt-…`) first (device tokens
+  are used directly), mirroring dispatch. Verified live 2026-11-02: the
+  `that sepa` account now reads its `addOnQuota` (100 granted credits) instead
+  of an unreadable body.
+- **Persisted quota snapshots keep balances across restarts.** Quota reads
+  were cached in an in-process TTL only, so after a restart the console showed
+  no balance for every account until the sweep re-read them (Buddy kept its
+  numbers via its usage-snapshot table; everyone else lost them). The account
+  row now stores the last successful quota read as `quota_snapshot` (jsonb),
+  written by the same refresh path that persists the plan, and the console
+  falls back to it when the cache is cold — a page open right after a restart
+  renders the last known balance instead of nothing, and the sweep refreshes
+  it. A failed fetch leaves the previous snapshot in place, like the plan
+  column. Applies to every provider, not just Qoder.
+- **Qoder umid bridge binaries are made executable before running.** The
+  `umidpack` runtime-info files ship without the exec bit (git mode 100644)
+  and nothing else in the delivery path set it, so fresh Linux/macOS installs —
+  including the Docker image — could not spawn them (`[qoder] elf mint failed`,
+  EACCES). The bridge now self-heals with a best-effort `chmod 755` before
+  spawning, and the Dockerfile marks the POSIX binaries executable at build.
+- **Trae region-unavailable refusals cool the account for a day.** Upstream
+  error `4013` ("AI service is not available in the current region now.") fell
+  through to the generic 502 platform-fault path, which cooled the account for
+  30 seconds without mutating it — the account was re-dialled on every request
+  inside the closed region window. It is now classified as a hard, account-wide
+  24-hour cooldown.
+- **Qoder quota refusals cool only the errored model.** Qoder's quota verdicts
+  (code `110` "Billing daily count exceeded" and the exhausted-quota upstream
+  499 close) were treated as account-wide quota exhaustion, parking every model
+  on the account when only one model's spend cap was hit. They are now
+  model-scoped: that model cools for a day while the account keeps serving its
+  other models.
+- **Notifications popover loads system health lazily.** The shell no longer
+  polls `/system/health` every 10 seconds for the whole page lifetime. The
+  popover fetches on first open (usually already cached from the shell's
+  version read), reuses that payload on every open, and refreshes only while it
+  is open — closing it stops the polling. This fixes the panel showing "System
+  health unavailable" with every metric Unavailable.
+
 ## [2.7.4] - 2026-11-01
 
 > **Instalasi ulang.** `2.7.4` tersedia di registri npm. Jika instalasi yang

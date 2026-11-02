@@ -168,10 +168,11 @@ export function normalizeBuddyToolNames(payload: Record<string, unknown>): void 
  * Both realms have a "let the backend choose" id, and the reference rewrites
  * `auto` onto it before anything downstream keys on the name — so eligibility,
  * cooldowns and the catalog all see one id. CN's is `default`; intl's is
- * `default-model`.
+ * `default-model` (confirmed from live CLI session logs, which send
+ * `model=default-model` for the intl auto path).
  */
 const BUDDY_AUTO_TARGET: Readonly<Record<"intl" | "cn", string>> = {
-  intl: "auto",
+  intl: "default-model",
   cn: "default",
 };
 
@@ -426,6 +427,20 @@ export const clineReasoningReplayPrepares: readonly ((
 ];
 
 /**
+ * The reference injects `cache_retention` on every chat body: `long` by
+ * default, `short` when prompt caching for 1h is disabled
+ * (`CODEBUDDY_DISABLE_PROMPT_CACHING_1H`). Matching the client keeps the
+ * upstream's prompt-caching behavior and price on the same path the CLI uses.
+ */
+function injectBuddyCacheRetention(payload: Record<string, unknown>): void {
+  if (payload["cache_retention"] !== undefined) return;
+  const disabled =
+    process.env.CODEBUDDY_DISABLE_PROMPT_CACHING_1H?.trim() === "1" ||
+    process.env.CODEBUDDY_DISABLE_PROMPT_CACHING_1H?.trim().toLowerCase() === "true";
+  payload["cache_retention"] = disabled ? "short" : "long";
+}
+
+/**
  * Payload prefix shared by the buddy pre-payload hooks: force `stream=true`,
  * apply the provider's DeepSeek thinking contract, opt `reasoning_summary` in
  * only when an effort is requested, and drop agent-namespace fields.
@@ -437,6 +452,7 @@ export function buddyPrePayloadCommon(
   context?: ProviderDispatchContext,
 ): void {
   injectBuddyPromptCacheKey(payload, request, context);
+  injectBuddyCacheRetention(payload);
   // `auto` and `default-model` are the same upstream model under two names, and
   // the reference resolves one to the other everywhere — catalog, eligibility,
   // cooldown keys. Treating them as two independent rows meant a client that

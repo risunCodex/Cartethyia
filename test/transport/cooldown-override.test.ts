@@ -243,6 +243,54 @@ dbDescribe("forceDisableCooldown", () => {
     expect(candidate?.["cooldown_until"]).toBeUndefined();
   });
 
+  test("a hard-cooling pinned account with a complete replay still falls through", async () => {
+    // The request is a complete conversation replay (every tool result is
+    // answered in the history), but the pinned account is cooling. It must
+    // NOT be refused with the hard "no longer routable" 400 — the recorded
+    // exchange may rebase to a fresh Run on an eligible account. The router
+    // receives `rebaseable: true` (the preparer derives it from the complete
+    // conversation), so a second healthy account picks up the fallthrough.
+    await writePreferences({});
+    const siblingId = await world.addAccount({
+      tenantId: world.tenantId,
+      credential: "sk-cooldown-sibling",
+      credentialKind: "api_key",
+    });
+    try {
+      await cool("quota_exhausted");
+      const service = new InMemoryRouteSnapshotService(createDatabaseSnapshotBuilder(getDb()));
+      const snapshot = await service.getSnapshot();
+      const candidates = (snapshot.candidates ?? []) as unknown as Array<Record<string, unknown>>;
+      const pinned = candidates.find((c) => c["provider_account_id"] === accountId);
+      expect(pinned).toBeDefined();
+      const sibling = candidates.find((c) => c["provider_account_id"] === siblingId);
+      expect(sibling).toBeDefined();
+      const engine = new RoutingEngine();
+      const plan = await engine.plan(
+        String(pinned?.["model_id"]),
+        snapshot,
+        world.tenantId,
+        undefined,
+        false,
+        undefined,
+        {
+          providerId: String(pinned?.["provider_id"]),
+          providerAccountId: accountId,
+          rebaseable: true,
+        },
+      );
+      // The cooling account is not selected; the healthy sibling is.
+      expect(plan.candidates.map((c) => c.provider_account_id)).not.toContain(accountId);
+      expect(plan.candidates.map((c) => c.provider_account_id)).toContain(siblingId);
+    } finally {
+      await getDb()
+        .update(providerAccounts)
+        .set({ status: "active", cooldownUntil: null })
+        .where(eq(providerAccounts.id, siblingId))
+        .catch(() => undefined);
+    }
+  });
+
   test("a rebaseable continuation falls through to normal routing when the pin is absent", async () => {
     // The conversation is complete (every tool result answered) and the pinned
     // account is not a candidate for the requested model. The router must NOT

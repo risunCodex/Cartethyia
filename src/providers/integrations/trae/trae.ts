@@ -103,7 +103,11 @@ function extractToken(secret: string): string | undefined {
  *   `quota_exceeded` 429, not a platform fault.
  * - Everything else is a platform fault (`platform_unavailable`).
  */
-function throwTraeUpstreamError(codeRaw: unknown, messageRaw: unknown): never {
+function throwTraeUpstreamError(
+  codeRaw: unknown,
+  messageRaw: unknown,
+  providerId?: string,
+): never {
   const code =
     typeof codeRaw === "number" || typeof codeRaw === "string" ? String(codeRaw) : undefined;
   const message =
@@ -118,7 +122,12 @@ function throwTraeUpstreamError(codeRaw: unknown, messageRaw: unknown): never {
       "authentication_failed",
       401,
       `Trae could not authenticate the account (upstream code 1001): ${message} (request {requestId}). Wrong key, right door — check the credential 🔑`,
-      { providerCode: "1001", providerStatus: 1001, credentialEvidence: true },
+      {
+        providerCode: "1001",
+        providerStatus: 1001,
+        credentialEvidence: true,
+        ...(providerId ? { providerId } : {}),
+      },
       "upstream",
     );
   }
@@ -129,12 +138,38 @@ function throwTraeUpstreamError(codeRaw: unknown, messageRaw: unknown): never {
       "quota_exceeded",
       429,
       `Trae quota exceeded (upstream code ${code ?? "unknown"}): ${message} (request {requestId}). You've maxed this window — pace yourself ⏳`,
-      { providerCode: code ?? "4008", providerStatus: code === "4008" ? 4008 : 429 },
+      {
+        providerCode: code ?? "4008",
+        providerStatus: code === "4008" ? 4008 : 429,
+        ...(providerId ? { providerId } : {}),
+      },
       "upstream",
     );
   }
 
-  throw new GatewayError("platform_unavailable", 502, message, {}, "upstream");
+  // Trae answers `4013 "AI service is not available in the current region now."`
+  // when the upstream does not serve the account's region. That is a durable
+  // verdict, not a transient transport fault: the account reproduces it on
+  // every request until the region opens, so it must cool hard rather than be
+  // re-dialled every thirty seconds. The classifier scopes this to the account
+  // (`trae-region-unavailable`) — never the proxy pool.
+  if (code === "4013" || lower.includes("not available in the current region")) {
+    throw new GatewayError(
+      "platform_unavailable",
+      502,
+      message,
+      { providerCode: "4013", ...(providerId ? { providerId } : {}) },
+      "upstream",
+    );
+  }
+
+  throw new GatewayError(
+    "platform_unavailable",
+    502,
+    message,
+    { ...(providerId ? { providerId } : {}) },
+    "upstream",
+  );
 }
 
 class TraeAdapter implements ProviderAdapter {
@@ -267,7 +302,7 @@ class TraeAdapter implements ProviderAdapter {
       }
       if (frame.event === "error") {
         const data = frame.data as { message?: unknown; code?: unknown };
-        throwTraeUpstreamError(data.code, data.message);
+        throwTraeUpstreamError(data.code, data.message, this.provider_id);
       }
       if (typeof frame.data !== "object" || frame.data === null) continue;
       const record = frame.data as Record<string, unknown>;
@@ -280,7 +315,7 @@ class TraeAdapter implements ProviderAdapter {
         const nested = record["error"] as Record<string, unknown> | undefined;
         const code = record["code"] ?? nested?.["code"];
         const message = record["message"] ?? nested?.["message"];
-        throwTraeUpstreamError(code, message);
+        throwTraeUpstreamError(code, message, this.provider_id);
       }
       /**
        * Two frame layouts reach here and both are live.

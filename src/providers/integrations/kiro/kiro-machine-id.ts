@@ -18,9 +18,12 @@ import { sha256Hex } from "../../../shared/hash";
  * account's `auth_state` so a refresh — which rotates the refresh token, and
  * with it any value derived from that token — cannot silently change it.
  *
- * The salts below are wire facts: they are what the observed client hashes.
- * They are deliberately different per credential family, because an API key and
- * a refresh token for the same account must not derive the same device id.
+ * The salts below are locally derived (stable per credential, distinct
+ * between credentials). They are NOT proven upstream wire facts: the
+ * unpacked IDE 1.4.62 uses VS Code's `machineIdSync()` and sends the device
+ * in `KiroIDE-{version}-{machineId}` (UA) plus `x-kiro-machineid` (header);
+ * the CLI 2.37.0 sends `x-kiro-machineid`. The legacy `KotlinNativeAPI`,
+ * `KiroAPIKey`, `KiroFallback` salts are absent from both binaries.
  */
 
 /** Prefix the observed client hashes for an OAuth (refresh-token) credential. */

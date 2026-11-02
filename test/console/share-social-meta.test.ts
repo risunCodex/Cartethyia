@@ -43,6 +43,49 @@ function webpSize(bytes: Uint8Array): { width: number; height: number } | undefi
   return undefined;
 }
 
+/** Canvas size from a JPEG's SOFn marker. */
+function jpegSize(bytes: Uint8Array): { width: number; height: number } | undefined {
+  let i = 2;
+  while (i < bytes.length) {
+    if (bytes[i] !== 0xff) {
+      i += 1;
+      continue;
+    }
+    const marker = bytes[i + 1]!;
+    // Standalone markers carry no length; skip them.
+    if (
+      marker === 0xd8 ||
+      marker === 0xd9 ||
+      (marker >= 0xd0 && marker <= 0xd7)
+    ) {
+      i += 2;
+      continue;
+    }
+    const length = (bytes[i + 2]! << 8) | bytes[i + 3]!;
+    // SOF0–SOF15 (excluding the ones with no dimension payload).
+    if (
+      marker >= 0xc0 &&
+      marker <= 0xcf &&
+      marker !== 0xc4 &&
+      marker !== 0xc8 &&
+      marker !== 0xcc
+    ) {
+      return {
+        height: (bytes[i + 5]! << 8) | bytes[i + 6]!,
+        width: (bytes[i + 7]! << 8) | bytes[i + 8]!,
+      };
+    }
+    i += 2 + length;
+  }
+  return undefined;
+}
+
+/** Canvas size for the social card image (JPEG or WebP). */
+function imageSize(bytes: Uint8Array): { width: number; height: number } | undefined {
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return jpegSize(bytes);
+  return webpSize(bytes);
+}
+
 describe("share social metadata", () => {
   test("the image is a file that is actually shipped", () => {
     // A path pointing at a missing asset renders as no card at all.
@@ -51,17 +94,22 @@ describe("share social metadata", () => {
   });
 
   test("the declared MIME type matches the file", () => {
-    expect(SHARE_SOCIAL_META.imageType).toBe("image/webp");
     const bytes = new Uint8Array(readFileSync(`${PUBLIC_ROOT}${SHARE_SOCIAL_META.image}`));
-    expect(String.fromCharCode(...bytes.slice(0, 4))).toBe("RIFF");
-    expect(String.fromCharCode(...bytes.slice(8, 12))).toBe("WEBP");
+    if (SHARE_SOCIAL_META.imageType === "image/jpeg") {
+      expect(bytes[0]).toBe(0xff);
+      expect(bytes[1]).toBe(0xd8);
+    } else {
+      expect(SHARE_SOCIAL_META.imageType).toBe("image/webp");
+      expect(String.fromCharCode(...bytes.slice(0, 4))).toBe("RIFF");
+      expect(String.fromCharCode(...bytes.slice(8, 12))).toBe("WEBP");
+    }
   });
 
   test("the declared dimensions are the file's real dimensions", () => {
     // The regression this guards: replacing the image and leaving the previous
     // size behind crops every preview.
     const bytes = new Uint8Array(readFileSync(`${PUBLIC_ROOT}${SHARE_SOCIAL_META.image}`));
-    const size = webpSize(bytes);
+    const size = imageSize(bytes);
     if (size === undefined) throw new Error("could not read canvas size from the image");
     expect(SHARE_SOCIAL_META.imageWidth).toBe(size.width);
     expect(SHARE_SOCIAL_META.imageHeight).toBe(size.height);

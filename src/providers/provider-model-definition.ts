@@ -85,7 +85,7 @@ export interface ModelDefinition {
    * on a free account while `gpt-5.6-luna` bills `x0.14` and is refused. The
    * only signal is the refusal itself: `11158 "model [X] is not allowed for
    * user type [personal_free_user]"`. See
-   * `.skills/cartethyia-reverse-engineering/references/codebuddy-dispatch-headers.md`.
+   * `documentation/research/codebuddy/2026-10-19-codebuddy-chat-dispatch-headers.md`.
    *
    * Optional, and absence is "tier unknown" rather than "served on free". Read
    * it as `=== true`; a UI that shows a tier must treat undefined as unknown,

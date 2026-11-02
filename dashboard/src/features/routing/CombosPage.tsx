@@ -1,4 +1,4 @@
-import { ArrowRight, Copy, CopyPlus, Layers, Pencil, Plus, Route, Search, Trash2, X } from "lucide-react";
+import { ArrowRight, Copy, CopyPlus, Image as ImageIcon, Layers, Pencil, Plus, Route, Search, Trash2, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "../../components/ui/button";
 import { Card, CardBody, CardHeader } from "../../components/ui/card";
@@ -9,15 +9,17 @@ import { ListRow } from "../../components/ui/list-row";
 import { Select } from "../../components/ui/select";
 import { EmptyState, ErrorState, LoadingState } from "../../components/ui/state";
 import { Inline, CardActions } from "../../components/ui/inline";
-import { ModelPickerModal } from "../../components/ModelPicker";
+import { ModelPickerModal, type FlatModelEntry } from "../../components/ModelPicker";
 import { SortableList } from "../../components/SortableList";
+import { ScopeInjectionField } from "../../components/ScopeInjectionField";
 import { Stack } from "../../components/ui/stack";
 import { CodeChip } from "../../components/ui/code-chip";
 import { getErrorMessage } from "../../data/api";
 import { useTrackedTimeout } from "../../hooks/use-timeout";
 import { useClipboard } from "../../hooks/use-clipboard";
 import { toast } from "../../lib/toast";
-import type { ComboStrategy, ModelAliasRow, ModelComboRow } from "../../data/contracts";
+import { useRuntimeSettings, useUpdateRuntimeSettings } from "../../hooks/settings";
+import type { ComboStrategy, ModelAliasRow, ModelComboRow, UpdateRuntimeSettingsRequest } from "../../data/contracts";
 import { COMBO_STRATEGY_OPTIONS } from "./combo-strategy";
 import {
   useCloneModelCombo,
@@ -256,6 +258,9 @@ function AliasesSection(): ReactNode {
             title="Select target model"
             multi={false}
           />
+          {editingAlias ? (
+            <ScopeInjectionField kind="alias" name={editingAlias.alias} />
+          ) : null}
         </form>
       </Dialog>
 
@@ -289,6 +294,147 @@ function AliasesSection(): ReactNode {
           </DialogActions>
         </Stack>
       </Dialog>
+    </Card>
+  );
+}
+
+// ── Vision Handoff Section ───────────────────────────────────────────────────
+
+/** The vision-only model filter used by the picker. */
+function isVisionModel(entry: FlatModelEntry): boolean {
+  return entry.kind === "model" && entry.entry.vision === true;
+}
+
+/**
+ * The global ordered vision-handoff model list. When a request carries images
+ * but the chosen model cannot see them, the gateway sends the image to the
+ * first model on this list and injects its description as text — the chosen
+ * model still answers. The first healthy model wins; if it fails (cooldown,
+ * quota, upstream error) the handoff falls to the next entry. Empty = the
+ * legacy `[image]` placeholder behavior. The list is ordered by dragging, and
+ * the picker only offers image-capable chat models.
+ */
+function VisionHandoffSection(): ReactNode {
+  const settingsQuery = useRuntimeSettings();
+  const mutation = useUpdateRuntimeSettings();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const settings = settingsQuery.data;
+  const models = settings?.visionHandoffModels ?? [];
+  const [list, setList] = useState<readonly { id: string; value: string }[]>(() =>
+    models.map((value) => ({ id: `v${value}`, value })),
+  );
+
+  const save = (
+    patch: UpdateRuntimeSettingsRequest,
+    message: string,
+  ): void => {
+    mutation.mutate(patch, {
+      onSuccess: () => toast.success(message),
+      onError: (error) =>
+        toast.error(getErrorMessage(error, "Could not update vision handoff.")),
+    });
+  };
+
+  const toggle = (value: string) => {
+    const next = list.some((m) => m.value === value)
+      ? list.filter((m) => m.value !== value)
+      : [...list, { id: `v${value}-${list.length}`, value }];
+    setList(next);
+    save(
+      { visionHandoffModels: next.map((m) => m.value) },
+      "Vision handoff models updated.",
+    );
+  };
+
+  const reorder = (ids: string[]) => {
+    const byId = new Map(list.map((m) => [m.id, m]));
+    const next = ids
+      .map((id) => byId.get(id))
+      .filter((m): m is { id: string; value: string } => Boolean(m));
+    setList(next);
+    save(
+      { visionHandoffModels: next.map((m) => m.value) },
+      "Vision handoff order updated.",
+    );
+  };
+
+  if (settingsQuery.isPending)
+    return <LoadingState label="Loading vision handoff settings…" />;
+  if (settingsQuery.isError || !settings) {
+    return (
+      <ErrorState
+        message={getErrorMessage(
+          settingsQuery.error,
+          "Failed to load runtime settings",
+        )}
+        onRetry={() => void settingsQuery.refetch()}
+      />
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Vision Handoff"
+        subtitle="When the selected model cannot see images, describe them with a vision model first"
+        icon={<ImageIcon size={16} />}
+        action={
+          <CardActions>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Plus size={13} />}
+              onClick={() => setPickerOpen(true)}
+            >
+              Pick models
+            </Button>
+          </CardActions>
+        }
+      />
+      <CardBody>
+        {list.length === 0 ? (
+          <EmptyState
+            title="No vision handoff models"
+            message="Add an ordered list of image-capable models. When a request carries an image but the chosen model cannot see it, the gateway will ask the first healthy model on this list to describe it and pass that description to the chosen model as text."
+          />
+        ) : (
+          <SortableList
+            items={list}
+            label="Vision handoff models"
+            gap="6px"
+            onReorder={reorder}
+            renderItem={(m) => (
+              <ListRow
+                density="compact"
+                actions={
+                  <button
+                    type="button"
+                    aria-label={`Remove ${m.value}`}
+                    onClick={() => toggle(m.value)}
+                    className="grid size-7 cursor-pointer place-items-center rounded-control text-text-tertiary hover:bg-hover"
+                  >
+                    <X size={12} />
+                  </button>
+                }
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <ImageIcon size={14} className="shrink-0 text-text-tertiary" />
+                  <CodeChip value={m.value} tone="accent" />
+                </div>
+              </ListRow>
+            )}
+          />
+        )}
+      </CardBody>
+      <ModelPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        selected={list.map((m) => m.value)}
+        onToggle={toggle}
+        title="Select vision models"
+        multi
+        filter={isVisionModel}
+      />
     </Card>
   );
 }
@@ -573,6 +719,9 @@ function CombosSection(): ReactNode {
             onValueChange={(v) => setStrategy(v as ComboStrategy)}
             options={COMBO_STRATEGY_OPTIONS}
           />
+          {editingCombo ? (
+            <ScopeInjectionField kind="combo" name={editingCombo.name} />
+          ) : null}
           <Stack gap="6px">
             <div className="flex items-center justify-between">
               <label className="text-caption font-semibold text-text-secondary">
@@ -685,6 +834,7 @@ export default function Combos(): ReactNode {
     <Stack gap="16px">
       <CombosSection />
       <AliasesSection />
+      <VisionHandoffSection />
     </Stack>
   );
 }

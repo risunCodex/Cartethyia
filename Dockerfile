@@ -95,6 +95,14 @@ RUN test -f /app/migrations/full-postgres/0000_baseline.sql \
 COPY --from=builder --chown=cartethyia:cartethyia /build/dist/dashboard ./dist/dashboard
 COPY --chmod=755 docker-entrypoint.sh ./entrypoint.sh
 COPY --from=builder --chown=cartethyia:cartethyia /build/vendor ./vendor
+# The umidpack bridge binaries are committed without the exec bit (git mode
+# 100644); mark the POSIX ones executable here so a fresh container can spawn
+# them (otherwise "[qoder] elf mint failed" / EACCES at runtime).
+RUN chmod +x \
+    vendor/qoder-umid/umidpack/elf-aarch64/runtime-info \
+    vendor/qoder-umid/umidpack/elf-x86_64/runtime-info \
+    vendor/qoder-umid/umidpack/macho-arm64/runtime-info \
+    vendor/qoder-umid/umidpack/macho-x86_64/runtime-info
 COPY --from=builder --chown=cartethyia:cartethyia /build/dist/cartethyia ./cartethyia
 
 # AOT prewarm keeps first boot fast; the binary reads this instead of

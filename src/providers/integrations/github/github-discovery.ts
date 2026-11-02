@@ -29,6 +29,7 @@ import {
   GITHUB_PROVIDER_ID,
   GITHUB_ENDPOINT_PATH,
   GITHUB_RESPONSES_ENDPOINT_PATH,
+  GITHUB_MESSAGES_ENDPOINT_PATH,
   GITHUB_AUTO_MODELS,
   recordGithubModelRoutes,
 } from "./github";
@@ -47,12 +48,11 @@ function positiveLimit(value: unknown): number | undefined {
  * The surfaces a row answers on, normalized to the canonical paths this
  * gateway registers.
  *
- * A row that supports neither chat nor responses is skipped rather than
- * defaulted: Copilot also serves a native Anthropic `/v1/messages` surface for
- * some SKUs, and this adapter speaks only the OpenAI wire. Registering such a
- * row as chat would publish a route that fails on first dispatch.
+ * Copilot serves three OpenAI/Anthropic surfaces: `/chat/completions`,
+ * `/responses`, and `/v1/messages`. A row that supports none of them is
+ * skipped rather than defaulted.
  */
-function wireFamilyFor(entry: Record<string, unknown>): "chat" | "responses" | undefined {
+function wireFamilyFor(entry: Record<string, unknown>): "chat" | "responses" | "messages" | undefined {
   const declared = boundedUpstreamArray(entry.supported_endpoints);
   if (!declared) return "chat";
   const endpoints = new Set<string>();
@@ -60,11 +60,12 @@ function wireFamilyFor(entry: Record<string, unknown>): "chat" | "responses" | u
     const label = sanitizeUpstreamLabel(value);
     if (label !== undefined) endpoints.add(label.replace(/^\/v1(?=\/)/, ""));
   }
-  // Chat is preferred when a row supports both: it is the surface every
-  // OpenAI-compatible client already speaks, and the upstream answers it for
-  // the same SKU. Responses is used only when chat is absent.
+  // Chat is preferred when a row supports it: it is the surface every
+  // OpenAI-compatible client already speaks. Responses and Messages are used
+  // only when chat is absent, in that order.
   if (endpoints.has("/chat/completions")) return "chat";
   if (endpoints.has("/responses")) return "responses";
+  if (endpoints.has("/messages")) return "messages";
   return undefined;
 }
 
@@ -73,6 +74,34 @@ function supports(entry: Record<string, unknown>, key: string): boolean {
   const capabilities = isRecord(entry.capabilities) ? entry.capabilities : undefined;
   const declared = isRecord(capabilities?.supports) ? capabilities.supports : undefined;
   return declared?.[key] === true;
+}
+
+/**
+ * Price deltas from the account's `/models` row when it publishes `token_prices`
+ * (dollars per 1M tokens). This is the real per-account price Copilot serves,
+ * which the shared models.dev catalog cannot know; when absent the base-catalog
+ * estimate is used instead.
+ */
+function copilotCost(entry: Record<string, unknown>): ModelDefinition["cost"] {
+  const billing = isRecord(entry.billing) ? entry.billing : undefined;
+  const prices = isRecord(billing?.token_prices) ? billing.token_prices : undefined;
+  const defaultTier = isRecord(prices?.default) ? prices.default : undefined;
+  const input = positiveLimit(defaultTier?.input_price);
+  const output = positiveLimit(defaultTier?.output_price);
+  if (input === undefined && output === undefined) {
+    return modelsDevCatalog.costFor(GITHUB_PROVIDER_ID, String(entry.id ?? ""));
+  }
+  return {
+    input: input ?? null,
+    output: output ?? null,
+    ...(typeof (defaultTier as Record<string, unknown> | undefined)?.cache_read_price === "number"
+      ? { cache_read: (defaultTier as { cache_read_price?: number }).cache_read_price }
+      : {}),
+    ...(typeof (defaultTier as Record<string, unknown> | undefined)?.cache_write_price === "number"
+      ? { cache_write: (defaultTier as { cache_write_price?: number }).cache_write_price }
+      : {}),
+    pricing_model: "pay-per-use",
+  };
 }
 
 function toModelDefinition(entry: Record<string, unknown>): ModelDefinition | undefined {
@@ -89,16 +118,32 @@ function toModelDefinition(entry: Record<string, unknown>): ModelDefinition | un
   // clamped the same way every other catalog row is.
   const outputLimit = Math.min(declaredOutput, contextLimit);
   const vision = supports(entry, "vision");
+  // `reasoning_effort` is a list (e.g. ["low","medium","high","xhigh","max"])
+  // when the model supports effort levels; absence means the model does not
+  // expose an effort knob. Carrying it lets routing clamp to the model's real
+  // ladder instead of the provider-wide `max→high` cap.
+  const supportsObj = isRecord(capabilities?.supports) ? capabilities.supports : undefined;
+  const reasoningEfforts = Array.isArray(supportsObj?.reasoning_effort)
+    ? (supportsObj.reasoning_effort as unknown[])
+        .filter((level): level is string => typeof level === "string" && level.length > 0)
+    : undefined;
+  const cost = copilotCost(entry);
   return {
     modelId,
     wireFamily,
-    endpointPath: wireFamily === "responses" ? GITHUB_RESPONSES_ENDPOINT_PATH : GITHUB_ENDPOINT_PATH,
+    endpointPath:
+      wireFamily === "responses"
+        ? GITHUB_RESPONSES_ENDPOINT_PATH
+        : wireFamily === "messages"
+          ? GITHUB_MESSAGES_ENDPOINT_PATH
+          : GITHUB_ENDPOINT_PATH,
     contextLimit,
     outputLimit,
     modalities: { input: vision ? ["text", "image"] : ["text"], output: ["text"] },
     reasoning: true,
+    ...(reasoningEfforts === undefined ? {} : { reasoningEfforts }),
     toolCall: true,
-    cost: modelsDevCatalog.costFor(GITHUB_PROVIDER_ID, modelId),
+    cost,
   };
 }
 

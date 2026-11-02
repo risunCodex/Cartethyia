@@ -15,6 +15,7 @@ import {
   getCachedQuotaEntry,
   invalidateQuotaCache,
 } from "../../providers/quota/cache";
+import { readQuotaSnapshot, readQuotaSnapshots } from "../../providers/quota/snapshot";
 import {
   QUOTA_REFRESH_TIMEOUT_MS,
   refreshAccountQuota,
@@ -353,6 +354,13 @@ export function registerAccountQuotaTenantRoutes(
         getCachedQuotaEntries(access.tenantId, ownedIds, redis),
         getCachedQuotaEntries(GLOBAL_QUOTA_LENS, globalIds, redis),
       ]);
+      // A page open right after a restart finds the in-process cache empty.
+      // Fall back to the persisted snapshots (which survive a restart) so the
+      // page still renders the last known balance; the sweep refreshes it.
+      const snapshots = await readQuotaSnapshots(
+        db,
+        rows.filter((row) => !globalCache.has(row.id) && !ownedCache.has(row.id)).map((row) => row.id),
+      );
 
       const pending = pendingQuotaRefreshes();
       const providerIds = [...new Set(rows.map((row) => row.providerId))];
@@ -402,6 +410,9 @@ export function registerAccountQuotaTenantRoutes(
       const accounts = rows.map((row) => {
         const entry =
           row.tenantId === null ? globalCache.get(row.id) : ownedCache.get(row.id);
+        const snapshot = entry ?? snapshots.get(row.id);
+        const entryQuota = snapshot ? snapshot.quota : null;
+        const entryFetchedAt = snapshot ? snapshot.fetchedAt : null;
         // No background refresh is enqueued here: enqueuing one for every
         // account whose cached value had aged out means a single page open hits
         // every provider's quota endpoint at once — and because the page also
@@ -435,13 +446,13 @@ export function registerAccountQuotaTenantRoutes(
           name: row.label || row.id,
           credentialHint: row.credentialKind,
           active: row.status === "active",
-          quota: entry
-            ? toQuotaView(entry.quota, row, {
-                fetchedAt: entry.fetchedAt,
-              lastAttemptAt: entry.lastAttemptAt,
-              refreshError: entry.refreshError,
-              ...(isRefreshing ? { status: "refreshing" as const } : {}),
-            })
+          quota: entryQuota
+            ? toQuotaView(entryQuota, row, {
+                fetchedAt: entryFetchedAt,
+                lastAttemptAt: entry?.lastAttemptAt ?? null,
+                refreshError: entry?.refreshError ?? null,
+                ...(isRefreshing ? { status: "refreshing" as const } : {}),
+              })
             : null,
           pending: isRefreshing,
           health: toQuotaAccountHealth(row),
@@ -503,13 +514,33 @@ export function registerAccountQuotaTenantRoutes(
           health: toQuotaAccountHealth(account),
         };
       }
+      // Cache is cold (e.g. right after a restart): render the last persisted
+      // snapshot instead of hitting upstream on every page open. The sweep
+      // refreshes it; a page open does not need to pay the upstream cost.
+      const snapshot = await readQuotaSnapshot(db, accountId);
+      if (snapshot) {
+        return {
+          accountId,
+          quota: toQuotaView(snapshot.quota, account, {
+            fetchedAt: snapshot.fetchedAt,
+            lastAttemptAt: snapshot.fetchedAt,
+          }),
+          health: toQuotaAccountHealth(account),
+        };
+      }
 
       // Cold read: this is the one path that legitimately waits on upstream, and
       // it shares the in-flight fetch with any queued background fill so a cold
       // page open never issues two requests for the same account.
       const outcome = await refreshAccountQuota(
         refreshDeps,
-        { accountId, providerId: account.providerId, tenantId: account.tenantId, credentialKind: account.credentialKind },
+        {
+          accountId,
+          providerId: account.providerId,
+          tenantId: account.tenantId,
+          credentialKind: account.credentialKind,
+          authState: account.authState,
+        },
         signalFetch(timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS)),
       );
       const fresh = await getCachedQuotaEntry(access.tenantId, accountId, redis);
@@ -571,7 +602,16 @@ export function registerAccountQuotaTenantRoutes(
       try {
         outcome = await refreshAccountQuota(
           refreshDeps,
-          { accountId, providerId: account.providerId, tenantId: account.tenantId, credentialKind: account.credentialKind },
+          {
+            accountId,
+            providerId: account.providerId,
+            tenantId: account.tenantId,
+            credentialKind: account.credentialKind,
+            // Kiro's usage surface is profile-scoped: without the account's auth
+            // state the collector cannot resolve a `profileArn`, and the GET is
+            // refused with `400 Invalid profileArn.`.
+            authState: account.authState,
+          },
           egress.fetch,
         );
       } finally {
@@ -616,6 +656,7 @@ export function registerAccountQuotaTenantRoutes(
             providerId: providerAccounts.providerId,
             tenantId: providerAccounts.tenantId,
             credentialKind: providerAccounts.credentialKind,
+            authState: providerAccounts.authState,
           })
           .from(providerAccounts)
           .where(

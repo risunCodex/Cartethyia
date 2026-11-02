@@ -508,6 +508,13 @@ export interface ProviderAccountResponse {
   label: string;
   credentialKind: CredentialKind;
   credentialMode?: CredentialMode;
+  /**
+   * Which sign-in family issued this credential, read from the account's
+   * `auth_state` (e.g. `social`/`oidc`/`api_key` for Kiro). Surfaced so the
+   * console can badge an account by how it logged in without shipping the
+   * whole auth state to the browser.
+   */
+  authMethod?: string;
   tokenExpiresAt?: string;
   /**
    * Who issued this credential, read from the JWT `iss` claim at registration
@@ -800,6 +807,14 @@ export interface ProviderCatalogStore {
   syncModels(tenantId: string, providerId: string): Promise<{ synced: number }>;
   listAccounts(tenantId: string, providerId: string): Promise<readonly ProviderAccountResponse[]>;
   listAllAccounts(tenantId: string): Promise<readonly ProviderAccountResponse[]>;
+  /**
+   * Provider-id + status only, for every account the tenant can see. Much
+   * cheaper than `listAllAccounts` (which also fetches today/lifetime usage,
+   * inflight, pool rows): used by the provider list's "configured" marker and
+   * the flat model picker's active-account counts, neither of which reads
+   * usage.
+   */
+  listAllAccountSummaries(tenantId: string): Promise<readonly { providerId: string; status: string }[]>;
   /**
    * Non-secret upstream auth configuration for the given owned accounts,
    * keyed by account id. Used by the account-export route so a re-import can

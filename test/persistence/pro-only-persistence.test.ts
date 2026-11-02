@@ -18,7 +18,9 @@
  */
 import { expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { applySqliteMigrations, createSqliteDatabase } from "../../src/persistence/db-sqlite";
+import { applySqliteMigrations, buildSqliteHandle, createSqliteDatabase } from "../../src/persistence/db-sqlite";
+import { persistQuotaSnapshot, readQuotaSnapshot, readQuotaSnapshots } from "../../src/providers/quota/snapshot";
+import type { ProviderQuotaResult } from "../../src/providers/quota/quota-contracts";
 
 async function boot(): Promise<Database> {
   const sqlite = createSqliteDatabase(":memory:");
@@ -96,4 +98,61 @@ test("a quota_plan survives alongside the health columns it shares a row with", 
     .get() as { quota_plan: string | null; consecutive_failures: number };
   expect(row.quota_plan).toBe("Pro Plan");
   expect(row.consecutive_failures).toBe(0);
+});
+
+test("quota_snapshot persists and survives a restart (fresh handle)", async () => {
+  const sqlite = await boot();
+  const handle = buildSqliteHandle(sqlite);
+  sqlite.exec("INSERT INTO providers (id) VALUES ('qoder')");
+  sqlite.exec(
+    `INSERT INTO provider_accounts (id, provider_id, label, credential_kind)
+     VALUES ('acct-q1', 'qoder', 'qoder', 'oauth')`,
+  );
+
+  const quota: ProviderQuotaResult = {
+    source: "qoder",
+    plan: null,
+    windows: [
+      {
+        kind: "qoder:addon",
+        label: "Granted credits",
+        accounting: "pooled",
+        used: 0,
+        limit: 100,
+        remaining: 100,
+        usedPercent: 0,
+        remainingPercent: 100,
+        resetsAt: null,
+      },
+    ],
+    error: null,
+  };
+
+  await persistQuotaSnapshot(handle.db, "acct-q1", quota, new Date("2026-11-02T00:00:00Z"));
+  const snapshot = await readQuotaSnapshot(handle.db, "acct-q1");
+  expect(snapshot).not.toBeNull();
+  expect(snapshot?.quota.source).toBe("qoder");
+  expect(snapshot?.quota.windows[0]?.limit).toBe(100);
+  expect(snapshot?.fetchedAt).toBe("2026-11-02T00:00:00.000Z");
+
+  // A fresh handle simulates a restart: the in-process cache is empty, but the
+  // row still answers.
+  const handle2 = buildSqliteHandle(sqlite);
+  const again = await readQuotaSnapshot(handle2.db, "acct-q1");
+  expect(again?.quota.windows[0]?.remaining).toBe(100);
+});
+
+test("readQuotaSnapshots batch-reads for several accounts", async () => {
+  const sqlite = await boot();
+  const handle = buildSqliteHandle(sqlite);
+  sqlite.exec("INSERT INTO providers (id) VALUES ('qoder')");
+  sqlite.exec(
+    `INSERT INTO provider_accounts (id, provider_id, label, credential_kind)
+     VALUES ('acct-a', 'qoder', 'a', 'oauth'), ('acct-b', 'qoder', 'b', 'oauth')`,
+  );
+  const quota: ProviderQuotaResult = { source: "qoder", plan: null, windows: [], error: null };
+  await persistQuotaSnapshot(handle.db, "acct-a", quota);
+  const map = await readQuotaSnapshots(handle.db, ["acct-a", "acct-b"]);
+  expect(map.has("acct-a")).toBe(true);
+  expect(map.has("acct-b")).toBe(false);
 });

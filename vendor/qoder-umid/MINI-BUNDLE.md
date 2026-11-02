@@ -13,7 +13,7 @@ surfaces that need a stable native identity. Later same-account controls found
 that daily CREDITS claims do not require a genuine identity: generated, random,
 empty, and omitted machine headers all exposed an existing grant. The bridge
 does not create a missing grant. See
-[`12-Qoder-30-10-2026-umid-and-identity-findings.md`](../../documentation/archive/research/12-Qoder-30-10-2026-umid-and-identity-findings.md).
+[`documentation/research/qoder/2026-10-29-qoder-credits-claims-identity.md`](../../documentation/research/qoder/2026-10-29-qoder-credits-claims-identity.md).
 
 ## Contents of `qoder-umid-mini.tar.gz`
 

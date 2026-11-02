@@ -132,6 +132,10 @@ export class KiroStreamDecoder {
 
     const eventType = event.headers[":event-type"] ?? "";
     switch (eventType) {
+      // First frame of a stream; carries only an empty conversation id. Nothing
+      // to emit (observed live 2026-11-02: `{"conversationId":""}`).
+      case "initial-response":
+        return { deltas: [] };
       case "assistantResponseEvent":
         return { deltas: this.#textDeltas(readString(event.payload, "content")) };
       case "reasoningContentEvent":
@@ -303,6 +307,13 @@ function readString(payload: string | null, key: string): string {
  *
  * The upstream has sent this payload as a bare string, as `{text}`, and as
  * `{content}` across versions; all three are accepted rather than picking one.
+ *
+ * One shape must NOT be read as text: `{redactedContent:"…"}`. That is an
+ * encrypted envelope (observed live 2026-11-02: base64 → `.KTR~~<base64url-
+ * JSON>` → `{"encryptionRegion":null,"mintedAtMs":…,"modelHash":"…","slots":
+ * [],"v":1}`) whose content the upstream never exposes. Emitting it as
+ * reasoning would leak a blob that is not reasoning, so it is treated as no
+ * text at all.
  */
 function readReasoning(payload: string | null): string {
   const parsed = parsePayload(payload);
@@ -311,6 +322,8 @@ function readReasoning(payload: string | null): string {
   if (typeof value === "string") return value;
   if (value !== null && typeof value === "object") {
     const record = value as Record<string, unknown>;
+    // Redacted envelope: not reasoning text; never surface it.
+    if (typeof record.redactedContent === "string") return "";
     if (typeof record.text === "string") return record.text;
     if (typeof record.content === "string") return record.content;
   }

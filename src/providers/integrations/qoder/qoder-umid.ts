@@ -33,7 +33,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { log } from "../../../observability/logger";
 
@@ -144,6 +144,22 @@ function wsl(script: string, timeout = 120_000): string {
   return String(r.stdout ?? "");
 }
 
+/**
+ * Best-effort make a POSIX bridge binary executable before spawning it. The
+ * umidpack binaries are committed without the exec bit (git mode 100644) and
+ * nothing else in the delivery path sets it — a Docker image or a fresh clone
+ * on Linux/macOS would otherwise fail to spawn them (EACCES -> "[qoder] elf
+ * mint failed"). Idempotent; if it cannot set the bit, `spawnSync` reports
+ * the real failure as before.
+ */
+export function ensurePosixExecutable(file: string): void {
+  try {
+    chmodSync(file, 0o755);
+  } catch {
+    /* spawn will report the actual error */
+  }
+}
+
 /** Run the bridge inside WSL under flock; returns the identity or null. */
 
 function seedPath(): string {
@@ -179,6 +195,7 @@ export function mintQoderNativeIdentity(accountId: string): { identity: QoderNat
 
   if (bridge.kind === "elf") {
     const exe = join(umidpackDir(), process.arch === "arm64" ? "elf-aarch64" : "elf-x86_64", "runtime-info");
+    ensurePosixExecutable(exe);
     const seed = seedPath();
     const dir = seed.slice(0, seed.lastIndexOf("/"));
     mkdirSync(dir, { recursive: true });
@@ -192,6 +209,7 @@ export function mintQoderNativeIdentity(accountId: string): { identity: QoderNat
   if (bridge.kind === "macho") {
     const arch = process.arch === "arm64" ? "macho-arm64" : "macho-x86_64";
     const exe = join(umidpackDir(), arch, "runtime-info");
+    ensurePosixExecutable(exe);
     const seed = seedPath();
     const dir = seed.slice(0, seed.lastIndexOf("/"));
     mkdirSync(dir, { recursive: true });
@@ -236,6 +254,7 @@ export function replayQoderNativeIdentity(seed: string, accountId: string): Qode
 
   if (bridge.kind === "elf") {
     const exe = join(umidpackDir(), process.arch === "arm64" ? "elf-aarch64" : "elf-x86_64", "runtime-info");
+    ensurePosixExecutable(exe);
     const seed = seedPath();
     writeFileSync(seed, seed, "utf8");
     const r = spawnSync(exe, [ENV_CODE], { encoding: "utf8", timeout: 25_000 });
@@ -245,6 +264,7 @@ export function replayQoderNativeIdentity(seed: string, accountId: string): Qode
   if (bridge.kind === "macho") {
     const arch = process.arch === "arm64" ? "macho-arm64" : "macho-x86_64";
     const exe = join(umidpackDir(), arch, "runtime-info");
+    ensurePosixExecutable(exe);
     const seedPathStr = seedPath();
     writeFileSync(seedPathStr, seed, "utf8");
     const r = spawnSync(exe, [ENV_CODE, "--account-stdin"], {

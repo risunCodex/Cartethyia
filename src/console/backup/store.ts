@@ -1003,22 +1003,46 @@ export async function normalizeShareChildPolicy(
   db: CartethyiaDatabase,
   tenantId: string,
 ): Promise<void> {
+  // Template policy columns are nulled on every child so auth reads the full
+  // policy from the parent (`policy = parent ?? row`). The exception is a
+  // `per_key` concurrency child: it carries its own cap (copied at issue) and
+  // its own admission identity, so `concurrency_scope` and
+  // `max_concurrent_requests` are preserved for those rows.
+  const policyNulls = {
+    notesTitle: null,
+    notesSubtitle: null,
+    notesBody: null,
+    requestsPerMinute: null,
+    dailyTokenLimit: null,
+    monthlyTokenLimit: null,
+    lifetimeTokenBudget: null,
+    modelPrefix: null,
+    modelList: null,
+    clientRouterDenylist: null,
+  };
   await db
     .update(apiKeys)
     .set({
-      notesTitle: null,
-      notesSubtitle: null,
-      notesBody: null,
-      requestsPerMinute: null,
-      dailyTokenLimit: null,
-      monthlyTokenLimit: null,
-      lifetimeTokenBudget: null,
+      ...policyNulls,
       maxConcurrentRequests: null,
-      modelPrefix: null,
-      modelList: null,
-      clientRouterDenylist: null,
     })
-    .where(and(eq(apiKeys.tenantId, tenantId), isNotNull(apiKeys.parentKeyId)));
+    .where(
+      and(
+        eq(apiKeys.tenantId, tenantId),
+        isNotNull(apiKeys.parentKeyId),
+        sql`${apiKeys.concurrencyScope} <> 'per_key'`,
+      ),
+    );
+  await db
+    .update(apiKeys)
+    .set(policyNulls)
+    .where(
+      and(
+        eq(apiKeys.tenantId, tenantId),
+        isNotNull(apiKeys.parentKeyId),
+        eq(apiKeys.concurrencyScope, "per_key"),
+      ),
+    );
 }
 
 /**

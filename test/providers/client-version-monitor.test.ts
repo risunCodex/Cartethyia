@@ -112,6 +112,20 @@ describe("cursor client version discovery", () => {
   });
 });
 
+describe("opencode client version fallback", () => {
+  test("the source is the CLI's own npm feed", () => {
+    expect(VERSION_SOURCES.opencode.sources[0]?.url).toContain(
+      "opencode.ai/update/api/latest/cli/npm",
+    );
+  });
+
+  test("the fallback is the current latest release", () => {
+    // A cold process sends this before discovery resolves; if it lags the
+    // upstream release the UA advertises a client build that no longer ships.
+    expect(VERSION_SOURCES.opencode.fallback).toBe("2.2.5");
+  });
+});
+
 describe("client version monitor snapshot", () => {
   test("starts on fallback and reports latest after background refresh", async () => {
     const resolver = createClientVersionResolver({
@@ -191,9 +205,9 @@ describe("client version monitor snapshot", () => {
 
   test("matches Claude and Kiro SDK fingerprints embedded in their current clients", () => {
     expect(VERSION_SOURCES.claudeSdk.fallback).toBe("0.128.0");
-    expect(buildKiroUserAgent("1.2.56", "device")).toContain("aws-sdk-js/1.0.39");
+    expect(buildKiroUserAgent("1.2.56", "device")).toContain("aws-sdk-js/1.0.44");
     expect(buildKiroAmzUserAgent("1.2.56", "device")).toBe(
-      "aws-sdk-js/1.0.39 KiroIDE-1.2.56-device",
+      "aws-sdk-js/1.0.44 KiroIDE-1.2.56-device",
     );
     expect(buildKiroSsoUserAgent()).toContain("aws-sdk-js/3.980.0");
     expect(buildKiroSsoAmzUserAgent()).toBe("aws-sdk-js/3.980.0 KiroIDE");

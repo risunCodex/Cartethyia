@@ -262,6 +262,46 @@ describe("Trae upstream auth verdict 1001", () => {
   });
 });
 
+describe("Trae free-tier quota 4008", () => {
+  const trae4008 = (): GatewayError =>
+    new GatewayError(
+      "quota_exceeded" as never,
+      429,
+      "Trae quota exceeded (upstream code 4008): Your requests have exceeded the quota.",
+      { providerCode: "4008", providerStatus: 4008 } as never,
+      "upstream" as never,
+    );
+
+  test("is a model-scoped 1-day cooldown, not the generic 1h fallback", () => {
+    const classification = classifyAccountError(trae4008(), {
+      origin: "upstream",
+      scope: "account",
+      providerId: "trae",
+      modelId: "deepseek-v4.1-flash",
+      providerCode: "4008",
+      statusCode: 4008,
+    });
+    expect(classification.category).toBe("model_unreachable");
+    expect(classification.status).toBe("cooldown");
+    expect(classification.cooldownMs).toBe(24 * 60 * 60 * 1000);
+    expect(classification.mutatesAccount).toBe(true);
+  });
+
+  test("a provider-scoped stream frame still reaches the model cooldown writer", () => {
+    // A stream frame carries no credential detail, so `canMutate` is false;
+    // the Trae arm must still set `mutatesAccount` true so the pair is
+    // parked for the day instead of being re-dialled every few minutes.
+    const classification = classifyAccountError(trae4008(), {
+      origin: "upstream",
+      scope: "provider",
+      providerId: "trae",
+      modelId: "deepseek-v4.1-flash",
+    });
+    expect(classification.category).toBe("model_unreachable");
+    expect(classification.mutatesAccount).toBe(true);
+  });
+});
+
 describe("an unclassified failure is a cooldown, never a parked account", () => {
   test("an unmapped upstream error cools down for 15 minutes", () => {
     const error = new GatewayError(

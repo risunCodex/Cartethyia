@@ -51,6 +51,43 @@ export interface SseDecodeOptions {
 
 const DEFAULT_MAX_EVENT_BYTES = 4 * 1024 * 1024;
 
+/**
+ * True when the accumulated data is a complete JSON value.
+ *
+ * Uses a bracket-depth scan that skips string contents (including escapes), so
+ * an inline `\n` or `\n\n` inside a string does not count as a structural
+ * terminator. A non-JSON payload (`[DONE]`, plain text) has depth 0 and reads
+ * as complete, so blank-line boundaries stay working for ordinary streams.
+ */
+function isCompleteJsonValue(data: string): boolean {
+  if (data.length === 0) return true;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < data.length; i += 1) {
+    const ch = data[i]!;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{" || ch === "[") {
+      depth += 1;
+    } else if (ch === "}" || ch === "]") {
+      depth -= 1;
+      if (depth < 0) return true; // trailing close: not a partial JSON prefix
+    }
+  }
+  return depth <= 0;
+}
+
 // A corrupt SSE stream is an upstream protocol failure, not a client mistake:
 // labelling it `invalid_request` told the client its request was wrong and
 // invited a retry of the identical request against a broken upstream. The
@@ -156,6 +193,18 @@ export async function* decodeSseEvents(
     }
     if (line.startsWith("id:") || line.startsWith("retry:")) return;
     if (line.trim() === "") {
+      // A blank line is an SSE event boundary — but only when the payload
+      // accumulated so far is already a complete value. Some upstreams
+      // (Qoder IDE /model/v1) emit JSON that contains literal blank lines
+      // inside a string (`raw_usage` carries keys like
+      // `"data_policy_preferre\n\nnd_count"`). Treating that blank line as a
+      // boundary splits the JSON, leaves a dangling continuation, and throws
+      // "Malformed SSE line". When the open data is not yet a complete JSON
+      // value, append the blank line as a continuation instead.
+      if (dataLines.length > 0 && !isCompleteJsonValue(dataLines.join("\n"))) {
+        dataLines.push("");
+        return;
+      }
       yield* dispatchEvent();
       return;
     }

@@ -97,6 +97,35 @@ test("reasoning_content is surfaced as reasoning content", async () => {
   expect(textOf(ev)).toBe("ok");
 });
 
+test("a raw_usage terminal frame with literal newlines inside its JSON is salvaged", async () => {
+  // The IDE surface emits a terminal raw_usage event whose JSON payload
+  // contains literal newline bytes inside string values (e.g.
+  // `"time_of_\nscheduler"`). Those bytes are not valid JSON, so the
+  // translator must repair the frame instead of dropping it. If it is
+  // dropped, the terminal is synthesized without any finish reason
+  // (`provider_stop_reason` stays absent) — the salvage path is what makes
+  // the finish reason and usage flow through.
+  const chunk = {
+    choices: [] as unknown[],
+    created: 1793589918,
+    id: "chatcmpl-x",
+    model: "qfmodel",
+    object: "chat.completion.chunk",
+    raw_usage: {
+      data: {
+        completion_tokens: 37,
+        model: "bailian-qwen3.8-flash",
+        model_context: { ["time_of_\nscheduler"]: 401 },
+      },
+    },
+  };
+  const ev = await collect(["data: " + JSON.stringify(chunk) + "\n\n"]);
+  const terminal = ev.find((e) => e["type"] === "terminal");
+  expect(terminal).toBeDefined();
+  expect(terminal?.["stop_reason"]).toBe("stop");
+  expect(terminal?.["provider_stop_reason"]).toBe("stop");
+});
+
 test("plain text passes through untouched", async () => {
   const ev = await collect([
     frame({ content: "Answer is 42." }),

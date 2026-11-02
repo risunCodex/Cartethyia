@@ -1,13 +1,16 @@
 // Kiro model discovery.
 //
 // The account's own model list is authoritative — which models a credential
-// reaches depends on the plan it is bound to — and it is served by the Amazon Q
-// catalog for a resolved profile. The request is scoped by the account's region
-// and profile for the same reason dispatch is.
+// reaches depends on the plan it is bound to — and it is served by the Kiro
+// control-plane (management) service for a resolved profile. The request is
+// scoped by the account's region and profile for the same reason dispatch is.
 //
-// This surface has its own client identity: it is the IDE's model-list call,
-// not the agent's chat call, and the upstream validates the User-Agent's shape
-// rather than ignoring it.
+// This surface has its own client identity: it is the IDE's model-list call
+// (client `@amzn/kiro-control-plane-bearer-client`), not the agent's chat
+// call, and the upstream validates the User-Agent's shape rather than ignoring
+// it. In the 1.4.62 build the operation is bound to `GET /List-Available-Models`
+// on `https://management.{region}.kiro.dev` (awsJson1_0, `x-amz-target`
+// `KiroControlPlaneBearerService.ListAvailableModels`).
 
 import type { FetchLike } from "../../quota/quota-contracts";
 import type { ModelDefinition } from "../../provider-model-definition";
@@ -19,7 +22,7 @@ import {
 } from "../../operations/client-versions";
 import { machineIdForAuthState } from "./kiro-machine-id";
 import { resolveKiroProfileArn } from "./kiro-profile";
-import { KIRO_MODELS } from "./kiro-catalog";
+import { KIRO_MODELS, KIRO_MANAGEMENT_HOST_TEMPLATE } from "./kiro-catalog";
 
 /** AWS region shape, checked before a region is interpolated into a URL. */
 const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
@@ -29,6 +32,9 @@ const MAX_DISCOVERED_MODELS = 500;
 
 /** Effort tiers the models that accept an effort field advertise. */
 const KIRO_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
+
+/** The management service target used in `x-amz-target`. */
+const KIRO_MANAGEMENT_TARGET = "KiroControlPlaneBearerService.ListAvailableModels" as const;
 
 /**
  * Ids the seed catalog deliberately excludes.
@@ -80,36 +86,42 @@ export async function fetchKiroModels(
   if (credential.length === 0) return null;
   const fetcher = options.fetcher ?? fetch;
   const scope = readScope(options.authState);
+  const version = getKiroVersion();
+  const machineId = machineIdForAuthState(options.authState);
+  const host = KIRO_MANAGEMENT_HOST_TEMPLATE.replace("{region}", scope.region);
   const params = new URLSearchParams({ origin: "AI_EDITOR" });
   if (scope.profileArn.length > 0) params.set("profileArn", scope.profileArn);
 
   let response: Response;
   try {
-    // The catalog surface correlates the credential against the same device the
-    // generation surface sees, so it resolves the identity through the shared
-    // resolver rather than stating one of its own.
-    const version = getKiroVersion();
-    const machineId = machineIdForAuthState(options.authState);
-    response = await fetcher(
-      `https://q.${scope.region}.amazonaws.com/ListAvailableModels?${params.toString()}`,
-      {
-        headers: {
-          authorization: `Bearer ${credential}`,
-          accept: "application/json",
-          connection: "close",
-          "x-amzn-kiro-agent-mode": "vibe",
-          "x-amzn-codewhisperer-optout": "true",
-          "amz-sdk-request": "attempt=1; max=1",
-          "amz-sdk-invocation-id": crypto.randomUUID(),
-          // The upstream validates this value's shape and rejects a malformed
-          // one outright, so it is built from the same source the generation
-          // surface uses rather than spelled out here.
-          "user-agent": buildKiroRuntimeUserAgent(version, machineId),
-          "x-amz-user-agent": buildKiroAmzUserAgent(version, machineId),
-        },
-        signal: AbortSignal.timeout(20_000),
-      },
-    );
+    const headers: Record<string, string> = {
+      authorization: `Bearer ${credential}`,
+      accept: "application/json",
+      connection: "close",
+      "x-amz-target": KIRO_MANAGEMENT_TARGET,
+      "amz-sdk-request": "attempt=1; max=1",
+      "amz-sdk-invocation-id": crypto.randomUUID(),
+      "user-agent": buildKiroRuntimeUserAgent(version, machineId),
+      "x-amz-user-agent": buildKiroAmzUserAgent(version, machineId),
+      "x-kiro-machineid": machineId,
+    };
+    // The management surface labels API-key/enterprise/IdC credentials with
+    // `TokenType`; social/Builder-ID sessions send none. Mirror the client's
+    // `qje` map and the probe verified against the live service.
+    const authMethod = options.authState?.["authMethod"];
+    const tokenType =
+      authMethod === "api_key"
+        ? "API_KEY"
+        : authMethod === "external_idp"
+          ? "EXTERNAL_IDP"
+          : authMethod === "idc"
+            ? "SSO_OIDC"
+            : undefined;
+    if (tokenType !== undefined) headers["TokenType"] = tokenType;
+    response = await fetcher(`${host}/List-Available-Models?${params.toString()}`, {
+      headers,
+      signal: AbortSignal.timeout(20_000),
+    });
   } catch {
     return null;
   }
@@ -131,9 +143,6 @@ export async function fetchKiroModels(
     const modelId = typeof rawId === "string" ? rawId.trim() : "";
     if (modelId.length === 0 || seen.has(modelId) || RETIRED_KIRO_MODEL_IDS.has(modelId)) continue;
     seen.add(modelId);
-    // The seed row owns the limits and capabilities of an id it declares. The
-    // upstream listing reports an input ceiling only, and trusting it overwrote
-    // the output ceiling the catalog states.
     const seeded = KIRO_MODELS.find((model) => model.modelId === modelId);
     if (seeded !== undefined) {
       definitions.push(seeded);
@@ -145,8 +154,6 @@ export async function fetchKiroModels(
         ? (limits as Record<string, unknown>)["maxInputTokens"]
         : undefined;
     const contextLimit = typeof maxInput === "number" && maxInput > 0 ? Math.trunc(maxInput) : null;
-    // The catalog reports an input ceiling, not an output one; the static row
-    // carries the output ceiling the model family advertises.
     definitions.push(
       defineModel({
         id: modelId,
@@ -157,7 +164,8 @@ export async function fetchKiroModels(
         vision: true,
         reasoning: true,
         reasoningEfforts: KIRO_EFFORTS,
-        toolCall: true,}),
+        toolCall: true,
+      }),
     );
   }
   return definitions.length > 0 ? definitions : null;

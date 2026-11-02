@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import type { ApiKeyRecord, ApiKeyStore } from "../../persistence/stores/api-key-store";
 import { hashSecret } from "../../security/crypto";
 import { type ShareLinkStore, type ShareLinkSummary } from "../../persistence/stores/share-store";
-import { API_KEY_MODES, type ApiKeyMode, type ApiKeyModelAccessMode, type ShareLinkKind } from "../../persistence/schema";
+import { API_KEY_MODES, API_KEY_CONCURRENCY_SCOPES, type ApiKeyMode, type ApiKeyModelAccessMode, type ShareLinkKind } from "../../persistence/schema";
 import { isValidTenantKeyScope, type AccessScope } from "../../security/access-control";
 import { normalizeClientRouterId } from "../../security/client-router-fingerprint";
 import type { ShareActivityPort } from "../share/share-usage";
@@ -34,6 +34,9 @@ export type {
   SharedKeySummary,
   SharedKeyActivityDetail,
 } from "../share/share-usage";
+/** How a share template's concurrency cap applies to its recipients. */
+export type ConcurrencyScope = (typeof API_KEY_CONCURRENCY_SCOPES)[number];
+
 /** Input accepted when creating or editing a key. Null limits mean unlimited. */
 export interface CreateApiKeyRequest {
   enabled?: boolean;
@@ -49,6 +52,13 @@ export interface CreateApiKeyRequest {
   monthlyTokenLimit?: number | null;
   lifetimeTokenBudget?: number | null;
   maxConcurrentRequests?: number | null;
+  /**
+   * How `maxConcurrentRequests` applies to a share template's family:
+   * `family` (default) = one cap across all recipient keys (a single shared
+   * admission counter); `per_key` = each recipient key gets its own cap and
+   * independent counter. Ignored/meaningless for personal keys.
+   */
+  concurrencyScope?: ConcurrencyScope;
   /** Share-template slot cap; only meaningful when keyMode === "share". */
   maxChildren?: number | null;
   modelPrefix?: string;
@@ -90,6 +100,7 @@ export interface ApiKeyResponse {
   readonly modelList?: readonly string[];
   readonly clientRouterDenylist?: readonly string[];
   readonly maxConcurrentRequests?: number;
+  readonly concurrencyScope?: ConcurrencyScope;
   readonly maxChildren?: number;
   readonly notesTitle?: string;
   readonly notesSubtitle?: string;
@@ -119,34 +130,16 @@ export interface UpdateApiKeyResponse extends ApiKeyResponse {
 }
 
 /**
- * Ban reasons offered by the console dropdown. The first two are the operator's
- * own: "Instant Ban — Suka suka Gw" for the arbitrary ban, and a template for
- * suspicious traffic. The rest are generic, and an operator can still type a
- * custom reason — the dropdown is a convenience, not a closed set.
+ * Ban reasons offered by the console dropdown, and the durations the ban
+ * endpoint accepts. These are pure lists, kept in `ban-constants.ts` (no
+ * `node:*` imports) so the dashboard can import them without dragging Node
+ * crypto into the browser bundle. Re-exported here for backend consumers
+ * (`routes.ts` validates against `BAN_DURATION_CHOICES`).
  */
-export const API_KEY_BAN_REASONS: readonly { readonly value: string; readonly label: string }[] = [
-  { value: "instant_arbitrary", label: "Instant Ban — Suka suka Gw" },
-  { value: "traffic_suspicious", label: "Your traffic looks suspicious" },
-  { value: "abuse", label: "Abuse of the gateway" },
-  { value: "policy_violation", label: "Policy violation" },
-  { value: "compromised", label: "Key may be compromised" },
-  { value: "quota_exceeded", label: "Quota abused" },
-  { value: "other", label: "Other / custom" },
-] as const;
-
-/**
- * Ban durations the console offers, in whole minutes. `null` is permanent.
- * Mirrored by the dashboard (`dashboard/src/lib/ban-durations.ts`) so the UI
- * and the API agree on one list.
- */
-export const BAN_DURATION_CHOICES: readonly { readonly minutes: number | null; readonly label: string }[] = [
-  { minutes: 60, label: "1 hour" },
-  { minutes: 6 * 60, label: "6 hours" },
-  { minutes: 12 * 60, label: "12 hours" },
-  { minutes: 24 * 60, label: "1 day" },
-  { minutes: 7 * 24 * 60, label: "7 days" },
-  { minutes: null, label: "Permanent" },
-];
+export {
+  API_KEY_BAN_REASONS,
+  BAN_DURATION_CHOICES,
+} from "./ban-constants";
 
 /** What a bare "ban this key" click uses: the shortest, most reversible choice. */
 export const DEFAULT_BAN_MINUTES: number = 60;
@@ -349,6 +342,19 @@ export function validateApiKeyRequest(request: CreateApiKeyRequest): readonly Ac
   finitePositive(request.monthlyTokenLimit, "monthlyTokenLimit");
   finitePositive(request.lifetimeTokenBudget, "lifetimeTokenBudget");
   finitePositive(request.maxConcurrentRequests, "maxConcurrentRequests");
+  if (
+    request.concurrencyScope !== undefined &&
+    !(API_KEY_CONCURRENCY_SCOPES as readonly string[]).includes(request.concurrencyScope)
+  ) {
+    throw new ConsoleDomainError("invalid_limits", 400, "concurrencyScope must be family or per_key");
+  }
+  if (request.concurrencyScope !== undefined && keyMode !== "share") {
+    throw new ConsoleDomainError(
+      "invalid_limits",
+      400,
+      "concurrencyScope is only valid for share templates",
+    );
+  }
   if (request.maxChildren !== undefined && request.maxChildren !== null) {
     finitePositive(request.maxChildren, "maxChildren");
     if (request.maxChildren > 10_000) {
@@ -440,6 +446,7 @@ export function sanitizeApiKeyResponse(record: ApiKeyRecord): ApiKeyResponse {
     ...(record.monthlyTokenLimit === undefined ? {} : { monthlyTokenLimit: record.monthlyTokenLimit }),
     ...(record.lifetimeTokenBudget === undefined ? {} : { lifetimeTokenBudget: record.lifetimeTokenBudget }),
     ...(record.maxConcurrentRequests === undefined ? {} : { maxConcurrentRequests: record.maxConcurrentRequests }),
+    ...(record.concurrencyScope === undefined ? {} : { concurrencyScope: record.concurrencyScope }),
     ...(record.maxChildren === undefined ? {} : { maxChildren: record.maxChildren }),
     ...(record.modelPrefix === undefined ? {} : { modelPrefix: record.modelPrefix }),
     ...(record.modelAccessMode === undefined ? {} : { modelAccessMode: record.modelAccessMode }),

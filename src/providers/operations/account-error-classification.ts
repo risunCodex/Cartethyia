@@ -58,6 +58,26 @@ const UNCLASSIFIED_COOLDOWN_MS = resolveAccountUnclassifiedCooldownMs;
  */
 const GROK_QUOTA_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 /**
+ * Trae answers `4013 "AI service is not available in the current region now."`
+ * when the upstream does not serve the account's region. A day because the
+ * verdict is durable: it reproduces on every request until the region opens,
+ * and the account must not be re-dialled every thirty seconds for the whole
+ * window.
+ */
+const TRAE_REGION_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+/**
+ * Trae's free-tier quota (`4008` / "exceeded the quota") resets daily, so its
+ * exhaustion is a full-day model backoff — never the generic 1h fallback,
+ * which let the account re-enter rotation inside the window.
+ */
+const TRAE_QUOTA_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+/**
+ * Qoder's quota verdicts (`110` billing-daily-count, the upstream-499 close)
+ * are per-model: one model's spend cap does not drain another. A day matches
+ * the daily billing window the provider names.
+ */
+const QODER_QUOTA_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+/**
  * The buddy family's policy/channel block (`11140`, `11128`) is a *base* backoff,
  * not a flat penalty — see {@link resolveAccountPolicyBlockCooldownMs}. It used
  * to be two constants, 24h for the content block and 6h for the channel one,
@@ -869,6 +889,7 @@ export function classifyAccountError(
       // keeps serving its other models.
       providerCode === "112" ||
       providerCode === "110" ||
+      providerCode === "116" ||
       providerCode === "insufficient_quota" ||
       providerCode === "quota_exceeded" ||
       providerCode === "subscription:free-usage-exhausted" ||
@@ -1469,6 +1490,81 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
     },
   },
   {
+    // Trae answers `4013 "AI service is not available in the current region
+    // now."` when the upstream does not serve the account's region. That is a
+    // durable verdict on the account, not a transient transport fault: it
+    // reproduces on every request until the region opens, so it must cool hard
+    // for a day rather than be re-dialled every thirty seconds. Must run
+    // before `transport-fault`, which would read the 502 as a short
+    // `server_error`.
+    name: "trae-region-unavailable",
+    match: (s) =>
+      (s.providerId === "trae" || s.providerId === "traecn") &&
+      (s.providerCode === "4013" || s.lower.includes("not available in the current region")),
+    decide: (s) => {
+      const cooldownMs = TRAE_REGION_COOLDOWN_MS;
+      return s.result(
+        "quota_exhausted",
+        "cooldown",
+        cooldownMs,
+        new Date(Date.now() + cooldownMs),
+        s.reason("Trae service unavailable in the current region"),
+        // Account-scoped provider evidence still has to reach the writer: a
+        // stream frame carries no credential detail, so `canMutate` is false
+        // and without this the account stays in rotation to reproduce the
+        // refusal for the whole window the region is closed for.
+        true,
+      );
+    },
+  },
+  {
+    // Trae's free-tier quota (`4008` / "exceeded the quota") resets daily.
+    // Treating it like the generic quota cooldown (1h account-wide fallback)
+    // let the account re-enter rotation inside the window and reproduce the
+    // refusal every few minutes — the "cooldown not holding" report. The
+    // verdict is a full-day backoff on *any* model (the account's quota is
+    // spent, so every model on it shares the wall). Scoped to the model so
+    // the account is not disabled wholesale; the 1-day window means a model
+    // stays parked for the day instead of flapping. Must run before
+    // `quota-exhausted`, which would apply the generic shorter fallback.
+    name: "trae-quota-exhausted",
+    match: (s) =>
+      (s.providerId === "trae" || s.providerId === "traecn") &&
+      (s.providerCode === "4008" || s.lower.includes("have exceeded the quota")),
+    decide: (s) => {
+      const cooldownMs = s.statedCooldownMs ?? TRAE_QUOTA_COOLDOWN_MS;
+      return s.result(
+        "model_unreachable",
+        "cooldown",
+        cooldownMs,
+        new Date(Date.now() + cooldownMs),
+        s.reason("Trae quota exhausted for this model"),
+        s.origin === "upstream" && s.modelId !== undefined,
+      );
+    },
+  },
+  {
+    // Qoder's quota verdicts — `110` "Billing daily count exceeded" and the
+    // upstream-499 exhausted-quota close — are per-model: one model's spend
+    // cap does not drain another. Scoping them to the model keeps the account
+    // serving its other models. Must run before `quota-exhausted`, which
+    // parks the whole account.
+    name: "qoder-model-quota",
+    match: (s) =>
+      (s.providerId === "qoder" || s.providerId === "qodercn") && s.quotaSignal,
+    decide: (s) => {
+      const cooldownMs = s.statedCooldownMs ?? QODER_QUOTA_COOLDOWN_MS;
+      return s.result(
+        "model_unreachable",
+        "cooldown",
+        cooldownMs,
+        new Date(Date.now() + cooldownMs),
+        s.reason("Qoder quota exhausted for this model"),
+        s.origin === "upstream" && s.modelId !== undefined,
+      );
+    },
+  },
+  {
     name: "quota-exhausted",
     match: (s) => s.quotaSignal,
     decide: (s) => {
@@ -1478,11 +1574,21 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
       const grokFreeTier =
         s.providerCode === "subscription:free-usage-exhausted" ||
         s.providerCode.startsWith("subscription:") ||
+        // A 402 spend/entitlement wall (`personal-team-blocked:spending-limit`,
+        // "out of credits") is the same verdict: the account cannot serve until
+        // the operator tops up or upgrades. The default 1h fallback re-dialled
+        // it every hour inside a window that will not clear on its own.
+        s.providerCode.includes("spending") ||
+        s.providerCode.includes("credits") ||
         s.lower.includes("free-usage") ||
         s.lower.includes("free usage") ||
         s.lower.includes("included free usage") ||
         s.lower.includes("rolling 24-hour") ||
-        s.lower.includes("rolling 24 hour");
+        s.lower.includes("rolling 24 hour") ||
+        s.lower.includes("spending limit") ||
+        s.lower.includes("out of credits") ||
+        s.lower.includes("run out of credits") ||
+        s.lower.includes("need a grok subscription");
       const buddyCreditsExhausted =
         s.providerCode === "14018" || s.lower.includes("credits exhausted");
       const cooldownMs = grokFreeTier
@@ -1631,20 +1737,24 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
     // verdict, not a transport fault. It must run before `transport-fault`,
     // which otherwise reads the status as a 5xx-class outage and cools the
     // account for the shorter transient window — or leaves it unmutated.
+    //
+    // The verdict is per-model, like Qoder's other quota signs: one model's
+    // spend cap does not drain another, so it cools the pair, never the whole
+    // account.
     name: "qoder-499-quota",
     match: (s) =>
       (s.providerId === "qoder" || s.providerId === "qodercn") &&
       s.statusCode === 499 &&
       s.origin === "upstream",
     decide: (s) => {
-      const cooldownMs = s.statedCooldownMs ?? DEFAULT_QUOTA_COOLDOWN_MS();
+      const cooldownMs = s.statedCooldownMs ?? QODER_QUOTA_COOLDOWN_MS;
       return s.result(
-        "quota_exhausted",
+        "model_unreachable",
         "cooldown",
         cooldownMs,
         new Date(Date.now() + cooldownMs),
-        s.reason("Qoder quota exhausted (upstream 499)"),
-        s.origin === "upstream",
+        s.reason("Qoder quota exhausted for this model (upstream 499)"),
+        s.origin === "upstream" && s.modelId !== undefined,
       );
     },
   },
