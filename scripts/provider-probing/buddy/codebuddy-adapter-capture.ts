@@ -42,9 +42,20 @@ interface Capture {
 }
 let captured: Capture | undefined;
 const outbound = (async (url: string | URL | Request, init?: RequestInit) => {
+  const rawHeaders = (init?.headers ?? {}) as Record<string, string> | Headers | Array<[string, string]>;
+  const headers: Record<string, string> = {};
+  if (rawHeaders instanceof Headers) {
+    rawHeaders.forEach((value, key) => {
+      headers[key] = value;
+    });
+  } else if (Array.isArray(rawHeaders)) {
+    for (const [key, value] of rawHeaders) headers[key] = value;
+  } else {
+    Object.assign(headers, rawHeaders);
+  }
   captured = {
     url: String(url),
-    headers: Object.fromEntries(new Headers(init?.headers).entries()),
+    headers,
     body: JSON.parse(String(init?.body ?? "{}")) as unknown,
   };
   const stream = new ReadableStream<Uint8Array>({
