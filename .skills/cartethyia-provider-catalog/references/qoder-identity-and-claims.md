@@ -3,8 +3,8 @@
 Durable knowledge for Qoder (intl realm) account work: where identity comes
 from, which claim surfaces exist, what has been proven dead, and the
 verification order for a new claim path. The full evidence trail lives in
-[`documentation/archive/research/11-Qoder-30-10-2026-trial-activity-claims.md`](../../../documentation/archive/research/11-Qoder-30-10-2026-trial-activity-claims.md)
-and [`documentation/archive/research/12-Qoder-30-10-2026-umid-and-identity-findings.md`](../../../documentation/archive/research/12-Qoder-30-10-2026-umid-and-identity-findings.md).
+[`documentation/research/qoder/2026-10-29-qoder-credits-claims-identity.md`](../../../documentation/research/qoder/2026-10-29-qoder-credits-claims-identity.md)
+and [`documentation/research/qoder/2026-11-01-qoder-chat-wire-verification.md`](../../../documentation/research/qoder/2026-11-01-qoder-chat-wire-verification.md).
 
 ## Identity
 

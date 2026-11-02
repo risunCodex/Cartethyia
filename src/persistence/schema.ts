@@ -423,7 +423,7 @@ export const models = pgTable(
      * that predicts access — `credits` and `vendor` were both measured against
      * real dispatches and neither correlates. Only the refusal itself is a
      * signal, so the answer has to be recorded. See
-     * `.skills/cartethyia-reverse-engineering/references/codebuddy-dispatch-headers.md`.
+     * `documentation/research/codebuddy/2026-10-19-codebuddy-chat-dispatch-headers.md`.
      */
     proOnly: boolean("pro_only"),
     /**

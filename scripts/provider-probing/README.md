@@ -195,7 +195,7 @@ Free-tier gate facts (verified live 2026-11-02):
   websearch, write, execute`) with `strict:false` on each — no `patch`,
   `question`, or `todowrite` — plus `Accept: */*`, `Authorization: Bearer
   st_…`, and the same session/project fingerprint the adapter sends. See the
-  evidence ledger (`.skills/.../references/opencode-desktop-2.2.5.md`).
+  evidence ledger (`documentation/research/opencode/2026-11-02-desktop-2.2.5-binary-evidence.md`).
 - Model listing (`/zen/v1/models`) publishes `api.chat-completions.base_url`
   and `compatibility.reasoning_field: "reasoning_content"` per model.
 

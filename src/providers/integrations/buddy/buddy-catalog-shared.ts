@@ -160,7 +160,7 @@ export function makeBuddyCnImageModels(
  * plan rather than about the model. A pro account serves all six. The pill is
  * therefore a hint about a free account, and a dispatch is what settles it.
  *
- * @see `.skills/cartethyia-reverse-engineering/references/codebuddy-dispatch-headers.md`
+ * @see `documentation/research/codebuddy/2026-10-19-codebuddy-chat-dispatch-headers.md`
  */
 export const BUDDY_PRO_ONLY_MODEL_IDS: ReadonlySet<string> = new Set([
   "primary-model",
