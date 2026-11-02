@@ -78,7 +78,29 @@ function creditWindow(
 ): ProviderQuotaWindow | null {
   if (remaining === null && limit === null) return null;
   const used = remaining !== null && limit !== null ? limit - remaining : null;
-  return percentWindow(kind, label, null, resetsAt, used, limit, "pooled");
+  // Give pooled windows a percentage so the console can render a real bar and
+  // tone instead of an uncolored "quota-only" row (which is what a null
+  // percent produced: every Qoder account was grey, and "enable available
+  // accounts" could never match a window). A ceiling of 0 with nothing left is
+  // a spent balance — report 0% remaining rather than a null percent.
+  let usedPercent: number | null = null;
+  if (remaining !== null && limit !== null) {
+    if (limit > 0) usedPercent = ((limit - remaining) / limit) * 100;
+    else if (remaining <= 0) usedPercent = 100;
+  }
+  return percentWindow(kind, label, usedPercent, resetsAt, used, limit, "pooled");
+}
+
+/**
+ * The business API answers "never resets" with a far-future sentinel
+ * (`9999-12-31T00:00:00.000Z`). Keeping it on the wire makes the console show
+ * a 7978-year countdown. Any date at or beyond year 9999 means no reset.
+ */
+function normalizeQoderReset(resetsAt: string | null): string | null {
+  if (resetsAt === null) return null;
+  const date = new Date(resetsAt);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date.getUTCFullYear() >= 9999 ? null : resetsAt;
 }
 
 /**
@@ -168,7 +190,7 @@ export async function fetchQoderQuota(
     return { source: "qoder", plan: null, windows: [], error: null };
   }
 
-  const resetsAt = isoDate(root["expiresAt"] ?? root["expireAt"] ?? root["expires_at"]);
+  const resetsAt = normalizeQoderReset(isoDate(root["expiresAt"] ?? root["expireAt"] ?? root["expires_at"]));
   const windows: ProviderQuotaWindow[] = [];
   const plan = creditWindow("qoder:plan", "Plan credits", number(userQuota?.["remaining"]), number(userQuota?.["total"]), resetsAt);
   if (plan) windows.push(plan);

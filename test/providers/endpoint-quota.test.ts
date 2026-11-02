@@ -224,6 +224,15 @@ describe("Qoder quota — an unreadable body is not a zero balance", () => {
     expect(result.error).toBeNull();
     expect(result.windows).toHaveLength(2);
     for (const window of result.windows) expect(window.accounting).toBe("pooled");
+
+    // Pooled windows must carry a computable percent so the console can render
+    // a real bar/tone (all-null percents rendered every Qoder account grey).
+    const plan = result.windows.find((w) => w.kind === "qoder:plan");
+    const addOn = result.windows.find((w) => w.kind === "qoder:addon");
+    expect(plan?.remainingPercent).toBeCloseTo(30, 5);
+    expect(plan?.usedPercent).toBeCloseTo(70, 5);
+    expect(addOn?.remainingPercent).toBeCloseTo(62.5, 5);
+    expect(addOn?.usedPercent).toBeCloseTo(37.5, 5);
   });
 
   test("an exhausted account with a usable shared pool is not reported as empty", async () => {
@@ -265,6 +274,9 @@ describe("Qoder quota — an unreadable body is not a zero balance", () => {
 
     expect(result.windows).toHaveLength(1);
     expect(result.windows[0]?.used).toBe(0);
+    expect(result.windows[0]?.limit).toBe(0);
+    // A spent 0/0 balance reads as 0% remaining, not an uncolored row.
+    expect(result.windows[0]?.remainingPercent).toBe(0);
     expect(result.error).toBeNull();
   });
 
@@ -277,6 +289,25 @@ describe("Qoder quota — an unreadable body is not a zero balance", () => {
 
     expect(result.windows).toHaveLength(0);
     expect(result.error).toBeNull();
+  });
+
+  test("a far-future reset sentinel is treated as no reset", async () => {
+    // The business API answers "never resets" as `9999-12-31T00:00:00.000Z`;
+    // surfacing it rendered a 7978-year countdown on every window.
+    const fetcher = routedFetcher([
+      [
+        "quota/usage",
+        jsonResponse({
+          expiresAt: "9999-12-31T00:00:00.000Z",
+          userQuota: { remaining: 300, total: 1000, used: 700 },
+          addOnQuota: { remaining: 50, total: 80, used: 30 },
+        }),
+      ],
+    ]);
+
+    const result = await fetchQoderQuota("token", fetcher, {});
+
+    for (const window of result.windows) expect(window.resetsAt).toBeNull();
   });
 
   test("a PAT is exchanged for a job token before the quota read", async () => {
