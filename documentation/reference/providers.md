@@ -213,6 +213,13 @@ Alternative grants can fund the same model; a spent grant cannot disable an
 unrelated model. Future grants show **Not started yet** and their start time,
 but cannot fund requests. Expired grants cannot fund requests even if their
 last reported remaining amount was positive. Missing usage is unknown, not zero.
+Built-in Start Plan windows use the short **Start** label; referral/promo grant
+names remain as reported upstream. Timeout, network and unreadable-JSON quota
+failures remain distinct; a timeout does not advance the account failure streak.
+A successful balance is authoritative: a model with no matching grant is not
+eligible. Dashboard availability follows the same grant lifetimes and treats
+same-model grants as alternatives, rather than showing a spent sibling as an
+account-wide zero balance.
 
 The **Claim gifts** button in Quota Management or the provider account row is an
 explicit manual action. It reads marketing banners and billing preview, then
@@ -225,6 +232,8 @@ and the persisted quota snapshot used after a cold start.
 
 Automatic claims are **off by default**. Set `CARTETHYIA_ZCODE_AUTO_CLAIM=true`
 to opt active accounts in; the first pass runs after 24 hours and repeats daily.
+Each daily pass drains the eligible accounts in bounded pages; the page size
+does not defer the remaining accounts to another day.
 `CARTETHYIA_DISABLED_TASKS=zcode-gift-claim` still disables that task. Manual
 claim remains available independently. Disabled/cooling accounts are not
 automatically claimed, and this scheduler does not enable them.

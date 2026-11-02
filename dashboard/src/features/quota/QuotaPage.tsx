@@ -51,21 +51,14 @@ import {
   formatQuotaWindowLabel,
   formatResetDistance,
   quotaBarTone,
-  quotaWindowNotStarted,
+  quotaWindowState,
+  quotaPillSummary,
   paginateQuotaWindows,
   accountIdentity,
 } from "../../lib/format/quota";
 import { getErrorMessage } from "../../data/api";
 
 
-function isEmpty(account: QuotaEntry): boolean {
-  return Boolean(
-    account.quota?.windows.length &&
-    account.quota.windows.every(
-      (window) => !quotaWindowNotStarted(window) && window.remainingPercent !== null && window.remainingPercent <= 0,
-    ),
-  );
-}
 
 function firstResetAt(account: QuotaEntry): number {
   const resetTimes =
@@ -362,7 +355,7 @@ function QuotaCard({
       : "Check-in due";
   const statusHint = `${checkinHint}${lastReported ? " · Reported today" : ""}`;
   const totalCredits = quotaWindows.reduce((total, window) => {
-    if (quotaWindowNotStarted(window)) return total;
+    if (quotaWindowState(window) !== "current") return total;
     const limit = window.limit;
     if (typeof limit !== "number" || !Number.isFinite(limit)) return total;
     const remaining =
@@ -584,12 +577,13 @@ function QuotaCard({
             QUOTA WINDOWS
           </div>
           {pagination.items.map((window, index) => {
-            if (quotaWindowNotStarted(window) && window.startsAt) {
+            const state = quotaWindowState(window);
+            if (state !== "current") {
               return (
                 <div key={`${window.kind ?? window.label}:${window.startsAt}:${index}`} className="flex flex-col gap-2 text-badge">
                   <span className="font-semibold text-text-primary">{formatQuotaWindowLabel(window.label)}</span>
                   {window.modelIds?.length ? <span className="text-text-secondary">Models: {window.modelIds.join(", ")}</span> : null}
-                  <span className="text-text-tertiary">Not started yet · Starts {new Date(window.startsAt).toLocaleString()}</span>
+                  <span className="text-text-tertiary">{state === "expired" ? "Expired" : `Not started yet · Starts ${new Date(window.startsAt!).toLocaleString()}`}</span>
                 </div>
               );
             }
@@ -789,7 +783,7 @@ export default function QuotaPage(): ReactNode {
   };
 
   const turnOffEmpty = async () => {
-    const targets = accounts.filter((account) => account.active && isEmpty(account));
+    const targets = accounts.filter((account) => account.active && quotaPillSummary(account.quota?.windows ?? []).empty);
     await setActiveBatch.mutateAsync({ ids: targets.map((target) => target.id), active: false });
     toast.success(`Disabled ${targets.length} empty accounts`);
   };
@@ -798,9 +792,7 @@ export default function QuotaPage(): ReactNode {
     const targets = accounts.filter(
       (account) =>
         !account.active &&
-        account.quota?.windows.some(
-          (window) => !quotaWindowNotStarted(window) && window.remainingPercent !== null && window.remainingPercent > 0,
-        ),
+        quotaPillSummary(account.quota?.windows ?? []).available,
     );
     await setActiveBatch.mutateAsync({ ids: targets.map((target) => target.id), active: true });
     toast.success(`Enabled ${targets.length} available accounts`);
@@ -818,7 +810,7 @@ export default function QuotaPage(): ReactNode {
           minute: "2-digit",
         })
       : "Not updated";
-  const emptyCount = accounts.filter(isEmpty).length;
+  const emptyCount = accounts.filter((account) => quotaPillSummary(account.quota?.windows ?? []).empty).length;
 
   return (
     <Stack gap="16px" className="dashboard-page min-h-0 flex-1">

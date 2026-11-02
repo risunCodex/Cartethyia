@@ -99,12 +99,15 @@ function belowUsageFloor(state: {
   readonly quota_windows?: readonly unknown[] | undefined;
   readonly provider_id?: string;
   readonly model_id?: string;
+  readonly quota_entitlements_known?: boolean;
 }): boolean {
   const rawWindows = state.quota_windows as readonly ProviderQuotaWindow[] | undefined;
-  if (rawWindows === undefined || rawWindows.length === 0) return false;
+  if (rawWindows === undefined) return false;
   const relevant = filterCandidateQuotaWindows(rawWindows, state);
   const now = Date.now();
   const grants = relevant.filter((window) => window.modelIds !== undefined);
+  if (state.provider_id === "zcode-start" && grants.length === 0 &&
+    (state.quota_entitlements_known || rawWindows.some((window) => window.modelIds !== undefined))) return true;
   if (grants.length > 0 && !grants.some((window) => {
     if (window.startsAt && Date.parse(window.startsAt) > now) return false;
     if (window.resetsAt && Date.parse(window.resetsAt) <= now) return false;
@@ -562,24 +565,26 @@ export class RoutingEngine {
     // still prefers accounts that actually have remaining credit. The snapshot
     // is never fresher than the cache, but a stale balance beats an unknown
     // one for ordering, and the sweep refreshes it on schedule.
-    let rawWindows = cached?.quota.windows;
-    if (rawWindows === undefined && this.db !== undefined) {
-      const snapshot = await readQuotaSnapshot(this.db, accountId).catch(() => null);
-      rawWindows = snapshot?.quota.windows;
+    let quota = cached?.quota;
+    if (quota === undefined && this.db !== undefined) {
+      const stored = await readQuotaSnapshot(this.db, accountId).catch(() => null);
+      quota = stored?.quota;
     }
+    const rawWindows = quota?.windows;
     // The cache is authoritative when it has a reading; when it does not,
     // keep whatever the candidate already carried (the credit ordering reads
     // these windows, and a miss must not erase a stamped value).
     const quotaWindows =
       rawWindows === undefined
         ? undefined
-        : filterCandidateQuotaWindows(rawWindows, candidate);
+        : candidate.provider_id === "zcode-start" ? rawWindows : filterCandidateQuotaWindows(rawWindows, candidate);
     return {
       ...candidate,
       ...(setting?.usageFloor == null
         ? {}
         : { usage_floor: setting.usageFloor, usage_floor_unit: setting.usageFloorUnit }),
       ...(quotaWindows === undefined ? {} : { quota_windows: quotaWindows }),
+      ...(quota?.source === "zcode-start" && quota.error === null ? { quota_entitlements_known: true } : {}),
     };
   }
 

@@ -720,3 +720,45 @@ describe("quotaPillSummary grant and credit balances", () => {
     ]).text).toBe("30% left");
   });
 });
+
+describe("model-scoped quota availability", () => {
+  test("same-model grants are alternatives and unrelated spent models do not exhaust the account", () => {
+    const grant = { accounting: "independent" as const, remainingPercent: 0, modelIds: ["glm-5.3"] };
+    const summary = quotaPillSummary([grant, { ...grant, remainingPercent: 50 }, { ...grant, modelIds: ["glm-5.3-flash"] }]);
+    expect(summary.text).toBe("1 of 2 models available");
+    expect(summary.low).toBe(false);
+    expect(summary.available).toBe(true);
+    expect(summary.empty).toBe(false);
+    expect(summary.lowestPercent).toBeNull();
+  });
+
+  test("account-wide independent windows still constrain every model", () => {
+    const summary = quotaPillSummary([
+      { accounting: "independent", remainingPercent: 50, modelIds: ["glm-5.3"] },
+      { accounting: "independent", remainingPercent: 0 },
+    ]);
+    expect(summary.text).toBe("0 of 1 models available · 0% account limit left");
+    expect(summary.low).toBe(true);
+    expect(summary.available).toBe(false);
+    expect(summary.empty).toBe(true);
+  });
+
+  test("start and expiry boundaries agree with summaries without expiring recurring account limits", () => {
+    const originalNow = Date.now;
+    const now = Date.parse("2026-11-02T12:00:00Z");
+    Date.now = () => now;
+    try {
+      const grant = { accounting: "independent" as const, remainingPercent: 50, remaining: 50, modelIds: ["glm-5.3"] };
+      expect(quotaPillSummary([{ ...grant, startsAt: new Date(now).toISOString() }]).available).toBe(true);
+      const future = { ...grant, startsAt: new Date(now + 1).toISOString() };
+      expect(quotaPillSummary([future]).available).toBe(false);
+      expect(quotaPillSummary([future]).empty).toBe(false);
+      expect(quotaPillSummary([{ ...grant, remainingPercent: 0 }, future]).empty).toBe(true);
+      const expired = { ...grant, resetsAt: new Date(now).toISOString(), recurring: true };
+      expect(quotaPillSummary([expired]).available).toBe(false);
+      expect(quotaPillSummary([expired]).empty).toBe(true);
+      expect(quotaPillSummary([expired]).text).toBe("0 of 1 models available");
+      expect(quotaPillSummary([{ ...expired, modelIds: [] }]).available).toBe(true);
+    } finally { Date.now = originalNow; }
+  });
+});

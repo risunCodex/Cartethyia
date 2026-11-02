@@ -141,6 +141,14 @@ describe("ZCode Start Plan quota eligibility through registry", () => {
     expect(route("glm-5.3", [], { provider_id: "zcode" }).eligible).toBe(true);
   }));
 
+  test("a successful entitlement list excludes models with no matching grant", async () => withFrozenTime(NOW, async () => {
+    const quota = await collect([bucket("glm-5.3", 100)]);
+    expect(route("glm-5.3-flash", quota.windows).eligible).toBe(false);
+    expect(route("glm-5.3", quota.windows).eligible).toBe(true);
+    expect(route("glm-5.3", [], { quota_entitlements_known: true }).eligible).toBe(false);
+    expect(route("glm-5.3", []).eligible).toBe(true);
+  }));
+
   test("any live alternative grant serves the same model without pooling unrelated grants", async () => withFrozenTime(NOW, async () => {
     const quota = await collect([bucket("glm-5.3", 0), bucket("glm-5.3", 50, { plan_id: "bonus", user_plan_id: "bonus" })]);
     expect(route("glm-5.3", quota.windows).eligible).toBe(true);
@@ -171,10 +179,10 @@ describe("ZCode Start Plan quota eligibility through registry", () => {
     expect(route("glm-5.3", ended.windows).eligible).toBe(false);
   }));
 
-  test("display labels never turn an unscoped grant into an account-wide gate", async () => withFrozenTime(NOW, async () => {
+  test("display labels do not invent missing model capabilities", async () => withFrozenTime(NOW, async () => {
     const quota = await collect([bucket("glm-5.3", 0, { capabilities: ["tool:search"], show_name: "GLM" })]);
     expect(quota.windows[0]?.modelIds).toEqual([]);
-    expect(route("glm-5.3-flash", quota.windows).eligible).toBe(true);
+    expect(route("glm-5.3-flash", quota.windows).eligible).toBe(false);
   }));
 
   test("business and malformed envelopes are failures, valid absence is not", async () => {
@@ -182,6 +190,27 @@ describe("ZCode Start Plan quota eligibility through registry", () => {
     expect((await collect([], [], { success: false })).error).not.toBeNull();
     expect((await collect([], [], { data: "invalid" })).error).not.toBeNull();
     expect((await collect([], [])).error).toBeNull();
+  });
+
+  test("shortens the built-in Start window but preserves referral grant identity", async () => {
+    const start = await collect([bucket("glm-5.3")], [plan({ name: "ZCode Start Plan" })]);
+    expect(start.windows[0]?.label).toBe("glm-5.3-Trial · Start · daily");
+    expect(start.plan).toBe("ZCode Start Plan");
+    const referral = await collect([bucket("glm-5.3")], [plan({ name: "Referral Weekend" })]);
+    expect(referral.windows[0]?.label).toBe("glm-5.3-Trial · Referral Weekend · daily");
+    expect(referral.plan).toBe("Referral Weekend");
+  });
+
+  test("reports timeout separately from unreadable JSON without leaking exceptions", async () => {
+    const collector = await createDefaultProviderRegistry().resolveQuotaCollector(ID);
+    if (!collector) throw new Error("Missing Start Plan collector");
+    const fetcher = Object.assign(async () => { throw new DOMException("private fixture details", "TimeoutError"); }, { preconnect() {} });
+    const timeout = await collector("fixture", fetcher);
+    expect(timeout.error).toBe("plan billing operation timed out or was aborted");
+    const invalid = await collector("fixture", Object.assign(async () => new Response("not-json"), { preconnect() {} }));
+    expect(invalid.error).toBe("plan billing returned unreadable JSON");
+    const network = await collector("fixture", Object.assign(async () => { throw new TypeError("Bearer private-fixture-token"); }, { preconnect() {} }));
+    expect(network.error).toBe("plan billing network request failed");
   });
 });
 

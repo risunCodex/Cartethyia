@@ -53,29 +53,44 @@ test("opt-in schedules its first claim after one day, never startup", async () =
 
 const runId = createRunId("zcode-gift-sweep");
 dbDescribe("ZCode automatic gift eligibility", () => {
-  test("bounded passes rotate all active accounts and never mutate disabled accounts", async () => {
+  test("one daily sweep drains 51 active accounts once and freezes its upper key", async () => {
     await withRollback(async (client) => {
       const tenant = await createTenant(client, runId);
       await client.query("insert into providers (id, wire_family_default, base_url) values ('zcode-start', 'chat', 'https://zcode.z.ai') on conflict (id) do nothing");
       const active: string[] = [];
-      for (let i = 0; i < 3; i += 1) active.push(await createAccount(client, "zcode-start", { tenantId: tenant.tenantId }));
+      for (let i = 0; i < 51; i += 1) active.push(await createAccount(client, "zcode-start", { tenantId: tenant.tenantId }));
       const disabled = await createAccount(client, "zcode-start", { tenantId: tenant.tenantId, status: "disabled" });
-      await createAccount(client, "zcode-start", { tenantId: tenant.tenantId, status: "cooldown" });
+      const cooling = await createAccount(client, "zcode-start", { tenantId: tenant.tenantId, status: "cooldown" });
       const resolved: string[] = [];
+      const addedDuringSweep = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+      let insertedDuringSweep = false;
       const db = drizzle(client, { schema });
       const deps = {
-        db, maxPerPass: 2,
-        resolveCredential: async (_provider: string, id: string) => { resolved.push(id); return "dummy-secret"; },
+        db,
+        resolveCredential: async (_provider: string, id: string) => {
+          resolved.push(id);
+          if (!insertedDuringSweep) {
+            insertedDuringSweep = true;
+            await client.query("insert into provider_accounts (id, provider_id, tenant_id, label, credential_kind) values ($1, 'zcode-start', $2, 'added during sweep', 'api_key')", [addedDuringSweep, tenant.tenantId]);
+            throw new Error("one credential failure must not stop the remaining pages");
+          }
+          return "dummy-secret";
+        },
         fetcher: async () => Response.json({ code: 0, data: { deliveries: [], plans: [] } }),
       };
       const first = await zcodeGiftClaimSweep(deps);
-      const second = await zcodeGiftClaimSweep(deps);
-      expect(first.attempted).toBe(2);
-      expect(second.attempted).toBe(1);
+      expect(first.attempted).toBe(51);
+      expect(first.failed).toBe(1);
       expect(new Set(resolved)).toEqual(new Set(active));
+      expect(resolved).toHaveLength(51);
       expect(resolved).not.toContain(disabled);
-      await zcodeGiftClaimSweep(deps);
-      expect(resolved).toHaveLength(5);
+      expect(resolved).not.toContain(cooling);
+      expect(resolved).not.toContain(addedDuringSweep);
+      resolved.length = 0;
+      const second = await zcodeGiftClaimSweep(deps);
+      expect(second.attempted).toBe(52);
+      expect(new Set(resolved)).toEqual(new Set([...active, addedDuringSweep]));
+      expect(resolved).toHaveLength(52);
     });
   });
 

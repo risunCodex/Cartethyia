@@ -24,6 +24,8 @@ import { createDatabaseSnapshotBuilder } from "../../src/transport/routing/route
 import { InMemoryRouteSnapshotService } from "../../src/transport/routing/route-model";
 import { createWorld, type GatewayWorld } from "../helpers/fixtures";
 import { requireDatabase } from "../helpers/database";
+import { recordAccountCheck } from "../../src/providers/quota/refresh";
+import { createDefaultProviderRegistry } from "../../src/providers/default-registry";
 
 /**
  * `routesVisible` is set by the caller that knows which columns it wrote, not
@@ -183,6 +185,26 @@ describe("model cooldown route snapshot invalidation", () => {
       const cooldowns = rows[0]?.modelCooldowns as Record<string, string>;
       expect(Date.parse(cooldowns[world.modelId] ?? "")).toBeGreaterThan(Date.now());
       expect(cooldowns["xiaomi/mimo-v2.6-flash"]).toBeUndefined();
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  test("Start Plan quota timeouts never advance account failure streak", async () => {
+    const world = await createWorld();
+    try {
+      const collector = await createDefaultProviderRegistry().resolveQuotaCollector("zcode-start");
+      if (!collector) throw new Error("Missing Start Plan collector");
+      const quota = await collector("fixture", Object.assign(async () => {
+        throw new DOMException("quota request budget expired", "TimeoutError");
+      }, { preconnect() {} }));
+      for (let i = 0; i < 3; i += 1) await recordAccountCheck(getDb(), world.accountId, {
+        ok: false, category: "quota_fetch_failed", error: quota.error,
+      });
+      const rows = await getDb().select({ status: providerAccounts.status,
+        failures: providerAccounts.consecutiveFailures, cooldownUntil: providerAccounts.cooldownUntil,
+      }).from(providerAccounts).where(eq(providerAccounts.id, world.accountId));
+      expect(rows[0]).toEqual({ status: "active", failures: 0, cooldownUntil: null });
     } finally {
       await world.cleanup();
     }

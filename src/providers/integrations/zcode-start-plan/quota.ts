@@ -35,6 +35,10 @@ function periodLabel(period: string | undefined): string {
   return period ?? "grant";
 }
 
+function grantLabel(name: string): string {
+  return /^(?:zcode\s+)?start plan$/i.test(name) ? "Start" : name;
+}
+
 function percent(value: number | null, limit: number | null): number | null {
   return value !== null && limit !== null && limit > 0
     ? Math.min(100, Math.max(0, value / limit * 100))
@@ -103,7 +107,7 @@ export async function fetchZcodeStartPlanQuota(
       const expired = asTrimmedString(owner?.["status"])?.toLowerCase() === "expired";
       windows.push({
         kind: period ?? "grant",
-        label: `${asTrimmedString(bucket["show_name"]) ?? (models.join(", ") || "GLM")} · ${name} · ${periodLabel(period)}`,
+        label: `${asTrimmedString(bucket["show_name"]) ?? (models.join(", ") || "GLM")} · ${grantLabel(name)} · ${periodLabel(period)}`,
         accounting: "independent",
         modelIds: models,
         startsAt: boundary([owner?.["starts_at"], bucket["period_start"]], true),
@@ -127,7 +131,7 @@ export async function fetchZcodeStartPlanQuota(
       for (const raw of pending) {
         const entitlement = asRecord(raw);
         windows.push({
-          kind: "grant", label: `${name} · ${asTrimmedString(entitlement?.["show_name"]) ?? "not started yet"}`,
+          kind: "grant", label: `${grantLabel(name)} · ${asTrimmedString(entitlement?.["show_name"]) ?? "not started yet"}`,
           accounting: "independent", modelIds: modelIds(entitlement?.["capabilities"]), startsAt,
           resetsAt: instant(plan["ends_at"]), usedPercent: null, remainingPercent: null,
           remaining: null, used: null, limit: asCoercedNumber(entitlement?.["grant_units"]) ?? null,
@@ -136,7 +140,13 @@ export async function fetchZcodeStartPlanQuota(
       }
     }
     return { source, plan: [...names].join(", ") || null, windows, error: null };
-  } catch {
-    return { source, plan: null, windows: [], error: "plan billing unreachable or unreadable" };
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+    const message = name === "TimeoutError" || name === "AbortError"
+      ? "plan billing operation timed out or was aborted"
+      : name === "SyntaxError"
+        ? "plan billing returned unreadable JSON"
+        : "plan billing network request failed";
+    return { source, plan: null, windows: [], error: message };
   }
 }

@@ -25,8 +25,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   Billing uses the account's organization and reports monthly credits,
   purchased/free balances, five-hour/weekly limits and reset times separately.
   A model entitlement refusal rests that model, not the valid account.
-- Spent or future Start Plan grants do not block unrelated models or fund
-  requests before activation. Claims refresh both cached and persisted quota.
+- Start Plan routing and dashboard availability respect grant activation,
+  expiry and model scope; alternative grants do not create a false account-wide
+  zero balance. Claims refresh both cached and persisted quota, and a daily
+  automatic pass drains eligible accounts across bounded pages.
+- Built-in Start Plan quota windows use the short Start label while preserving
+  referral grant names. Quota timeout, network and JSON failures stay distinct.
 
 ## [2.7.5] - 2026-11-02
 
