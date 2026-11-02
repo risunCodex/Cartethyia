@@ -8,10 +8,18 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — 2.7.5
+## [2.7.5] - 2026-11-02
 
 ### Added
 
+- **Quota windows are filtered by the requested model family.** Providers that
+  report separate quota per model family (Antigravity: Gemini vs Claude/GPT;
+  Grok: per-product buckets) no longer block every model when one family is
+  exhausted. A candidate's quota windows are filtered to the ones that apply
+  to the dispatched model before the usage floor / exhausted-window check, so
+  a Claude-exhausted account still routes Gemini requests (the false 429 that
+  used to fire is gone). The filter is provider-specific and falls back to all
+  windows for providers without per-family quotas.
 - **`bun run dev` now restarts the full stack on any source change.** The
   dev supervisor (`scripts/dev/supervisor.ts`) previously hot-reloaded via
   Bun's `--hot`, which swaps only the changed module — boot-time state
@@ -112,6 +120,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Postgres traffic telemetry no longer falls back to SQLite SQL.** The
+  dialect check (`isPostgres`) reported Postgres for any handle whenever the
+  process env was `CARTETHYIA_DB_MODE=full`, so a SQLite handle received
+  SQLite bucket/percentile expressions (`strftime`, `::` casts) and every
+  canonical telemetry read (chart buckets, summary percentiles, provider usage
+  matrix) failed with `unrecognized token: ":"` under a full-mode process. The
+  dialect is now the only authority (`instanceof PgDialect` plus the
+  constructor-name check — both survive minification); the env fallback is
+  gone. A regression test builds a SQLite handle while the process mode is
+  full and asserts the SQLite branch still runs.
+- **Postgres usage flush no longer emits a duplicate `VALUES` alias.** The
+  source subquery already carries its alias (`AS v(id, delta)`), and the
+  statement template appended another `v`, producing `... AS v(id, delta) v`
+  — a syntax error that silently stopped
+  `api_keys.lifetime_tokens_consumed` from ever advancing (the lifetime budget
+  reader then saw a frozen number). The source is now named once per dialect:
+  SQLite keeps the trailing alias, Postgres keeps its own.
+- **A quota-cache miss no longer erases stamped quota windows.** The
+  model-family filter routed `applyUsageFloorToCandidate` through
+  `filterCandidateQuotaWindows(cached?.quota.windows ?? [], candidate)`, so a
+  cache miss became an empty array that overwrote the candidate's carried
+  `quota_windows` (violating the miss-must-not-erase-stamp invariant). The
+  filter now runs only when a reading exists; a miss leaves the candidate's
+  windows untouched.
 - **CodeBuddy/WorkBuddy adapters close the eight wire gaps found by unpacking
   the CodeBuddy CLI 2.179.2.** The reference CLI's chat request is the
   authority, and the gateway now matches it:

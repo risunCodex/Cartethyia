@@ -40,6 +40,53 @@ import type { RedisClient } from "../../persistence/redis";
 import { sharedClaudeSlowLanes } from "../../providers/integrations/claude/claude-slow-lane";
 
 /**
+ * Filters quota windows to those relevant to the candidate model.
+ * Providers like Antigravity report separate quotas for distinct model families
+ * (Gemini vs Claude/GPT), and Grok reports per-product buckets.
+ * Evaluating a Claude exhaustion against a Gemini request would incorrectly
+ * mark the account exhausted for Gemini when Gemini capacity is still available.
+ */
+export function filterCandidateQuotaWindows(
+  windows: readonly ProviderQuotaWindow[],
+  candidate: { readonly provider_id?: string; readonly model_id?: string },
+): readonly ProviderQuotaWindow[] {
+  if (windows.length === 0) return windows;
+  const providerId = candidate.provider_id?.toLowerCase() ?? "";
+  const modelId = candidate.model_id?.toLowerCase() ?? "";
+
+  if (providerId === "antigravity") {
+    const isGemini = /gemini|tab_flash/i.test(modelId);
+    const isClaude = /claude|opus|sonnet/i.test(modelId);
+    if (isGemini) {
+      return windows.filter((w) => {
+        const text = `${w.kind} ${w.label}`.toLowerCase();
+        if (text.includes("gemini") || text.includes("google")) return true;
+        return !text.includes("claude") && !text.includes("gpt");
+      });
+    }
+    if (isClaude) {
+      return windows.filter((w) => {
+        const text = `${w.kind} ${w.label}`.toLowerCase();
+        if (text.includes("claude") || text.includes("gpt")) return true;
+        return !text.includes("gemini") && !text.includes("google");
+      });
+    }
+  }
+
+  if (providerId === "grok") {
+    return windows.filter((w) => {
+      if (w.kind.startsWith("product:")) {
+        const product = w.kind.split(":")[1]?.toLowerCase();
+        return product ? modelId.includes(product) : true;
+      }
+      return true;
+    });
+  }
+
+  return windows;
+}
+
+/**
  * True when the account's remaining allowance is at or below its provider's
  * floor. Credit mode sums the absolute remaining credit; percent mode uses the
  * aggregate credit percentage and the lowest independent percentage window.
@@ -49,9 +96,13 @@ function belowUsageFloor(state: {
   readonly usage_floor?: number;
   readonly usage_floor_unit?: "credit" | "percent";
   readonly quota_windows?: readonly unknown[] | undefined;
+  readonly provider_id?: string;
+  readonly model_id?: string;
 }): boolean {
-  const windows = state.quota_windows as readonly ProviderQuotaWindow[] | undefined;
-  if (windows === undefined || windows.length === 0) return false;
+  const rawWindows = state.quota_windows as readonly ProviderQuotaWindow[] | undefined;
+  if (rawWindows === undefined || rawWindows.length === 0) return false;
+  const windows = filterCandidateQuotaWindows(rawWindows, state);
+  if (windows.length === 0) return false;
   const credit = totalRemainingCredit(windows);
   const percent = totalRemainingPercent(windows);
   const exhaustedIndependentWindow = windows.some(
@@ -493,19 +544,23 @@ export class RoutingEngine {
     // still prefers accounts that actually have remaining credit. The snapshot
     // is never fresher than the cache, but a stale balance beats an unknown
     // one for ordering, and the sweep refreshes it on schedule.
-    let quotaWindows = cached?.quota.windows;
-    if (quotaWindows === undefined && this.db !== undefined) {
+    let rawWindows = cached?.quota.windows;
+    if (rawWindows === undefined && this.db !== undefined) {
       const snapshot = await readQuotaSnapshot(this.db, accountId).catch(() => null);
-      quotaWindows = snapshot?.quota.windows;
+      rawWindows = snapshot?.quota.windows;
     }
+    // The cache is authoritative when it has a reading; when it does not,
+    // keep whatever the candidate already carried (the credit ordering reads
+    // these windows, and a miss must not erase a stamped value).
+    const quotaWindows =
+      rawWindows === undefined
+        ? undefined
+        : filterCandidateQuotaWindows(rawWindows, candidate);
     return {
       ...candidate,
       ...(setting?.usageFloor == null
         ? {}
         : { usage_floor: setting.usageFloor, usage_floor_unit: setting.usageFloorUnit }),
-      // The cache is authoritative when it has a reading; when it does not,
-      // keep whatever the candidate already carried (the credit ordering reads
-      // these windows, and a miss must not erase a stamped value).
       ...(quotaWindows === undefined ? {} : { quota_windows: quotaWindows }),
     };
   }
