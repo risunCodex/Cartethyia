@@ -1,49 +1,81 @@
 # Proposal — Wire Dialects (pola oh-my-pi) untuk chat/messages/responses
 
-**Status:** draft untuk dibaca, belum diimplementasikan.
+**Status:** draft v2 — matang, siap dibaca & diputuskan (belum diimplementasikan).
 **Tanggal:** 2026-11-02
-**Scope:** protocol / routing / provider-catalog (backend). Dashboard & schema tidak tersentuh kecuali tercatat.
-**Pendekatan:** mengadopsi pola *wire dialect* dari `oh-my-pi` (base repo ini), bukan membuat empat protocol family HTTP terpisah.
+**Scope:** protocol / routing / provider-catalog / migration / dashboard-minimal (backend-first).
+**Pendekatan:** mengadopsi pola *wire dialect* dari `oh-my-pi` (base repo ini). Bukan empat protocol family HTTP terpisah — melainkan satu lapisan dialect di bawah `wireFamily` yang di-resolve per (provider, model).
 
 ---
 
 ## 1. Kondisi saat ini (dari kode)
 
-- `src/protocol/canonical-model.ts:15` — hanya ada satu sumbu wire:
-  `WIRE_FAMILIES = ["chat", "responses", "messages", "gemini"]`.
-- `src/protocol/registry.ts:109-128` — `loadCodec()` memilih codec per `wireFamily` (dynamic import, cache per family). Ini sudah benar: per-wire module terpisah.
-- `src/protocol/request/chat.ts:188` — `tokenLimitField` default `"max_tokens"`, option `"max_completion_tokens"`.
-- `src/protocol/request/chat.ts:227-242, 336-405` — `reasoning_content` side-channel di-hardcode di codec chat (dipakai untuk WorkBuddy/CodeBuddy dan keluarga DeepSeek-style).
-- `src/protocol/request/messages.ts:649-662` — codec Anthropic menangani `max_tokens` wajib, floor, dsb.
-- `src/protocol/dsml.ts:21-58` — sudah ada `DsmlParseOptions` (dialect CodeBuddy strict vs Qoder fuzzy): seed untuk DSL.
-- `src/protocol/translation/quirks.ts:18-46` — tabel *declarative* `ParamQuirk`/`WireTokenBound`: precedent untuk pendekatan data-driven.
-- `src/providers/integrations/deepseek.ts:33,45,54` — DeepSeek V4 masuk `wireFamily: "messages"` (endpoint `/v1/messages`, versi Anthropic).
-- `src/providers/provider-model-definition.ts:36-56` — `ModelDefinition` punya `wireFamily`, `reasoningEfforts`, `modalities`, tapi **belum ada field dialect/compat**.
-- Tidak ada konsep `DialectId` / `DialectPolicy` / `InbandScanner` yang menyeluruh; `dsml.ts` adalah satu-satunya mekanisme in-band tool-call.
+### 1.1 Sumbu wire & codec
+
+- `src/protocol/canonical-model.ts:15` — `WIRE_FAMILIES = ["chat", "responses", "messages", "gemini"]`.
+- `src/protocol/registry.ts:109-128` — `loadCodec(wireFamily)` dynamic-import per family (cache per family) → `src/protocol/request/{chat,responses,messages,gemini}.ts`.
+- `src/protocol/registry.ts:139-177` — `encodeWireRequest(wireFamily, request, context)` meneruskan `CodecContext`: `isOAuth`, `maxBytesOverride`, `supportsPromptCaching`, `chatTokenLimitField`, `maxOutputTokens`, `promptCacheKey`.
+- `src/protocol/registry.ts:192-212` — `decodeWireStream` / `decodeWireResponse` juga terima `context`.
+
+### 1.2 Titik injeksi sentral (penting)
+
+Hanya **satu** adapter yang memakai codec di jalur dispatch:
+
+- `src/providers/adapters/compatible-adapter.ts:216` — `encodeWireRequest(candidate.wire_family, effectiveRequest, {...})` di dalam `preparePayload()`.
+- `src/providers/adapters/compatible-adapter.ts:376` — `decodeWireStream(wireFamily, res.body, request, { signal })`.
+- `src/providers/provider-probe.ts:97` — `encodeWireRequest("chat", prepared, {...})` untuk probe.
+
+Artinya: injeksi policy dialect cukup di satu tempat (`OpenAICompatibleAdapter`) untuk menutup seluruh jalur runtime.
+
+### 1.3 Quirks DeepSeek/Qwen sekarang tersebar
+
+- `src/protocol/request/chat.ts:188` — `tokenLimitField` default `"max_tokens"` (option `"max_completion_tokens"`).
+- `src/protocol/request/chat.ts:227-242, 336-405` — literal `reasoning_content` di-hardcode (dipakai WorkBuddy/CodeBuddy + keluarga DeepSeek-style).
+- `src/protocol/request/chat.ts:540-551` — `max_tokens` di-clamp & di-delete dengan cara yang sama untuk semua provider.
+- `src/protocol/translation/quirks.ts:18-46` — tabel declarative `ParamQuirk`/`WireTokenBound` (precedent data-driven yang sudah ada).
+- Qwen `enable_thinking` / `chat_template_kwargs` / tolak `tools: []` tidak punya tempat intrinsik (tidak tampil sebagai field di codec chat).
+
+### 1.4 In-band tool-call: sudah ada 3 parser terpisah
+
+| File | Dialect | Dipakai oleh |
+| --- | --- | --- |
+| `src/protocol/dsml.ts` | DSML strict (CodeBuddy) + fuzzy (Qoder) — `DsmlStreamParser`, `DsmlParseOptions` | `src/protocol/response/dsml.ts` |
+| `src/protocol/response/dsml.ts` | wrapper `DsmlToolCallParser` | `src/protocol/response/chat.ts:13,86,272` |
+| `src/protocol/response/omp-tool-call-markup.ts` | markup `calltool_calls:8hex>` (OMP) — `OmpToolCallMarkupParser` | `src/protocol/response/chat.ts:15,58,81,268-270` |
+
+`src/protocol/response/chat.ts` adalah satu-satunya konsumen runtime. Belum ada `<tool_call>` Qwen dan belum ada renderer untuk membangun ulang prompt.
+
+### 1.5 Catalog & routing
+
+- `src/providers/provider-model-definition.ts:36-56` — `ModelDefinition` punya `wireFamily`, `reasoningEfforts`, `modalities`; **belum ada field dialect**.
+- `src/providers/operations/provider-catalog-seeder.ts:77` — `db.insert(models).values(rows).onConflictDoUpdate(...)`; `src/providers/discovery/probing-service.ts:925` juga insert `models`. ModelDefinition → row `models`.
+- `src/transport/routing/route-catalog.ts:308-325` — `MODEL_COLUMNS` memproyeksikan `models` ke kandidat; `RouteCandidate` membawa `wireFamily` (baris 248, 272, 723-835).
+- `src/providers/integrations/deepseek.ts:33,45,54` — DeepSeek V4: `wireFamily: "messages"`, endpoint `/v1/messages` (versi Anthropic).
+- `models` table saat ini: `id, provider_id, model_id, wire_family, service_kind, endpoint_path, context_limit, output_limit, modalities, reasoning, tool_call, cost, source, source_updated_at, enabled, pro_only, free_tier` — **tidak ada kolom dialect**.
+- Migration terakhir: `0039_add_telemetry_provider_model_indexes.sql` (lite & full). Berikutnya: `0040`.
+
+---
 
 ## 2. Masalah yang diminta diatasi
 
 1. **Canonical rapuh saat dipaksa general.** Quirks keluarga (DeepSeek `reasoning_content`, `max_tokens`; Qwen `enable_thinking`/`chat_template_kwargs`/tolak `tools:[]`; strip special-token DSML) tidak punya tempat intrinsik → berubah jadi `if (providerId===…)` berserakan di dalam codec generik.
-2. **DeepSeek & Qwen bukan family transport baru.** Keduanya adalah dialect dari OpenAI-compatible (chat), kecuali DeepSeek anthropic-endpoint (messages). Memaksa mereka jadi `wireFamily` baru akan melipatgandakan codec.
-3. **In-band tool-call (DSML / `<tool_call>` Qwen) ditangani ad-hoc**, hanya recovery parsial (`dsml.ts`), tanpa renderer untuk membangun ulang prompt & tanpa scanner generik.
-4. **Transisi antar-provider bisa lossy** (pivot 2-hop), persis yang dihindari 9router lewat direct route.
+2. **DeepSeek & Qwen bukan family transport baru.** Keduanya dialect dari OpenAI-compatible (`chat`), kecuali DeepSeek anthropic-endpoint (`messages`). Menjadikannya `wireFamily` baru akan melipatgandakan codec & kolom `models.wire_family` (dan konsol validator/dashboard).
+3. **In-band tool-call ditangani ad-hoc.** Tiga parser terpisah (`dsml.ts`, `response/dsml.ts`, `omp-tool-call-markup.ts`) tanpa antarmuka bersama & tanpa renderer; Qwen `<tool_call>` belum ada.
+4. **Transisi antar-provider bisa lossy** (pivot 2-hop via canonical), persis yang dihindari 9router lewat direct route.
+
+---
 
 ## 3. Desain yang diusulkan
 
-Mengadopsi tiga pola utama oh-my-pi, dengan penyesuaian terhadap struktur Cartethyia.
-
-### 3.1 `DialectId` + `DialectPolicy` (resolved compat object)
-
-Tambahkan lapisan di bawah `wireFamily`, tidak menggantikannya:
+### 3.1 Tipe inti
 
 ```ts
 // src/protocol/translation/dialect/types.ts (baru)
 export type DialectId =
-  | "chat-default"      // OpenAI-compatible generik
-  | "deepseek"          // DSML + reasoning_content + max_tokens + strip tokens
-  | "qwen"              // enable_thinking + <tool_call> + strict chat template
-  | "claude"            // Anthropic messages (default utk wireFamily messages)
-  | "kimi" | "glm" | "minimax" | "gemini"; // extensible
+  | "chat-default"   // OpenAI-compatible generik (default wire chat)
+  | "deepseek"       // DSML + reasoning_content + max_tokens + strip tokens
+  | "qwen"           // enable_thinking + <tool_call> + strict chat template
+  | "claude"         // Anthropic messages (default wire messages)
+  | "kimi" | "glm" | "minimax" | "gemini"; // extensibel
 
 export interface DialectPolicy {
   readonly reasoningContentField?: "reasoning_content" | "reasoning" | "reasoning_text";
@@ -54,33 +86,62 @@ export interface DialectPolicy {
   readonly requiresAssistantContentForToolCalls: boolean;
   readonly allowsSyntheticReasoningContent: boolean;
   readonly thinkingFormat: "openai" | "qwen" | "deepseek" | "chat-template";
-  readonly inband: DialectId | null; // tool-call codec aktif, atau null = structured only
+  readonly inband: DialectId | null; // codec tool-call aktif; null = structured only
 }
 ```
 
-**Resolver** (mirip `detectOpenAICompat` omp): `resolveDialect(modelId, providerId, wireFamily) → DialectPolicy`. Sumber: table statis mirip `quirks.ts` (bukan KDL — repo tidak punya build-step KDL; TS table adalah precedent paling dekat). Fallback:
+### 3.2 Resolver (pure, selalu return policy)
 
-- `wireFamily === "messages"` → `claude`.
-- `providerId === "deepseek"` → `deepseek` (dengan varian: endpoint messages → tetap policy deepseek, tapi di-apply di codec messages).
-- `modelId` match qwen/portal/alibaba → `qwen`.
-- sisanya → `chat-default`.
+```ts
+// src/protocol/translation/dialect/resolver.ts (baru)
+export function resolveDialect(
+  modelId: string,
+  providerId: string,
+  wireFamily: WireFamily,
+  override?: DialectId | null,   // dari models.dialect (DB) — menang
+): DialectPolicy
+```
 
-### 3.2 Codec membaca `DialectPolicy`, bukan hardcode
+- Precedence: **override DB** → **eksplisit `ModelDefinition.dialect`** → **heuristic** (table statis mirip `quirks.ts`) → **default family** (`claude` utk messages, `chat-default` utk chat/responses).
+- Table statis `DIALECT_RULES` (bukan KDL — repo tidak punya build-step; `quirks.ts` adalah precedent). Contoh baris:
 
-`src/protocol/request/chat.ts` (dan `messages.ts` untuk DeepSeek anthropic) menerima `policy: DialectPolicy` via `CodecContext`/options:
+```ts
+{ match: { providerId: "deepseek" }, dialect: "deepseek" },
+{ match: { modelId: /qwen|portal|alibaba|qwq/i }, dialect: "qwen" },
+```
 
+- Resolver **tidak pernah throw**: selalu mengembalikan policy (fallback aman).
+
+### 3.3 Aliran runtime (satu titik injeksi)
+
+```
+models.dialect (0040) → MODEL_COLUMNS → RouteCandidate.dialect
+                              │
+OpenAICompatibleAdapter.preparePayload (compatible-adapter.ts:216)
+   policy = resolveDialect(candidate.model_id, candidate.provider_id,
+                           candidate.wire_family, candidate.dialect)
+   encodeWireRequest(wireFamily, request, { ...context, dialectPolicy: policy })
+                              │
+registry.ts → codec {chat|messages|responses} membaca options.dialectPolicy
+```
+
+`decodeWireStream` (compatible-adapter.ts:376) menerima `context.dialectPolicy` sama — scanner in-band & strip special-token dipakai di sisi decode. Probe (`provider-probe.ts:97`) ikut meneruskan policy.
+
+### 3.4 Perubahan codec
+
+**`src/protocol/request/chat.ts`**
 - `reasoningContentField` menggantikan literal `reasoning_content` (baris 242, 336, 405).
 - `maxTokensField` menggantikan literal `"max_tokens"` (baris 188, 540-551).
-- `stripSpecialTokens` mengaktifkan pembersihan DSML/special-token di stream (di `decodeWireStream` chat).
-- `supportsMultipleSystemMessages=false` (Qwen) → collapse system jadi satu.
-- `supportsToolChoice=false` (DeepSeek) → drop `tool_choice`.
-- `requiresAssistantContentForToolCalls` / `allowsSyntheticReasoningContent` → perilaku reasoning saat tool-call turn (eksplisit dari DeepSeek V4).
+- `supportsToolChoice=false` (DeepSeek) → drop `tool_choice` dari payload.
+- `supportsMultipleSystemMessages=false` (Qwen) → collapse beberapa `system` jadi satu.
+- `requiresAssistantContentForToolCalls` / `allowsSyntheticReasoningContent` → kebijakan reasoning saat tool-call turn (DeepSeek V4).
+- `policy.inband != null` → aktifkan scanner di `decodeWireStream` (lihat 3.5).
 
-Poin kunci: **codec tidak lagi menebak dari `providerId`**, ia membaca policy hasil resolve — persis `OpenAICompatPolicy` omp.
+**`src/protocol/request/messages.ts`** — DeepSeek anthropic-endpoint: policy `deepseek` diterapkan di wire messages (konten reasoning di assistant, `max_tokens`, dsb). `claude` tetap default messages.
 
-### 3.3 `DialectDefinition` + `InbandScanner` (in-band tool-call codec)
+**`src/protocol/request/responses.ts`** — baca `reasoningContentField`/`maxTokensField` (minor).
 
-Upgrade `dsml.ts` menjadi codec penuh (pola `DialectDefinition` omp):
+### 3.5 In-band tool-call: `DialectDefinition` + `InbandScanner` + konsolidasi
 
 ```ts
 // src/protocol/translation/dialect/inband.ts (baru)
@@ -90,7 +151,6 @@ export interface InbandScanner {
 }
 export interface DialectDefinition {
   readonly dialect: DialectId;
-  readonly prompt: string;
   createScanner(options?: InbandScannerOptions): InbandScanner;
   renderToolCall(call: ToolCall): string;
   renderAssistantToolCalls(calls: readonly ToolCall[]): string;
@@ -99,69 +159,133 @@ export interface DialectDefinition {
 }
 ```
 
-- `deepseek.ts`: DSML (`<｜DSML｜ calls>` dll) + legacy `<｜tool_calls_begin｜>` + `<think>` — re-use `src/protocol/dsml.ts` engine.
-- `qwen.ts`: `<tool_call>` JSON + `<think>` + `enable_thinking`.
-- `chat-default.ts`: structured-only (scanner kosong).
-- Dipasang di **decodeWireStream chat/messages** (scan ke `CanonicalEvent`) dan di **encode** (renderer untuk prompt replay) — sama seperti `InbandScanner` omp dipasang di stream.
+- `deepseek.ts` — engine dari `src/protocol/dsml.ts` (strict + fuzzy) + markup `<tool_calls:8hex>` dari `omp-tool-call-markup.ts` + legacy `<｜tool_calls_begin｜>` + `<think>`.
+- `qwen.ts` — `<tool_call>` JSON + `<think>` + `enable_thinking`/`chat_template_kwargs` (renderer & scanner).
+- `chat-default.ts` — structured-only (scanner kosong).
+- **Konsolidasi:** `src/protocol/response/chat.ts` (baris 13-16, 58, 81, 86, 268-272) dialihkan ke registry `DialectDefinition`; file lama `src/protocol/dsml.ts`, `src/protocol/response/dsml.ts`, `src/protocol/response/omp-tool-call-markup.ts` dihapus setelah cutover (tanpa alias — sesuai aturan repo). Pemakai hanya `response/chat.ts`, jadi blast radius kecil.
 
-### 3.4 Direct route antar pasangan rapuh (pola 9router)
+### 3.6 Direct translation route (pola 9router)
 
-`src/protocol/registry.ts` saat ini hanya memilih codec per family. Tambahkan mekanisme *translation route*:
+`src/protocol/registry.ts` tetap memilih codec per family. Tambahkan map terdaftar:
 
 ```ts
-// registry: translateRequest(sourceWire, targetWire, body) 
-// 1) coba direct route `${source}:${target}`
-// 2) fallback: source → openai → target (pivot)
+// registry: translateWireRequest(sourceFamily, targetFamily, payload)
+// 1) direct route `${source}:${target}` bila ada
+// 2) fallback: pivot via canonical
 ```
 
-Didaftarkan hanya untuk pasangan yang terbukti lossy lewat pivot (contoh: `messages → chat` dengan thinking/DSML; `responses → chat`). Default tetap pivot 2-hop; direct route adalah override terdaftar.
+- Didaftarkan hanya untuk pasangan yang terbukti lossy lewat canonical: mulai `messages:chat` & `responses:chat` (thinking/DSML/tool pairing).
+- Default tetap pivot canonical; direct route adalah override terdaftar.
 
-### 3.5 `providerPayload`/`providerMetadata` side-channel (preservasi native)
+### 3.7 Side-channel provider-native
 
-Verifikasi di `src/protocol/canonical-model.ts`: `CanonicalEvent` **belum punya slot `providerPayload` generik**. Yang sudah ada:
+Verifikasi di `src/protocol/canonical-model.ts`: `CanonicalEvent` **belum punya slot generik**. Yang ada:
+- `ContentPart` `extension` (`:320`) — `{ kind: "extension"; name; payload }`.
+- `ConversationState.provider_state` (`:508`).
 
-- `ContentPart` `extension` (`canonical-model.ts:320`) — `{ kind: "extension"; name; payload }`, bisa membawa data native per part.
-- `ConversationState.provider_state` (`canonical-model.ts:508`) — untuk state stateful/opaque.
+**Rekomendasi:** tanpa field baru di `CanonicalEvent`. Pakai `ContentPart.extension` untuk payload native per part (mis. `reasoning_content` raw, DSML raw) & `ConversationState` utk state; strip saat cross-provider, pertahankan saat same-provider. Tambah field event-level hanya jika nanti terbukti perlu.
 
-Rekomendasi phase 1: **jangan menambah field baru ke `CanonicalEvent`**. Gunakan `ContentPart.extension` untuk payload native per part (mis. `reasoning_content` raw, DSML raw) dan `ConversationState` untuk state; field di-strip saat cross-provider, dipertahankan saat same-provider. Kalau nanti terbukti butuh slot event-level, tambah field opsional saat itu — bukan sekarang.
+---
 
 ## 4. File yang tersentuh
 
 | Area | File |
 | --- | --- |
-| Tipe dialect + policy | `src/protocol/translation/dialect/types.ts` (baru) |
-| Resolver | `src/protocol/translation/dialect/resolver.ts` (baru) |
-| Codec in-band | `src/protocol/translation/dialect/deepseek.ts`, `qwen.ts`, `chat-default.ts`, `inband.ts` (baru); `src/protocol/dsml.ts` direfactor/dipakai ulang |
-| Codec chat | `src/protocol/request/chat.ts` (baca policy) |
-| Codec messages | `src/protocol/request/messages.ts` (baca policy utk DeepSeek anthropic) |
-| Codec responses | `src/protocol/request/responses.ts` (baca policy) |
-| Registry | `src/protocol/registry.ts` (teruskan policy; tambah direct-route map) |
-| Canonical model | `src/protocol/canonical-model.ts` (`providerPayload`/`providerMetadata` sudah ada? verifikasi; tambah kalau perlu) |
-| Catalog | `src/providers/provider-model-definition.ts` (field optional `dialect?: DialectId`); `src/providers/integrations/deepseek.ts`, `dashscope-models.ts` (set dialect eksplisit) |
-| Quirks | `src/protocol/translation/quirks.ts` (tetap; bisa jadi sumber data awal resolver) |
-| Tes | `test/protocol/dialect*.test.ts`, `test/protocol/request/chat-dialect.test.ts`, matrix round-trip (pola `tests/translator/matrix.js` 9router) |
+| Tipe + policy | `src/protocol/translation/dialect/types.ts` (baru) |
+| Resolver + rules | `src/protocol/translation/dialect/resolver.ts`, `rules.ts` (baru) |
+| In-band codec | `src/protocol/translation/dialect/inband.ts`, `deepseek.ts`, `qwen.ts`, `chat-default.ts` (baru) |
+| Konsolidasi lama | hapus `src/protocol/dsml.ts`, `src/protocol/response/dsml.ts`, `src/protocol/response/omp-tool-call-markup.ts`; retarget `src/protocol/response/chat.ts` |
+| Codec | `src/protocol/request/chat.ts`, `messages.ts`, `responses.ts` |
+| Registry | `src/protocol/registry.ts` — `CodecContext.dialectPolicy`, teruskan ke codec; direct-route map |
+| Adapter | `src/providers/adapters/compatible-adapter.ts` — resolve+inject di `preparePayload`/`decodeWireStream` |
+| Probe | `src/providers/provider-probe.ts` — teruskan policy |
+| Catalog | `src/providers/provider-model-definition.ts` (field opsional `dialect?`); `src/providers/integrations/deepseek.ts`, `dashscope-models.ts` (set dialect) |
+| Routing | `src/transport/routing/route-catalog.ts` — `MODEL_COLUMNS` + `RouteCandidate.dialect` |
+| Persistence | `src/persistence/schema.ts` (models.dialect); seeder `src/providers/operations/provider-catalog-seeder.ts`, `src/providers/discovery/probing-service.ts` |
+| Migration | `migrations/lite-sqlite3/0040_add_models_dialect.sql`, `migrations/full-postgres/0040_add_models_dialect.sql` |
+| Dashboard (minimal) | `dashboard/src/features/providers/ProvidersPage.tsx` / Models — badge read-only dialect |
+| Tes | `test/protocol/dialect*.test.ts`, `test/protocol/request/chat-dialect.test.ts`, `test/protocol/request/messages-deepseek.test.ts`, `test/providers/model-sync-without-account.test.ts` (migration), matrix round-trip |
+
+---
 
 ## 5. Migrasi & risk
 
-- **Tanpa migration DB.** `wireFamily` tetap; hanya bertambah field opsional `dialect` di `ModelDefinition`/catalog (tidak wajib; resolver punya fallback). `WIRE_FAMILIES` tidak berubah → console schema/validator tidak perlu disentuh.
-- **Default off / backward compatible:** jika `dialect` tidak di-set, resolver fallback ke perilaku hari ini (`chat-default`/`claude`). Tidak ada perubahan observable sampai suatu model men-set dialect atau resolver memetakannya.
-- **Risk & mitigation:**
-  - *Regresi wire chat* → golden tests per bentuk request (reasoning, tool, system, max_tokens) sebelum/sesudah refactor; assert payload identik untuk `chat-default`.
-  - *DSML scanner aktif di tempat yang salah* → scanner hanya aktif ketika `policy.inband` non-null; mati untuk `chat-default`.
-  - *DeepSeek anthropic endpoint salah policy* → test khusus `messages` + provider deepseek (reasoning_content & max_tokens di wire messages).
-  - *Double handling reasoning_content* (chat & messages) → satu sumber: `policy.reasoningContentField`.
-- **Test list:**
-  1. Unit: `resolveDialect` mapping (deepseek/qwen/claude/default).
-  2. Golden: `canonicalToChatPayload` dengan policy deepseek → `reasoning_content` + `max_tokens`; policy qwen → `enable_thinking` + satu system + tanpa `tools:[]`; default → payload hari ini byte-identik.
-  3. Round-trip: chat→messages→chat (tool, thinking, image) tidak kehilangan field.
-  4. Stream: DSML & `<tool_call>` Qwen di-parse jadi `CanonicalEvent` (toolCall), sisa teks bersih.
-  5. Regression: full backend suite (target `bun run test:backend`).
+### 5.1 Migration `0040` (lite & full)
 
-## 6. Pertanyaan terbuka
+```sql
+-- lite-sqlite3/0040_add_models_dialect.sql
+ALTER TABLE "models" ADD COLUMN "dialect" TEXT;
+```
 
-1. **Scope phase 1:** mulai dari `chat` saja (deepseek+qwen via chat), atau sekaligus `messages` (DeepSeek anthropic endpoint)? Rekomendasi: **chat dulu**, messages menyusul — chat adalah mayoritas provider & paling banyak if-branches.
-2. **Sumber kebenaran policy:** table TS statis (mirip `quirks.ts`) vs KDL rules (pola omp persis). Rekomendasi: **TS table** — tidak perlu build-step baru, dan `quirks.ts` sudah precedent.
-3. **Lokasi direktori:** `src/protocol/translation/dialect/` (dekat quirks/normalize) vs `src/protocol/dialect/`. Rekomendasi: **translation/dialect/**.
-4. **Field `dialect` di ModelDefinition** diperbolehkan & bersifat opsional, atau murni resolver berbasis id? Rekomendasi: **opsional di ModelDefinition + fallback resolver** (eksplisit menang, heuristic menebak).
-5. **Direct route:** daftarkan pasangan awal mana? Rekomendasi mulai dari `messages:chat` (pivot paling umum dipakai untuk DeepSeek anthropic → model chat) & `responses:chat`.
-6. **providerPayload:** sudah terverifikasi — `CanonicalEvent` belum punya slot generik; gunakan `ContentPart.extension` + `ConversationState.provider_state` (lihat §3.5). Perlu keputusan: cukup itu, atau nanti tambah field event-level kalau terbukti perlu.
+```sql
+-- full-postgres/0040_add_models_dialect.sql
+ALTER TABLE "models" ADD COLUMN "dialect" TEXT;
+```
+
+- `NULL` = resolver fallback (default aman). Tidak ada backfill wajib; `NULL` justru default.
+- `models.dialect` dibaca `MODEL_COLUMNS` → `RouteCandidate.dialect` → override resolver.
+- Dashboard `ProvidersPage.tsx:52` tetap `["chat","responses","messages"]` — tidak berubah (kita tidak menambah family).
+
+### 5.2 Default off / backward compatible
+
+- Tanpa `dialect` diset/diresolve → policy sama dengan perilaku hari ini (`chat-default`/`claude`). Payload byte-identik (dibuktikan golden test P0).
+- `ModelDefinition.dialect` opsional; resolver heuristic hanya menebak saat tidak ada override.
+
+### 5.3 Guard tiap jalur baru
+
+- `resolveDialect` pure, selalu return, tidak pernah throw.
+- Scanner in-band hanya aktif ketika `policy.inband != null`; `chat-default` tidak pernah mengaktifkan.
+- Strip special-token hanya untuk `policy.stripSpecialTokens === "deepseek"`.
+- Direct route hanya untuk pasangan terdaftar; selain itu pivot canonical.
+- `CodecContext.dialectPolicy` opsional — codec yang belum menerima policy tetap berjalan (fallback ke literal lama sampai port selesai).
+
+### 5.4 Risk & mitigation
+
+| Risk | Mitigasi |
+| --- | --- |
+| Regresi wire chat | Golden payload P0 (byte-identik) utk default; run full suite |
+| `reasoning_content` dobel handling | Satu sumber: `policy.reasoningContentField` |
+| Scanner aktif di tempat salah | Gate `policy.inband != null` |
+| DeepSeek anthropic salah policy | Test khusus `messages` + provider deepseek |
+| Konsolidasi parser pecah | Retarget hanya `response/chat.ts`; pindahkan test parser lama ke test dialect |
+| Migration pecah di salah satu dialect | Test sqlite-type-parity & boot/migrate (sudah ada di suite) |
+
+### 5.5 Test matrix
+
+1. **Unit resolver:** `resolveDialect` mapping (deepseek/qwen/claude/default), precedence override DB > ModelDefinition > heuristic > default.
+2. **Golden default:** `canonicalToChatPayload` policy `chat-default` → payload **byte-identik** dengan hari ini (tool, reasoning, system, max_tokens).
+3. **Golden DeepSeek (chat):** `reasoning_content` + `max_tokens` + drop `tool_choice` + `requiresAssistantContentForToolCalls`; strip `stripDeepseekSpecialTokens` di stream.
+4. **Golden Qwen:** `enable_thinking` + `thinking_budget` + satu system + tanpa `tools: []`.
+5. **Round-trip:** chat→messages→chat (tool, thinking, image) tidak kehilangan field (matrix ala `tests/translator/matrix.js` 9router).
+6. **Stream in-band:** parse DSML strict & fuzzy; parse Qwen `<tool_call>`; sisa teks bersih; nama tool undeclared tidak di-promote.
+7. **Direct route:** `messages:chat` dengan thinking & DSML → payload target benar.
+8. **Migration:** `0040` diterapkan ke lite & full; `NULL` terserap resolver; model-sync tanpa account tetap hijau.
+9. **Regression:** `bun run test:backend` hijau.
+
+---
+
+## 6. Fase implementasi (matang, berurutan)
+
+| Fase | Isi | Bukti keluar |
+| --- | --- | --- |
+| P0 | Capture golden payload hari ini (chat/messages/responses: tool, reasoning, system, max_tokens, stream) | test golden commit ke repo |
+| P1 | `types.ts` + `resolver.ts` + `CodecContext.dialectPolicy` + registry + adapter inject (default = existing) | full suite hijau; payload masih identik |
+| P2 | Migration `0040` + `ModelDefinition.dialect` + seeder/probing + `MODEL_COLUMNS` + `RouteCandidate.dialect` | migration test + model-sync test |
+| P3 | `chat.ts` baca policy (deepseek/qwen behavior), `responses.ts` minor | golden chat/deepseek/qwen |
+| P4 | `inband.ts` + `deepseek.ts` + `qwen.ts` + konsolidasi & hapus parser lama | stream in-band tests |
+| P5 | `messages.ts` deepseek + direct translation route | round-trip + direct route tests |
+| P6 | Dashboard badge read-only; telemetry opsional (lihat open questions) | dashboard build/typecheck |
+| P7 | Test matrix penuh + verifikasi live gateway per provider (deepseek, qwen, claude, chat default) | laporan verifikasi |
+
+> Catatan: P2 boleh maju sebelum P3 — urutan hanya memudahkan review; yang tidak boleh dilanggar adalah **default-off** sampai P3.
+
+---
+
+## 7. Pertanyaan terbuka (dengan rekomendasi)
+
+1. **Mode dashboard:** read-only badge (P6) vs editor untuk override dialect per model? Rekomendasi: **read-only dulu**; editor menyusul (perlu route console + kontrak).
+2. **Telemetry:** tambah kolom `dialect` di `telemetry_events` sekarang? Rekomendasi: **nanti** — phase ini cukup memakai payload capture & log warn saat fallback berubah.
+3. **Nama kolom:** `dialect` vs `dialect_id`? Rekomendasi: **`dialect`** (nilai string `DialectId`).
+4. **Wajibkah `ModelDefinition.dialect` untuk provider baru?** Rekomendasi: **opsional**, resolver fallback menangani.
+5. **Scope `gemini` wire:** ikut dialect? Rekomendasi: **belum** — Gemini sudah punya codec sendiri; cukup `chat`/`messages`/`responses` pada fase ini.
+6. **Kinerja:** cache resolver per `(modelId, providerId, wireFamily, override)`? Rekomendasi: **ya**, Map kecil + invalidate per snapshot revision.
