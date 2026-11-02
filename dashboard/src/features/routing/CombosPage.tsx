@@ -1,5 +1,5 @@
 import { ArrowRight, Copy, CopyPlus, Image as ImageIcon, Layers, Pencil, Plus, Route, Search, Trash2, X } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "../../components/ui/button";
 import { Card, CardBody, CardHeader } from "../../components/ui/card";
 import { Dialog } from "../../components/ui/dialog";
@@ -314,15 +314,22 @@ function isVisionModel(entry: FlatModelEntry): boolean {
  * legacy `[image]` placeholder behavior. The list is ordered by dragging, and
  * the picker only offers image-capable chat models.
  */
-function VisionHandoffSection(): ReactNode {
+export function VisionHandoffSection(): ReactNode {
   const settingsQuery = useRuntimeSettings();
   const mutation = useUpdateRuntimeSettings();
   const [pickerOpen, setPickerOpen] = useState(false);
   const settings = settingsQuery.data;
   const models = settings?.visionHandoffModels ?? [];
-  const [list, setList] = useState<readonly { id: string; value: string }[]>(() =>
-    models.map((value) => ({ id: `v${value}`, value })),
-  );
+  // Mirrors the server setting. Deliberately not a `useState` initializer: the
+  // settings query can resolve after mount (cold cache), and freezing the list
+  // on the first render kept a just-saved model invisible until a hard refresh.
+  // Re-syncing on every settings change keeps local order authoritative while
+  // still reflecting the persisted list once it arrives.
+  const [list, setList] = useState<readonly { id: string; value: string }[]>([]);
+  useEffect(() => {
+    setList(models.map((value) => ({ id: `v${value}`, value })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings]);
 
   const save = (
     patch: UpdateRuntimeSettingsRequest,

@@ -110,6 +110,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   with sort/select pinned to the right edge. The search no longer stretches
   full width on desktop, and the row wraps cleanly on narrow viewports with no
   empty gutter.
+- **Vision handoff models appear immediately after saving.** The card's model
+  list is now kept in sync with the runtime-settings query after it resolves
+  (cold cache), so a just-saved model is visible without a hard refresh — the
+  previous initializer froze the list on first render while the query could
+  still be loading.
 - **Gateway-signed model test asks for a real sample.** The provider detail
   "Test" button now sends a 256-token budget and a prompt asking the model to
   identify itself and its knowledge cutoff, producing a useful sample instead of
