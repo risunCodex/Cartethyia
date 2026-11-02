@@ -169,6 +169,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Vision handoff no longer forwards a giant session to the main model.** A
+  handoff on a large CLI session (700+ tool-result turns, multi-megabyte body)
+  replaced the image parts but still sent the whole transcript — including
+  hundreds of tool results — to the text-only model verbatim. Upstreams reset
+  or reject such payloads (502/ECONNRESET) even though the handoff only needs
+  to describe the attached image, appearing as "broken on large sessions"
+  (small fresh chats worked). The handoff now condenses the request first: for
+  a huge session it keeps only the system prompt plus the active
+  image-carrying turn; small requests pass through untouched. The description
+  is also explicitly framed as an automated vision-model description, so the
+  main model no longer treats it as prose the user typed.
 - **Postgres traffic telemetry no longer falls back to SQLite SQL.** The
   dialect check (`isPostgres`) reported Postgres for any handle whenever the
   process env was `CARTETHYIA_DB_MODE=full`, so a SQLite handle received
