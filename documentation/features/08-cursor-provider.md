@@ -107,8 +107,9 @@ symptom the stability exists to avoid.
 
 ## Known gaps
 
-- No quota collector: no Cursor quota endpoint is established by the donor or by
-  the API evidence, and inventing one would publish a balance this gateway cannot
-  measure.
+- Quota collector exists (`src/providers/integrations/cursor/cursor-quota.ts`,
+  registered in `default-registry.ts`): it reads `/auth/usage` and
+  `/api/usage-summary`. It was absent at the time this doc was first written;
+  it is present now.
 - The catalog is live discovery only — the roster is per-account and per-plan,
   and Cursor declares each model's capabilities, so there is no static floor.

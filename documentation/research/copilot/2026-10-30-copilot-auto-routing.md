@@ -1,4 +1,4 @@
-﻿# Copilot Auto routing â€” VS Code 1.144.0
+﻿# Copilot Auto routing — VS Code 1.144.0
 
 Static trace of the supplied `VSCodeUserSetup-x64-1.144.0.exe`. The installer
 was unpacked, never executed. This is a new current-build note; the
@@ -59,9 +59,9 @@ values and aliases:
 | `balance` | Balance | Accepted tier; general fallback |
 | `intelligence` | Intelligence | Accepted tier |
 | `fast` | Fast | Accepted for managed/session routing and tier override; not in the explicit user-selectable tier set |
-| `eco` | â€” | Normalized to `efficiency` |
-| `balanced` | â€” | Normalized to `balance` |
-| `max` | â€” | Normalized to `intelligence` |
+| `eco` | — | Normalized to `efficiency` |
+| `balanced` | — | Normalized to `balance` |
+| `max` | — | Normalized to `intelligence` |
 
 In that bundle, **Optimize for** exposes the first three values; `fast` is an
 additional routing value. For unconfigured requests, the resolver selects

@@ -91,9 +91,9 @@ own wire says so on its metadata, not in the enum.
 `InMemoryRouteSnapshotService` builds one frozen snapshot: candidates, aliases,
 combos, provider routing, and pool routing. A console mutation calls `invalidate()`,
 which bumps the revision and drops the cache. The next request rebuilds. The
-mutation itself does not wait for the eleven database reads a rebuild issues
+mutation itself does not wait for the thirteen database reads a rebuild issues
 (providers, models, accounts, aliases, combos, provider and pool routing
-settings, disabled models, and the two CLI mapping tables).
+settings, disabled models, and the two CLI mapping tables, plus pool settings).
 
 `RoutingEngine` turns a requested model into a `RoutePlan`. A bare name matches
 `model_id`. A `provider/model` name matches both. Alias and combo lookup happen
@@ -129,33 +129,30 @@ threshold; a missing reading remains unknown rather than exhausted. See
 
 ```mermaid
 flowchart LR
-  req[\"request\"] --> file[\"data/telemetry-events/<day>.events.jsonl\"]
-  file --> index[\"data/telemetry-events/<day>.index.json\"]
+  req[\"request\"] --> writer[\"hourly JSONL per writer\"]
+  writer --> files[\"data/telemetry-events/<hourStamp>-<writer>.jsonl\"]
+  req --> db[\"telemetry_events (SQL)\"]
   req --> totals[\"telemetry_usage_totals\"]
-  req --> payload[\"telemetry_payloads index\"]
+  req --> payload[\"telemetry_payloads\"]
   payload --> frames[\"payload frame files\"]
-  console[\"usage, breakdown, chart\"] --> index
-  console[\"request list, detail\"] --> file
+  console[\"usage, breakdown, chart\"] --> db
+  console[\"request list, detail\"] --> files
   console --> totals
 ```
 
-Per-request events are appended to one file per UTC day —
-`<YYYY-MM-DD>.events.jsonl` — not rows in `telemetry_events`. The day file is
-append-only and is never rewritten while the day is open.
+Per-request events are written to hourly JSONL files, one per writer —
+`<YYYY-MM-DDTHH>-<writerUUID>.jsonl` — and the same events are also stored as
+rows in the `telemetry_events` SQL table. The JSONL files are append-only while
+their hour is open.
 
-Beside it, `<YYYY-MM-DD>.index.json` carries the running totals, the per-name
-breakdown sums, per-hour slots, and a byte watermark of how much of the event
-file has been folded in. Usage totals, the breakdown, and the traffic chart
-read **the index**; only the request list and the detail drawer read the event
-file, and they read backwards from its tail in blocks. A usage query therefore
-costs a few small JSON reads rather than a parse of the whole period, and its
-cost does not grow with traffic.
+Usage totals, the breakdown, and the traffic chart read the **SQL**
+`telemetry_events` / `telemetry_usage_totals` tables via `event-query.ts`; the
+request list and the detail drawer read the JSONL frame files. There is no
+`.index.json` companion and no byte-watermark folding — the analytics source is
+the SQL table, and the JSONL files are raw retention/audit frames.
 
-Folding is incremental and idempotent, driven by the watermark rather than by
-comparing file names. An unterminated line — one the writer may still be
-appending to — is left for the next pass instead of counted.
-
-Retention deletes whole days, the event file and its index together.
+Retention prunes hourly JSONL files and SQL rows by hour age
+(`telemetry-store.ts`), not whole days as a file/index pair.
 
 The database keeps lifetime totals and a short-lived payload index. Payload
 bodies are files. The payload index stores `storage`, `file`, `offset`,

@@ -89,8 +89,8 @@ filtered out of the plain checkbox list so the two halves cannot drift.
 file assembles every other key patch, so a key whose only change is the label
 still goes through it.
 
-Only `claude` has `mappingMode: "remote"` in `TOOL_REGISTRY`. Expand the
-`REMOTE_CLI_TOOL_UA` list in `src/security/cli-client-fingerprint.ts` when
+`claude` and `codex` use `mappingMode: "remote"` in `TOOL_REGISTRY`. Expand
+the `REMOTE_CLI_TOOL_UA` list in `src/security/cli-client-fingerprint.ts` when
 another tool gains a mapping table.
 
 ## Failure shape

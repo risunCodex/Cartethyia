@@ -38,7 +38,7 @@ No binaries were executed.
 | `X-Qoder-Remote-Protocol-Version` (line 86733) | not sent |
 | `X-Model-Name` (line 85716) | adapter sends `x-model-key` / `x-model-source` instead (different name) |
 | `Cosy-MachineCode` (line 85929) | only in `qoder-checkin` (UMID); not merged into chat dispatch |
-| `Cosy-MachineHostname` (line 86179) | only in `qoder-checkin` (UMID); not merged into chat dispatch |
+| `Cosy-MachineHostname` (line 86179) | sent in chat dispatch (`qoder.ts:1152`, `qoderMachineHostname()`); also used by `qoder-checkin` |
 | `Content-Length` | native sets it explicitly (`Content-Length: %v`, line 86306); adapter lets `fetch` set it — functionally equivalent |
 
 Non-issue: native header casing is PascalCase (`Cosy-Key`, `Cosy-User`,

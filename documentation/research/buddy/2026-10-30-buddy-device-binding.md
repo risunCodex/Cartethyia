@@ -3,9 +3,9 @@
 Buddy-family providers (`cb`, `cbcn`, `workbuddy`, `workbuddycn`) carry two
 device-identity headers on desktop chat traffic:
 
-- `X-Device-Token` â€” the TuringShield risk token (real device fingerprint,
+- `X-Device-Token` — the TuringShield risk token (real device fingerprint,
   encrypted).
-- `X-Device-Id-List: {"qimei36":"â€¦"}` â€” a per-account device binding.
+- `X-Device-Id-List: {"qimei36":"…"}` — a per-account device binding.
 
 Together they tell upstream risk control which device is talking. The first is
 machine-bound; the second is what makes each pooled account look like its own
@@ -20,11 +20,11 @@ variant json). It is loaded at runtime; no env is required.
 their own copy.
 
 Pipeline (from the vendor DLL and reverse notes):
-device fingerprint â†’ JCE V3 â†’ XXTEA â†’ AES-256-CBC (+embedded RSA) â†’ base64
-`v3:AAAAâ€¦`. The token is produced by `configure(channelId, productName,
-productVersion)` + `fetchDeviceToken({â€¦})`.
+device fingerprint → JCE V3 → XXTEA → AES-256-CBC (+embedded RSA) → base64
+`v3:AAAA…`. The token is produced by `configure(channelId, productName,
+productVersion)` + `fetchDeviceToken({…})`.
 
-Per-provider payload profiles (same SDK, distinct product identity â€” tokens
+Per-provider payload profiles (same SDK, distinct product identity — tokens
 differ between providers):
 
 | Provider | channelId | productName | productVersion |
@@ -39,12 +39,12 @@ is used only when the SDK is absent.
 
 ## Per-account binding (`qimei36`)
 
-The desktop client also sends `X-Device-Id-List: {"qimei36":"â€¦"}` â€” a second,
+The desktop client also sends `X-Device-Id-List: {"qimei36":"…"}` — a second,
 independent device identity. Resolving it per account gives each account in a
 pool its own device presentation instead of sharing the machine's single
 fingerprint:
 
-1. `auth_state.qimei36` â€” explicit binding (operator-set / imported) wins.
+1. `auth_state.qimei36` — explicit binding (operator-set / imported) wins.
 2. Otherwise a deterministic sha256 of the account id (32 hex). Stable across
    restarts, no database write, and each freshly added account gets its own id
    automatically.
@@ -68,4 +68,4 @@ Returned only when an account id is available (unauthenticated sends none).
 `X-Device-Token` remains one per machine (the SDK derives it from hardware; it
 does not accept per-account input). The per-account `qimei36` binding is what
 distinguishes accounts. A second, full per-account Turing token would require
-reimplementing the proprietary crypto â€” not done.
+reimplementing the proprietary crypto — not done.

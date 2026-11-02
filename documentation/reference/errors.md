@@ -93,7 +93,7 @@ Rules (`gateway-error.ts`, `error-lifecycle.ts`):
 
 ---
 
-## 3. `GatewayErrorCode` — complete catalog (55 codes)
+## 3. `GatewayErrorCode` — complete catalog (54 codes)
 
 HTTP status shown is the status the code is normally emitted with; several
 codes can carry different statuses in different call sites (noted). Retry
@@ -147,7 +147,7 @@ semantics come from `classifyUpstreamFailure` (the canonical list in §4.5).
 
 | Code | HTTP | Retryable | Meaning | Produced by |
 | --- | --- | --- | --- | --- |
-| `authentication_failed` | 401 | yes | Unknown/revoked/expired/mismatched key; upstream auth rejection (401/403 with auth identifiers) | `api-key-auth.ts`, `export-endpoint.ts`, `boot/app.ts`, `failure-policy.ts` classification |
+| `authentication_failed` | 401 | yes | Unknown/revoked/expired/mismatched key; upstream auth rejection (401/403 with auth identifiers) | `src/security/api-key-auth.ts`, `export-endpoint.ts`, `boot/app.ts`, `failure-policy.ts` classification |
 | `policy_rejected` | 403 | no | Deterministic policy/content rejection (upstream `11140` content-policy, loopback-only endpoints) | `failure-policy.ts` classification, `export-endpoint.ts`, `boot/app.ts` |
 | `client_router_denied` | 403 | no | Key's client-router denylist blocks the calling client | `auth-guard.ts` |
 | `proxy_auth_required` | 407 | yes | Proxy/upstream demanded proxy authentication | `failure-policy.ts` status table |
@@ -270,7 +270,8 @@ An attempt is **retryable** when any of:
    `upstream_overloaded`, `provider_capacity_exhausted`,
    `upstream_queued`,
    `accounts_unavailable`, `accounts_rate_limited`, `quota_exceeded`,
-   `authentication_failed`, `proxy_auth_required`,
+   `authentication_failed`, `proxy_auth_required`, `route_unavailable`,
+   `rate_limited`,
    `deadline_exceeded`, `context_length_exceeded` }.
 3. Status ∈ { 401, 403, 429, 500–599 }.
 
@@ -360,8 +361,6 @@ in use:
 | `invalid_limit` | 400 | Query pagination limit |
 | `invalid_config` | 400 | Pool config |
 | `invalid_pool` | 400 | Pool shape fields |
-| `invalid_endpoint` | 400 | Endpoint format |
-| `invalid_pool_limits` | 400 | Pool limit validation |
 | `ssrf_rejected` | 400 | Private endpoint rejected |
 | `payload_too_large` | 413 | Over 5 MB system-prompt payload etc. |
 | `self_reference` | 422 | Alias targeting itself |
@@ -370,6 +369,10 @@ in use:
 | `not_supported` | 400/503 | Feature unavailable (speed tests, probing, relay deploy) |
 | `pool_unavailable` | 503 | All pools saturated (domain registration) |
 | `capability_unsupported` | 501 | Key share / telemetry not configured |
+| `oauth_not_supported` | 400 | OAuth flow not supported for this provider |
+| `browser_code_not_supported` | 400 | Browser-code OAuth flow unsupported |
+| `device_code_not_supported` | 400 | Device-code OAuth flow unsupported |
+| `import_not_supported` | 400 | Model import not supported for this provider |
 | `internal_error` | 500 | Fallback |
 
 ---

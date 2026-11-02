@@ -9,12 +9,13 @@ correspond to any real client is what channel verification refuses.
 
 | | Desktop | CLI |
 |---|---|---|
-| Sent by | the desktop app / VSCode extension | the official CLI, via the OpenAI Node SDK |
+| Sent by | the desktop app / VSCode extension | the official CLI (axios `RestOperations`, not the OpenAI Node SDK) |
 | Browser headers (`origin`, `referer`, `accept-language`, `x-requested-with`, `x-codebuddy-request`) | yes | **no** |
 | `Accept` | `application/json, text/event-stream` | `application/json` |
 | Device token / machine & session ids | yes | **no** |
 | `X-Agent-Intent` / `X-Agent-Type` / `X-Agent-Runtime` | no | `craft` / `main` / `other` |
-| `x-stainless-*` SDK fingerprints | no | yes (8) |
+| `x-stainless-*` SDK fingerprints | no | **no** (CLI uses axios; no OpenAI SDK fingerprint) |
+| IDE headers (`x-ide-name`, `x-ide-type`, `x-ide-version`, `x-domain`) | desktop-implied | yes (CLI sends them too) |
 | Trace parent (`b3` 4th field, `X-B3-ParentSpanId`) | no | yes |
 | `X-User-Id` | account id | account id, or the literal `anonymous` |
 | `User-Agent` | `WorkBuddy/<v> WorkBuddy AI/<v> CLI/<v>` | `CLI/<v> CodeBuddy/<v>` |

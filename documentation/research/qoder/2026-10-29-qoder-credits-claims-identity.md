@@ -97,8 +97,10 @@ no device-unlock theories; refresh token and device unique per attempt.
 
 To avoid executing the bridge binary / touching WSL or the real registry, a
 **software-generated identity** mode is implemented in Cartethyia
-(`src/providers/integrations/qoder/qoder-umid.ts`), gated by
-`CARTETHYIA_QODER_UMID_GENERATED=true`. It mirrors the real bridge's output
+(`src/providers/integrations/qoder/qoder-umid.ts`). It is the automatic
+fallback when no UMID bridge is configured (the old opt-in gate
+`CARTETHYIA_QODER_UMID_GENERATED` no longer exists). It mirrors the real
+bridge's output
 shape (verified against a live WSL ELF mint): `machineToken` = `P1gA` + 84
 base64url (88 total), `machineType`/`machineCode` = 18 hex each, `isVm` =
 `false`. The token is derived deterministically per account: two SHA-256

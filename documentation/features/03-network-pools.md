@@ -11,7 +11,7 @@ not own model selection (`architecture.md`).
 | Table | Key | Holds |
 | --- | --- | --- |
 | `network_pools` | `id` | `kind`, `endpoint_config`, `credential_ciphertext`, `max_inflight`, `weight`, `family`, health columns, speed-test and byte totals |
-| `pool_routing_settings` | PK `tenant_id` | `strategy` (`least_loaded` \| `round_robin`), `rotate_count` |
+| `pool_routing_settings` | PK `tenant_id` | `strategy` (`least_loaded` \| `round_robin` \| `random`), `rotate_count` |
 | `provider_routing_settings` | `(tenant_id, provider_id)` or global when `tenant_id IS NULL` | Provider/account routing controls, including `skip_proxy`, `user_agent`, and the separate [Usage floor](04-usage-floor.md) setting |
 
 `skipProxy` and `userAgent` live on the *provider* row, not the pool row: when
@@ -52,7 +52,8 @@ The role files are split on purpose:
 
 Strategy is per tenant: `least_loaded` (the default) does a weighted scan with a
 rotating tie-break; `round_robin` serves `rotate_count` requests per pool before
-advancing and skips a pool the same way account failover does.
+advancing and skips a pool the same way account failover does; `random` picks a
+pool at random (weighted).
 
 An operator may set a pool to `disabled`; network failures can park it in
 `cooldown`, and a successful dispatch or recovery restores it to `active`.

@@ -28,7 +28,7 @@ selection mode exists in the backend today but is invisible.
 - Routes already exist:
   - `GET /routing/pools/strategy` → `store.getStrategy(tenantId)` (defaults to
     `DEFAULT_POOL_STRATEGY` when no row exists — `operations.ts:125`).
-  - `PUT /routing/pools/strategy` → validates `strategy` ∈ enum and
+  - `PATCH /routing/pools/strategy` → validates `strategy` ∈ enum and
     `rotateCount` ∈ `1..1000`, writes the row, invalidates the route snapshot,
     and audits `network_pool.strategy_updated` (`operations.ts:129`).
 - The selector honors all three strategies in
@@ -112,7 +112,7 @@ Design principles:
 - `usePoolStrategy()` → `useQuery` on `queryKeys.network.poolStrategy`
   (`["console", "network", "pool-strategy"]`), `queryFn` → `GET
   /routing/pools/strategy`, validated with `assertPoolStrategy`.
-- `useUpdatePoolStrategy()` → `useMutation` → `PUT /routing/pools/strategy`,
+- `useUpdatePoolStrategy()` → `useMutation` → `PATCH /routing/pools/strategy`,
   invalidates the strategy query + the route snapshot (backend already does the
   snapshot invalidation; the query invalidation keeps the card fresh).
 
@@ -203,7 +203,7 @@ None required for the core feature. Optional:
 - Component-level: `RoutingStrategyCard` renders the right control per state
   (skipProxy on/off, no pools, each mode) with the existing test harness if one
   is added; otherwise verify via the agent-browser against a local gateway.
-- API: `PUT /routing/pools/strategy` round-trip (set round_robin/3, read back,
+- API: `PATCH /routing/pools/strategy` round-trip (set round_robin/3, read back,
   verify card reflects it), invalid strategy rejected (400), `rotateCount` out
   of range rejected.
 - Routing behavior unchanged: selector logic is untouched; the UI only reads and

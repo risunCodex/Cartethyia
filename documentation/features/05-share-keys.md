@@ -52,7 +52,7 @@ make every `/v1` request drag a 2 MiB blob through it.
 | `GET /share/:token/popup-image` | The image bytes, served with a private cache policy and `X-Content-Type-Options: nosniff` |
 | `POST /share/:token/issue` | Mint an enrollment child key; requires a non-empty `nameHint` |
 | `GET /share/:token/stats` | Family totals, hourly buckets, top models, top client IPs |
-| `GET /share/:token/stats/stream` | The same as SSE, one snapshot every 10 s |
+| `GET /share/:token/stats/stream` | The same as SSE, one snapshot every 30 s |
 
 Enrollment can issue multiple active child keys from the same canonical client
 IP, including across different share templates. The client IP and its

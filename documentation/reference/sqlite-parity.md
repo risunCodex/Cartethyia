@@ -13,8 +13,9 @@ retired migration history are recreated and restored from backup, not upgraded
 in place. What follows is what that arrangement actually does, measured against
 a real SQLite database on 2026-10-07, not inferred from the types.
 
-The column counts are from `schema.ts`: 20 `boolean`, 14 `jsonb`, 29
-`timestamp`, 13 `bigint` (all `mode: "number"`), 4 `numeric`, 10 `pgEnum`.
+The column counts are from `schema.ts` (measured on 2026-11-02): 20
+`boolean`, 23 `jsonb`, 33 `timestamp`, 18 `bigint` (all `mode: "number"`),
+4 `numeric`, 10 `pgEnum`.
 
 ## What round-trips correctly
 

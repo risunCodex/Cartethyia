@@ -145,10 +145,9 @@ Dashboard halaman Usage memanggil: `/system/usage`, `/system/usage/summary`,
 
 ## 6. Test terdampak
 
-- `test/observability/event-query*` (jika ada) — summary/percentile
-- `test/console/observability*` — endpoint usage summary/health
-- `test/console/read-through-cache*` — multi-consumer cache
-- `test/persistence/db-sqlite*` — statement cache behavior
+- `test/console/telemetry-sql-queries.test.ts` — summary/percentile SQL queries
+- `test/console/usage-performance.test.ts` — endpoint usage summary/health
+- `test/persistence/sqlite-statement-cache.test.ts` — statement cache behavior
 
 ---
 

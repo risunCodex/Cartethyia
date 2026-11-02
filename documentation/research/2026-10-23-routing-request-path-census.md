@@ -61,13 +61,13 @@ mutations converge immediately rather than waiting out the TTL.
 One memo serves three hot readers: preferences, the tenant concurrency limit
 (`src/boot/dependencies.ts:216`), and the payload-capture policy.
 
-### Route catalog — 0 on a hit, 11 SELECTs on a rebuild
+### Route catalog — 0 on a hit, 13 SELECTs on a rebuild
 
 `InMemoryRouteSnapshotService.getSnapshot()` (`src/transport/routing/route-model.ts:435`)
-returns a memoized `deepFreeze`d snapshot (`:406`) built from **11 parallel
-SELECTs** (`src/transport/routing/route-catalog.ts:373-390`: providers, models,
-provider_accounts, aliases, combos, routing settings, pools, disabled models,
-CLI mappings, CLI settings, pool settings).
+returns a memoized `deepFreeze`d snapshot (`:406`) built from **13 parallel
+SELECTs** (`src/transport/routing/route-catalog.ts:432-457`: providers, models,
+provider_accounts, aliases, combos, routing settings, pools, pool accounts,
+disabled models, CLI mappings, CLI settings, pool settings, console settings).
 
 Cached until `invalidate()` (`:451`). In-flight builds are revision-tagged
 (`:437`, `:494`) so a write landing mid-build cannot clobber or be clobbered —
@@ -137,14 +137,15 @@ drain, default 500 ms / 500 rows (`:235`). Drops rather than blocks when full
 ### Quota debit — write path, already two-tier
 
 `debitBuddySpend` (`attempt-finalize.ts:598`) → `debitCachedQuota`
-(`src/console/quota/cache.ts:255`): in-process `TtlCache` + Redis (`:46`, `:232`),
+(`src/providers/quota/cache.ts:255`): in-process `TtlCache` + Redis (`:46`, `:232`),
 batch `MGET` for the overview (`:173`). Advisory; failures swallowed.
 
 ### Abuse check — every request, shared only with Redis
 
-`modelStrikes.check({ ip })` (`auth-guard.ts:76`) on every authenticated request.
-`RedisModelAbuseStore` when Redis is present, else `InMemoryModelAbuseStore`
-(`dependencies.ts:252`), a plain `Map` (`src/security/model-abuse.ts:126`).
+`IpAbuseProtectionService.checkBeforeAccess` (`src/transport/guards/abuse-guard.ts`)
+runs on every authenticated request. `RedisIpAbuseStore` when Redis is present,
+else `InMemoryIpAbuseStore` (`dependencies.ts:320`), a plain `Map`
+(`src/security/abuse.ts:189`).
 Without Redis, bans are per-process — a prober spreading requests across
 processes is not banned.
 
@@ -214,15 +215,15 @@ processes is not banned.
 
 | Thing | Bound | Where |
 |---|---|---|
-| Provider capture body | 256 KiB per attempt | `attempt-finalize.ts:83` |
-| Provider capture response | 256 KiB, `response.clone()` | `attempt-finalize.ts:263` |
+| Provider capture body | up to `captureDepthMaxBytes(depth)` — 1 MiB at `minimum`, 8 MiB `moderate`, 16 MiB `maximum` | `capture-policy.ts:74` |
+| Provider capture response | same bound, `response.clone()` | `attempt-finalize.ts` |
 | Request translation buffers | unbound | `src/transport/translation/` |
 | SSE decode state | per stream | `src/protocol/sse-decoder.ts` |
 | Stream transform state | per stream | `src/transport/dispatch/streaming/` |
 | Usage/accounting struct | per attempt | `attempt-finalize.ts` |
 
-The 256 KiB capture is the single largest per-request allocation, and it is
-**per attempt** — a request with 3 attempts may hold 3 × (256 + 256) KiB of
+The capture buffer is the single largest per-request allocation, and it is
+**per attempt** — a request with 3 attempts may hold 3 × (cap + cap) of
 capture buffers alive simultaneously, because `captureProviderExchange` sinks
 into a per-attempt object (`attempt-loop.ts:270`) held until the loop returns.
 
@@ -252,8 +253,7 @@ reducing per-request footprint will.
 
 ## 5. Process model multiplies everything
 
-`src/main.ts:112` sets `reusePort: true`, and `src/persistence/boot.ts:110`
-confirms each process opens its own pool.
+`src/main.ts:144` sets `reusePort` via `resolveProcessTopology().multiProcess`, and `src/persistence/boot.ts:110` confirms each process opens its own pool.
 
 Every cache in §3 is **process-local**. With P processes:
 

@@ -60,7 +60,7 @@ dashboard/src/i18n/
 - **Not hook-first:** `t()` is an imported plain function used anywhere (props,
   event handlers, plain helpers). Locale switching repaints once: `store.ts`
   sets `<html data-lang>` and dispatches a CustomEvent — the same pattern
-  `customization/settings.ts` already uses for `data-blur-*` — and the app
+  `dashboard/src/features/customization/settings.ts` already uses for `data-blur-*` — and the app
   shell keys its top subtree on the locale so React rebuilds text once.
 - **Bundle:** both locales ship in the main bundle (roughly 60–100KB raw,
   compresses well). No dynamic import in phase 1; introduce per-locale chunks
@@ -74,7 +74,7 @@ dashboard/src/i18n/
 - A `Select` on the **Settings** page (not Customization — this is behavior,
   not cosmetics).
 - Persists `cartethyia:i18n:lang` (`"en" | "id"`); read synchronously at boot
-  before first render (same pattern as `settings.ts`) so there is **no EN flash**
+  before first render (same pattern as `dashboard/src/features/customization/settings.ts`) so there is **no EN flash**
   on reload.
 
 ---
@@ -84,7 +84,7 @@ dashboard/src/i18n/
 | Phase | Content | Duration | Commits |
 |---|---|---|---|
 | 1 | Infra (`i18n/lang.ts`, `store.ts`, `t.ts`, `dictionary.ts`, `en.ts` skeleton), `tCount`, switcher in Settings, PoC on one page (**Overview** — easiest to verify visually), unit tests for the store/t helpers | ½ session | 1 |
-| 2 | Shell: sidebar/nav (`apps/console/shell.tsx`), topbar, user card, sign-in/setup pages, global toast copy, customization page | ½–1 session | 2 |
+| 2 | Shell: sidebar/nav (`dashboard/src/apps/console/shell.tsx`), topbar, user card, sign-in/setup pages, global toast copy, customization page | ½–1 session | 2 |
 | 3 | High-traffic features: `providers/` (incl. `ApiKeyForm`, `Models`), `proxy/`, `quota/`, `usage/`, `session/`, `settings/` | 1–2 sessions | 3–5 (per area) |
 | 4 | Remaining sweep: `studio/` (StudioPage, ChatBubble, Composer), `routing/`, `cli-tools/`, `logs/`, `provider-detail/` | 1–2 sessions | 6–8 |
 | 5 | Test migration + browser pass + leftover audit (scan `features/` + `components/` for missed JSX literals) | ½–1 session | 9 |
