@@ -267,12 +267,12 @@ export function RequestDetailDrawer({
                   variant="danger"
                   size="sm"
                   onClick={() => {
-                    const option = API_KEY_BAN_REASONS.find((r) => r.value === banReason);
+                    // The audit label is derived server-side from `reason`; the
+                    // client only sends the machine value.
                     banKey.mutate(
                       {
                         keyId: detail.apiKeyId as string,
                         reason: banReason,
-                        reasonLabel: option?.label,
                         minutes: banMinutes,
                       },
                       {

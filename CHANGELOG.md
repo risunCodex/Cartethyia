@@ -8,7 +8,7 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [2.7.5] - 2026-11-02
+## [2.7.5] - 2026-11-03
 
 ### Added
 
@@ -187,6 +187,52 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   Qoder included — because both signals are already per-candidate. The rank
   (fresh → slow → cooling → saturated) remains the primary sort key; credit only
   breaks ties inside one rank.
+- **Address parsing behind the admin gates and SSRF policy is now one
+  implementation.** Three previously separate parsers (SSRF allowlist, trust
+  boundary, drain admin gate) each had their own IPv4/IPv6/CIDR logic with
+  subtle differences (IPv4-mapped spellings, bare-CIDR handling, dotted-quad
+  IPv6). A single `src/network/ip-utils.ts` now serves all of them with each
+  consumer's semantics preserved exactly — fail-closed stays fail-closed,
+  allowlist strictness is unchanged, and the client-IP canonicalization key is
+  byte-identical — pinned by a 45-spelling parity test. No operator-visible
+  change; this closes the gap where the three gates could disagree on the same
+  address.
+- **Estimated token counts now appear in usage/telemetry.** When
+  `/v1/messages/count_tokens` answers from the local estimator (model on a wire
+  family without a native count endpoint), the request previously vanished from
+  telemetry entirely — no row, no latency sample, no Console Log line, because
+  the handler finalized nothing. It now flows through the same telemetry
+  finalizer as every other request (status completed, estimated usage with
+  null cost), so the usage page counts it and the latency histogram no longer
+  has a blind spot for that route.
+- **Native service routes share one request-handling core.** Image generation,
+  systemone, and the Responses-compact dispatcher now use the same shared
+  helpers (credential resolution, scope check, body validation, fetch context,
+  usage read-back) as the token-count and websearch routes instead of private
+  copies that had already drifted — image/embedding JSON responses now carry
+  `cache-control: no-store`, which their private serializer forgot.
+- **Routing eligibility types match reality.** The evaluator no longer casts
+  the route candidate to an anonymous structural extension: the post-catalog
+  shape (`RoutedCandidate`) is a shared type, `quota_windows` is properly typed
+  end-to-end, and dead defensive fields (`account_locked`/`locked`, producible
+  by nothing) with their unreachable rejection reason are gone.
+- **Messages OAuth thinking-budget requests fail fast and clearly.** An OAuth
+  request whose thinking budget cannot fit under the OAuth `max_tokens` ceiling
+  used to be encoded with a max_tokens above the ceiling and rejected by
+  Anthropic with an opaque upstream error; it now returns a clean local 400
+  naming the budget/ceiling conflict.
+- **PKCE verifier for the Qoder device flow is fully CSPRNG.** The verifier
+  bytes already came from `randomBytes`, but its length (43–128) was drawn from
+  `Math.random` — RFC 7636 requires the whole verifier to come from a secure
+  generator. It is now a fixed 64 characters (inside the IDE's own range, so
+  fingerprinting fidelity is kept) from CSPRNG end to end. Note this refines
+  the device-login entry above: the alphabet stays byte-identical with the
+  IDE, the length is now a fixed 64 instead of variable.
+- **Cursor roster cache is bounded.** The per-account model-roster cache was
+  unbounded, keyed by the raw credential, and never evicted expired entries —
+  token rotation grew it without limit. It is now capped at 1024 entries with
+  oldest-first eviction and keyed by a hash of the credential instead of the
+  token itself.
 
 ### Fixed
 
@@ -380,6 +426,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   version read), reuses that payload on every open, and refreshes only while it
   is open — closing it stops the polling. This fixes the panel showing "System
   health unavailable" with every metric Unavailable.
+- **Telemetry reconciliation counted zero completed files.** The reconciliation
+  state row incremented `files_completed + 0` instead of `+ 1`, so the
+  "files completed" counter never moved regardless of how many drain files were
+  processed.
+- **The usage chart's "cached" series plotted total input tokens.** The console
+  usage chart read the wrong SQL aggregate for its cached-token series, so the
+  cached share of the prompt was drawn as the full input line.
+- **DNS resolution failures are classified deterministically.** Two stacked
+  5-second DNS timeout timers in the pooled dial path raced each other, so a
+  stalled lookup could surface as a 502 `transport_unavailable` or a 499/504
+  abort-shaped error depending on which timer won. The inner deadline (which
+  owns the correct classification) is now the only one.
+- **A login ban's human-readable label can no longer be forged in the audit
+  trail.** The API-key ban endpoint stored a client-supplied free-text
+  `reasonLabel` in the audit record — attacker-controlled text next to the
+  machine-readable reason operators use for forensics. The label is now derived
+  server-side from the ban reason, and unknown/custom reasons simply carry no
+  label.
+- **Leftover dead code from earlier passes is removed, and stale docs with
+  it.** Unused codec preload hooks (whose docs claimed a boot warm-up that
+  never existed), a dead capability-unsupported error constructor, a dead
+  antigravity endpoint-order helper, dead SSE header writes the framework
+  discarded, a stale "15 minutes" payload-retention comment (it has been an
+  hour for a while), a defensive double-cast with an unreachable fallback in
+  the codec's string sanitizer, a redundant three-way branch in the Anthropic
+  cache-control builder, and duplicated FNV-1a hash implementations — all gone,
+  with the type-level duplicates (`BackupExportResult` near-miss naming)
+  renamed so the next grep finds one of each.
+
+### Removed
+
+- **`src/network/response-headers.ts`.** The denylist response-header stripper
+  has no caller: caller-facing responses are built from scratch by the proxy
+  projection, and upstream response headers are never forwarded wholesale, so
+  the strip set was unreachable. The invariant ("upstream headers are never
+  forwarded wholesale") is now documented at the projection site. If a raw
+  passthrough transport is ever added, resurrect the strip set from git
+  history.
 
 ## [2.7.4] - 2026-11-01
 

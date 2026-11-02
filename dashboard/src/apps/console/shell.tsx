@@ -695,30 +695,75 @@ export function DashboardShell({
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const handleUpdateNow = async (): Promise<void> => {
     setUpdating(true);
+    setUpdateError(null);
     try {
       await consoleRequest<void>("/updates/apply", { method: "POST" });
-    } catch {
+    } catch (error) {
       setUpdating(false);
+      setUpdateError(
+        typeof error === "object" && error !== null && "message" in error
+          ? String((error as { message: unknown }).message)
+          : "The update could not be started.",
+      );
       return;
     }
     // block refresh
     const beforeUnload = (e: BeforeUnloadEvent): void => { e.preventDefault(); };
     window.addEventListener("beforeunload", beforeUnload);
-    // poll until version changes
+    // Poll the update status file, not the release tag: the installer reports
+    // success or failure itself, so a failed npm run ends the loop with an
+    // error instead of polling forever against a tag that never changes.
     const target = latestTag;
+    const stop = (): void => {
+      window.clearInterval(poll);
+      window.removeEventListener("beforeunload", beforeUnload);
+    };
     const poll = window.setInterval(async () => {
       try {
-        const res = await fetch("/console/api/updates/release");
-        const data = (await res.json()) as { tag_name?: string };
-        if (target !== undefined && data.tag_name !== target) {
-          window.clearInterval(poll);
-          window.removeEventListener("beforeunload", beforeUnload);
+        const res = await fetch("/console/api/updates/status");
+        const data = (await res.json()) as { status?: string; stderrTail?: string };
+        if (data.status === "failed") {
+          stop();
+          setUpdating(false);
+          setUpdateError(
+            `The install failed${data.stderrTail ? `: ${data.stderrTail}` : ". See update.log in the config directory."}`,
+          );
+          return;
+        }
+        if (data.status === "success") {
+          stop();
+          // Verify the running version actually moved before reloading: a
+          // success that did not change the version would loop back to the
+          // same badge.
+          try {
+            const health = await fetch("/console/api/system/health");
+            const body = (await health.json()) as { version?: string };
+            if (body.version !== undefined && target !== undefined && body.version === target) {
+              window.location.reload();
+              return;
+            }
+          } catch {
+            // The gateway may still be restarting; fall back to reloading.
+          }
           window.location.reload();
+          return;
         }
       } catch {
-        // server restarting; keep polling
+        // Server restarting; keep polling. Fall back to the release-tag check
+        // so an old gateway without /updates/status still terminates the loop.
+        try {
+          const res = await fetch("/console/api/updates/release");
+          const data = (await res.json()) as { tag_name?: string };
+          if (target !== undefined && data.tag_name !== undefined && data.tag_name !== target) {
+            stop();
+            window.location.reload();
+          }
+        } catch {
+          // Keep polling.
+        }
       }
     }, 3000);
   };
@@ -946,6 +991,7 @@ export function DashboardShell({
           : { onDismissVersion: () => dismissUpdate(latestTag) })}
         onUpdateNow={handleUpdateNow}
         updating={updating}
+        {...(updateError === null ? {} : { error: updateError })}
       />
     </>
   );

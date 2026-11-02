@@ -41,8 +41,9 @@ describe("Qoder device flow start", () => {
     const state = JSON.parse(started.providerState ?? "{}") as Record<string, unknown>;
     expect(typeof state.verifier).toBe("string");
     expect(typeof state.machineId).toBe("string");
-    // The verifier comes from the IDE's own alphabet (no base64 `+`/`/`).
-    expect(state.verifier).toMatch(/^[A-Za-z0-9-._~]{43,128}$/);
+    // The verifier comes from the IDE's own alphabet (no base64 `+`/`/`) and
+    // is a fixed 64 chars (RFC 7636 §4.1 range [43,128]).
+    expect(state.verifier).toMatch(/^[A-Za-z0-9-._~]{64}$/);
   });
 });
 

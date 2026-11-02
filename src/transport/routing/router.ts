@@ -12,6 +12,7 @@ import {
   type ProviderRoutingSetting,
   type Reservation,
   type RouteCandidate,
+  type RoutedCandidate,
   type RoutePlan,
   type EligibilityDecision,
   type RouteContinuationAffinity,
@@ -92,14 +93,8 @@ export function filterCandidateQuotaWindows(
  * aggregate credit percentage and the lowest independent percentage window.
  * No reading means unknown, which is not below the floor.
  */
-function belowUsageFloor(state: {
-  readonly usage_floor?: number;
-  readonly usage_floor_unit?: "credit" | "percent";
-  readonly quota_windows?: readonly unknown[] | undefined;
-  readonly provider_id?: string;
-  readonly model_id?: string;
-}): boolean {
-  const rawWindows = state.quota_windows as readonly ProviderQuotaWindow[] | undefined;
+function belowUsageFloor(state: RoutedCandidate): boolean {
+  const rawWindows = state.quota_windows;
   if (rawWindows === undefined || rawWindows.length === 0) return false;
   const windows = filterCandidateQuotaWindows(rawWindows, state);
   if (windows.length === 0) return false;
@@ -126,11 +121,9 @@ function belowUsageFloor(state: {
  * known-zero last. Free-tier models skip the preference entirely — a free model
  * routes to any account, as the provider's own directory stated it is free.
  */
-function creditPriority(
-  candidate: RouteCandidate & { quota_windows?: readonly unknown[] },
-): number {
+function creditPriority(candidate: RoutedCandidate): number {
   if (candidate.free_tier === true) return 0;
-  const windows = candidate.quota_windows as readonly ProviderQuotaWindow[] | undefined;
+  const windows = candidate.quota_windows;
   if (windows === undefined || windows.length === 0) return 0;
   const credit = totalRemainingCredit(windows);
   if (credit === null) return 0;
@@ -319,7 +312,7 @@ function earliestWindowResetMs(
  * The earliest instant any cooling candidate recovers, in epoch ms.
  *
  * `undefined` when no decision carries a deadline — which is the honest answer
- * for a set whose exclusions have no reset (`disabled`, `locked`), and keeps
+ * for a set whose exclusions have no reset (`disabled`), and keeps
  * `accountsRateLimitedError` from reporting a number nobody measured. The
  * minimum, not the maximum: the client can be served as soon as the *first*
  * account comes back, so quoting the slowest would hold it off longer than it
@@ -338,36 +331,22 @@ function earliestResetMs(
 }
 
 export class EligibilityEvaluator {
-  evaluate(candidate: RouteCandidate): EligibilityDecision {
-    const state = candidate as RouteCandidate & {
-      readonly health_status?: string;
-      readonly cooldown_kind?: "hard" | "soft";
-      readonly cooldown_until?: number;
-      readonly account_locked?: boolean;
-      readonly locked?: boolean;
-      readonly usage_floor?: number;
-      readonly usage_floor_unit?: "credit" | "percent";
-      readonly quota_windows?: readonly ProviderQuotaWindow[] | undefined;
-      /** Slow-lane stamp applied at plan time; see `applySlowLane`. */
-      readonly lane?: "slow";
-    };
-    if (state.account_locked || state.locked)
-      return { eligible: false, reason: "locked", candidate };
-    if (state.health_status === "disabled")
+  evaluate(candidate: RoutedCandidate): EligibilityDecision {
+    if (candidate.health_status === "disabled")
       return { eligible: false, reason: "disabled", candidate };
-    if (state.health_status === "model_cooldown")
-      return { eligible: false, reason: "model_cooldown", candidate, ...spreadDeadline(state.cooldown_until) };
-    if (state.health_status === "cooldown" && state.cooldown_kind === "hard")
-      return { eligible: false, reason: "cooldown_hard", candidate, ...spreadDeadline(state.cooldown_until) };
+    if (candidate.health_status === "model_cooldown")
+      return { eligible: false, reason: "model_cooldown", candidate, ...spreadDeadline(candidate.cooldown_until) };
+    if (candidate.health_status === "cooldown" && candidate.cooldown_kind === "hard")
+      return { eligible: false, reason: "cooldown_hard", candidate, ...spreadDeadline(candidate.cooldown_until) };
     // The floor is checked here, not after selection: an account below its
     // floor must not win the route. An account with no reading is left
     // eligible — a missing quota fetch is not proof the allowance is gone.
-    if (belowUsageFloor(state))
+    if (belowUsageFloor(candidate))
       return {
         eligible: false,
         reason: "quota_exhausted",
         candidate,
-        ...spreadDeadline(earliestWindowResetMs(state.quota_windows, Date.now())),
+        ...spreadDeadline(earliestWindowResetMs(candidate.quota_windows, Date.now())),
       };
     // A slow lane is orthogonal to cooldown, never a member of it: the account
     // still serves on spare capacity when the request carries the slow usage
@@ -378,10 +357,10 @@ export class EligibilityEvaluator {
     // exclusion, not that it overrides one. An account with no usable allowance
     // is not rescued by the lane — the lane is a latency budget against spare
     // capacity, and an account below its floor has none.
-    if (state.lane === "slow")
+    if (candidate.lane === "slow")
       return { eligible: true, reason: "slow", candidate };
-    if (state.health_status === "cooldown")
-      return { eligible: true, reason: "cooldown", candidate, ...spreadDeadline(state.cooldown_until) };
+    if (candidate.health_status === "cooldown")
+      return { eligible: true, reason: "cooldown", candidate, ...spreadDeadline(candidate.cooldown_until) };
     return { eligible: true, reason: "healthy", candidate };
   }
 

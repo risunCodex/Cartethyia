@@ -408,13 +408,9 @@ export function isClaudeBillingHeaderText(text: string): boolean {
 // Well-formed UTF-16 coercion
 
 export function toWellFormedString(value: string): string {
-  const maybe = value as unknown as { toWellFormed?: () => string };
-  if (typeof maybe.toWellFormed === "function") return maybe.toWellFormed();
-  // Fallback for runtimes without String.prototype.toWellFormed (replace lone surrogates)
-  return value.replace(
-    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
-    "\uFFFD",
-  );
+  // String.prototype.toWellFormed is ES2024; guaranteed by Bun ≥1.4, the only
+  // supported runtime.
+  return value.toWellFormed();
 }
 
 export function toWellFormedDeep(value: unknown): unknown {

@@ -27,6 +27,7 @@
  */
 
 import { GatewayError } from "../../../protocol/gateway-error";
+import { fnv1a32 } from "../shared/hash";
 
 const CREDIT_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CACHE_SIZE = 64;
@@ -122,15 +123,10 @@ export class FallbackCreditCache {
 
 /**
  * Compute a simple hash of the request body for cache keying.
- * Uses FNV-1a — fast, deterministic, sufficient for cache identity.
+ * FNV-1a — fast, deterministic, sufficient for cache identity.
  */
 export function hashBody(body: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < body.length; i++) {
-    hash ^= body.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(36);
+  return fnv1a32(body).toString(36);
 }
 
 // Shared process-wide cache instance

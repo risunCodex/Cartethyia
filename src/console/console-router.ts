@@ -80,6 +80,15 @@ export interface ConsoleApiCompositionDeps {
     | undefined;
   readonly resolvePeerAddress?: (request: Request) => string | null;
   readonly trustedProxyBoundary?: TrustedProxyBoundary;
+  /**
+   * The process shutdown coordinator, narrowed to the surface the update apply
+   * route needs. Declared structural (not the class) so the console composition
+   * root does not import the boot layer; `ShutdownCoordinator` satisfies it.
+   */
+  readonly shutdownCoordinator?: {
+    readonly begin: (reason: "update") => Promise<void>;
+    readonly totalShutdownBudgetMs: () => number;
+  };
 }
 /**
  * Extracts a bearer API key from a console request, or `undefined`.
@@ -197,6 +206,7 @@ export function createConsoleRouter(deps: ConsoleApiCompositionDeps): AnyElysia 
     admissionService: deps.admissionService,
     readRoutingAccountInflight: deps.readRoutingAccountInflight,
     ...(deps.flushBuffers ? { flushBuffers: deps.flushBuffers } : {}),
+    ...(deps.shutdownCoordinator ? { shutdownCoordinator: deps.shutdownCoordinator } : {}),
     credentialService,
     // The backup surface re-authenticates the operator, so it needs the current
     // user's hash. Read from the session on the request that asks for it, never

@@ -498,7 +498,7 @@ export function findTable(section: BackupSection, name: string): Table | undefin
   return tablesForSection(section).find((table) => tableName(table) === name);
 }
 
-export interface BackupExportResult {
+export interface BackupPayloadExport {
   readonly payload: BackupPayload;
   readonly counts: Record<string, number>;
 }

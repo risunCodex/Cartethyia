@@ -12,6 +12,12 @@ export const KIRO_PROVIDER_ID = "kiro" as const;
  */
 export const KIRO_GENERATE_PATH = "/generateAssistantResponse" as const;
 
+/** AWS region shape, checked before a region is interpolated into a URL. */
+export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
+
+/** Fallback region when no (or an invalid) region is configured. */
+export const KIRO_DEFAULT_REGION = "us-east-1" as const;
+
 /**
  *  Runtime service host template (generation). `{region}` is interpolated.
  *

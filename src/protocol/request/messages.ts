@@ -674,11 +674,16 @@ export function canonicalToClaudeMessagesPayload(
     });
   }
   const thinkingEnabled = isThinkingEnabled(request);
+  // Real ceilings (P2-12): an impossible thinking budget surfaces as a typed
+  // local 400 instead of an over-ceiling max_tokens that 400s opaquely upstream.
+  const maxAllowed = isOAuth
+    ? WIRE_TOKEN_BOUNDS["messages"]?.oauthCeiling ?? Number.MAX_SAFE_INTEGER
+    : Number.MAX_SAFE_INTEGER;
   if (thinkingEnabled && request.reasoning?.budget_tokens !== undefined) {
     maxTokens = ensureMaxTokensForThinking(
       maxTokens,
       request.reasoning.budget_tokens,
-      Number.MAX_SAFE_INTEGER,
+      maxAllowed,
     );
   }
   // Whether this model speaks adaptive thinking (`type: "adaptive"` +
@@ -711,7 +716,7 @@ export function canonicalToClaudeMessagesPayload(
   if (!adaptiveThinking && effectiveBudgetTokens !== undefined) {
     // The upstream requires the budget to stay below `max_tokens`; raise
     // max_tokens to leave room for the answer rather than let it 400.
-    maxTokens = ensureMaxTokensForThinking(maxTokens, effectiveBudgetTokens, Number.MAX_SAFE_INTEGER);
+    maxTokens = ensureMaxTokensForThinking(maxTokens, effectiveBudgetTokens, maxAllowed);
   }
   const payload: ClaudeWireObject = {
     model: request.model,

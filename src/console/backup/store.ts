@@ -76,7 +76,7 @@ import {
   tableName,
   type BackupBytes,
   type BackupDate,
-  type BackupExportResult,
+  type BackupPayloadExport,
   type BackupPayload,
   type BackupRow,
   type ValidatedRestore,
@@ -569,7 +569,7 @@ export async function exportBackup(
   db: CartethyiaDatabase,
   tables: readonly Table[],
   tenantId: string,
-): Promise<BackupExportResult> {
+): Promise<BackupPayloadExport> {
   const stream = exportBackupStream(db, tables, tenantId);
   let document = "";
   for await (const chunk of stream.jsonChunks) document += chunk;

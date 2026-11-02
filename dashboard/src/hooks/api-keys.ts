@@ -89,14 +89,13 @@ export function useBanApiKey() {
   return useMutation<
     UpdateApiKeyResponse,
     ApiErrorShape,
-    { keyId: string; reason: string; reasonLabel?: string; minutes?: number | null }
+    { keyId: string; reason: string; minutes?: number | null }
   >({
-    mutationFn: ({ keyId, reason, reasonLabel, minutes }) =>
+    mutationFn: ({ keyId, reason, minutes }) =>
       consoleRequest<UpdateApiKeyResponse>(`/api-keys/${encodeURIComponent(keyId)}/ban`, {
         method: "POST",
         body: JSON.stringify({
           reason,
-          ...(reasonLabel === undefined ? {} : { reasonLabel }),
           ...(minutes === undefined ? {} : { minutes }),
         }),
       }),

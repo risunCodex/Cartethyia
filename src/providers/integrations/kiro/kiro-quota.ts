@@ -34,7 +34,7 @@ import {
 } from "../../operations/client-versions";
 import { machineIdForAuthState } from "./kiro-machine-id";
 import { resolveKiroProfileArn } from "./kiro-profile";
-import { KIRO_MANAGEMENT_HOST_TEMPLATE } from "./kiro-catalog";
+import { AWS_REGION_PATTERN, KIRO_DEFAULT_REGION, KIRO_MANAGEMENT_HOST_TEMPLATE } from "./kiro-catalog";
 
 /**
  * The fetcher shape this module needs: a plain callable. `FetchLike` from the
@@ -44,9 +44,6 @@ import { KIRO_MANAGEMENT_HOST_TEMPLATE } from "./kiro-catalog";
  * either full type.
  */
 type KiroFetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-
-/** AWS region shape, checked before a region is interpolated into a URL. */
-const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
 
 interface KiroQuotaAuth {
   readonly region: string;
@@ -59,7 +56,7 @@ interface KiroQuotaAuth {
 function quotaAuth(context: QuotaCollectionContext | undefined): KiroQuotaAuth {
   const raw = context?.auth_state ?? {};
   const regionRaw = typeof raw["region"] === "string" ? raw["region"].trim() : "";
-  const region = AWS_REGION_PATTERN.test(regionRaw) ? regionRaw : "us-east-1";
+  const region = AWS_REGION_PATTERN.test(regionRaw) ? regionRaw : KIRO_DEFAULT_REGION;
   const authMethod = typeof raw["authMethod"] === "string" ? raw["authMethod"] : "builder-id";
   // The usage surface is profile-scoped and refuses a request without the field,
   // exactly as generation does, so it scopes to the same value generation does:

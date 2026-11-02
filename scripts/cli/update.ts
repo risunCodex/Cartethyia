@@ -1,5 +1,6 @@
 /**
- * The update path.
+ * The update path — CLI-side wrapper over the shared detached-install flow in
+ * `src/console/updates/apply-update.ts`.
  *
  * npm cannot replace this package's directory while a process is executing out
  * of it (EBUSY on Windows). So we spawn the installer as a detached process,
@@ -8,50 +9,20 @@
  * `cartethyia start`), so the new version comes up automatically.
  * Cross-OS: uses npm.cmd on Windows.
  */
-import { spawn } from "node:child_process";
+import {
+  spawnDetachedUpdate,
+  UPDATE_INSTALL_COMMAND,
+  type UpdateStatus,
+} from "../../src/console/updates/apply-update";
 
 export function updateCommand(): string {
-  return "npm install -g cartethyia@latest --prefer-online";
-}
-
-/**
- * Processes still running out of the package directory, so npm can rename it.
- *
- * The rename is the whole install on Windows, and it fails with EBUSY while
- * anything holds the directory — including a hold that outlives the process
- * that took it. `carte` itself runs from that directory, so the install has to
- * wait until this process is gone; these are the others.
- */
-function stopHoldingProcesses(): void {
-  if (process.platform !== "win32") return;
-  // `taskkill` filters on the window title and image name only, so it is asked
-  // for the two processes this CLI can leave behind. /T takes the tree, so a
-  // detached gateway started by a tray goes with it.
-  for (const image of ["cartethyia.exe", "carte.exe"]) {
-    try {
-      spawn("taskkill", ["/F", "/T", "/IM", image], { stdio: "ignore" }).unref();
-    } catch {
-      // A missing taskkill is not the install's problem; npm will report the
-      // hold if one is left.
-    }
-  }
+  return UPDATE_INSTALL_COMMAND;
 }
 
 export function runDetachedUpdate(): void {
-  const isWin = process.platform === "win32";
-  const shell = isWin ? "cmd.exe" : "/bin/sh";
-  const install = "npm install -g cartethyia@latest --prefer-online";
-  const restart = isWin
-    ? "cartethyia start"
-    : "systemctl restart cartethyia 2>/dev/null || cartethyia start";
-  const script = `${install} && ${restart}`;
-  const args = isWin ? ["/c", script] : ["-c", script];
-  stopHoldingProcesses();
-  const child = spawn(shell, args, {
-    detached: true,
-    stdio: "ignore",
-  });
-  child.unref();
+  // The shared module owns stopHoldingProcesses, the wrapper, the status file,
+  // and the update.log redirection; the CLI only prints.
+  spawnDetachedUpdate({});
 }
 
 export function printUpdateInstructions(from: string, to: string | null): void {
@@ -74,3 +45,6 @@ export function printUpdateInstructions(from: string, to: string | null): void {
   console.log(`  ${updateCommand()}`);
   console.log("");
 }
+
+/** Status shape the shared module writes; re-exported for CLI readers. */
+export type { UpdateStatus };

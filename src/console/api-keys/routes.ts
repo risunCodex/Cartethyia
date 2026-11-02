@@ -20,6 +20,7 @@ import type {
   SharedChildrenPageOptions,
 } from "../../persistence/stores/api-key-store";
 import {
+  API_KEY_BAN_REASONS,
   BAN_DURATION_CHOICES,
   DEFAULT_BAN_MINUTES,
   generateApiKeySecret,
@@ -830,10 +831,13 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
         target: keyId,
         detail: {
           reason,
-          // `reasonLabel` is the human-readable dropdown label the dashboard
-          // sends alongside the machine `reason`; it is inert on the wire, so
-          // preserve it in the audit trail instead of dropping it.
-          ...(request.reasonLabel === undefined ? {} : { reasonLabel: request.reasonLabel }),
+          // The human-readable label is derived server-side from the machine
+          // `reason`, so the audit trail cannot be skewed by a client-authored
+          // label. Unknown reasons (custom text) simply carry no label; the
+          // free-text `reason` above is still recorded verbatim.
+          ...(API_KEY_BAN_REASONS.find((r) => r.value === reason)?.label === undefined
+            ? {}
+            : { reasonLabel: API_KEY_BAN_REASONS.find((r) => r.value === reason)!.label }),
           ...(bannedUntil === null ? { permanent: true } : { bannedUntil: bannedUntil.toISOString() }),
         },
       });
@@ -1050,7 +1054,9 @@ export function createApiKeyRoutes(config: ApiKeyConfig): AnyElysia {
       {
         body: t.Object({
           reason: t.String(),
-          reasonLabel: t.Optional(t.String()),
+          // `reasonLabel` is deliberately not accepted: the audit label is
+          // derived server-side from `reason` (see `banKey`), so a client
+          // cannot author the human-readable audit entry.
           minutes: t.Optional(t.Union([t.Number({ minimum: 1 }), t.Null()])),
         }),
       },

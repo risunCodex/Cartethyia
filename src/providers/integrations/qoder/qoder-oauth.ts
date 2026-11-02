@@ -225,14 +225,20 @@ function parseDeviceState(value: string | undefined): QoderDeviceState | undefin
  * Random PKCE verifier in the exact alphabet the desktop IDE uses.
  *
  * The IDE's `startDeviceFlow` draws the verifier from
- * `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~` (43–128
- * chars). Using the same alphabet keeps the login byte-for-byte identical to
- * the desktop client, which the approval server may use to fingerprint the
- * requesting client.
+ * `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~`. Using
+ * the same alphabet keeps the login byte-for-byte identical to the desktop
+ * client, which the approval server may use to fingerprint the requesting
+ * client. Length is fixed at 64 — RFC 7636 §4.1 requires [43,128]; a fixed
+ * length avoids a non-cryptographic length while the content comes entirely
+ * from the CSPRNG (`randomBytes`) below.
  */
 function qoderIdeVerifier(): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
-  const length = 43 + Math.floor(Math.random() * 86);
+  // RFC 7636 §4.1: verifier length must be within [43,128]; fixed here. Content
+  // comes from the CSPRNG (randomBytes) below. `67` (alphabet length) does not
+  // divide 256, so the `%` mapping has a negligible modulo bias (~21/256 per
+  // char) — irrelevant for a 64-char secret with ~388 bits of input entropy.
+  const length = 64;
   const bytes = randomBytes(length);
   let out = "";
   for (let i = 0; i < length; i += 1) {

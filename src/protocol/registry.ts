@@ -111,8 +111,10 @@ type CodecModule =
  *
  * The dynamic import is awaited by the caller. Wire encoding happens before the
  * upstream request is issued, so the cost is paid once, on the first request,
- * and is subsequently free. `preloadCodecs()` warms it during boot to remove
- * even that first-request delay.
+ * The cost is paid once, on the first request for that family, because wire
+ * encoding happens before the upstream request is issued. There is no preload
+ * at boot: no family is knowable then, and eagerly loading all three codecs
+ * would defeat the ~50 MiB of resident memory this indirection removes.
  */
 const codecCache = new Map<WireFamily, Promise<CodecModule>>();
 
@@ -125,8 +127,8 @@ const codecCache = new Map<WireFamily, Promise<CodecModule>>();
  * a gateway instance only ever serves one family.
  *
  * The cost is paid once, on the first request for that family, because wire
- * encoding happens before the upstream request is issued. `preloadCodec()`
- * warms it during boot so even that first-request delay disappears.
+ * encoding happens before the upstream request is issued. No boot-time preload
+ * exists — see the note on `codecCache` above.
  */
 async function loadCodec(wireFamily: WireFamily): Promise<CodecModule> {
   const cached = codecCache.get(wireFamily);
@@ -147,15 +149,6 @@ async function loadCodec(wireFamily: WireFamily): Promise<CodecModule> {
   })();
   codecCache.set(wireFamily, promise);
   return promise;
-}
-
-/**
- * Warms the codec module for a wire family during boot so the first request
- * does not pay the dynamic-import cost. Safe to call concurrently; the cache
- * deduplicates.
- */
-export function preloadCodec(wireFamily: WireFamily): Promise<void> {
-  return loadCodec(wireFamily).then(() => undefined);
 }
 
 export async function encodeWireRequest(

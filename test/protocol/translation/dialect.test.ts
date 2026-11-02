@@ -38,6 +38,21 @@ describe("resolveDialect", () => {
     const unknown = resolveDialect("qwen3-thinking", "ollama", "chat", "not-a-dialect");
     expect(unknown.inband).toBe("qwen"); // heuristic still applies; no throw
   });
+
+  test("memoization: repeated same-args calls return the identical object", () => {
+    const a = resolveDialect("deepseek-v4-pro", "deepseek", "messages");
+    const b = resolveDialect("deepseek-v4-pro", "deepseek", "messages");
+    expect(b).toBe(a); // Map hit, not a recompute
+  });
+
+  test("memoization: distinct override/declared args produce distinct resolutions", () => {
+    const plain = resolveDialect("qwen3-thinking", "ollama", "chat");
+    const overridden = resolveDialect("qwen3-thinking", "ollama", "chat", "deepseek");
+    const declared = resolveDialect("qwen3-thinking", "ollama", "chat", null, "qwen");
+    expect(overridden.inband).toBe("deepseek");
+    expect(plain.inband).not.toBe("deepseek");
+    expect(declared).toBe(plain); // same key semantics → same cached policy
+  });
 });
 
 describe("canonicalToChatPayload dialect policy", () => {

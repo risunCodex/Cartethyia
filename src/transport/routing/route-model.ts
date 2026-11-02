@@ -2,6 +2,7 @@
 import { GatewayError } from "../../protocol/gateway-error";
 import { type ServiceKind, type WireFamily } from "../../protocol/canonical-model";
 import type { CallerIdentity } from "../../security/access-control";
+import type { ProviderQuotaWindow } from "../../providers/quota/quota-contracts";
 
 export type { CallerIdentity };
 
@@ -103,8 +104,41 @@ export interface RouteCandidate {
   readonly usage_floor?: number;
   readonly usage_floor_unit?: "credit" | "percent";
   /** Live quota windows (cache) the floor check evaluates. */
-  readonly quota_windows?: readonly unknown[];
+  readonly quota_windows?: readonly ProviderQuotaWindow[];
 }
+
+/**
+ * A candidate as the routing engine actually evaluates it: the catalog fields
+ * above plus the health/cooling stamp `route-catalog.ts` projects onto it and
+ * the plan-time slow-lane marker.
+ *
+ * Declared here — not as a route-catalog-local intersection — so
+ * `EligibilityEvaluator.evaluate` can take the routed shape without a cast,
+ * and so every stamping site agrees on the same field set by construction.
+ */
+export type RoutedCandidate = RouteCandidate & {
+  /**
+   * Health marker the catalog projects from `provider_accounts.status` and
+   * unexpired `model_cooldowns` entries. Absent = no health exclusion known.
+   * Mutable by declaration: the catalog builds the base candidate first and
+   * stamps health/cooling onto it as account rows are walked.
+   */
+  health_status?: "cooldown" | "model_cooldown" | "disabled";
+  /** Cooldown class the catalog derives from the account's last error category. */
+  cooldown_kind?: "hard" | "soft";
+  /**
+   * Epoch milliseconds at which this candidate's cooling window ends, when one
+   * is in force. Routing-internal: it is what lets `plan()` report a real reset
+   * on the all-accounts-cooling answer, and it never reaches a client verbatim —
+   * only the derived `retry-after` does.
+   */
+  cooldown_until?: number;
+  /**
+   * Slow-lane stamp applied at plan time (test-supported; runtime slow-lane
+   * activity is read live via `sharedClaudeSlowLanes.isActive`).
+   */
+  lane?: "slow";
+};
 
 /**
  * Provider-routing strategies. The runtime tuple is the source: the console's
@@ -278,7 +312,6 @@ export type EligibilityReason =
   | "cooldown_hard"
   | "model_cooldown"
   | "quota_exhausted"
-  | "locked"
   | "disabled"
 
 export interface EligibilityDecision {
@@ -288,7 +321,7 @@ export interface EligibilityDecision {
   /**
    * Epoch milliseconds at which this candidate's cooling window ends, when the
    * exclusion that produced this decision carries one. Absent for a healthy
-   * candidate and for every reason with no deadline (`disabled`, `locked`,
+   * candidate and for every reason with no deadline (`disabled`,
    * `quota_exhausted` from spent windows or the usage floor). `plan()` takes the
    * minimum across the cooling set to report the earliest reset a client could
    * retry against.
@@ -336,7 +369,7 @@ export interface AdmissionController {
  * Translates the evaluator's internal reason codes into operator English.
  *
  * These names are the vocabulary the routing layers use with each other —
- * `model_cooldown`, `cooldown_hard`, `locked` — not something to print into the
+ * `model_cooldown`, `cooldown_hard` — not something to print into the
  * public message, where the client would read an enum instead of an
  * explanation. The codes stay in the envelope's `reasons` field for anyone who
  * wants them; the sentence carries what they mean.
@@ -350,7 +383,6 @@ const ELIGIBILITY_REASON_LABELS: Readonly<Record<string, string>> = {
   cooldown_hard: "every account is in a hard cooldown",
   cooldown: "accounts are cooling down",
   disabled: "all accounts are disabled",
-  locked: "all accounts are locked by another request",
   credit_floor_reached: "credit or quota is exhausted",
   quota_exhausted: "every account has an exhausted quota window or is below its configured usage floor",
   capability_unsupported: "the accounts serving this model do not support the request's capabilities (e.g. images, tools, or reasoning)",
@@ -397,15 +429,6 @@ export function modelNotFoundError(requested: string, resolved: readonly string[
   );
 }
 
-export function capabilityUnsupportedError(capability: string): GatewayError {
-  return new GatewayError(
-    "capability_unsupported",
-    400,
-    `No account serving this model supports ${capability} (request {requestId}). Drop the ${capability} part of the request, or route to a model that accepts it. Know your tools — this one just isn't in the box 🧰`,
-    { capability },
-  );
-}
-
 /**
  * Every candidate in the plan refused admission: each account is already
  * serving its configured max-inflight.
@@ -448,7 +471,7 @@ export function capacityExhaustedError(context?: {
 
 /**
  * The model exists and is routed, but every account serving it is currently
- * unusable (disabled / locked). This is transient and
+ * unusable (disabled). This is transient and
  * retry-able, so it must NOT surface as `model_not_found` — a 404 tells the
  * client to fix its request when the real fix is to wait or add capacity.
  *

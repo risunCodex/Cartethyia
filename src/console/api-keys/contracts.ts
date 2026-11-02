@@ -148,7 +148,6 @@ export const DEFAULT_BAN_MINUTES: number = 60;
 /** Body accepted by the ban endpoint. */
 export interface BanApiKeyRequest {
   readonly reason: string;
-  readonly reasonLabel?: string;
   /**
    * Ban duration in whole minutes from {@link BAN_DURATION_CHOICES}; `null`
    * means permanent. Absent = {@link DEFAULT_BAN_MINUTES}.

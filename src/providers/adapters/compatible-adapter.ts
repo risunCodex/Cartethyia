@@ -333,8 +333,11 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
    * the caller (the route handler validates only the trust boundary), so this
    * method only stamps headers and posts.
    *
-   * `systemone` is kept as a named alias because the `/v1/systemone` route
-   * reads it directly; both names are the same behavior.
+   * `systemone` is kept as a named alias because both names are live: the
+   * transport dispatch handler for `POST /v1/systemone`
+   * (transport/dispatch/systemone.ts) and the discovery probing service
+   * (discovery/probing-service.ts) read it directly; both names are the same
+   * behavior.
    */
   async dispatchNativeService(
     body: Record<string, unknown>,

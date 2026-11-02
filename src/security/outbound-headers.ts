@@ -22,6 +22,24 @@ export const X_FRAME_OPTIONS = "DENY";
 export const BADGE_IMAGE_ORIGIN = "https://img.shields.io";
 
 /**
+ * Invariant: upstream response headers are NEVER forwarded wholesale to
+ * callers. There is no denylist-and-forward step on the egress path — the
+ * success projection (`proxySuccessHeaders` in
+ * `transport/dispatch/upstream.ts`) rebuilds the caller-facing header set from
+ * scratch (`cache-control: no-store`, `x-request-id`, and
+ * `GATEWAY_SECURITY_HEADERS` below), so credential-bearing upstream fields
+ * (`set-cookie`, `www-authenticate`, `proxy-authorization`) and hop-by-hop
+ * headers can never leak through by omission from a strip list.
+ *
+ * Any future feature that wants to pass upstream response fields to a caller
+ * must copy only the specific content-bearing headers it needs — do not
+ * reintroduce a "forward everything except" filter. A module implementing
+ * exactly that (`src/network/response-headers.ts` + `stripResponseHeaders`)
+ * existed once and was deleted as dead code (see git history for it), because
+ * every egress path had already moved to the rebuild-from-scratch projection.
+ */
+
+/**
  * Security headers on every `/v1` response, whichever path produced it.
  *
  * One list for the three paths that emit it — the request-context middleware,

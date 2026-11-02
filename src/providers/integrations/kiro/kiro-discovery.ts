@@ -22,10 +22,7 @@ import {
 } from "../../operations/client-versions";
 import { machineIdForAuthState } from "./kiro-machine-id";
 import { resolveKiroProfileArn } from "./kiro-profile";
-import { KIRO_MODELS, KIRO_MANAGEMENT_HOST_TEMPLATE } from "./kiro-catalog";
-
-/** AWS region shape, checked before a region is interpolated into a URL. */
-const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
+import { AWS_REGION_PATTERN, KIRO_DEFAULT_REGION, KIRO_GENERATE_PATH, KIRO_MODELS, KIRO_MANAGEMENT_HOST_TEMPLATE } from "./kiro-catalog";
 
 /** Longest model list this will read; the upstream sends a few dozen at most. */
 const MAX_DISCOVERED_MODELS = 500;
@@ -50,7 +47,6 @@ const RETIRED_KIRO_MODEL_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /** Path the adapter dispatches to; recorded on every discovered row. */
-const KIRO_GENERATE_PATH = "/generateAssistantResponse";
 /** Options for one discovery run. */
 export interface KiroModelDiscoveryOptions {
   readonly credential: string;
@@ -67,7 +63,7 @@ interface DiscoveryScope {
 
 function readScope(authState: Readonly<Record<string, unknown>> | undefined): DiscoveryScope {
   const regionRaw = typeof authState?.["region"] === "string" ? authState["region"].trim() : "";
-  const region = AWS_REGION_PATTERN.test(regionRaw) ? regionRaw : "us-east-1";
+  const region = AWS_REGION_PATTERN.test(regionRaw) ? regionRaw : KIRO_DEFAULT_REGION;
   const profileArn = resolveKiroProfileArn(authState);
   return { region, profileArn };
 }

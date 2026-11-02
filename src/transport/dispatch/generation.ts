@@ -20,13 +20,19 @@
  */
 import type { ImageGenerationOutcome, ProviderAdapter, ProviderDispatchTarget } from "../../providers/provider-contracts";
 import { GatewayError } from "../../protocol/gateway-error";
-import { resolveCredentialForAccount } from "../../providers/operations/provider-credential-service";
 import type { ServiceKind } from "../../protocol/canonical-model";
 import { metrics } from "../../observability/metrics";
 import type { ProxyRequestState } from "../request/state";
 import { completeAttempt, estimatedUsage, nativeCompletionBase } from "./attempt-finalize";
 import { runAttemptLoop } from "./attempt-loop";
 import { captureProviderRateLimit } from "./ratelimit-capture";
+import {
+  hasScope,
+  jsonResponse,
+  networkFetchContext,
+  requireRecordBody,
+  resolveAttemptCredential,
+} from "./native-shared";
 
 import type { GatewayHandlerDeps } from "./handler-deps";
 
@@ -73,13 +79,6 @@ function isMediaKind(kind: GenerationKind | PassthroughKind): kind is Generation
  * caller, so an unbounded `n` is an easy way to spend someone else's quota.
  */
 const MAX_ITEMS_PER_REQUEST = 10;
-
-function jsonResponse(payload: unknown, status: number, requestId: string): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { "content-type": "application/json", "x-request-id": requestId },
-  });
-}
 
 /**
  * Forwards a streaming upstream response to the client and accounts for it.
@@ -158,19 +157,14 @@ function createNativeSurfaceHandler(
   return async ({ request }: { request: Request }): Promise<Response> => {
     const state = deps.stateStore.require(request);
     const authorization = state.authorization;
-    const body = state.ingressBody;
-    if (!authorization || body === null || typeof body !== "object" || Array.isArray(body)) {
-      throw new GatewayError(
-        "invalid_request",
-        400,
-        `The ${noun} body must be a JSON object (request {requestId}). Send one with at least a model and a prompt. Check the shape of what you sent — then resend 🪞`,
-      );
-    }
-    const generation = body as Record<string, unknown>;
+    const generation = requireRecordBody(
+      state,
+      `The ${noun} body must be a JSON object (request {requestId}). Send one with at least a model and a prompt. Check the shape of what you sent — then resend 🪞`,
+    );
     if (typeof generation.model !== "string" || generation.model.trim().length === 0) {
       throw new GatewayError("invalid_request", 400, `A model is required (request {requestId}): it names the ${noun} provider to use. Check the shape of what you sent — then resend 🪞`);
     }
-    if (!authorization.snapshot.scopes?.includes("routing:invoke" as never)) {
+    if (!hasScope(authorization?.snapshot.scopes, "routing:invoke")) {
       throw new GatewayError(
         "policy_rejected",
         403,
@@ -200,10 +194,15 @@ function createNativeSurfaceHandler(
     const prepared = await deps.proxyPreparer.prepareNativeService({
       model: generation.model,
       serviceKind: kind,
-      authorization,
+      // `requireRecordBody` already refused a missing authorization; this guard
+      // exists only to narrow the type for the code below.
+      authorization: authorization!,
       ...(state.abortController.signal ? { signal: state.abortController.signal } : {}),
       ...(state.clientUserAgent === undefined ? {} : { clientUserAgent: state.clientUserAgent }),
     });
+    if (!authorization) {
+      throw new GatewayError("invalid_request", 400, "authentication required (request {requestId})");
+    }
 
     return runAttemptLoop<Response, ProviderAdapter>({
       state,
@@ -221,19 +220,7 @@ function createNativeSurfaceHandler(
       strictPoolSelection: false,
       exhaustedError: new GatewayError("route_unavailable", 503, `no eligible ${noun} generation route (request {requestId}). The bouncer stepped out — come back shortly 🚪`),
       prepare: async (candidate) => {
-        const credential = candidate.provider_account_id
-          ? await resolveCredentialForAccount(
-              deps.db,
-              candidate.provider_id,
-              candidate.provider_account_id,
-              deps.oauthRefreshService && deps.resolveOAuthRefresher
-                ? { refreshService: deps.oauthRefreshService, resolveRefresher: deps.resolveOAuthRefresher }
-                : undefined,
-            )
-          : {
-              provider_id: candidate.provider_id as ProviderAdapter["provider_id"],
-              credential_kind: "none" as const,
-            };
+        const credential = await resolveAttemptCredential(deps, candidate);
         const adapter = await deps.resolveProviderAdapter?.(candidate.provider_id);
         if (!adapter) {
           throw new GatewayError(
@@ -309,14 +296,7 @@ function createNativeSurfaceHandler(
           abort_signal: state.abortController.signal,
           request_headers: inboundHeaders,
           ...(candidate.user_agent === undefined ? {} : { user_agent: candidate.user_agent }),
-          ...(deps.networkBindingFactory
-            ? {
-                outbound_fetch: deps.networkBindingFactory.fetch(
-                  leases.proxySlot?.poolId,
-                  authorization.tenantId,
-                ),
-              }
-            : {}),
+          ...networkFetchContext(deps, leases.proxySlot?.poolId, authorization.tenantId),
         };
         // Prefer the provider's own method for this kind; otherwise post the
         // body to the candidate's endpoint through the adapter, which owns the

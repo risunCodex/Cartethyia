@@ -53,7 +53,13 @@ import {
 import { machineIdForAuthState } from "./kiro-machine-id";
 import { estimateKiroSessionCache } from "./kiro-cache";
 import { resolveKiroProfileArn } from "./kiro-profile";
-import { kiroContextWindow, KIRO_GENERATE_PATH, KIRO_RUNTIME_HOST_TEMPLATE } from "./kiro-catalog";
+import {
+  AWS_REGION_PATTERN,
+  KIRO_DEFAULT_REGION,
+  kiroContextWindow,
+  KIRO_GENERATE_PATH,
+  KIRO_RUNTIME_HOST_TEMPLATE,
+} from "./kiro-catalog";
 import { resolveInboundSessionId } from "../../operations/session-resolution";
 import { KiroStreamDecoder, isKiroTruncationReason, type KiroUsage } from "./kiro-stream";
 
@@ -74,9 +80,6 @@ interface KiroAuthState {
   readonly machineId?: string;
 }
 
-/** AWS region shape, checked before a region is interpolated into a URL. */
-const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
-
 interface KiroAdapterOptions {
   readonly fetch?: typeof fetch;
 }
@@ -87,7 +90,7 @@ function readAuthState(context: ProviderDispatchContext): KiroAuthState | undefi
   if (raw === undefined) return undefined;
   const authMethod = typeof raw["authMethod"] === "string" ? raw["authMethod"] : undefined;
   if (authMethod === undefined) return undefined;
-  const region = typeof raw["region"] === "string" && raw["region"].trim().length > 0 ? raw["region"].trim() : "us-east-1";
+  const region = typeof raw["region"] === "string" && raw["region"].trim().length > 0 ? raw["region"].trim() : KIRO_DEFAULT_REGION;
   const profileArn = typeof raw["profileArn"] === "string" && raw["profileArn"].trim().length > 0 ? raw["profileArn"].trim() : undefined;
   const machineId = typeof raw["machineId"] === "string" && raw["machineId"].trim().length > 0 ? raw["machineId"].trim() : undefined;
   return {
@@ -155,8 +158,8 @@ function resolveAccountMachineId(context: ProviderDispatchContext): string {
 
 /** Region validated before interpolation into an endpoint URL. */
 function safeRegion(authState: KiroAuthState | undefined): string {
-  const region = authState?.region ?? "us-east-1";
-  return AWS_REGION_PATTERN.test(region) ? region : "us-east-1";
+  const region = authState?.region ?? KIRO_DEFAULT_REGION;
+  return AWS_REGION_PATTERN.test(region) ? region : KIRO_DEFAULT_REGION;
 }
 
 /**

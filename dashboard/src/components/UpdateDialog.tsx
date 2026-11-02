@@ -64,6 +64,8 @@ export interface UpdateDialogProps {
   readonly onUpdateNow?: (() => void) | undefined;
   /** Whether an update is currently in progress (blocks refresh). */
   readonly updating?: boolean;
+  /** Set when the install failed or could not start; rendered instead of the spinner. */
+  readonly error?: string;
 }
 
 /** Copies text and reports the transient "copied" state to the button. */
@@ -95,6 +97,7 @@ export function UpdateDialog({
   onDismissVersion,
   onUpdateNow,
   updating = false,
+  error,
 }: UpdateDialogProps): ReactNode {
   const { copied, copy } = useCopy();
   const target = latestVersion ?? "the latest release";
@@ -122,7 +125,7 @@ export function UpdateDialog({
               Don&rsquo;t show for v{target}
             </Button>
           )}
-          {onUpdateNow !== undefined ? (
+          {onUpdateNow !== undefined && !error ? (
             <Button onClick={onUpdateNow} disabled={updating}>
               {updating ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : null}
               {updating ? "Updating…" : "Update now"}
@@ -181,6 +184,15 @@ export function UpdateDialog({
             gives you the command instead of a button that installs.
           </p>
         </div>
+
+        {error ? (
+          <div className="flex items-start gap-6 rounded-card border border-inner-border bg-surface-2 p-4 text-red-500">
+            <span className="mt-0.5 shrink-0">
+              <TriangleAlert size={14} aria-hidden="true" />
+            </span>
+            <p className="text-badge min-w-0 break-words">Update failed — {error}</p>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-4">
           <a

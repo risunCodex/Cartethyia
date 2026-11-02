@@ -1,11 +1,15 @@
 import type { ProviderAdapter, ProviderDispatchTarget } from "../../providers/provider-contracts";
 import { GatewayError } from "../../protocol/gateway-error";
-import { resolveCredentialForAccount } from "../../providers/operations/provider-credential-service";
 import { metrics } from "../../observability/metrics";
-import { parseThinkingSuffix } from "../../protocol/translation/thinking";
-import { completeAttempt, estimatedUsage, nativeCompletionBase } from "./attempt-finalize";
-import { repriceUsage, usageFromProvider } from "../../providers/provider-usage";
+import { estimatedUsage, nativeCompletionBase, completeAttempt } from "./attempt-finalize";
 import { runAttemptLoop } from "./attempt-loop";
+import {
+  networkFetchContext,
+  requireRecordBody,
+  resolveAttemptCredential,
+  stripThinkingSuffix,
+  usageFromUpstreamClone,
+} from "./native-shared";
 
 /**
  * The native System One route (`POST /v1/systemone`) and the dependency surface
@@ -31,10 +35,10 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
   return async ({ request }: { request: Request }): Promise<Response> => {
     const state = deps.stateStore.require(request);
     const authorization = state.authorization;
-    const body = state.ingressBody;
-    if (!authorization || body === null || typeof body !== "object" || Array.isArray(body))
-      throw new GatewayError("invalid_request", 400, "systemone request body must be a JSON object (request {requestId}). Check the shape of what you sent — then resend 🪞");
-    const decision = body as Record<string, unknown>;
+    const decision = requireRecordBody(
+      state,
+      "systemone request body must be a JSON object (request {requestId}). Check the shape of what you sent — then resend 🪞",
+    );
     if (typeof decision.model !== "string" || decision.model.trim().length === 0)
       throw new GatewayError("invalid_request", 400, "model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
     // A thinking suffix (`model(high)`) is stripped for the same reason the
@@ -42,9 +46,7 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
     // allowlist and the route plan, and `(high)` is not part of any registered
     // id. The level itself is dropped — a decision request carries no reasoning
     // effort to shape, and the body is passed upstream verbatim.
-    const { model: bareModel } = parseThinkingSuffix(decision.model);
-    const decisionBody: Record<string, unknown> =
-      bareModel === decision.model ? decision : { ...decision, model: bareModel };
+    const { bareModel, body: decisionBody } = stripThinkingSuffix(decision.model, decision);
     // Trust boundary only: the decision model's own question shapes are
     // upstream's to validate. `state` and a `questions` object are what make a
     // System One request a System One request at all.
@@ -60,7 +62,7 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
     const prepared = await deps.proxyPreparer.prepareNativeService({
       model: bareModel,
       serviceKind: "systemone",
-      authorization,
+      authorization: authorization!,
       ...(state.abortController.signal ? { signal: state.abortController.signal } : {}),
       ...(state.clientUserAgent === undefined ? {} : { clientUserAgent: state.clientUserAgent }),
     });
@@ -85,19 +87,7 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
         "no eligible System One route (request {requestId}). The bouncer stepped out — come back shortly 🚪",
       ),
       prepare: async (candidate) => {
-        const credential = candidate.provider_account_id
-          ? await resolveCredentialForAccount(
-              deps.db,
-              candidate.provider_id,
-              candidate.provider_account_id,
-              deps.oauthRefreshService && deps.resolveOAuthRefresher
-                ? { refreshService: deps.oauthRefreshService, resolveRefresher: deps.resolveOAuthRefresher }
-                : undefined,
-            )
-          : {
-              provider_id: candidate.provider_id as ProviderAdapter["provider_id"],
-              credential_kind: "none" as const,
-            };
+        const credential = await resolveAttemptCredential(deps, candidate);
         const adapter = (await deps.resolveProviderAdapter?.(candidate.provider_id)) as SystemoneAdapter | undefined;
         if (!adapter || typeof adapter.systemone !== "function")
           throw new GatewayError(
@@ -131,14 +121,7 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
           deadline: state.deadlineMs,
           abort_signal: state.abortController.signal,
           ...(candidate.user_agent === undefined ? {} : { user_agent: candidate.user_agent }),
-          ...(deps.networkBindingFactory
-            ? {
-                outbound_fetch: deps.networkBindingFactory.fetch(
-                  leases.proxySlot?.poolId,
-                  authorization.tenantId,
-                ),
-              }
-            : {}),
+          ...networkFetchContext(deps, leases.proxySlot?.poolId, authorization!.tenantId),
         });
         if (!response.ok) {
           // Surface the upstream decision error verbatim: it is the operator's
@@ -154,20 +137,9 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
         // Prefer the usage the decision endpoint reported; fall back to the
         // fixed native estimate. `response.clone()` leaves the body readable
         // for the client.
-        let reportedUsage: ReturnType<typeof usageFromProvider>;
-        try {
-          const parsed: unknown = await response.clone().json();
-          reportedUsage = usageFromProvider(
-            typeof parsed === "object" && parsed !== null
-              ? (parsed as Record<string, unknown>)["usage"]
-              : undefined,
-          );
-        } catch {
-          reportedUsage = undefined;
-        }
-        const usage = repriceUsage(
-          reportedUsage ??
-            estimatedUsage(prepared.estimatedInputTokens, prepared.estimatedOutputTokens),
+        const usage = await usageFromUpstreamClone(
+          response,
+          estimatedUsage(prepared.estimatedInputTokens, prepared.estimatedOutputTokens),
           candidate.provider_id,
           candidate.model_id,
         );

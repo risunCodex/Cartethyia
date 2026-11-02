@@ -93,27 +93,15 @@ interface AnthropicCacheControlOptions {
  * No invented minimum prefix length.
  */
 export function anthropicCacheControl(
-  hint: CacheHint | undefined,
+  _hint: CacheHint | undefined,
   options: AnthropicCacheControlOptions = {},
-): Record<string, unknown> {
+): { cache_control: AnthropicCacheControl } {
   const control: AnthropicCacheControl = { type: "ephemeral" };
   if (options.ttl) control.ttl = options.ttl;
 
-  if (!hint || hint === "stable_prefix") {
-    // Stable prefix: emit automatic top-level cache_control at last cacheable block
-    return { cache_control: control };
-  }
-
-  if (hint.kind === "breakpoint") {
-    // Per-content-block cache control for explicitly marked breakpoints
-    // The breakpoint list indicates positions where cache boundaries should be
-    // applied (in top-level request builder when flattening to Messages format)
-    return {
-      // Caller-marked breakpoints handled by surface adapter
-      // per_block_cache: hint.list, // not exposed to API, managed by adapter
-      cache_control: control,
-    };
-  }
-
+  // Every hint shape maps to the same top-level control: stable_prefix emits
+  // it at the last cacheable block, breakpoint hints are handled per-block by
+  // the surface adapter, and no hint still gets Anthropic's automatic cache
+  // control. The (unused) hint parameter is kept so call sites document intent.
   return { cache_control: control };
 }

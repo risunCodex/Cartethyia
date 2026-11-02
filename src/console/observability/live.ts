@@ -94,10 +94,9 @@ export function createLiveRoutes(config: LiveConfig): AnyElysia {
         requireScope(access, "dashboard:read");
         const tenantId = access?.tenantId;
         if (!tenantId) return errorResponse(new Error("Tenant required"), set, "Live operation failed");
-        set.headers["content-type"] = "text/event-stream";
-        set.headers["cache-control"] = "no-cache, no-transform";
-        set.headers["connection"] = "keep-alive";
-        set.headers["x-accel-buffering"] = "no";
+        // No `set.headers` writes here: this handler returns a `Response`, so
+        // Elysia discards `set` and `consoleSseResponse` below owns the SSE
+        // headers (content-type, cache-control, connection, buffering).
         return consoleSseResponse(
           createConsoleSseStream(request.signal, ({ send }) => {
             return subscribeRequestCompleted((notice) => {

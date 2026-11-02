@@ -1,11 +1,15 @@
 import { GatewayError } from "../../protocol/gateway-error";
-import { resolveCredentialForAccount } from "../../providers/operations/provider-credential-service";
 import { metrics } from "../../observability/metrics";
-import { parseThinkingSuffix } from "../../protocol/translation/thinking";
 import type { CodexCompactAdapter } from "../../providers/integrations/codex/codex";
 import { completeAttempt, estimatedUsage, nativeCompletionBase } from "./attempt-finalize";
-import { repriceUsage, usageFromProvider } from "../../providers/provider-usage";
 import { runAttemptLoop } from "./attempt-loop";
+import {
+  networkFetchContext,
+  requireRecordBody,
+  resolveAttemptCredential,
+  stripThinkingSuffix,
+  usageFromUpstreamClone,
+} from "./native-shared";
 
 /**
  * The native Codex compaction route (`POST /v1/responses/compact`) and the
@@ -25,10 +29,10 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
   return async ({ request }: { request: Request }): Promise<Response> => {
     const state = deps.stateStore.require(request);
     const authorization = state.authorization;
-    const body = state.ingressBody;
-    if (!authorization || body === null || typeof body !== "object" || Array.isArray(body))
-      throw new GatewayError("invalid_request", 400, "compact request body must be a JSON object (request {requestId}). Check the shape of what you sent — then resend 🪞");
-    const compact = body as Record<string, unknown>;
+    const compact = requireRecordBody(
+      state,
+      "compact request body must be a JSON object (request {requestId}). Check the shape of what you sent — then resend 🪞",
+    );
     if (typeof compact.model !== "string" || compact.model.trim().length === 0)
       throw new GatewayError("invalid_request", 400, "model is required (request {requestId}). Check the shape of what you sent — then resend 🪞");
     // A thinking suffix (`model(high)`) is stripped here for the same reason the
@@ -39,9 +43,7 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
     // reasoning effort to shape, and the body is passed upstream verbatim.
     // Stripping keeps a client that appends the suffix to every request working
     // here instead of failing with a misleading model-not-found.
-    const { model: compactModel } = parseThinkingSuffix(compact.model);
-    const compactBody: Record<string, unknown> =
-      compactModel === compact.model ? compact : { ...compact, model: compactModel };
+    const { bareModel: compactModel, body: compactBody } = stripThinkingSuffix(compact.model, compact);
     if (!(typeof compact.input === "string" || Array.isArray(compact.input)))
       throw new GatewayError("invalid_request", 400, "input must be a string or array (request {requestId}). Check the shape of what you sent — then resend 🪞");
     if ("instructions" in compact && typeof compact.instructions !== "string")
@@ -57,7 +59,7 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
       throw new GatewayError("admission_unavailable", 503, "Codex compact transport unavailable (request {requestId}). The bouncer stepped out — come back shortly 🚪");
     const prepared = await deps.proxyPreparer.prepareNativeCompact({
       model: compactModel,
-      authorization,
+      authorization: authorization!,
       signal: state.abortController.signal,
       ...(state.clientUserAgent === undefined ? {} : { clientUserAgent: state.clientUserAgent }),
     });
@@ -88,14 +90,10 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
             503,
             "Codex compact requires an OAuth account (request {requestId}). Wrong key, right door — check the credential 🔑",
           );
-        const credential = await resolveCredentialForAccount(
-          deps.db,
-          "codex",
-          candidate.provider_account_id,
-          deps.oauthRefreshService && deps.resolveOAuthRefresher
-            ? { refreshService: deps.oauthRefreshService, resolveRefresher: deps.resolveOAuthRefresher }
-            : undefined,
-        );
+        const credential = await resolveAttemptCredential(deps, {
+          ...candidate,
+          provider_id: "codex",
+        });
         if (credential.credential_kind !== "oauth")
           throw new GatewayError(
             "capability_unsupported",
@@ -110,36 +108,17 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
           credential,
           deadline: state.deadlineMs,
           abort_signal: state.abortController.signal,
-          ...(deps.networkBindingFactory
-            ? {
-                outbound_fetch: deps.networkBindingFactory.fetch(
-                  leases.proxySlot?.poolId,
-                  authorization.tenantId,
-                ),
-              }
-            : {}),
+          ...networkFetchContext(deps, leases.proxySlot?.poolId, authorization!.tenantId),
         });
         // Prefer the usage the compaction endpoint actually reported. The
         // estimate is a fixed 1024+1024 reserve, and compaction is by
         // construction a large-input operation, so charging it unconditionally
-        // let real spend run far past the counter. `usageFromProvider` returns
-        // undefined when the body reported nothing, which keeps the estimate as
-        // the fallback. `response.clone()` leaves the body readable for the
-        // client.
-        let reportedUsage: ReturnType<typeof usageFromProvider>;
-        try {
-          const parsed: unknown = await response.clone().json();
-          reportedUsage = usageFromProvider(
-            typeof parsed === "object" && parsed !== null
-              ? (parsed as Record<string, unknown>)["usage"]
-              : undefined,
-          );
-        } catch {
-          reportedUsage = undefined;
-        }
-        const usage = repriceUsage(
-          reportedUsage ??
-            estimatedUsage(prepared.estimatedInputTokens, prepared.estimatedOutputTokens),
+        // let real spend run far past the counter. `usageFromUpstreamClone`
+        // falls back to the estimate when the body reported nothing, and
+        // `response.clone()` leaves the body readable for the client.
+        const usage = await usageFromUpstreamClone(
+          response,
+          estimatedUsage(prepared.estimatedInputTokens, prepared.estimatedOutputTokens),
           candidate.provider_id,
           candidate.model_id,
         );

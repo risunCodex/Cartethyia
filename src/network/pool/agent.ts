@@ -122,9 +122,11 @@ function createSsrfLookup(policy: SsrfPolicy): NonNullable<RequestOptions["looku
       family?: number,
     ) => void,
   ): void => {
-    const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), 5_000);
-    void resolveAllAddresses(hostname, abort.signal)
+    // No outer AbortController/timer here: `resolveAllAddresses` already races
+    // its own 5s deadline against the OS lookup and maps the failure to a
+    // deterministic `transport_unavailable` 502. A second timer would only
+    // re-race it with a different error class (499/504 depending on timing).
+    void resolveAllAddresses(hostname)
       .then((addrs) => {
         try {
           validateResolvedAddresses(addrs, policy);
@@ -145,8 +147,7 @@ function createSsrfLookup(policy: SsrfPolicy): NonNullable<RequestOptions["looku
         }
         cb(null, first, family);
       })
-      .catch((error: unknown) => cb(error as Error))
-      .finally(() => clearTimeout(timer));
+      .catch((error: unknown) => cb(error as Error));
   }) as unknown as NonNullable<RequestOptions["lookup"]>;
 }
 

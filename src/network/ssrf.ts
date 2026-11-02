@@ -3,6 +3,12 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { GatewayError } from "../protocol/gateway-error";
 import type { SsrfPolicy } from "../config/network";
+import {
+  cidrContainsAddress,
+  ipv4ToNumberStrict,
+  ipv6GroupsToBytes,
+  normalizeIpv6Groups,
+} from "./ip-utils";
 
 const DNS_CACHE_TTL_MS = 60_000;
 const DNS_CACHE_MAX = 64;
@@ -31,87 +37,24 @@ type DnsLookup = (
   options: { all: true },
 ) => Promise<readonly { address: string; family: number }[]>;
 
-function ipv4Number(address: string): number {
-  const parts = address.split(".");
-  if (parts.length !== 4 || parts.some((part) => !/^\d+$/.test(part)))
-    throw new Error("invalid IPv4");
-  const octets = parts.map(Number);
-  if (octets.some((part) => part < 0 || part > 255)) throw new Error("invalid IPv4");
-  return (((octets[0]! << 24) >>> 0) | (octets[1]! << 16) | (octets[2]! << 8) | octets[3]!) >>> 0;
-}
-
 function ipv6Bytes(address: string): Uint8Array {
-  const value = address.toLowerCase().split("%", 1)[0]!;
-  if (value.includes(".")) {
-    const split = value.lastIndexOf(":");
-    if (split < 0) throw new Error("invalid IPv6");
-    const mapped = ipv4Number(value.slice(split + 1));
-    return ipv6Bytes(
-      `${value.slice(0, split)}:${(mapped >>> 16).toString(16)}:${(mapped & 0xffff).toString(16)}`,
-    );
-  }
-  const halves = value.split("::");
-  if (halves.length > 2) throw new Error("invalid IPv6");
-  const left = halves[0] ? halves[0].split(":") : [];
-  const right = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
-  if (halves.length === 1 && left.length !== 8) throw new Error("invalid IPv6");
-  const missing = 8 - left.length - right.length;
-  if (missing < 0 || (halves.length === 2 && missing < 1)) throw new Error("invalid IPv6");
-  const groups = [...left, ...Array.from({ length: missing }, () => "0"), ...right];
-  if (groups.length !== 8 || groups.some((part) => !/^[0-9a-f]{1,4}$/.test(part)))
-    throw new Error("invalid IPv6");
-  const bytes = new Uint8Array(16);
-  groups.forEach((part, index) => {
-    const n = Number.parseInt(part, 16);
-    bytes[index * 2] = n >>> 8;
-    bytes[index * 2 + 1] = n & 255;
-  });
+  const bytes = ipv6GroupsToBytes(normalizeIpv6Groups(address, { allowDottedQuad: true }) ?? []);
+  if (bytes === undefined) throw new Error("invalid IPv6");
   return bytes;
 }
 
 function cidrContains(address: string, cidr: string): boolean {
-  const [network, prefixText] = cidr.split("/");
-  if (!network || prefixText === undefined) return false;
-  // A present-but-blank prefix (`"10.0.0.0/"`) must be refused, not coerced.
-  // `Number("")` is 0 and `""` is not `undefined`, so a plain truthiness check
-  // here would leave `prefix = 0` — and a /0 admits every address of its family.
-  // An operator's typo would therefore silently widen the allowlist to the whole
-  // IPv4 space, including the link-local metadata endpoint this guard exists to
-  // refuse.
-  //
-  // Requiring a run of digits (after trimming) also refuses the exotic spellings
-  // `Number` accepts for zero — `-0`, `+0`, `0x0`, `0b0`, `0o0`, `0.0` — all of
-  // which are typos rather than a deliberate "allow everything". Only a written
-  // `0` means that, which is the next branch's business.
-  const prefixDigits = prefixText.trim();
-  if (!/^\d+$/.test(prefixDigits)) return false;
-  const prefix = Number(prefixDigits);
-  const family = isIP(address);
-  if (
-    family !== isIP(network) ||
-    !Number.isInteger(prefix) ||
-    prefix < 0 ||
-    prefix > (family === 4 ? 32 : 128)
-  )
-    return false;
-  if (family === 4) {
-    const bits = 32 - prefix;
-    return bits === 32 ? true : ipv4Number(address) >>> bits === ipv4Number(network) >>> bits;
-  }
-  const a = ipv6Bytes(address);
-  const n = ipv6Bytes(network);
-  for (let index = 0; index < prefix; index++) {
-    const byte = Math.floor(index / 8);
-    const bit = 7 - (index % 8);
-    if (((a[byte]! >> bit) & 1) !== ((n[byte]! >> bit) & 1)) return false;
-  }
-  return true;
+  return cidrContainsAddress(address, cidr, {
+    requirePrefix: true,
+    unwrapMapped: false,
+    allowDottedQuad: true,
+  });
 }
 
 function unsafeAddress(address: string): boolean {
   const family = isIP(address);
   if (family === 4) {
-    const n = ipv4Number(address);
+    const n = ipv4ToNumberStrict(address);
     return [
       [0, 8],
       [0x0a000000, 8],
@@ -175,9 +118,15 @@ export function validateResolvedAddresses(
   return addresses[0]!;
 }
 
+export async function resolveAllAddresses(hostname: string): Promise<string[]>;
 export async function resolveAllAddresses(
   hostname: string,
   signal: AbortSignal,
+  lookupFn?: DnsLookup,
+): Promise<string[]>;
+export async function resolveAllAddresses(
+  hostname: string,
+  signal: AbortSignal = new AbortController().signal,
   lookupFn: DnsLookup = lookup,
 ): Promise<string[]> {
   if (signal.aborted) throw abortErrorForSignal(signal);

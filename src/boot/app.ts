@@ -680,6 +680,10 @@ export function createGatewayApp(deps: GatewayAppDeps) {
           stateStore: requestStateStore,
           resolvePeerAddress: (request) => peerAddresses.get(request) ?? null,
           trustedProxyBoundary: deps.trustedProxyBoundary,
+          // The update apply route drains through the process coordinator
+          // before exiting, so the destructive path cannot skip telemetry
+          // flush and pool close.
+          shutdownCoordinator: deps.shutdownCoordinator,
         }),
       );
     }

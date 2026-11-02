@@ -281,11 +281,13 @@ export interface ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent>;
   /**
-   * Optional native-protocol capability. A provider whose catalog serves a
-   * non-`llm` service kind (System One) implements the matching method; the
-   * native route handler looks it up and dispatches the caller's opaque body
-   * through it. The body is forwarded untouched — the method only adds the
-   * provider's auth/identity headers and posts it to `endpoint_path`.
+   * Optional native-protocol capability for the public `POST /v1/systemone`
+   * route (the dispatch leg of the System One service, alongside the probing
+   * leg served by the discovery/probing-service). A provider whose catalog
+   * serves a non-`llm` service kind (System One) implements the matching
+   * method; the native route handler looks it up and dispatches the caller's
+   * opaque body through it. The body is forwarded untouched — the method only
+   * adds the provider's auth/identity headers and posts it to `endpoint_path`.
    *
    * An adapter without this method is simply not eligible for the route, which
    * is why it is optional rather than a required no-op.

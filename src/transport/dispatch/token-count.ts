@@ -37,9 +37,11 @@ import type { ProviderAdapter, ProviderDispatchTarget } from "../../providers/pr
 import { GatewayError } from "../../protocol/gateway-error";
 import { isRecord } from "../../protocol/codecs";
 import { metrics } from "../../observability/metrics";
+import type { TelemetryBatchBuffer } from "../../observability/telemetry-buffer";
 import type { ProxyRequestState } from "../request/state";
 import type { PreparedNativeRequest } from "../request/preparer";
 import { completeAttempt, estimatedUsage, nativeCompletionBase } from "./attempt-finalize";
+import { finalizeRequestTelemetry } from "../guards/error-lifecycle";
 import { runAttemptLoop } from "./attempt-loop";
 import { hasScope, networkFetchContext, requireRecordBody, resolveAttemptCredential } from "./native-shared";
 
@@ -93,7 +95,7 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
       // real 429/503 — a fabricated count would tell the client its context
       // fits when nothing is there to serve the turn that follows.
       if (!(error instanceof GatewayError) || error.code !== "capability_unsupported") throw error;
-      return estimatedCountResponse(state, countBody);
+      return estimatedCountResponse(state, countBody, deps.telemetryBuffer, deps.db);
     }
 
     return runAttemptLoop<Response, ProviderAdapter>({
@@ -202,20 +204,40 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
  *
  * No attempt is finalized: nothing was leased, nothing was sent upstream, and
  * no provider produced this number, so recording it against an account would
- * invent usage the account never served. The request still gets an outcome —
- * without one the `afterResponse` hook finalizes it as a failure, and a count
- * that answered 200 would show up in Console Log as an error.
+ * invent usage the account never served. The request is still finalized through
+ * `finalizeRequestTelemetry` (the early-rejection pattern) — without it the
+ * latency histogram, the `request_complete` console event, and the durable
+ * telemetry row all miss this request — and `state.completed` prevents the
+ * `afterResponse` fallback from finalizing it a second time.
  */
 function estimatedCountResponse(
   state: ProxyRequestState,
   countBody: Record<string, unknown>,
+  telemetryBuffer: TelemetryBatchBuffer | undefined,
+  db: GatewayHandlerDeps["db"],
 ): Response {
   const inputTokens = estimateMessagesInputTokens(countBody);
   const payload = JSON.stringify({ input_tokens: inputTokens });
-  state.outcome = { status: "completed", httpStatus: 200 };
+  // The request still gets an outcome — without one the `afterResponse` hook
+  // would finalize it as a failure, and a count that answered 200 would show up
+  // in Console Log as an error. `usage` is a zero-priced estimate: nothing was
+  // leased and no provider produced this number, so recording a cost against an
+  // account would invent usage the account never served (`estimated_cost: null`).
+  state.outcome = {
+    status: "completed",
+    httpStatus: 200,
+    usage: estimatedUsage(inputTokens, 0),
+  };
   state.completed = true;
   state.clientResponseText = payload;
   metrics.proxy_requests_total.inc(1, { status: "completed" });
+  // Finalize telemetry inline (the early-rejection pattern) instead of routing
+  // through `completeAttempt`: there was no lease and no provider — but the
+  // latency histogram, the `request_complete` console event, and the durable
+  // row must still happen, exactly once. `completed = true` also disables the
+  // `afterResponse` fallback, which is what used to make this request vanish
+  // from telemetry entirely.
+  if (telemetryBuffer) finalizeRequestTelemetry(state, telemetryBuffer, db);
   return new Response(payload, {
     headers: {
       "content-type": "application/json",

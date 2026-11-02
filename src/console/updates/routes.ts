@@ -1,11 +1,23 @@
 import { Elysia, type AnyElysia } from "elysia";
-import { spawn } from "node:child_process";
-import { consoleErrorHandler, requireTenantScope } from "../shared/errors";
+import { consoleErrorHandler, requireTenantScope, ConsoleDomainError } from "../shared/errors";
 import { consoleSseResponse, createConsoleSseStream } from "../observability/sse";
 import type { ObservabilityStore } from "../observability/contracts";
 import type { ConsoleAccessResolver } from "../auth/access";
 import { fetchLatestRelease, type LatestRelease } from "./repository-updates";
 import { isNewerRelease } from "./version-compare";
+import {
+  isFreshlyInstalling,
+  readUpdateStatus,
+  spawnDetachedUpdate,
+  updateStatusPath,
+  writeUpdateStatus,
+} from "./apply-update";
+
+/** Minimal drain surface the apply route needs from the process coordinator. */
+export interface UpdateShutdownCoordinator {
+  readonly begin: (reason: "update") => Promise<void>;
+  readonly totalShutdownBudgetMs: () => number;
+}
 
 // Memory is sampled per visible tab: ten seconds per stream made a console
 // with many open tabs wake up constantly for numbers nobody is reading. 30 s
@@ -97,25 +109,98 @@ export function createUpdateRoutes(config: {
   readonly accessResolver: ConsoleAccessResolver;
   readonly observabilityStore: ObservabilityStore;
   readonly fetchRelease?: () => Promise<LatestRelease | null>;
+  /**
+   * The process `ShutdownCoordinator`, narrowed to the drain surface the apply
+   * route needs. Optional only so reduced compositions (tests of the read-only
+   * routes) build without one; the apply route itself throws when absent,
+   * because exiting without a drain is the bug this redesign removes.
+   */
+  readonly shutdownCoordinator?: UpdateShutdownCoordinator;
+  /** Overrides status-file resolution (tests); defaults to the config dir. */
+  readonly configDir?: string;
+  /** Overrides the detached spawn (tests); defaults to the real installer. */
+  readonly spawnUpdate?: typeof spawnDetachedUpdate;
 }): AnyElysia {
   const fetchRelease = config.fetchRelease ?? fetchLatestRelease;
+  const configDir = config.configDir;
+  const spawnUpdate = config.spawnUpdate ?? spawnDetachedUpdate;
   return new Elysia()
     .error(consoleErrorHandler("Update check failed"))
     .get("/updates/release", async () => await fetchRelease())
-    .post("/updates/apply", ({ request }) => {
+    // Same no-scope posture as `/updates/release`: the status file holds no
+    // credentials and no tenant data, only whether the last install landed.
+    .get("/updates/status", () => readUpdateStatus(configDir) ?? { status: "idle", startedAt: new Date(0).toISOString() })
+    .post("/updates/apply", async ({ request }) => {
       requireTenantScope(config.accessResolver(request), "dashboard:write");
-      const isWin = process.platform === "win32";
-      const shell = isWin ? "cmd.exe" : "/bin/sh";
-      const install = "npm install -g cartethyia@latest --prefer-online";
-      const restart = isWin
-        ? "cartethyia start"
-        : "systemctl restart cartethyia 2>/dev/null || cartethyia start";
-      const script = `${install} && ${restart}`;
-      const args = isWin ? ["/c", script] : ["-c", script];
-      const child = spawn(shell, args, { detached: true, stdio: "ignore" });
-      child.unref();
-      setTimeout(() => process.exit(0), 1500);
-      return { started: true };
+      if (config.shutdownCoordinator === undefined) {
+        throw new ConsoleDomainError(
+          "update_unavailable",
+          503,
+          "The update flow needs a shutdown coordinator; this composition cannot apply updates.",
+        );
+      }
+      const status = readUpdateStatus(configDir);
+      // Double-apply guard: a status file younger than ten minutes that still
+      // says "installing" means the detached installer is running and another
+      // spawn would race it for the same npm cache and package directory.
+      if (isFreshlyInstalling(status)) {
+        throw new ConsoleDomainError(
+          "update_in_progress",
+          409,
+          "An update is already installing. Check /updates/status for its result.",
+        );
+      }
+      // The target tag is best-effort: it labels the intent file, but a failed
+      // release lookup must not block the install itself.
+      const release = await fetchRelease().catch(() => null);
+      const targetTag = release?.tag_name.replace(/^v/, "");
+      writeUpdateStatus(
+        {
+          status: "installing",
+          ...(targetTag === undefined ? {} : { targetTag }),
+          startedAt: new Date().toISOString(),
+        },
+        configDir,
+      );
+      const spawnResult = spawnUpdate(configDir === undefined ? {} : { configDir });
+      if (!spawnResult.started) {
+        // Flip the intent file to `failed` here, regardless of whether the spawn
+        // implementation already did: the dashboard's poll loop must see a
+        // terminal status, never a silent `installing` with no installer behind it.
+        writeUpdateStatus(
+          {
+            status: "failed",
+            startedAt: new Date().toISOString(),
+            exitCode: -1,
+            stderrTail: spawnResult.error ?? "unknown error",
+          },
+          configDir,
+        );
+        throw new ConsoleDomainError(
+          "update_spawn_failed",
+          500,
+          "The detached installer could not be started.",
+          { error: spawnResult.error ?? "unknown" },
+        );
+      }
+      const coordinator = config.shutdownCoordinator;
+      // Drain like a planned stop, then exit. The safety timer is the
+      // coordinator's own total budget: begin() is bounded by design, but a
+      // hung hook must not keep a half-updated process alive past it.
+      const budgetMs = coordinator.totalShutdownBudgetMs();
+      const safety = setTimeout(() => process.exit(0), budgetMs);
+      if (typeof safety.unref === "function") safety.unref();
+      void coordinator
+        .begin("update")
+        .catch(() => undefined)
+        .finally(() => {
+          clearTimeout(safety);
+          process.exit(0);
+        })
+        // The finally callback itself must never surface as an unhandled
+        // rejection: exit either succeeded or the process is already leaving.
+        .catch(() => undefined);
+      return { started: true, statusPath: updateStatusPath(configDir) };
     })
     .get("/notifications/stream", ({ request }) => {
       const tenantId = requireTenantScope(

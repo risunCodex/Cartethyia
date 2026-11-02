@@ -18,7 +18,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createTestGateway, type TestGateway } from "../helpers/gateway";
 import { createWorld, type GatewayWorld } from "../helpers/fixtures";
-import { dbDescribe } from "../helpers/database";
+import { dbDescribe, getTestPool } from "../helpers/database";
 
 /** A Messages count body: model plus the turns to price. */
 function countBody(model: string): Record<string, unknown> {
@@ -107,5 +107,49 @@ dbDescribe("count_tokens on a route without a counter", () => {
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe("invalid_request");
+  });
+
+  test("an estimated count still writes exactly one telemetry row with observed latency", async () => {
+    gateway.setRoutes([
+      {
+        providerId: chat.providerId,
+        modelId: chat.modelId,
+        accountId: chat.accountId,
+      },
+    ]);
+    const response = await gateway.json("/v1/messages/count_tokens", countBody(chat.modelId), {
+      token: world.token,
+    });
+    expect(response.status).toBe(200);
+    const requestId = response.headers.get("x-request-id");
+    expect(requestId).not.toBeNull();
+
+    // The buffer flushes on a timer; the drain loop empties it fully.
+    await gateway.telemetryBuffer.flush();
+
+    const pool = await getTestPool();
+    const result = await pool.query<{
+      status: string;
+      http_status: number | null;
+      endpoint: string | null;
+      input_tokens: number | null;
+      estimated_cost_usd: string | null;
+      latency_ms: number | null;
+    }>(
+      "select status, http_status, endpoint, input_tokens, estimated_cost_usd, latency_ms from telemetry_events where request_id = $1",
+      [requestId],
+    );
+    // Exactly one row: the finalizer runs once (no `afterResponse` double-write).
+    expect(result.rowCount).toBe(1);
+    const row = result.rows[0]!;
+    expect(row.status).toBe("completed");
+    expect(row.http_status).toBe(200);
+    expect(row.endpoint).toBe("/v1/messages/count_tokens");
+    // The usage is the estimate itself, unpriced: no provider served it.
+    expect(row.input_tokens).toBe(3);
+    expect(row.estimated_cost_usd).toBeNull();
+    // The latency histogram blind spot: the row now carries a real latency.
+    expect(row.latency_ms).not.toBeNull();
+    expect(Number(row.latency_ms)).toBeGreaterThanOrEqual(0);
   });
 });

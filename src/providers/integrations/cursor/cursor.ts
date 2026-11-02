@@ -62,6 +62,7 @@ import { defaultParameterValues, fetchCursorModels } from "./cursor-catalog";
 import type { CursorModelInfo } from "./cursor-catalog";
 import { decodeValueToJson, decodeStructEntriesToJson } from "./protocol/struct";
 import { cursorVariantForExecArgs } from "./protocol/tool-canonical";
+import { fnv1a32 } from "../shared/hash";
 
 /**
  * Client-heartbeat cadence for every Cursor Run.
@@ -81,8 +82,38 @@ const CURSOR_HEARTBEAT_INTERVAL_MS = 5_000;
  * every dispatch.
  */
 const CURSOR_ROSTER_TTL_MS = 300_000;
-/** credential → { roster, fetchedAt } for the parameter lookup. */
+/**
+ * credential → { roster, fetchedAt } for the parameter lookup.
+ *
+ * Keyed by an FNV-1a digest of the credential rather than the raw token so a
+ * long-lived map does not hold live credentials as keys. Bounded by
+ * `ROSTER_CACHE_MAX` with oldest-first eviction: the TTL is only checked on
+ * read, so without a cap rotated tokens would grow the map without bound.
+ */
+const ROSTER_CACHE_MAX = 1024;
 const rosterCache = new Map<string, { roster: readonly CursorModelInfo[]; fetchedAt: number }>();
+
+function rosterCacheSet(credential: string, roster: readonly CursorModelInfo[]): void {
+  const key = String(fnv1a32(credential));
+  rosterCache.delete(key); // re-set moves the entry to newest position
+  rosterCache.set(key, { roster, fetchedAt: Date.now() });
+  while (rosterCache.size > ROSTER_CACHE_MAX) {
+    const oldest = rosterCache.keys().next().value;
+    if (oldest === undefined) break;
+    rosterCache.delete(oldest);
+  }
+}
+
+/**
+ * Test-only access to the roster cache (cap/eviction/TTL behavior is covered
+ * by `test/providers/cursor-roster-cache.test.ts` without a full dispatch).
+ */
+export const rosterCacheForTests = {
+  size: (): number => rosterCache.size,
+  set: rosterCacheSet,
+  get: (credential: string): { roster: readonly CursorModelInfo[]; fetchedAt: number } | undefined =>
+    rosterCache.get(String(fnv1a32(credential))),
+};
 /** Client-heartbeat cadence the Cursor edge expects (donor `heartbeatMs`). */
 const CURSOR_HEARTBEAT_INTERVAL_OVERRIDE = (() => {
   const raw = process.env.CARTETHYIA_CURSOR_HEARTBEAT_MS?.trim();
@@ -846,7 +877,8 @@ class CursorAdapter implements ProviderAdapter {
     credential: string,
     context: ProviderDispatchContext,
   ): Promise<readonly CursorModelInfo[]> {
-    const cached = rosterCache.get(credential);
+    const key = String(fnv1a32(credential));
+    const cached = rosterCache.get(key);
     if (cached !== undefined && Date.now() - cached.fetchedAt < CURSOR_ROSTER_TTL_MS) {
       return cached.roster;
     }
@@ -858,7 +890,7 @@ class CursorAdapter implements ProviderAdapter {
           : { fetcher: context.outbound_fetch as unknown as typeof fetch }),
         signal: context.abort_signal,
       });
-      rosterCache.set(credential, { roster, fetchedAt: Date.now() });
+      rosterCacheSet(credential, roster);
       return roster;
     } catch {
       return cached?.roster ?? [];

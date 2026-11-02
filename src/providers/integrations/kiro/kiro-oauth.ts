@@ -56,7 +56,7 @@ import {
   getKiroVersion,
 } from "../../operations/client-versions";
 import { deriveApiKeyMachineId, deriveOAuthMachineId, normalizeMachineId } from "./kiro-machine-id";
-import { KIRO_MANAGEMENT_HOST_TEMPLATE } from "./kiro-catalog";
+import { KIRO_MANAGEMENT_HOST_TEMPLATE, AWS_REGION_PATTERN, KIRO_DEFAULT_REGION } from "./kiro-catalog";
 import { fetchKiroQuota } from "./kiro-quota";
 
 /** Auth methods this integration supports, as stored on the account. */
@@ -69,11 +69,7 @@ export type KiroAuthMethod =
   | "external_idp"
   | "api_key";
 
-/** AWS region shape, checked before a region is interpolated into a URL. */
-const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
-
-/** Default region when an account carries none. */
-const DEFAULT_REGION = "us-east-1";
+const DEFAULT_REGION: string = KIRO_DEFAULT_REGION;
 
 /** The vendor's own sign-in and refresh service for the social families. */
 export const KIRO_AUTH_SERVICE = "https://prod.us-east-1.auth.desktop.kiro.dev" as const;

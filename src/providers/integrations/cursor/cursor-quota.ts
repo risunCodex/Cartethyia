@@ -35,6 +35,7 @@ import {
 } from "../../quota/quota-contracts";
 import type { QuotaCollectionContext } from "../../quota/quota-support";
 import { cursorAccountIdentity } from "./cursor-auth";
+import { fnv1a32 } from "../shared/hash";
 import { CURSOR_API_HOST, CURSOR_WEBSITE_HOST } from "./cursor-shared";
 
 /** Timestamp keys naming the end of the current window. */
@@ -226,12 +227,7 @@ function authStateUserId(context: QuotaCollectionContext | undefined): string | 
  * subject it replaces.
  */
 function cursorAccountTag(credential: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < credential.length; index += 1) {
-    hash ^= credential.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return `cursor-${hash.toString(36).padStart(7, "0").slice(0, 7)}`;
+  return `cursor-${fnv1a32(credential).toString(36).padStart(7, "0").slice(0, 7)}`;
 }
 
 export async function fetchCursorQuota(

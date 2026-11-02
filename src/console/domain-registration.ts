@@ -124,6 +124,16 @@ export interface ConsoleDomainContext {
   readonly loadConsoleUser: (request: Request) => Promise<{ readonly passwordHash: string } | null>;
   /** Password verification against the console user's stored hash. */
   readonly credentialService: Pick<ConsoleCredentialService, "verifyPassword">;
+  /**
+   * The process shutdown coordinator, narrowed to the update apply route's
+   * drain surface. Optional because reduced compositions (tests) legitimately
+   * build a console that cannot apply updates; the apply route answers 503
+   * rather than exiting undrained when it is absent.
+   */
+  readonly shutdownCoordinator?: {
+    readonly begin: (reason: "update") => Promise<void>;
+    readonly totalShutdownBudgetMs: () => number;
+  };
 }
 import { and, eq, isNull, or } from "drizzle-orm";
 import { networkPools, providerRoutingSettings } from "../persistence/schema";
@@ -252,6 +262,9 @@ export function registerConsoleDomains(
   console.use(createUpdateRoutes({
     accessResolver: ctx.accessResolver,
     observabilityStore,
+    ...(ctx.shutdownCoordinator === undefined
+      ? {}
+      : { shutdownCoordinator: ctx.shutdownCoordinator }),
   }));
   console.use(createRemoteSupportRoutes({
     accessResolver: ctx.accessResolver,

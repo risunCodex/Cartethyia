@@ -412,8 +412,9 @@ export function buildPayloadRecord(
 
 /**
  * Postgres-backed redacted request/response payload capture. Payloads live for
- * the tenant's chosen retention — 15 minutes by default — and are pruned by the
- * sweep.
+ * the tenant's chosen retention — an hour by default (see
+ * {@link payloadRetentionMs} / `DEFAULT_PAYLOAD_RETENTION_MS`) — and are pruned
+ * by the sweep.
 
  */
 export class TelemetryPayloadCapture {

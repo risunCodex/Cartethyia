@@ -37,7 +37,7 @@ interface BackupExportDeps {
   readonly resolvePeerAddress: (request: Request) => string | null;
 }
 
-/** The file-write result of an operator export, distinct from the payload shape `BackupExportResult` in `contracts.ts`. */
+/** The file-write result of an operator export, distinct from the payload shape `BackupPayloadExport` in `contracts.ts`. */
 export interface BackupExportFileResult {
   readonly path: string;
   readonly bytes: number;

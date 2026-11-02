@@ -17,7 +17,30 @@ import type { DialectId, DialectPolicy } from "./types";
 /** Known dialect ids, for validating loose DB/string overrides. */
 const KNOWN_DIALECT_IDS = new Set<string>(Object.keys(DEFAULT_DIALECT_POLICIES));
 
+/**
+ * Memoization for `resolveDialect` (mirrors THINKING_RESOLVE_CACHE). The key
+ * concatenates every argument, all of which are value types, so it is
+ * collision-safe; the cache is unbounded because the key space is bounded by
+ * the model catalog, not by request volume.
+ */
+const DIALECT_RESOLVE_CACHE = new Map<string, DialectPolicy>();
+
 export function resolveDialect(
+  modelId: string,
+  providerId: string,
+  wireFamily: WireFamily,
+  override?: string | null,
+  declared?: DialectId,
+): DialectPolicy {
+  const key = `${modelId.toLowerCase()}|${providerId}|${wireFamily}|${override ?? ""}|${declared ?? ""}`;
+  const cached = DIALECT_RESOLVE_CACHE.get(key);
+  if (cached !== undefined) return cached;
+  const policy = resolveDialectUncached(modelId, providerId, wireFamily, override, declared);
+  DIALECT_RESOLVE_CACHE.set(key, policy);
+  return policy;
+}
+
+function resolveDialectUncached(
   modelId: string,
   providerId: string,
   wireFamily: WireFamily,

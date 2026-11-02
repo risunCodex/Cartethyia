@@ -257,8 +257,6 @@ export function normalizeAntigravityToolSchemas(request: CanonicalRequest): Cano
 const lastGoodEndpoints = new Map<string, string>();
 const LAST_GOOD_ENDPOINT_MAX = 256;
 
-const DEFAULT_ORDER_INDEX = Number.MAX_SAFE_INTEGER;
-
 /**
  * Records the endpoint that just served a successful turn. Call this with the
  * `endpoint` reported by empty-stream recovery (or the URL that produced a
@@ -299,18 +297,6 @@ export function orderAntigravityEndpoints(
   const index = endpoints.indexOf(sticky);
   if (index <= 0) return endpoints;
   return [sticky, ...endpoints.slice(0, index), ...endpoints.slice(index + 1)];
-}
-
-/**
- * Position of `endpoint` in the caller's own endpoint order, used to log a
- * failover without the caller re-deriving the list.
- */
-export function antigravityEndpointOrderIndex(
-  endpoints: readonly string[],
-  endpoint: string,
-): number {
-  const index = endpoints.indexOf(endpoint);
-  return index < 0 ? DEFAULT_ORDER_INDEX : index;
 }
 
 // Model discovery (`v1internal:fetchAvailableModels`) — live catalog.

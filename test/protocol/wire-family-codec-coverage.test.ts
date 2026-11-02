@@ -9,21 +9,34 @@
  * contract so a drift is a failing test, not a silent mis-encode.
  */
 import { describe, expect, test } from "bun:test";
-import { preloadCodec } from "../../src/protocol/registry";
+import { encodeWireRequest } from "../../src/protocol/registry";
+import type { CanonicalRequest } from "../../src/protocol/canonical-model";
 import {
   SurfaceAdapterRegistry,
   SURFACE_DESCRIPTORS,
 } from "../../src/transport/surface/adapters";
 
+function minimalRequest(): CanonicalRequest {
+  return {
+    model: "test-model",
+    messages: [{ role: "user", content: [{ kind: "text", text: "hello" }] }],
+    generation_controls: {},
+    stream: false,
+    source_surface: "chat",
+  };
+}
+
 describe("wire-family codec coverage", () => {
-  test("registry loads a codec for every non-native wire family", async () => {
-    await expect(preloadCodec("chat")).resolves.toBeUndefined();
-    await expect(preloadCodec("responses")).resolves.toBeUndefined();
-    await expect(preloadCodec("messages")).resolves.toBeUndefined();
+  test("registry encodes a request for every non-native wire family", async () => {
+    for (const family of ["chat", "responses", "messages"] as const) {
+      const payload = await encodeWireRequest(family, minimalRequest());
+      expect(payload).toBeTypeOf("object");
+      expect(Object.keys(payload).length).toBeGreaterThan(0);
+    }
   });
 
   test("gemini has no registry codec — it dispatches through its native path", async () => {
-    await expect(preloadCodec("gemini")).rejects.toThrow();
+    await expect(encodeWireRequest("gemini", minimalRequest())).rejects.toThrow();
   });
 });
 
