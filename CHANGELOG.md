@@ -24,6 +24,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   default, and defaults are frozen to today's behavior (byte-identical
   payloads). Migration `0040` adds `models.dialect`. See
   `documentation/features/09-wire-dialects.md`.
+- **Data-driven thinking/effort ladder.** The hardcoded per-model reasoning
+  effort clamps are replaced by a declarative rule table that resolves each
+  model + wire family to a `ThinkingConfig` (supported efforts + transport
+  mode: OpenAI effort, Anthropic budget/adaptive, Gemini level). One canonical
+  clamp (`clampThinkingLevelForModel`) drives chat/responses/messages, and a
+  clamped effort raises the output floor (`outputFloorFor`) so answers don't
+  truncate. Declared efforts (`reasoningEfforts` / `ModelDefinition.thinking`)
+  win over the table; defaults are byte-identical to before. No migration. See
+  `documentation/features/10-thinking-effort-ladder.md`.
 - **Quota windows are filtered by the requested model family.** Providers that
   report separate quota per model family (Antigravity: Gemini vs Claude/GPT;
   Grok: per-product buckets) no longer block every model when one family is
