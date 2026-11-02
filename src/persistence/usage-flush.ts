@@ -65,14 +65,19 @@ async function writeLifetimeDeltas(
   // text and the join against a uuid key fails. SQLite stores the key as text
   // and rejects `UPDATE ... FROM (VALUES ...)` outright, so the same rows are
   // a SELECT with named columns instead.
-  const source = sqliteDialect()
+  const sqlite = sqliteDialect();
+  const source = sqlite
     ? `(${rows.map((row) => `SELECT '${row.apiKeyId}' AS id, ${row.delta} AS delta`).join(" UNION ALL ")})`
     : `(VALUES ${rows.map((row) => `('${row.apiKeyId}'::uuid, ${row.delta}::bigint)`).join(", ")}) AS v(id, delta)`;
+  // PostgreSQL already carries its alias in `source`; only the bare SQLite
+  // subquery needs the trailing alias appended. Emitting both (`AS v(id, delta) v`)
+  // is a syntax error on Postgres, so the flush silently never ran.
+  const from = sqlite ? `${source} v` : source;
   await db.execute(sql.raw(`
     UPDATE "api_keys"
     SET "lifetime_tokens_consumed" =
       COALESCE("api_keys"."lifetime_tokens_consumed", 0) + v.delta
-    FROM ${source} v
+    FROM ${from}
     WHERE "api_keys"."id" = v.id
   `));
 }
