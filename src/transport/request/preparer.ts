@@ -1,5 +1,5 @@
 import { GatewayError } from "../../protocol/gateway-error";
-import type { CanonicalRequest, ServiceKind, ContentPart } from "../../protocol/canonical-model";
+import type { CanonicalRequest, CanonicalMessage, ServiceKind, ContentPart } from "../../protocol/canonical-model";
 import { toolResultParts } from "../../protocol/canonical-model";
 import type { ApiKeyAdmissionService } from "../../security/admission/service";
 import type { VisionHandoffCall, VisionHandoffResult } from "../vision-handoff";
@@ -39,6 +39,16 @@ function requestNeedsToolRepair(request: CanonicalRequest): boolean {
 }
 
 /**
+ * The text that replaces an image part after a successful vision handoff.
+ * The description is wrapped so the receiving model understands it is an
+ * automated description of an image the user attached — not prose the user
+ * typed — which is what made it answer as if it had no image at all.
+ */
+function visionDescriptionText(description: string): string {
+  return `[The user attached an image. A vision model described it for you: ${description}]`;
+}
+
+/**
  * Replaces every image part (or its `[image]` degradation placeholder) in the
  * request with a single text part carrying the vision-handoff description.
  * Returns `null` when the request has neither image parts nor placeholders.
@@ -55,7 +65,7 @@ export function replaceImagePartsWithText(
     if (!hasImage) return parts;
     return parts.flatMap((part): ContentPart[] =>
       isImageOrPlaceholderPart(part)
-        ? [{ kind: "text", text: description }]
+        ? [{ kind: "text", text: visionDescriptionText(description) }]
         : [part],
     );
   };
@@ -77,6 +87,77 @@ export function replaceImagePartsWithText(
   );
   if (unchangedMessages) return null;
   return { ...request, messages: nextMessages };
+}
+
+/**
+ * When a handoff request is a giant session (opencode CLI sessions routinely
+ * carry hundreds of tool-result turns), the text-only request that goes to the
+ * main model is still enormous: the handoff only replaced the image parts, so
+ * the full history — including 700+ tool transcripts — is forwarded verbatim.
+ * Upstreams reject or reset such payloads (502/ECONNRESET), which is the
+ * "broken on large sessions" report: a small fresh chat works, a session with
+ * a large context dies even though the handoff itself is just a description.
+ *
+ * The handoff describes *an image the user just attached* — it does not need
+ * the rest of the session. For a giant request this pass returns only the
+ * system prompt (when present) plus the active image-carrying turn; the whole
+ * history is dropped so the payload stays small and upstreams do not reset it.
+ * Small requests (< the thresholds) pass through untouched.
+ */
+export function condenseHandoffRequest(request: CanonicalRequest): CanonicalRequest {
+  const activeIndex = lastImageCarryingUserTurnIndex(request);
+  if (activeIndex < 0) return request;
+
+  const totalMessages = request.messages.length;
+  let totalChars = 0;
+  for (const message of request.messages) totalChars += messageCharSize(message);
+  if (totalMessages <= HANDOFF_CONDENSE_MESSAGE_THRESHOLD && totalChars <= HANDOFF_CONDENSE_CHARS_THRESHOLD) {
+    return request;
+  }
+
+  const kept: CanonicalMessage[] = [];
+  for (let i = 0; i < request.messages.length; i += 1) {
+    const message = request.messages[i]!;
+    if (message.role === "system") {
+      kept.push(message);
+      continue;
+    }
+    if (i === activeIndex) {
+      kept.push(message);
+      // Anything after the active turn stays after it (rare, but preserved).
+      kept.push(...request.messages.slice(activeIndex + 1));
+      break;
+    }
+  }
+  // Never return a request that lost the very turn we are answering.
+  if (!kept.includes(request.messages[activeIndex]!)) return request;
+  return { ...request, messages: kept };
+}
+
+const HANDOFF_CONDENSE_MESSAGE_THRESHOLD = 100;
+const HANDOFF_CONDENSE_CHARS_THRESHOLD = 200_000;
+
+function messageCharSize(message: CanonicalMessage): number {
+  let size = 0;
+  for (const part of message.content) {
+    if (part.kind === "text" || part.kind === "refusal") {
+      size += part.text.length;
+    } else if (part.kind === "toolCall") {
+      size += part.name.length;
+      try {
+        size += JSON.stringify(part.arguments).length;
+      } catch {
+        size += 64;
+      }
+    } else {
+      try {
+        size += JSON.stringify((part as { data?: unknown }).data ?? "").length;
+      } catch {
+        size += 64;
+      }
+    }
+  }
+  return size;
 }
 
 /** Prefix of a provider-continuation tool-call id the gateway itself minted. */
@@ -441,7 +522,14 @@ export class ProxyRequestPreparer {
             // (tools, reasoning, …) survive alongside the handoff — a chain
             // variant carries them, and rewriting from the pristine request
             // would reintroduce capabilities the winning route lacks.
-            const replaced = replaceImagePartsWithText(variant.request, description);
+            // Condense first (while the active turn still carries its image, so
+            // it can be located): a session with hundreds of tool-result turns
+            // forwards a multi-megabyte body that upstreams reset or reject
+            // (502 / ECONNRESET) — the "broken on large sessions" report. The
+            // handoff only needs to describe the attached image, so the giant
+            // history is dropped entirely, leaving system + active turn.
+            const condensedBase = condenseHandoffRequest(variant.request);
+            const replaced = replaceImagePartsWithText(condensedBase, description);
             if (replaced !== null) {
               const requiredAfter = deriveRequiredCapabilities(replaced);
               try {
