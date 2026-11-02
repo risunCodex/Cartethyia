@@ -34,7 +34,7 @@ export interface ModelHealth {
   readonly familyState: FamilyState | null;
 }
 
-export interface ModelCapabilities {
+interface ModelCapabilities {
   readonly contextWindow: number | null;
   readonly maxOutputTokens: number | null;
   readonly modalities: readonly string[];

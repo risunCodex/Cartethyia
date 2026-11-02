@@ -29,7 +29,7 @@ export class DrizzlePreferencesReader implements PreferencesReader {
   }
 }
 
-export interface CachedPreferencesReaderOptions {
+interface CachedPreferencesReaderOptions {
   readonly ttlMs?: number;
   readonly maxEntries?: number;
   readonly revision?: () => number;

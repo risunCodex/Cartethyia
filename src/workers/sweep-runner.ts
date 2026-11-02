@@ -19,10 +19,10 @@
 import { log } from "../observability/logger";
 import { runGrowingWaves } from "./scheduler";
 
-export const DEFAULT_SWEEP_CONCURRENCY = 5;
+const DEFAULT_SWEEP_CONCURRENCY = 5;
 
 /** Outcome counts for one sweep pass. */
-export interface SweepResult {
+interface SweepResult {
   /** Targets the lister returned. */
   readonly listed: number;
   /** Targets dropped before the run: no refresher, not due, or over the cap. */
@@ -41,7 +41,7 @@ export interface SweepResult {
 }
 
 /** What `select` returns: the batch to run, plus any extra drops it made. */
-export interface SweepSelection<T> {
+interface SweepSelection<T> {
   readonly batch: readonly T[];
   /**
    * Targets dropped by selection itself (stale cache, over the per-pass cap).
@@ -51,7 +51,7 @@ export interface SweepSelection<T> {
 }
 
 /** One sweep's domain hooks. */
-export interface SweepPlan<T> {
+interface SweepPlan<T> {
   /** Log prefix, e.g. `quota-refresh`. */
   readonly name: string;
   /** Lists candidate targets. A rejection is logged and yields an empty pass. */
@@ -96,7 +96,7 @@ export interface SweepPlan<T> {
 }
 
 /** The counts a pass that never got off the ground reports. */
-export const EMPTY_SWEEP_RESULT: SweepResult = {
+const EMPTY_SWEEP_RESULT: SweepResult = {
   listed: 0,
   skipped: 0,
   attempted: 0,

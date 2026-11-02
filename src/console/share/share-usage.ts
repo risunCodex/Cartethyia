@@ -13,7 +13,7 @@ import { apiKeys, telemetryUsageTotals } from "../../persistence/schema";
 import { shouldMaskClientIp } from "../shared/ip-privacy";
 import { utcDayStart } from "../shared/day";
 
-export interface SharedKeyTokenUsage {
+interface SharedKeyTokenUsage {
   readonly requests: number;
   readonly errors: number;
   readonly inputTokens: number;

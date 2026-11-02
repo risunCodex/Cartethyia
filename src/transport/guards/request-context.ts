@@ -24,7 +24,7 @@ interface RequestApp {
   ): RequestApp;
 }
 
-export interface RequestContextDeps {
+interface RequestContextDeps {
   readonly stateStore: ProxyRequestStateStore;
   readonly clock?: () => number;
   /** Explicit deadline override; defaults to `CARTETHYIA_UPSTREAM_TIMEOUT_MS` (120s). */

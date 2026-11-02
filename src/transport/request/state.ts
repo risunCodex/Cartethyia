@@ -159,7 +159,7 @@ export interface ProxyRequestState {
   addCleanup(cleanup: () => void): void;
 }
 
-export interface RequestTracker {
+interface RequestTracker {
   track(id: string): void;
   untrack(id: string): void;
 }

@@ -21,7 +21,7 @@ import { GatewayError } from "../protocol/gateway-error";
 import { providerRateLimitIsIpScoped } from "../providers/provider-metadata";
 
 /** What one upstream failure means for the egress that carried it. */
-export type EgressVerdict =
+type EgressVerdict =
   | { kind: "none" }
   | { kind: "cooldown"; retryAfterMs?: number }
   | { kind: "blocked" };

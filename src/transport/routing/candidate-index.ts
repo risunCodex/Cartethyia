@@ -2,7 +2,7 @@
 import type { RouteCandidate, RouteSnapshot } from "./route-model";
 
 /** One parsed model reference: `provider/model` or a bare `model`. */
-export interface ParsedModel {
+interface ParsedModel {
   readonly providerId: string | null;
   readonly modelId: string;
 }
@@ -24,7 +24,7 @@ export function parseModelReference(model: string): ParsedModel {
  * candidates cost K×C `candidateMatches` calls (each re-parsing the model
  * string), repeated on every request.
  */
-export interface RouteCandidateIndex {
+interface RouteCandidateIndex {
   /** Candidates keyed by `provider_id/model_id`, snapshot order preserved. */
   readonly qualified: ReadonlyMap<string, readonly RouteCandidate[]>;
   /** Candidates keyed by bare `model_id`, snapshot order preserved. */

@@ -15,7 +15,7 @@
  */
 import { GatewayError, type GatewayErrorCode } from "../protocol/gateway-error";
 
-export interface ShutdownNotice {
+interface ShutdownNotice {
   readonly code: Extract<GatewayErrorCode, "shutting_down">;
   readonly message: string;
   readonly reason?: string;
@@ -27,7 +27,7 @@ export interface ShutdownNotice {
  * with it before swapping the image so its callers are told the process is
  * coming straight back.
  */
-export const UPDATE_SHUTDOWN_REASON = "update";
+const UPDATE_SHUTDOWN_REASON = "update";
 
 export function shutdownNotice(reason: string | undefined): ShutdownNotice {
   if (reason === UPDATE_SHUTDOWN_REASON) {

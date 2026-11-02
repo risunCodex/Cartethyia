@@ -70,7 +70,7 @@ const SEGMENT_MIN_CLUSTER = 4;
  *  would hide every later prose paragraph from the heuristics. */
 const CODE_LINE = /^(?:[ \t]*```.*|(?: {2,}|\t)(?![ \t]*(?:[-*+]|\d+[.)])[ \t]).*|.*[{}[\](;,>][ \t]*)$/gm;
 
-export interface ThinkingLoopConfig {
+interface ThinkingLoopConfig {
   readonly enabled?: boolean;
 }
 

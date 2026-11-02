@@ -14,7 +14,7 @@ import { consoleErrorHandler, requireTenantScope } from "../shared/errors";
 import { REMOTE_SUPPORT_TOOLS } from "./contracts";
 import type { RemoteSupportService } from "./service";
 
-export interface RemoteSupportRoutesConfig {
+interface RemoteSupportRoutesConfig {
   readonly accessResolver: ConsoleAccessResolver;
   readonly service: RemoteSupportService;
 }

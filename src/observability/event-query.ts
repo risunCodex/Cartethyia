@@ -41,7 +41,7 @@ export interface EventPage {
   readonly nextCursor?: string;
 }
 
-export interface EventListQuery {
+interface EventListQuery {
   readonly tenantId: string;
   /**
    * Lower bound. Omitting it means "the whole retained window" — the SQL table
@@ -97,7 +97,7 @@ export interface UsageSummary {
   readonly unpriced: number;
 }
 
-export interface BreakdownGroup {
+interface BreakdownGroup {
   readonly key: string;
   readonly requests: number;
   readonly errors: number;
@@ -119,7 +119,7 @@ export interface ChartBucket {
   readonly outputTokens: number;
 }
 
-export interface HealthTotals {
+interface HealthTotals {
   readonly requests: number;
   readonly errors: number;
   readonly inputTokens: number;
@@ -142,7 +142,7 @@ function numericNullable(value: unknown): number | null {
 }
 
 /** Maps one `telemetry_events` row to the console's record shape. */
-export function eventRecordFromRow(row: {
+function eventRecordFromRow(row: {
   readonly id: string | null;
   readonly createdAt: Date;
   readonly tenantId: string;
@@ -800,7 +800,7 @@ const HOUR_MS = 3_600_000;
  * event on every tick. The rollup is the same definition as the read-side
  * counts, so the two cannot drift.
  */
-export interface FamilyKpiTotals {
+interface FamilyKpiTotals {
   readonly requests: number;
   readonly errors: number;
   readonly tokens: number;
@@ -839,7 +839,7 @@ export async function familyKpiTotals(
  * page caps at {@link MAX_LIMIT}, so a busy family would freeze at 500
  * requests/errors/last-hour regardless of real traffic.
  */
-export interface FamilyUsageTotals {
+interface FamilyUsageTotals {
   readonly requests: number;
   readonly errors: number;
   readonly lastHourRequests: number;
@@ -983,7 +983,7 @@ export async function familyHourlyTelemetry(
  * used to pull every retained event into an array to average `tokensPerSec`
  * and sort latencies in JavaScript.
  */
-export interface HealthPerformance {
+interface HealthPerformance {
   readonly latencyAvgMs: number | null;
   readonly latencyP50Ms: number | null;
   readonly latencyP95Ms: number | null;
@@ -1023,7 +1023,7 @@ export async function summarizeHealthPerformance(
  * and the latency percentiles come from the same database-side percentile
  * path {@link summarizeTelemetry} uses.
  */
-export interface UsagePerformanceTotals {
+interface UsagePerformanceTotals {
   readonly avgResolveMs: number;
   readonly avgDurationMs: number;
   /**

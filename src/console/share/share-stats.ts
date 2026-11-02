@@ -30,7 +30,7 @@ import { cachedRead } from "../shared/read-through-cache";
 import { utcDayStart, utcMonthStart } from "../shared/day";
 
 /** Totals for the whole share family, all-time plus the windows the UI draws. */
-export interface ShareFamilyTotals {
+interface ShareFamilyTotals {
   readonly requests: number;
   readonly errors: number;
   readonly inputTokens: number;
@@ -45,7 +45,7 @@ export interface ShareFamilyTotals {
 }
 
 /** One hour bucket of the last 24 hours, oldest first. */
-export interface ShareHourlyBucket {
+interface ShareHourlyBucket {
   /** ISO instant at the top of the hour. */
   readonly hour: string;
   readonly requests: number;
@@ -53,7 +53,7 @@ export interface ShareHourlyBucket {
   readonly tokens: number;
 }
 
-export interface ShareTopModel {
+interface ShareTopModel {
   readonly modelId: string;
   readonly requests: number;
   readonly tokens: number;
@@ -63,7 +63,7 @@ export interface ShareTopModel {
   readonly avgTtfbMs: number | null;
 }
 
-export interface ShareTopClientIp {
+interface ShareTopClientIp {
   /** Always masked: this payload is served to the recipient, not the tenant. */
   readonly ip: string;
   readonly requests: number;

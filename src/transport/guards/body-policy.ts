@@ -62,7 +62,7 @@ export function isJsonProxyRoutePath(path: string): boolean {
   return isJsonProxyRoute(path);
 }
 
-export interface IngressPolicyOptions {
+interface IngressPolicyOptions {
   readonly maxBodyBytes?: number;
 }
 

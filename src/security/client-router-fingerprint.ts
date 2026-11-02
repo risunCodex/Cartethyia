@@ -21,7 +21,7 @@ import { getHeader as readRecordHeader } from "../protocol/canonical-model";
  * `id` is the stable token an operator stores in a key's denylist, so it is
  * part of the persisted contract and must not be renamed casually.
  */
-export interface ClientRouterDefinition {
+interface ClientRouterDefinition {
   readonly id: string;
   /** Human label for the dashboard. */
   readonly label: string;
@@ -40,7 +40,7 @@ export interface ClientRouterDefinition {
  * safe for a uniquely named header; a header whose value distinguishes it must
  * name a matcher instead.
  */
-export interface ClientRouterSignal {
+interface ClientRouterSignal {
   /** Header name, lowercase. */
   readonly field: string;
   /** Human description shown when the signal matches. */
@@ -114,14 +114,14 @@ export const CLIENT_ROUTERS: readonly ClientRouterDefinition[] = [
 const LEGACY_CLIENT_ROUTER_IDS: Readonly<Record<string, string>> = { omniroute: "9router" };
 
 /** A signal that matched, with the product it belongs to. */
-export interface MatchedClientSignal {
+interface MatchedClientSignal {
   readonly field: string;
   readonly description: string;
   /** The observed value, capped, for the operator's audit trail. */
   readonly value: string;
 }
 
-export interface ClientRouterMatch {
+interface ClientRouterMatch {
   readonly routerId: string;
   readonly label: string;
   readonly signals: readonly MatchedClientSignal[];

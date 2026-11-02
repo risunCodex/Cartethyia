@@ -9,7 +9,7 @@ import { usageToChatWire, type OpenAiUsage } from "../../providers/provider-usag
 import { TEXT_ENCODER } from "../../protocol/sse-frame";
 import { SurfaceStreamEncoder } from "./stream-frame";
 
-export interface CompletionEncodingOptions {
+interface CompletionEncodingOptions {
   response_id?: string;
   model?: string;
   created?: number;
@@ -150,7 +150,7 @@ export class CompletionStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent
   }
 }
 
-export class CompletionAdapter implements SurfaceAdapter {
+class CompletionAdapter implements SurfaceAdapter {
   readonly surface = "completion" as const;
 
   matchesBodyShape(body: unknown): boolean {

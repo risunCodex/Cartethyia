@@ -58,7 +58,7 @@ function newSessionToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-export class ConsoleSessionStore {
+class ConsoleSessionStore {
   constructor(private readonly db: CartethyiaDatabase) {}
 
   async create(newSession: {

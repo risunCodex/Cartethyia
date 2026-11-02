@@ -19,13 +19,13 @@ import { ensureV1Suffix } from "./fs-ops";
  * sibling project used `openai-chat | openai-responses | anthropic-messages`;
  * Cartethyia's canonical surface vocabulary is the shorter form.
  */
-export type CliToolSurface = "chat" | "responses" | "messages";
+type CliToolSurface = "chat" | "responses" | "messages";
 
 /** How the tool's config is managed. */
-export type ConfigType = "env" | "custom" | "guide";
+type ConfigType = "env" | "custom" | "guide";
 
 /** A native model slot exposed by a CLI tool. */
-export interface ToolModelDef {
+interface ToolModelDef {
   readonly id: string;
   readonly name: string;
   readonly alias: string;
@@ -63,13 +63,13 @@ export interface CliMappingSettings {
 }
 
 /** A note shown in the tool card UI. */
-export interface ToolNote {
+interface ToolNote {
   readonly type: "info" | "warning" | "error";
   readonly text: string;
 }
 
 /** A guide step for guide-only tools. */
-export interface GuideStep {
+interface GuideStep {
   readonly step: number;
   readonly title: string;
   readonly desc?: string;
@@ -78,7 +78,7 @@ export interface GuideStep {
 }
 
 /** A code block for guide-only tools. */
-export interface GuideCodeBlock {
+interface GuideCodeBlock {
   readonly language: string;
   readonly code: string;
 }
@@ -235,7 +235,7 @@ export interface ToolInjector {
 export type AllStatusesResult = Readonly<Record<string, ToolStatus>>;
 
 /** Status details extracted from a tool's configuration file(s). */
-export interface StatusDetails {
+interface StatusDetails {
   readonly configured: boolean;
   readonly currentEndpoint?: string | null | undefined;
   readonly currentApiKeyPrefix?: string | null | undefined;

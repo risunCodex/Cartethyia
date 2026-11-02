@@ -29,10 +29,10 @@ import {
   TREE_MAX_LINES,
 } from "./rtk-constants";
 
-export type RtkFilter = ((input: string) => string) & { filterName?: string };
+type RtkFilter = ((input: string) => string) & { filterName?: string };
 
 /** `git diff` → per-file header, per-hunk truncation, +/- counts. */
-export const gitDiffFilter: RtkFilter = (diff) => {
+const gitDiffFilter: RtkFilter = (diff) => {
   const result: string[] = [];
   let currentFile = "";
   let added = 0;
@@ -83,7 +83,7 @@ export const gitDiffFilter: RtkFilter = (diff) => {
 gitDiffFilter.filterName = "git-diff";
 
 /** `git log` → one line per commit, capped. */
-export const gitLogFilter: RtkFilter = (input) => {
+const gitLogFilter: RtkFilter = (input) => {
   const lines = input.split("\n");
   const out: string[] = [];
   for (const line of lines) {
@@ -99,7 +99,7 @@ export const gitLogFilter: RtkFilter = (input) => {
 gitLogFilter.filterName = "git-log";
 
 /** `git status` → branch line, changed-file counts, file list capped. */
-export const gitStatusFilter: RtkFilter = (input) => {
+const gitStatusFilter: RtkFilter = (input) => {
   const lines = input.split("\n");
   const out: string[] = [];
   let changed = 0;
@@ -119,7 +119,7 @@ export const gitStatusFilter: RtkFilter = (input) => {
 gitStatusFilter.filterName = "git-status";
 
 /** `grep`/`rg` dump (`file:line:content`) → grouped by file, capped per file. */
-export const grepFilter: RtkFilter = (input) => {
+const grepFilter: RtkFilter = (input) => {
   const byFile = new Map<string, Array<[string, string]>>();
   let total = 0;
   for (const line of input.split("\n")) {
@@ -151,7 +151,7 @@ export const grepFilter: RtkFilter = (input) => {
 grepFilter.filterName = "grep";
 
 /** `find` dump (path-per-line) → grouped by parent directory, capped. */
-export const findFilter: RtkFilter = (input) => {
+const findFilter: RtkFilter = (input) => {
   const byDir = new Map<string, string[]>();
   for (const line of input.split("\n")) {
     const path = line.trim();
@@ -177,7 +177,7 @@ export const findFilter: RtkFilter = (input) => {
 findFilter.filterName = "find";
 
 /** `ls -la` dump → directories and files with human sizes, noise dirs dropped. */
-export const lsFilter: RtkFilter = (input) => {
+const lsFilter: RtkFilter = (input) => {
   const dirs: string[] = [];
   const files: Array<[string, number]> = [];
   const byExt = new Map<string, number>();
@@ -219,7 +219,7 @@ export const lsFilter: RtkFilter = (input) => {
 lsFilter.filterName = "ls";
 
 /** `tree` dump → collapsed, noise dirs dropped, capped. */
-export const treeFilter: RtkFilter = (input) => {
+const treeFilter: RtkFilter = (input) => {
   const out: string[] = [];
   for (const line of input.split("\n")) {
     const trimmed = line.replace(/[│├└─]/g, " ").trim();

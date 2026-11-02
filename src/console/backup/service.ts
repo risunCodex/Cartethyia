@@ -49,13 +49,13 @@ import { detectFormat, restoreOrder, validateRestorePayload } from "./validate";
 import { convert9RouterBackup, type ImportReport } from "./nine-router";
 import { isRecord } from "../../protocol/codecs";
 
-export interface BackupServiceOptions {
+interface BackupServiceOptions {
   readonly db: CartethyiaDatabase;
   /** Verifies the signed-in operator's console password; supplied by the router. */
   readonly verifyPassword: (password: string) => Promise<boolean>;
 }
 
-export interface ExportOptions {
+interface ExportOptions {
   readonly sections?: readonly BackupSection[];
   readonly password: string;
   /** The tenant whose rows are exported. Never another tenant's. */
@@ -65,7 +65,7 @@ export interface ExportOptions {
 }
 
 /** One table as it appears in a backup file, and whether it can be restored. */
-export interface BackupInspectionRow {
+interface BackupInspectionRow {
   readonly section: string;
   readonly table: string;
   readonly count: number;
@@ -106,7 +106,7 @@ export interface ImportResult {
  * checklist is built from an inspection of *this* file and a selection never
  * invents a table.
  */
-export interface BackupRestoreSelection {
+interface BackupRestoreSelection {
   /** Table names to restore; absent or empty restores every table present. */
   readonly tables?: readonly string[];
 }

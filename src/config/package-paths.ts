@@ -6,7 +6,7 @@ import { resolve } from "node:path";
  * virtual `import.meta.dir`, so deployments can point this at the shipped
  * assets directory explicitly.
  */
-export function resolvePackageRoot(
+function resolvePackageRoot(
   moduleDir: string,
   configuredRoot: string | undefined,
 ): string {

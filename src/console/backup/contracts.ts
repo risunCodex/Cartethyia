@@ -205,7 +205,6 @@ export function sealedAliases(table: Table): ReadonlyMap<string, string> {
   return out;
 }
 
-
 /**
  * Which rows of a table belong to one tenant, and how a restore replaces them.
  *
@@ -236,7 +235,7 @@ export function sealedAliases(table: Table): ReadonlyMap<string, string> {
  * - `self` — the tenant row itself, matched on its own id, upserted and never
  *   deleted.
  */
-export type TableOwnership =
+type TableOwnership =
   | { readonly kind: "direct"; readonly column: Column; readonly replace: "delete" | "upsert" }
   | {
       readonly kind: "viaParent";
@@ -509,11 +508,6 @@ export interface ValidatedTable {
   readonly table: Table;
   readonly mode: "replace" | "append";
   readonly rows: readonly BackupRow[];
-}
-
-export interface RestoreResult {
-  readonly restored: Record<string, number>;
-  readonly skipped: Record<string, number>;
 }
 
 /**

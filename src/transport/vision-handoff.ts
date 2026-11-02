@@ -54,16 +54,6 @@ export interface VisionHandoffResult {
 }
 
 /** Inputs for running the handoff across an ordered model list. */
-export interface VisionHandoffInput {
-  /** The canonical request that still carries image parts. */
-  readonly canonicalRequest: CanonicalRequest;
-  /** Ordered vision-model ids (`provider/model`), priority first. */
-  readonly models: readonly string[];
-  readonly authorization: ResolvedApiKey;
-  readonly deadlineMs: number;
-  readonly signal?: AbortSignal;
-  readonly clientUserAgent?: string;
-}
 
 /** The shape the preparer calls; matches `runVisionHandoff` in preparer deps. */
 export interface VisionHandoffCall {
@@ -128,7 +118,7 @@ function hashActiveImageSet(request: CanonicalRequest): string {
  * keeps its own streaming reply once the description is folded in; the
  * description itself must still be whole before the parent is dispatched.
  */
-export function buildVisionSubRequest(parent: CanonicalRequest, model: string): CanonicalRequest {
+function buildVisionSubRequest(parent: CanonicalRequest, model: string): CanonicalRequest {
   const index = lastRealImageCarryingUserTurnIndex(parent);
   if (index < 0) {
     throw new GatewayError(

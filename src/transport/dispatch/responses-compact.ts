@@ -13,7 +13,7 @@ import { runAttemptLoop } from "./attempt-loop";
  */
 import type { GatewayHandlerDeps } from "./handler-deps";
 
-export type ResponsesCompactHandlerDeps = GatewayHandlerDeps;
+type ResponsesCompactHandlerDeps = GatewayHandlerDeps;
 
 /**
  * Handles `POST /v1/responses/compact`: the native Codex compaction proxy. The

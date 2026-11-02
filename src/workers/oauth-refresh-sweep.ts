@@ -9,7 +9,7 @@ export interface DueOAuthAccount {
   readonly providerId: string;
 }
 
-export interface OAuthRefreshSweepDeps {
+interface OAuthRefreshSweepDeps {
   readonly loadDueAccounts: () => Promise<readonly DueOAuthAccount[]>;
   readonly refreshService: Pick<OAuthRefreshService, "ensureFreshAccessToken">;
   /** Resolves a provider's token-endpoint client; accounts with no registered refresher are skipped. */

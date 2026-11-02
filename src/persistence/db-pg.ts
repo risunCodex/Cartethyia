@@ -81,7 +81,7 @@ function databaseUrlFromLibpqEnv(): string | undefined {
   return `postgres://${credentials}${authorityHost}:${port}${path}`;
 }
 
-export function requireDatabaseUrl(): string {
+function requireDatabaseUrl(): string {
   return requireConnectionUrl({
     schemes: ["postgres:", "postgresql:"],
     candidates: databaseUrlCandidates(),
@@ -124,7 +124,7 @@ export function poolIdleFloorFromEnv(): number {
  * only closes an idle client after `idleTimeoutMillis` (60s here); this gives
  * the pool a faster, explicit shrink path while still keeping the floor warm.
  */
-export function startPoolShrinker(pool: Pool, floor: number): () => void {
+function startPoolShrinker(pool: Pool, floor: number): () => void {
   const interval = setInterval(() => {
     try {
       const idle = pool.idleCount;

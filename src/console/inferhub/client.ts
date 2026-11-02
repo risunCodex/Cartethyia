@@ -54,13 +54,6 @@ export interface InferhubClientOptions {
   readonly now?: () => number;
 }
 
-export class InferhubRateLimited extends Error {
-  constructor() {
-    super("inferhub management rate limit reached");
-    this.name = "InferhubRateLimited";
-  }
-}
-
 /**
  * One management GET.
  *

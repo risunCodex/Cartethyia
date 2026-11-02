@@ -22,7 +22,7 @@ import { isRecord } from "../protocol/codecs";
 const TEXT_DECODER = new TextDecoder();
 
 /** Decodes a stored secret: UTF-8 bytes or a string, trimmed. */
-export function decodeSecretText(secret: Uint8Array | string): string {
+function decodeSecretText(secret: Uint8Array | string): string {
   const raw = typeof secret === "string" ? secret : TEXT_DECODER.decode(secret);
   return raw.trim();
 }
@@ -48,7 +48,7 @@ function fieldString(record: Record<string, unknown>, key: string): string {
 }
 
 /** `{accessToken, orgId?}` — the Kilo Code envelope (org scoping is optional). */
-export interface KiloEnvelope {
+interface KiloEnvelope {
   readonly accessToken: string;
   /** Organization the gateway scopes requests to; absent when the profile omits one. */
   readonly orgId?: string;
@@ -79,7 +79,7 @@ export function decodeKiloCredential(secret: Uint8Array | string): KiloEnvelope 
 }
 
 /** `{oauthAccessToken, apiKey}` — the Muse Code (Meta) envelope. */
-export interface MuseEnvelope {
+interface MuseEnvelope {
   readonly oauthAccessToken: string;
   readonly apiKey: string;
 }

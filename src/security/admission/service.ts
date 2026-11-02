@@ -12,7 +12,7 @@ import { admissionMetricLabel, reasonToGatewayError } from "./reasons";
 
 /** Persists reconciled lifetime token consumption for an API key. Injected so
  *  the in-memory admission service stays decoupled from Drizzle/Postgres. */
-export type LifetimeUsagePersister = (input: {
+type LifetimeUsagePersister = (input: {
   apiKeyId: string;
   delta: number;
 }) => Promise<void>;
@@ -23,7 +23,7 @@ export type LifetimeUsagePersister = (input: {
  * counter store only when it is about to seed a missing lifetime counter, so
  * the ≤3s-stale snapshot value cannot freeze a low baseline in place. Injected
  * so the admission module stays decoupled from Drizzle/Postgres. */
-export type FreshLifetimeConsumedReader = (apiKeyId: string) => Promise<number | undefined>;
+type FreshLifetimeConsumedReader = (apiKeyId: string) => Promise<number | undefined>;
 
 
 export class ApiKeyAdmissionService {

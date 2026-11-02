@@ -12,7 +12,7 @@ export function textPart(text: string): ContentPart {
  * `document.source`). Each parser reads its own shape and hands the extracted
  * values here so the data-URI split happens once.
  */
-export interface RawFileBlock {
+interface RawFileBlock {
   /** Inline payload — may be raw base64 or a whole `data:` URI. */
   readonly data?: unknown;
   readonly media_type?: string | undefined;

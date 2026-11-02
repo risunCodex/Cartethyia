@@ -23,7 +23,7 @@ import type { ApplyInput, CliMappingInput, CliModelMapping } from "./contracts";
  * `download` and `apply` require `keyId`; the server resolves the recoverable
  * AES-256-GCM copy so the operator never pastes a raw secret.
  */
-export interface CliToolsRoutesConfig {
+interface CliToolsRoutesConfig {
   readonly service: CliToolService;
   readonly accessResolver: ConsoleAccessResolver;
   readonly auditSink?: AuditSink;

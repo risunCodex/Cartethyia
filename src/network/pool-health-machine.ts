@@ -16,7 +16,7 @@ export interface PoolHealthEvent {
   readonly createdAt: string;
 }
 
-export interface PoolHealthSnapshot {
+interface PoolHealthSnapshot {
   readonly poolId: string;
   readonly tenantId: string;
   readonly status: "active" | "cooldown" | "disabled";

@@ -39,7 +39,7 @@ import {
 import { KEEPALIVE_COMMENT_BYTES, type StreamEventPipeline } from "./encoder";
 
 /** Collaborators the stream tail reads from the dispatch handler. */
-export interface StreamFinalizeDeps {
+interface StreamFinalizeDeps {
   readonly db: CartethyiaDatabase;
   readonly poolSelector?: NetworkPoolSelector | undefined;
   readonly telemetryBuffer?: TelemetryBatchBuffer | undefined;
@@ -56,7 +56,7 @@ export interface StreamCandidateIdentity {
 }
 
 /** What the stream tail needs from the attempt's input. */
-export interface StreamFinalizeInput {
+interface StreamFinalizeInput {
   readonly state: ProxyRequestState;
   readonly deps: StreamFinalizeDeps;
   readonly prepared: PreparedProxyRequest;

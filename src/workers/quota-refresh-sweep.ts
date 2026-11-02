@@ -97,7 +97,7 @@ const DEFAULT_MAX_CHECKINS_PER_PASS = 10;
  * its automatic check-in — only a manual press, which bypasses the cap, ever
  * reaches it.
  */
-export function checkinSlotAvailable(
+function checkinSlotAvailable(
   providerId: string,
   checkinsSoFar: number,
   maxCheckins: number,

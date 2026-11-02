@@ -35,7 +35,7 @@ import {
 } from "../../observability/payload-capture";
 
 /** Shared state/context carried by every ordered transport stage. */
-export interface TransportPipelineContext {
+interface TransportPipelineContext {
   readonly db: CartethyiaDatabase;
   readonly stateStore: ProxyRequestStateStore;
   readonly surfaceRegistry: SurfaceAdapterRegistry;

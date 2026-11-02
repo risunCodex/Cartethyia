@@ -7,13 +7,13 @@ import { dedupeRequest } from "../network/deduplication";
  * - Revision-aware key invalidation
  */
 
-export interface TtlCacheOptions {
+interface TtlCacheOptions {
   readonly ttlMs?: number;
   readonly maxEntries?: number;
   readonly now?: () => number;
 }
 
-export interface TtlCacheEntry<T> {
+interface TtlCacheEntry<T> {
   readonly value: T;
   readonly at: number;
 }
@@ -134,7 +134,7 @@ export class TtlCache<T> {
 }
 
 /** One TTL-sized cache inside a {@link TtlCacheFamily}. */
-export interface TtlCacheFamilyOptions {
+interface TtlCacheFamilyOptions {
   /** TTL applied when a caller does not pass its own. */
   readonly defaultTtlMs: number;
   /** Entry cap per TTL-sized cache. */

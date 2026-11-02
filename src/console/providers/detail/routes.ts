@@ -30,7 +30,7 @@ const ROUTING_BOUNDS = {
   maxInflightPerProxy: PROVIDER_ROUTING_MAX_INFLIGHT_BOUNDS,
 } as const;
 
-export function createProviderDetailOperations(deps: ProviderDetailConfig) {
+function createProviderDetailOperations(deps: ProviderDetailConfig) {
   const operations = {
     async getRouting(
       access: AccessDecision | undefined,

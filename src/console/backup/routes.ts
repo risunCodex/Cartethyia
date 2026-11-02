@@ -26,7 +26,7 @@ import { DELETE_ALL_SCOPES, compressBackupStream } from "./store";
 import type { BackupService } from "./service";
 import type { AuditRecorder } from "../auth/audit-recorder";
 
-export interface BackupRoutesConfig {
+interface BackupRoutesConfig {
   readonly accessResolver: ConsoleAccessResolver;
   /**
    * Builds the service for one request. A factory rather than an instance

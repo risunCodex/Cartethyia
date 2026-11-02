@@ -8,7 +8,7 @@ import type {
   TelemetryPayloadDepth,
   TelemetryPayloadMode,
 } from "../console/settings/contracts";
-export type CaptureScope = "tenant" | "debug_session" | "operator_flag";
+type CaptureScope = "tenant" | "debug_session" | "operator_flag";
 
 /**
  * How long a captured payload frame lives when the deployment has not chosen.
@@ -203,13 +203,13 @@ export interface PayloadCaptureInput {
   operatorFlagOptIn?: boolean;
 }
 
-export interface PayloadSignals {
+interface PayloadSignals {
   readonly toolCalls: number;
   readonly images: number;
   readonly attachments: number;
 }
 
-export interface StoredPayload {
+interface StoredPayload {
   id: string;
   /**
    * JSON text of the five body surfaces, in drawer order, built while the

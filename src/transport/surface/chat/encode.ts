@@ -52,7 +52,7 @@ function repairToolArgumentText(json: string): string {
   return jsonrepair(json);
 }
 
-export function bytesToString(value: string | Uint8Array): string {
+function bytesToString(value: string | Uint8Array): string {
   return typeof value === "string" ? value : new TextDecoder().decode(value);
 }
 
@@ -84,7 +84,7 @@ export function getModel(options: ChatEncodeOptions, events: CanonicalEvent[]): 
  * placeholder — passing the provider's own bytes through is the whole point of
  * the extension — but never an explicit configuration.
  */
-export function resolveObfuscation(options: ChatEncodeOptions): {
+function resolveObfuscation(options: ChatEncodeOptions): {
   value: string | undefined;
   pinned: boolean;
 } {
@@ -96,7 +96,7 @@ export function resolveObfuscation(options: ChatEncodeOptions): {
   return { value: undefined, pinned: false };
 }
 
-export function eventObfuscation(event: CanonicalEvent): string | undefined {
+function eventObfuscation(event: CanonicalEvent): string | undefined {
   if (event.type !== "content_delta" || event.content.kind !== "extension") return undefined;
   if (!event.content.name.includes("obfuscat")) return undefined;
   const payload = event.content.payload;
@@ -106,13 +106,13 @@ export function eventObfuscation(event: CanonicalEvent): string | undefined {
 }
 
 /** Audio output payload carried as an `audio` extension content part. */
-export function eventAudio(event: CanonicalEvent): Record<string, unknown> | undefined {
+function eventAudio(event: CanonicalEvent): Record<string, unknown> | undefined {
   if (event.type !== "content_delta" || event.content.kind !== "extension") return undefined;
   if (event.content.name !== "audio") return undefined;
   return isRecord(event.content.payload) ? event.content.payload : undefined;
 }
 
-export function eventReasoningText(event: CanonicalEvent): string | undefined {
+function eventReasoningText(event: CanonicalEvent): string | undefined {
   if (event.type !== "content_delta" || event.content.kind !== "reasoning") return undefined;
   return reasoningTextOf(event.content);
 }
@@ -144,7 +144,7 @@ function mergedReasoningText(events: readonly CanonicalEvent[]): string {
 export function finishReason(stopReason: CanonicalStopReason | undefined): string {
   return chatFinishReason(stopReason);
 }
-export function eventToolCall(
+function eventToolCall(
   event: CanonicalEvent,
 ): { state: ToolCallState; hasArguments: boolean } | undefined {
   if (event.type === "tool_call_delta") {

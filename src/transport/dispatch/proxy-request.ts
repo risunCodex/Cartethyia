@@ -41,7 +41,7 @@ import type { PreparedProxyRequest } from "../request/preparer";
 
 import type { GatewayHandlerDeps } from "./handler-deps";
 
-export type ProviderProxyHandlerDeps = GatewayHandlerDeps & {
+type ProviderProxyHandlerDeps = GatewayHandlerDeps & {
   /** Live lookup of a provider's SSRF-validated upstream host. */
   readonly byokUpstreamHosts?: { readonly get: (providerId: string) => ByokUpstreamHost | undefined };
 };

@@ -14,13 +14,13 @@ import type {
  * The API-layer service owns validation against the registry; this store
  * only serializes rows in and out of Postgres.
  */
-export interface StoredMappingRow extends CliModelMapping {
+interface StoredMappingRow extends CliModelMapping {
   readonly toolId: string;
   readonly tenantId: string;
   readonly apiKeyId: string;
 }
 
-export interface StoredSettings {
+interface StoredSettings {
   readonly tenantId: string;
   readonly toolId: string;
   readonly apiKeyId: string;

@@ -33,7 +33,7 @@ const URL_POLL_MS = 500;
 /** Cached install detection so we don't spawn `where`/`which` on every poll. */
 const installedCache = new Map<RemoteSupportTool, boolean>();
 
-export interface RemoteSupportServiceConfig {
+interface RemoteSupportServiceConfig {
   /** Defaults to the gateway's configured port. */
   readonly port: number;
   /** Overridable for tests. Defaults to a subdir of the user config dir. */
@@ -245,7 +245,7 @@ function tailscaleDnsName(): string | null {
  * nothing about this: stopping the tunnel leaves the node up and empties the
  * status, which is why an online node alone was read as "still active".
  */
-export function tailscaleServing(): boolean {
+function tailscaleServing(): boolean {
   const result = spawnSync("tailscale", ["serve", "status", "--json"], { encoding: "utf8", windowsHide: true });
   if (result.status !== 0) return false;
   let parsed: unknown;

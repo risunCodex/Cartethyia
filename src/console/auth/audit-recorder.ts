@@ -8,7 +8,7 @@ import {
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 import { type AccessDecision } from "../../security/access-control";
 
-export interface AuditRecordInput {
+interface AuditRecordInput {
   readonly access: AccessDecision;
   readonly action: string;
   readonly target: string;

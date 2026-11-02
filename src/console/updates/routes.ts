@@ -30,7 +30,7 @@ const MEMORY_GROWTH_RATIO = 1.2;
 const MAX_MEMORY_SAMPLES = 8;
 const RELEASES_URL = "https://github.com/risunCodex/Cartethyia/releases";
 
-export interface NotificationEvent {
+interface NotificationEvent {
   readonly id: string;
   readonly kind: "memory-high" | "memory-growth" | "update-available";
   readonly title: string;

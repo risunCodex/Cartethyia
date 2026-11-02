@@ -31,7 +31,7 @@
  * but those spans measure local response processing, not decode. Only a
  * client-visible stream window counts as decode time.
  */
-export interface TokenSpeedInput {
+interface TokenSpeedInput {
   /** Completion/output tokens reported for the request. */
   readonly outputTokens?: number | undefined;
   /** End-to-end gateway latency in milliseconds. */

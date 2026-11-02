@@ -19,8 +19,8 @@ export interface ProviderQuotaResultSnapshot {
   readonly fetchedAt: string;
 }
 
-export const TENANT_STATUSES = ["active", "suspended", "deleted"] as const;
-export type TenantStatus = (typeof TENANT_STATUSES)[number];
+const TENANT_STATUSES = ["active", "suspended", "deleted"] as const;
+type TenantStatus = (typeof TENANT_STATUSES)[number];
 
 export const tenants = pgTable(
   "tenants",
@@ -40,35 +40,35 @@ export const tenants = pgTable(
 
 // Canonical tenant/timestamp column definitions shared by every table.
 
-export function tenantRefNullable() {
+function tenantRefNullable() {
   return uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" });
 }
 
-export function tenantRefRequired() {
+function tenantRefRequired() {
   return uuid("tenant_id")
     .notNull()
     .references(() => tenants.id, { onDelete: "cascade" });
 }
 
-export function tenantRefPrimaryKey() {
+function tenantRefPrimaryKey() {
   return uuid("tenant_id")
     .primaryKey()
     .references(() => tenants.id, { onDelete: "cascade" });
 }
 
-export function tenantCascadeSetNull() {
+function tenantCascadeSetNull() {
   return uuid("tenant_id").references(() => tenants.id, { onDelete: "set null" });
 }
 
-export function createdAtColumn() {
+function createdAtColumn() {
   return timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 }
 
-export function updatedAtColumn() {
+function updatedAtColumn() {
   return timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
 }
 
-export function timestampColumns() {
+function timestampColumns() {
   return { createdAt: createdAtColumn(), updatedAt: updatedAtColumn() };
 }
 
@@ -104,7 +104,7 @@ export const healthStatus = pgEnum("health_status", ["active", "cooldown", "disa
  * One definition, because the two tables are driven by the same transitions and
  * a column added to one of them by hand is how they drift.
  */
-export function healthColumns() {
+function healthColumns() {
   return {
     status: healthStatus("status").notNull().default("active"),
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
@@ -131,20 +131,20 @@ export const wireFamily = pgEnum("wire_family", ["chat", "responses", "messages"
 // `https` is a hosted relay front door (Vercel, Cloudflare, Deno, Netlify):
 // plain HTTP CONNECT to an origin that terminates TLS itself, so the transport
 // is recorded as what it speaks rather than as a generic proxy.
-export const networkPoolKind = pgEnum("network_pool_kind", ["http", "https", "socks5"]);
+const networkPoolKind = pgEnum("network_pool_kind", ["http", "https", "socks5"]);
 
 //  health_events.entity_kind — distinguishes which owning
 // table entity_id/account_id/network_pool_id references.
-export const healthEntityKind = pgEnum("health_entity_kind", ["account", "pool"]);
+const healthEntityKind = pgEnum("health_entity_kind", ["account", "pool"]);
 
-export const telemetrySourceSurface = pgEnum("telemetry_source_surface", [
+const telemetrySourceSurface = pgEnum("telemetry_source_surface", [
   "chat",
   "responses",
   "messages",
   "completion",
 ]);
 
-export const telemetryStatus = pgEnum("telemetry_status", [
+const telemetryStatus = pgEnum("telemetry_status", [
   "completed",
   "failed",
   "cancelled",
@@ -368,7 +368,6 @@ export const providerAccounts = pgTable("provider_accounts", {
   ],
 );
 
-
 //  OAuth refresh token + cross-process lease, normalized out of
 // `provider_accounts` into its own 1:0/1 table. The vast majority of
 // provider accounts are `credentialKind: "api_key"`, for which these four
@@ -406,7 +405,6 @@ export const providerOauthStates = pgTable("provider_oauth_states", {
   leaseOwner: text("lease_owner"),
   leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
 });
-
 
 // One row per (provider_id, model_id, route), with `endpoint_path`
 // identifying the route — the same model through two providers, or through
@@ -507,7 +505,6 @@ export const tenantDisabledModels = pgTable(
     ),
   ],
 );
-
 
 // Tenant-owned HTTP/HTTPS/SOCKS5 pools share the provider-account health state machine.
 export const networkPools = pgTable("network_pools", {
@@ -643,8 +640,6 @@ export const providerPoolAccounts = pgTable(
     index("provider_pool_accounts_provider_status_idx").on(table.providerId, table.status),
   ],
 );
-export type ProviderPoolAccount = typeof providerPoolAccounts.$inferSelect;
-
 
 // Account and network-pool health events share one table. The entity kind
 // selects exactly one owner FK, and the CHECK constraint below preserves
@@ -684,7 +679,6 @@ export const healthEvents = pgTable(
     ),
   ],
 );
-
 
 // Model aliasing & combos. Aliases resolve a client-facing name to a
 // real model; combos back a client-facing name with >=1 real models,
@@ -815,7 +809,7 @@ export const providerRoutingSettings = pgTable(
   }),
 );
 
-export const poolRoutingStrategy = pgEnum("pool_routing_strategy", [
+const poolRoutingStrategy = pgEnum("pool_routing_strategy", [
   "least_loaded",
   "round_robin",
   "random",
@@ -837,7 +831,6 @@ export const poolRoutingSettings = pgTable("pool_routing_settings", {
   /** Requests served by one pool before round robin advances. */
   rotateCount: integer("rotate_count").notNull().default(1),
 });
-
 
 export const API_KEY_MODES = ["personal", "share"] as const;
 export type ApiKeyMode = (typeof API_KEY_MODES)[number];
@@ -1038,7 +1031,6 @@ export const sharePopups = pgTable(
   ],
 );
 
-
 // Public bearer links for enrolling one shared key per resolved client IP, and
 // for handing a personal key to its owner. The hash is the lookup key; the
 // token is additionally retained encrypted so the owner's console can show the
@@ -1047,11 +1039,10 @@ export const sharePopups = pgTable(
  * Share-link kinds, as a runtime tuple. Route schemas and DTOs project this
  * list rather than restating it.
  */
-export const SHARE_LINK_KINDS = ["enroll", "handoff"] as const;
+const SHARE_LINK_KINDS = ["enroll", "handoff"] as const;
 
 /** One share-link kind. */
 export type ShareLinkKind = (typeof SHARE_LINK_KINDS)[number];
-
 
 export const shareLinks = pgTable(
   "share_links",
@@ -1093,7 +1084,6 @@ export const shareLinks = pgTable(
     check("share_links_kind_check", sql`${table.kind} IN ('enroll', 'handoff')`),
   ],
 );
-
 
 /**
  * Console dashboard users — distinct from API-key tenants.
@@ -1167,7 +1157,6 @@ export const consoleLockouts = pgTable(
   ],
 );
 
-
 // Configuration-change audit has its own retention lifecycle; it is separate
 // from metadata telemetry and short-lived optional payload capture.
 export const adminAuditLog = pgTable(
@@ -1189,7 +1178,6 @@ export const adminAuditLog = pgTable(
     ),
   ],
 );
-
 
 // Runtime preferences are stored in one validated JSONB bag. The filter
 // master toggle remains a typed column because it is read on the proxy path.
@@ -1350,7 +1338,6 @@ export const inferhubConfigKeys = pgTable("inferhub_config_keys", {
   updatedAt: updatedAtColumn(),
 });
 
-
 // CLI Tools (CLI tool configuration): per-tenant mapping table that lets a coding-agent
 // slot (e.g. Claude Code's "opus" slot) target a specific Cartethyia model. Rows
 // are opaque strings — validation happens at the API boundary against the
@@ -1380,7 +1367,6 @@ export const cliToolMappings = pgTable(
   ],
 );
 
-
 // Per-(tenant, tool, api_key) settings: whether mappings are active and which
 // mode the tool is configured for. Primary key is the composite of all three.
 export const cliToolSettings = pgTable(
@@ -1397,7 +1383,6 @@ export const cliToolSettings = pgTable(
   },
   (table) => [primaryKey({ columns: [table.tenantId, table.toolId, table.apiKeyId] })],
 );
-
 
 // Metadata-only request telemetry. Retention is configured independently of
 // payload capture (`CARTETHYIA_TELEMETRY_RETENTION_DAYS`, default 30 days).
@@ -1604,7 +1589,7 @@ export const telemetryReconciliationState = pgTable(
 );
 
 /** Durable aggregates retained after metadata telemetry expires. */
-export const TELEMETRY_USAGE_IDENTITY_TYPES = ["account", "api_key"] as const;
+const TELEMETRY_USAGE_IDENTITY_TYPES = ["account", "api_key"] as const;
 export type TelemetryUsageIdentityType = (typeof TELEMETRY_USAGE_IDENTITY_TYPES)[number];
 
 export const telemetryUsageTotals = pgTable(
@@ -1642,7 +1627,6 @@ export const telemetryUsageTotals = pgTable(
     ),
   ],
 );
-
 
 export const telemetryPayloads = pgTable(
   "telemetry_payloads",
@@ -1686,8 +1670,6 @@ export const telemetryPayloads = pgTable(
   ],
 );
 
-
-
 // Daily check-in ledger: one row per (account, calendar day) once the sweep has
 // attempted that account's claim.
 //
@@ -1707,7 +1689,6 @@ export const dailyCheckinLedger = pgTable(
     primaryKey({ columns: [table.dayKey, table.accountId] }),
   ],
 );
-
 
 /**
  * Per-day, per-model credit deductions the buddy billing meter reported.

@@ -33,7 +33,7 @@ const INVALIDATION_CHANNEL = "cartethyia:cache:invalidate";
  * collide, and so a `FLUSHDB`-free deploy can drop one namespace without
  * touching another.
  */
-export type SharedCacheNamespace = "auth" | "preferences" | "credential" | "routing" | "public-models";
+type SharedCacheNamespace = "auth" | "preferences" | "credential" | "routing" | "public-models";
 
 const NAMESPACE_PREFIX: Readonly<Record<SharedCacheNamespace, string>> = {
   auth: "cartethyia:cache:auth:",
@@ -50,7 +50,7 @@ const NAMESPACE_PREFIX: Readonly<Record<SharedCacheNamespace, string>> = {
 };
 
 /** One notice that peers must drop an entry. */
-export interface InvalidationNotice {
+interface InvalidationNotice {
   readonly namespace: SharedCacheNamespace;
   /** Omitted means "all keys in the namespace". */
   readonly key?: string;

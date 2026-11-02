@@ -10,7 +10,7 @@ import { isProxyAgentPair, type ProxyAgentPair } from "./pool/agent";
 import { metrics } from "../observability/metrics";
 import { trackNetworkCall } from "../observability/performance-metrics";
 // Validated fetch — single egress with ProxyAgent support
-export interface ValidatedFetchOptions {
+interface ValidatedFetchOptions {
   readonly fetchFn?: typeof fetch;
   readonly policy?: SsrfPolicy;
   readonly maxRedirects?: number;

@@ -36,7 +36,7 @@ export const LOG_RING_MAX_CODE_UNITS = 8_192;
 
 /** Marker appended wherever content was dropped. */
 export const LOG_TRUNCATED_MARKER = "[truncated]";
-export const LOG_CIRCULAR_MARKER = "[circular]";
+const LOG_CIRCULAR_MARKER = "[circular]";
 
 function isHighSurrogate(code: number): boolean {
   return code >= 0xd800 && code <= 0xdbff;

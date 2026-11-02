@@ -24,7 +24,7 @@ export type TrustedProxyMode = "disabled" | "trusted" | "platform";
  * naming CIDRs. It cannot be mistaken for an address, so the list form stays
  * unambiguous.
  */
-export const TRUSTED_PROXY_PLATFORM_TOKEN = "platform";
+const TRUSTED_PROXY_PLATFORM_TOKEN = "platform";
 
 /** Trusted reverse-proxy boundary used for forwarded client addresses. */
 export interface TrustedProxyBoundary {

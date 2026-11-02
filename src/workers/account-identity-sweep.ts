@@ -17,7 +17,7 @@ import { decodeJwtPayload } from "../providers/authentication/oauth-flow-store";
 import { runSweep } from "./sweep-runner";
 
 /** One account whose stored credential has never had its identity read. */
-export interface UnenrichedAccount {
+interface UnenrichedAccount {
   readonly id: string;
   readonly providerId: string;
   readonly label: string;
@@ -29,7 +29,7 @@ export interface UnenrichedAccount {
   readonly credentialCiphertext: Buffer | Uint8Array | null;
 }
 
-export interface AccountIdentityEnrichmentSweepDeps {
+interface AccountIdentityEnrichmentSweepDeps {
   readonly db: CartethyiaDatabase;
   /**
    * How many accounts to enrich in one pass. Identity parsing is pure CPU on

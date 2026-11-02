@@ -107,7 +107,7 @@ interface GatewayShellDeps {
  * `runtime/dependencies.ts` either supplies it or the app does not boot, so
  * there is no runtime shape check to fall through.
  */
-export interface ProductionAppDeps {
+interface ProductionAppDeps {
   readonly mode: "production";
   readonly db: CartethyiaDatabase;
   readonly proxyPreparer: ProxyRequestPreparer;

@@ -26,7 +26,7 @@ import type {
 /** Ask buckets are keyed to this many decimals so float noise cannot split one price into two tiers. */
 const PRICE_PRECISION = 6;
 /** Default number of live providers a capacity-weighted price must have behind it. */
-export const DEFAULT_MIN_CAPACITY = 2;
+const DEFAULT_MIN_CAPACITY = 2;
 
 const FAMILY_STATES: readonly FamilyState[] = [
   "operational",
@@ -114,7 +114,7 @@ export function groupTiers(
  * provider count would make `providersLive` wrong, and a wrong availability
  * number is worse than an absent one.
  */
-export function pricePointsToTiers(
+function pricePointsToTiers(
   points: unknown,
   official: number | null,
 ): readonly Tier[] {

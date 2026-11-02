@@ -26,7 +26,7 @@ export function eventText(event: CanonicalEvent): string | undefined {
 // The endpoint path is authoritative: user-agent sniffing and prompt-text
 // marker scanning never override it, so routing cannot depend on client
 // identity strings or prompt content.
-export type WinningSource =
+type WinningSource =
   "explicit_marker" | "body_shape" | "endpoint_path";
 
 export interface SurfaceInput {
@@ -35,7 +35,7 @@ export interface SurfaceInput {
   path: string;
 }
 
-export interface SurfaceDetection {
+interface SurfaceDetection {
   surface: SourceSurface;
   winning_source: WinningSource;
   /**
@@ -64,7 +64,7 @@ export interface SurfaceAdapter {
  * it explicitly. Both detection lookups read this table, so adding a surface
  * is one row here plus its adapter.
  */
-export interface SurfaceDescriptor {
+interface SurfaceDescriptor {
   readonly surface: SourceSurface;
   readonly pathPrefix: string;
 }

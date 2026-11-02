@@ -50,7 +50,7 @@ export interface ImportReport {
   readonly remapped: readonly string[];
 }
 
-export interface ConversionResult {
+interface ConversionResult {
   readonly payload: BackupPayload;
   readonly report: ImportReport;
 }

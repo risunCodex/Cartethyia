@@ -45,7 +45,7 @@ export async function resolveConsoleAccess(
 }
 
 /** The signed-in console user behind a request, or `null` when unauthenticated. */
-export interface ResolvedConsoleUser {
+interface ResolvedConsoleUser {
   readonly id: string;
   readonly sessionId: string;
   readonly tenantId: string;

@@ -341,7 +341,7 @@ export interface SqliteAuthStatements {
   readonly childrenConsumed: { get: (parentId: string) => { total: number } | null };
 }
 
-export function prepareAuthStatements(sqlite: Database): SqliteAuthStatements {
+function prepareAuthStatements(sqlite: Database): SqliteAuthStatements {
   // A key is active while not revoked and not under an active ban: a ban is
   // active when `banned_at` is set and `banned_until` is null (permanent) or
   // still in the future. SQLite stores timestamps as ISO text, so the
@@ -507,7 +507,7 @@ function applyFilePragmas(db: Database): void {
 }
 
 /** The SQLite set lives beside the PostgreSQL one, never inside it. */
-export function resolveSqliteMigrationsFolder(): string {
+function resolveSqliteMigrationsFolder(): string {
   return resolvePackagePath("migrations", "lite-sqlite3");
 }
 

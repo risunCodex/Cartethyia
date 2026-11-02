@@ -23,7 +23,7 @@ export class RoundRobinState {
  * combinations would retain one entry forever. 1000 is far above the working
  * set of any real catalog, so eviction only ever targets genuinely cold keys.
  */
-export const MAX_ROUND_ROBIN_ENTRIES = 1000;
+const MAX_ROUND_ROBIN_ENTRIES = 1000;
 
 /**
  * Creates the bounded LRU map the router keeps round-robin state in.

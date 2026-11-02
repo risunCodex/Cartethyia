@@ -52,13 +52,13 @@ export type EmptyStreamFetch = (
  * unjittered, so a provider returning 200-with-no-events could drive an
  * unbounded wait, and concurrent clients could resynchronize their retries.
  */
-export interface EmptyStreamPolicy {
+interface EmptyStreamPolicy {
   readonly maxEmptyReplays?: number;
   readonly firstEventTimeoutMs?: number;
   readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
 
-export interface EmptyStreamResult {
+interface EmptyStreamResult {
   readonly response: Response;
   readonly tally: StreamTally;
   readonly endpoint: string;

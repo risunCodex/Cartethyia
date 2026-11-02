@@ -34,7 +34,7 @@ import { poolByteSnapshot } from "../../network/pool/byte-accounting";
 import { consoleSseResponse, createConsoleSseStream } from "./sse";
 import { subscribeRequestCompleted } from "../../observability/request-notify";
 
-export interface LiveConfig {
+interface LiveConfig {
   readonly accessResolver: ConsoleAccessResolver;
   readonly poolSelector?: NetworkPoolSelector;
   readonly db?: CartethyiaDatabase;

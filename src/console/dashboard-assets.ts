@@ -9,7 +9,7 @@ import { acceptsGzip } from "./response-compression";
 /**
  * Represents the result of serving a static file.
  */
-export interface StaticServeResult {
+interface StaticServeResult {
   status: number;
   body: Uint8Array | undefined;
   headers: Record<string, string>;
@@ -18,7 +18,7 @@ export interface StaticServeResult {
 /**
  * Configuration for the static file handler.
  */
-export interface StaticHandlerConfig {
+interface StaticHandlerConfig {
   /** Absolute path to the dashboard build directory */
   buildDir: string;
   /**
@@ -30,7 +30,7 @@ export interface StaticHandlerConfig {
 }
 
 /** Shared landing, console, and public share entry document produced by Vite. */
-export const DEFAULT_ENTRY_DOCUMENTS: Readonly<Record<string, string>> = {
+const DEFAULT_ENTRY_DOCUMENTS: Readonly<Record<string, string>> = {
   "/": "index.html",
   "/share": "index.html",
   "/console": "index.html",
@@ -47,7 +47,7 @@ function dashboardBuildHeader(html: string): Record<string, string> {
  * their own card here — crawlers do not run the client bundle, so a
  * `document.title` set at runtime cannot reach them.
  */
-export interface SocialMeta {
+interface SocialMeta {
   title: string;
   description: string;
   image: string;

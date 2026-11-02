@@ -30,10 +30,10 @@ import { captureProviderRateLimit } from "./ratelimit-capture";
 
 import type { GatewayHandlerDeps } from "./handler-deps";
 
-export type GenerationHandlerDeps = GatewayHandlerDeps;
+type GenerationHandlerDeps = GatewayHandlerDeps;
 
 /** Which surface a handler serves. Drives candidate filtering and error copy. */
-export type GenerationKind = Extract<ServiceKind, "imageGeneration" | "videoGeneration">;
+type GenerationKind = Extract<ServiceKind, "imageGeneration" | "videoGeneration">;
 
 /**
  * Surfaces the gateway routes but does not model.
@@ -44,7 +44,7 @@ export type GenerationKind = Extract<ServiceKind, "imageGeneration" | "videoGene
  * is the whole feature: routing, admission, failover, and accounting still
  * apply, and the upstream's own bytes come back untouched.
  */
-export type PassthroughKind = Extract<ServiceKind, "embedding" | "audioTranscription" | "audioSpeech">;
+type PassthroughKind = Extract<ServiceKind, "embedding" | "audioTranscription" | "audioSpeech">;
 
 /** Error-copy noun per surface, so a refusal names what the caller asked for. */
 const SURFACE_NOUNS: Record<GenerationKind | PassthroughKind, string> = {
@@ -145,12 +145,12 @@ async function passThrough(
 }
 
 /** Builds the handler for one generation surface. */
-export function createGenerationHandler(kind: GenerationKind, deps: GenerationHandlerDeps) {
+function createGenerationHandler(kind: GenerationKind, deps: GenerationHandlerDeps) {
   return createNativeSurfaceHandler(kind, deps);
 }
 
 /** Builds the handler for one routed surface, media or passthrough. */
-export function createNativeSurfaceHandler(
+function createNativeSurfaceHandler(
   kind: GenerationKind | PassthroughKind,
   deps: GenerationHandlerDeps,
 ) {

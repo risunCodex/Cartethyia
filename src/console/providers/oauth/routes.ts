@@ -172,7 +172,7 @@ export class DrizzleOAuthAccountStore implements OAuthAccountStore {
  * server the redirect arrives at; `callback-listener.ts` is what makes those
  * the same endpoint.
  */
-export interface PersistedOAuthAccount {
+interface PersistedOAuthAccount {
   readonly accountId: string;
 }
 
@@ -213,7 +213,7 @@ async function requireClient(
 }
 
 /** The result of exchanging one authorization code, as the caller should report it. */
-export interface OAuthCompleteOutcome {
+interface OAuthCompleteOutcome {
   readonly ok: boolean;
   readonly message: string;
   /**
@@ -410,7 +410,7 @@ function failurePage(message: string, wantsJson: boolean): Response {
   );
 }
 
-export function createOAuthLoginOperations(config: OAuthLoginConfig) {
+function createOAuthLoginOperations(config: OAuthLoginConfig) {
   const operations = {
     async beginAuthorize(
         access: AccessDecision | undefined,

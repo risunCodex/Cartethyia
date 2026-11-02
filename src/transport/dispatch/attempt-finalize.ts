@@ -394,7 +394,7 @@ let captureFailureReported = false;
  * deployment condition that does not change per request, so repeating it for
  * every request would bury the rest of the log without adding information.
  */
-export function reportCaptureFailure(error: unknown): void {
+function reportCaptureFailure(error: unknown): void {
   if (captureFailureReported) return;
   captureFailureReported = true;
   const directory = payloadDirectory();

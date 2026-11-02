@@ -23,7 +23,7 @@ export interface ConnectionUrlCandidate {
 }
 
 /** How one backing service's connection string is resolved. */
-export interface ConnectionUrlSpec {
+interface ConnectionUrlSpec {
   /** Accepted URL schemes, e.g. `postgres:` / `postgresql:`. */
   readonly schemes: readonly string[];
   /** URL variables, in resolution order. */

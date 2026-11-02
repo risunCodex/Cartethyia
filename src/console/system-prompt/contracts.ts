@@ -112,7 +112,7 @@ export const SYSTEM_PROMPT_ALIAS_LIMIT = 512;
  * `override` mode is not honoured for these providers — it would strip the
  * identity and the upstream would refuse the request.
  */
-export const WRAPPED_INJECTION_PROVIDERS: ReadonlySet<string> = new Set([
+const WRAPPED_INJECTION_PROVIDERS: ReadonlySet<string> = new Set([
   "cb", // CodeBuddy International
   "cbcn", // CodeBuddy CN
   "workbuddy",

@@ -45,7 +45,7 @@ import { runAttemptLoop } from "./attempt-loop";
 
 import type { GatewayHandlerDeps } from "./handler-deps";
 
-export type TokenCountHandlerDeps = GatewayHandlerDeps;
+type TokenCountHandlerDeps = GatewayHandlerDeps;
 
 /** Builds the `POST /v1/messages/count_tokens` handler. */
 export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
@@ -255,7 +255,7 @@ function estimatedCountResponse(
  * `/v1/messages?beta=true/count_tokens` — the counting segment lands inside the
  * query, so the upstream sees the chat path with junk after it and never counts.
  */
-export function joinCountTokensPath(endpoint: string): string {
+function joinCountTokensPath(endpoint: string): string {
   const queryAt = endpoint.indexOf("?");
   const path = queryAt === -1 ? endpoint : endpoint.slice(0, queryAt);
   const query = queryAt === -1 ? "" : endpoint.slice(queryAt);

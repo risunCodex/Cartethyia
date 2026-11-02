@@ -51,7 +51,7 @@ export { parseCooldownEntry };
  */
 export const PROVIDER_BLOCK_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 
-export const DEFAULT_PROXY_CONCURRENCY = 10;
+const DEFAULT_PROXY_CONCURRENCY = 10;
 const DEFAULT_PROXY_WEIGHT = 100;
 const MAX_PROXY_WEIGHT = 1000;
 // Crash-recovery bound, not a lease duration: normal releases DECR/DEL the
@@ -63,7 +63,7 @@ const MAX_PROXY_WEIGHT = 1000;
 function poolInflightTtlSeconds(): number {
   return resolveInflightTtlSeconds();
 }
-export function effectiveConcurrency(limit: number): number {
+function effectiveConcurrency(limit: number): number {
   if (!Number.isInteger(limit) || limit < 1) return 0;
   return limit;
 }
@@ -100,7 +100,7 @@ function decrementLocal(counter: Map<string, number>, key: string): void {
   else counter.set(key, value - 1);
 }
 
-export type PoolSelectionFailureReason =
+type PoolSelectionFailureReason =
   | "at_capacity"
   | "provider_at_capacity"
   | "cooldown"
@@ -109,7 +109,7 @@ export type PoolSelectionFailureReason =
   | "coordination_unavailable"
   | "no_active_pool";
 
-export interface PoolCapacitySnapshot {
+interface PoolCapacitySnapshot {
   readonly poolId: string;
   readonly maxInflight: number;
   readonly currentInflight: number;

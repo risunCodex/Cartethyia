@@ -3,7 +3,7 @@ import type { ConsoleSession, ConsoleUser } from "../../persistence/schema";
 
 import { isRecord } from "../../protocol/codecs";
 
-export function asDate(value: unknown): Date | undefined {
+function asDate(value: unknown): Date | undefined {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
   if (typeof value === "string" || typeof value === "number") {
     const date = new Date(value);
@@ -40,7 +40,7 @@ export function userRecord(value: unknown): ConsoleUser | undefined {
   return value as unknown as ConsoleUser;
 }
 
-export function mutationAffectedRows(value: unknown): number | undefined {
+function mutationAffectedRows(value: unknown): number | undefined {
   if (!isRecord(value)) return undefined;
   for (const key of ["rowCount", "rowsAffected", "changes"] as const) {
     const count = value[key];
@@ -50,7 +50,7 @@ export function mutationAffectedRows(value: unknown): number | undefined {
 }
 
 /** Awaitable Drizzle mutation builder that may expose `.returning()`. */
-export interface ReturningBuilder extends PromiseLike<unknown> {
+interface ReturningBuilder extends PromiseLike<unknown> {
   returning?: (...columns: unknown[]) => PromiseLike<unknown[]>;
 }
 

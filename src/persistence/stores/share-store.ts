@@ -38,7 +38,7 @@ function addressMatches(address: string): SQL {
 }
 
 /** Newly created share-link metadata. */
-export interface ShareLinkRecord {
+interface ShareLinkRecord {
   readonly id: string;
   readonly apiKeyId: string;
   readonly kind: ShareLinkKind;
@@ -61,7 +61,7 @@ export interface ShareLinkSummary {
 }
 
 /** A stable link's encrypted token, or null when it predates token retention. */
-export interface ShareLinkToken {
+interface ShareLinkToken {
   readonly id: string;
   readonly apiKeyId: string;
   readonly kind: ShareLinkKind;
@@ -103,13 +103,13 @@ export interface ShareLinkPolicy {
 }
 
 /** Public template fields authorized for a valid enrollment-link lookup. */
-export interface ShareApiKeyRow extends ShareLinkPolicy {
+interface ShareApiKeyRow extends ShareLinkPolicy {
   readonly active: boolean;
   readonly createdAt: string;
 }
 
 /** A personal key revealed by its handoff link. */
-export interface ShareHandoffRow extends ShareLinkPolicy {
+interface ShareHandoffRow extends ShareLinkPolicy {
   /** Encrypted personal credential; null when the row predates secret storage. */
   readonly keyEncrypted: Buffer | null;
 }
@@ -119,7 +119,7 @@ export interface ShareHandoffRow extends ShareLinkPolicy {
  * public lookup answers with a discriminated result instead of the caller
  * guessing which endpoint to try.
  */
-export type ShareLinkResolution =
+type ShareLinkResolution =
   | { readonly kind: "enroll"; readonly key: ShareApiKeyRow }
   | { readonly kind: "handoff"; readonly key: ShareHandoffRow };
 
@@ -137,7 +137,7 @@ export type ShareLinkOutcome =
   | { readonly ok: true; readonly resolution: ShareLinkResolution }
   | { readonly ok: false; readonly refusal: ShareLinkRefusal };
 
-export interface SharedApiKeyMaterial {
+interface SharedApiKeyMaterial {
   readonly keyHash: string;
   readonly keyPrefix: string;
   readonly clientIp: string;
@@ -146,7 +146,7 @@ export interface SharedApiKeyMaterial {
   readonly nameHint?: string;
 }
 
-export type SharedApiKeyIssueResult =
+type SharedApiKeyIssueResult =
   | {
       readonly kind: "issued";
       readonly apiKeyId: string;

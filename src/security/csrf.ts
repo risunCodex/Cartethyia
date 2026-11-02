@@ -16,7 +16,7 @@ import { isRecord } from "../protocol/codecs";
  * but cannot read the cookie value, so it cannot forge the header.
  */
 export const CSRF_COOKIE_NAME = "csrf_token";
-export const CSRF_HEADER_NAME = "x-csrf-token";
+const CSRF_HEADER_NAME = "x-csrf-token";
 
 /**
  * Name of the session cookie whose presence gates CSRF validation in
@@ -30,7 +30,7 @@ export const SESSION_COOKIE_NAME = "session_token";
  * `SessionCookiePolicy` structurally satisfies this (extra fields are fine),
  * so call sites keep passing their existing policy object unchanged.
  */
-export interface CsrfCookiePolicy {
+interface CsrfCookiePolicy {
   readonly maxAge: number;
   readonly sameSite: "Lax" | "Strict" | "None";
   readonly secure: boolean;

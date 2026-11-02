@@ -25,7 +25,7 @@
 import { GatewayError } from "../../protocol/gateway-error";
 import { isLoopbackPeer, tokenMatches } from "../../transport/drain-endpoint";
 
-export interface ConsoleAccountResetDeps {
+interface ConsoleAccountResetDeps {
   /** Shared secret; the route is registered only when this is set. */
   readonly token: string;
   /** Removes every console user and session. Resolves to the number removed. */

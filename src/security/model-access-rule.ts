@@ -24,7 +24,7 @@ import type { ApiKeyModelAccessMode } from "../persistence/schema";
 export type ModelRejectionReason = "model-denied" | "model-not-allowed";
 
 /** The subset of an authorization snapshot this rule reads. */
-export interface ModelAccessPolicy {
+interface ModelAccessPolicy {
   readonly model_access_mode?: ApiKeyModelAccessMode | null | undefined;
   readonly model_list?: readonly string[] | ReadonlySet<string> | null | undefined;
 }

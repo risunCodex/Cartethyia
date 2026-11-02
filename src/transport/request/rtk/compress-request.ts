@@ -26,7 +26,7 @@ import { autoDetectFilter, dedupLogFilter, safeApplyFilter, smartTruncateFilter 
 import { RTK_RAW_CAP, rtkProfile, type RtkLevel } from "./rtk-constants";
 import { ponyTailPrompt, type PonyTailLevel } from "./ponytail-prompt";
 
-export interface CompressionOptions {
+interface CompressionOptions {
   /** Compact bulky tool-result text in the message history. */
   readonly rtkPrune?: boolean;
   /** RTK strength; `full` when omitted. See {@link RtkLevel}. */
@@ -35,7 +35,7 @@ export interface CompressionOptions {
   readonly ponyTail?: PonyTailLevel | null | undefined;
 }
 
-export interface CompressionStats {
+interface CompressionStats {
   /** Tool-result text parts actually shortened. */
   readonly prunedParts: number;
   /** Characters removed by RTK (>= 0). */
@@ -45,7 +45,7 @@ export interface CompressionStats {
 }
 
 /** Compresses one text blob with RTK at a strength level, or returns it unchanged. */
-export function compressToolText(text: string, level?: RtkLevel | null): string {
+function compressToolText(text: string, level?: RtkLevel | null): string {
   const profile = rtkProfile(level);
   if (text.length < profile.minSize || text.length > RTK_RAW_CAP) return text;
   const filter = autoDetectFilter(text, { genericFallback: profile.genericFallback });

@@ -44,7 +44,7 @@ export type TransportKind = (typeof TRANSPORT_KINDS)[number];
 
 
 /** Config keys reserved for endpoint/label; every other key is opaque non-secret transport config. */
-export const RESERVED_ENDPOINT_CONFIG_KEYS: Record<string, true> = {
+const RESERVED_ENDPOINT_CONFIG_KEYS: Record<string, true> = {
   endpoint: true,
   label: true,
 };

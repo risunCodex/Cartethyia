@@ -55,7 +55,7 @@ function visionDescriptionText(description: string): string {
  * Only user-message parts are replaced; system/tool-result images are left
  * untouched.
  */
-export function replaceImagePartsWithText(
+function replaceImagePartsWithText(
   request: CanonicalRequest,
   description: string,
 ): CanonicalRequest | null {
@@ -170,7 +170,7 @@ const CURSOR_CALL_PREFIX = "call_cursor_";
  * Any other id belongs to a conversation the client owns; it is not a
  * continuation and must not influence routing.
  */
-export function continuationCallIds(request: CanonicalRequest): readonly string[] {
+function continuationCallIds(request: CanonicalRequest): readonly string[] {
   const ids: string[] = [];
   for (const message of request.messages) {
     if (message.role !== "tool" && message.role !== "user") continue;
@@ -194,7 +194,7 @@ export function continuationCallIds(request: CanonicalRequest): readonly string[
  * Returns `undefined` when the request carries no continuation ids — the
  * ordinary routing path.
  */
-export function resolveContinuationAffinity(
+function resolveContinuationAffinity(
   request: CanonicalRequest,
   authorization: ResolvedApiKey,
 ): RouteContinuationAffinity | undefined {
@@ -272,7 +272,7 @@ function isCompleteContinuationReplay(request: CanonicalRequest, ids: readonly s
  * adapter rebases it into a fresh Run on whichever account serves the model.
  * That is what makes switching provider/model mid-conversation work.
  */
-export function resolveContinuationAffinityWithRebase(
+function resolveContinuationAffinityWithRebase(
   request: CanonicalRequest,
   authorization: ResolvedApiKey,
 ): RouteContinuationAffinity | undefined {
@@ -334,7 +334,7 @@ export interface PreparedNativeRequest {
   readonly admissionService: ApiKeyAdmissionService;
 }
 
-export interface ProxyRequestPreparerDeps {
+interface ProxyRequestPreparerDeps {
   readonly snapshotService: InMemoryRouteSnapshotService;
   readonly routingEngine: RoutingEngine;
   readonly admissionService: ApiKeyAdmissionService;

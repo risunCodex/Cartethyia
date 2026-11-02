@@ -20,7 +20,7 @@ import { decryptCredentialToString, encryptCredential, hashSecret } from "../../
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 
 /** Shape returned to the console: whether a key is set, and never the key. */
-export interface InferhubKeyStatus {
+interface InferhubKeyStatus {
   readonly configured: boolean;
   /** Last four characters, so an operator can tell two keys apart. */
   readonly last4: string | null;

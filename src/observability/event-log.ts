@@ -255,7 +255,7 @@ export async function readTelemetryEvents(): Promise<TelemetryEventRecord[]> {
   return events;
 }
 
-export interface EventQuery {
+interface EventQuery {
   readonly tenantId?: string;
   readonly since?: Date;
   /**
@@ -372,7 +372,7 @@ export async function queryTelemetryEvents(query: EventQuery): Promise<Telemetry
   return events;
 }
 
-export interface EventTotals {
+interface EventTotals {
   requests: number;
   succeeded: number;
   failed: number;

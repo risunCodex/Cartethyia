@@ -64,7 +64,7 @@ import { StreamEventPipeline } from "./encoder";
 import { StreamFinalizer, type StreamCandidateIdentity } from "./finalize";
 
 /** Collaborators the streaming branch reads from the dispatch handler. */
-export interface StreamingDispatchDeps {
+interface StreamingDispatchDeps {
   readonly db: CartethyiaDatabase;
   readonly networkBindingFactory?: ValidatedNetworkBindingFactory | undefined;
   readonly poolSelector?: NetworkPoolSelector | undefined;
@@ -73,7 +73,7 @@ export interface StreamingDispatchDeps {
 }
 
 /** Everything one streamed attempt needs, all resolved by its caller. */
-export interface StreamingDispatchInput {
+interface StreamingDispatchInput {
   readonly state: ProxyRequestState;
   readonly deps: StreamingDispatchDeps;
   readonly prepared: PreparedProxyRequest;

@@ -32,7 +32,7 @@ export interface RuntimeMemorySnapshot {
 }
 
 /** Live collection sizes sampled alongside process memory. */
-export interface RuntimeMetricSources {
+interface RuntimeMetricSources {
   readonly routingRoundRobinEntries: () => { readonly combo: number; readonly provider: number };
   /**
    * Tracked keys in the in-memory IP abuse store, or 0 when the store is

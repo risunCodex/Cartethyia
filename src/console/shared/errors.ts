@@ -7,7 +7,7 @@ import { formatPublicErrorMessage } from "../../protocol/gateway-error";
 // (or the storage-layer BackupError, same code/status/message shape) and
 // shapes it through errorResponse; guards narrow to TenantAccessDecision.
 
-export interface ErrorResponseOptions {
+interface ErrorResponseOptions {
   readonly detailsPolicy?: "omit" | "include-if-present" | "always-include";
 }
 
@@ -105,7 +105,7 @@ export function requireAnyScope(
   return access;
 }
 
-export type TenantAccessDecision = AccessDecision & { readonly tenantId: string };
+type TenantAccessDecision = AccessDecision & { readonly tenantId: string };
 
 export function requireTenantScope(
   access: AccessDecision | undefined,

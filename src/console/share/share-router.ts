@@ -56,7 +56,7 @@ export interface ShareModelInfo {
   readonly webSearch: boolean;
 }
 
-export interface ShareRouterOptions {
+interface ShareRouterOptions {
   readonly db: CartethyiaDatabase;
   readonly shareStore: ShareLinkStore;
   /** Resolves the normalized client IP through the trusted-proxy boundary. */

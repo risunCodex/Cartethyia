@@ -5,18 +5,18 @@
  * `render()` emits the Prometheus exposition format on demand.
  */
 
-export type MetricLabels = Readonly<Record<string, string | number>>;
+type MetricLabels = Readonly<Record<string, string | number>>;
 
-export interface CounterMetric {
+interface CounterMetric {
   inc(value?: number, labels?: MetricLabels): void;
 }
 
-export interface GaugeMetric extends CounterMetric {
+interface GaugeMetric extends CounterMetric {
   set(value: number, labels?: MetricLabels): void;
   dec(value?: number, labels?: MetricLabels): void;
 }
 
-export interface HistogramMetric {
+interface HistogramMetric {
   observe(value: number, labels?: MetricLabels): void;
 }
 

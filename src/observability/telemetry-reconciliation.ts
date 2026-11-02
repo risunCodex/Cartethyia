@@ -66,13 +66,13 @@ const MAX_FILES_PER_RUN = 64;
  */
 const HOURS_TO_SKIP = 2;
 
-export interface ReconcileOptions {
+interface ReconcileOptions {
   /** Report only: count the gap without writing anything. */
   readonly verify?: boolean;
   readonly now?: Date;
 }
 
-export interface ReconcileReport {
+interface ReconcileReport {
   readonly ran: boolean;
   /** Why the run did nothing, when it did nothing. */
   readonly skippedReason?: "lease_held" | "no_files" | "uptodate";

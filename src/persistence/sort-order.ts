@@ -27,7 +27,7 @@ export type SortOrderDb =
  * `idColumn`/`sortIndexColumn`, and every caller passes its own schema-typed
  * table plus the two columns.
  */
-export interface SortOrderTable {
+interface SortOrderTable {
   readonly table: PgTable;
   readonly idColumn: AnyColumn;
   readonly sortIndexColumn: AnyColumn;

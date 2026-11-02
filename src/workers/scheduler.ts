@@ -28,7 +28,7 @@ export interface ScheduledTask {
   run(): Promise<unknown> | void;
 }
 
-export interface ScheduledTaskRegistryOptions {
+interface ScheduledTaskRegistryOptions {
   /**
    * Cross-process coordinator. When present, a task that cannot acquire the
    * fleet lease SKIPS its tick rather than waiting — the next interval is the
@@ -76,7 +76,7 @@ export async function runGrowingWaves<T>(
   }
 }
 
-export const DEFAULT_INITIAL_BATCH_SIZE = 2;
+const DEFAULT_INITIAL_BATCH_SIZE = 2;
 
 /**
  * How long a tick may wait for the maintenance lease.

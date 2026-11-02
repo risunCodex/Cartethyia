@@ -28,14 +28,14 @@ import type { RestoreWarning } from "../backup/contracts";
 // and the mode is read from the environment the process was started with.
 
 /** The administrator to create when a restored backup left none to sign in with. */
-export interface AdminBootstrap {
+interface AdminBootstrap {
   readonly password: string;
   readonly username?: string;
   readonly displayName?: string;
 }
 
 /** What a first-boot restore did, so the console can report it honestly. */
-export interface RestoreBackupOutcome {
+interface RestoreBackupOutcome {
   readonly restored: Record<string, number>;
   readonly skipped: Record<string, number>;
   /** Parts of the file that could not be restored. */

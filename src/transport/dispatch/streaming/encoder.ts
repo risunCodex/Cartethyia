@@ -17,7 +17,7 @@ import { createDispatchStreamEncoder, type DispatchStreamEncoder } from "../stre
 import { THINKING_LOOP_MARKER, ThinkingLoopDetector } from "./thinking-loop";
 
 /** The terminal event shape every stream settles (or fails to settle) on. */
-export type StreamTerminalEvent = Extract<CanonicalEvent, { type: "terminal" }>;
+type StreamTerminalEvent = Extract<CanonicalEvent, { type: "terminal" }>;
 
 /**
  * SSE comment frame: valid framing on every streamed surface, ignored by
@@ -46,7 +46,7 @@ interface TruncatedEventTranscript {
 }
 
 /** Error-frame input in the shape the dispatch stream encoder accepts. */
-export type StreamErrorFrameInput = Parameters<DispatchStreamEncoder["encodeError"]>[0];
+type StreamErrorFrameInput = Parameters<DispatchStreamEncoder["encodeError"]>[0];
 
 /**
  * Per-event state and framing for one stream. Client framing and protocol

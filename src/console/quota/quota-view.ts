@@ -11,7 +11,7 @@ import {
 } from "../../providers/quota/refresh";
 
 /** Shape returned for quota data on dashboard account responses. */
-export interface QuotaRefreshView {
+interface QuotaRefreshView {
   readonly source: string;
   readonly status: "ready" | "error" | "refreshing";
   readonly plan: string | null;

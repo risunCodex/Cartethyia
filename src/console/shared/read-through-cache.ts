@@ -31,7 +31,7 @@
 import { createHash } from "node:crypto";
 
 /** The slice of Redis this cache needs, so it can be tested without a server. */
-export interface ReadThroughCacheClient {
+interface ReadThroughCacheClient {
   get(key: string): Promise<string | null>;
   set(key: string, value: string, mode: "EX", ttlSeconds: number): Promise<unknown>;
 }
@@ -41,7 +41,7 @@ export interface ReadThroughCacheClient {
  * more often pass a shorter TTL; this value suits the dashboard's polling
  * cadence and the append-only telemetry log.
  */
-export const READ_THROUGH_DEFAULT_TTL_SECONDS = 10;
+const READ_THROUGH_DEFAULT_TTL_SECONDS = 10;
 
 /** The cached value plus the strong validator for the bytes it serializes to. */
 export interface CachedResult<T> {
@@ -59,7 +59,7 @@ function etagFor(bytes: string): string {
 }
 
 /** The sibling key holding the validator, so a cached body is never re-hashed. */
-export function etagKey(key: string): string {
+function etagKey(key: string): string {
   return `${key}:etag`;
 }
 
@@ -196,7 +196,7 @@ export function conditionalResponse<T>(
 }
 
 /** True when an `If-None-Match` header names this validator. */
-export function matchesEtag(header: string | null, etag: string): boolean {
+function matchesEtag(header: string | null, etag: string): boolean {
   if (header === null) return false;
   const trimmed = header.trim();
   if (trimmed === "*") return true;

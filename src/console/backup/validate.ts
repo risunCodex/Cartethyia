@@ -136,7 +136,7 @@ function requiredColumns(table: Table): ReadonlySet<string> {
 }
 
 /** Detection outcome for an uploaded file. */
-export type DetectedFormat =
+type DetectedFormat =
   | { readonly kind: "native"; readonly payload: Record<string, unknown> }
   | { readonly kind: "nine_router"; readonly payload: Record<string, unknown> }
   | { readonly kind: "unknown"; readonly reason: string };

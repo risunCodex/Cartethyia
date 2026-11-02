@@ -384,7 +384,7 @@ export function withDirectFallback(fetcher: typeof fetch): typeof fetch {
  * (`buddy-activity-report`) with its own ledger, so it is not re-POSTed on
  * every sweep. See `buddy-growth-tasks.ts`.
  */
-export type DailyGrowthPassResult = {
+type DailyGrowthPassResult = {
   readonly checkin: DailyCheckinResult;
 };
 

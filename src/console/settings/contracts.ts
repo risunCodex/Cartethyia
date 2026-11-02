@@ -73,7 +73,7 @@ export interface RuntimeSettingsResponse {
 }
 
 /** The deployment-level values a `null` runtime setting falls back to. */
-export interface RuntimeSettingsDefaults {
+interface RuntimeSettingsDefaults {
   /** Seconds; from `CARTETHYIA_UPSTREAM_TIMEOUT_MS`. */
   readonly upstreamTimeoutSeconds: number;
   /** Minutes; what the payload store expires frames after. */
@@ -128,7 +128,7 @@ export type TelemetryPayloadMode = (typeof TELEMETRY_PAYLOAD_MODES)[number];
 export const TELEMETRY_PAYLOAD_DEPTHS = ["minimum", "moderate", "maximum"] as const;
 /** Capture depth for `full` mode accepted by the runtime-settings PATCH. */
 export type TelemetryPayloadDepth = (typeof TELEMETRY_PAYLOAD_DEPTHS)[number];
-export const PRIVACY_MODES = ["masked", "full"] as const;
+const PRIVACY_MODES = ["masked", "full"] as const;
 /** Provider/model label privacy accepted by the runtime-settings PATCH. */
 export type PrivacyMode = (typeof PRIVACY_MODES)[number];
 /** PonyTail directive intensity accepted by the runtime-settings PATCH. */

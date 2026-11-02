@@ -20,7 +20,7 @@ import { ConsoleDomainError, requireGlobalAdmin, requireTenantScope } from "../s
 import type { ConsoleAccessResolver } from "../auth/access";
 
 /** True when `token` looks like a plausible machine token. */
-export function isValidNativeIdentityToken(token: string): boolean {
+function isValidNativeIdentityToken(token: string): boolean {
   return typeof token === "string" && token.length >= 8 && token.length <= 512;
 }
 
@@ -120,7 +120,7 @@ export function createNativeIdentityOps(
  * (`tenant_id IS NULL`) need platform admin; tenant-owned accounts need the
  * tenant scope for the owning tenant.
  */
-export interface NativeIdentityScope {
+interface NativeIdentityScope {
   readonly tenantId: string | null;
 }
 

@@ -102,7 +102,7 @@ export interface ModelRoutingStore {
 
 /** Structurally satisfied by `InMemoryRouteSnapshotService` as-is — no import
  * of routing internals into the console domain layer. */
-export interface ModelRoutingSnapshotInvalidator {
+interface ModelRoutingSnapshotInvalidator {
   invalidate(): Promise<number>;
 }
 

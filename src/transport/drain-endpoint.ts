@@ -20,7 +20,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { GatewayError } from "../protocol/gateway-error";
 
-export interface DrainEndpointDeps {
+interface DrainEndpointDeps {
   /** Shared secret; the route is registered only when this is set. */
   readonly token: string;
   /** Begins the graceful drain (the process's own shutdown path). */

@@ -23,7 +23,7 @@ import type { ProviderRecord } from "./contracts";
  * purpose: the projection should not be able to reach a loader, so the type
  * cannot drift into "call something expensive to answer a boolean".
  */
-export interface ProviderDiscoveryLookup {
+interface ProviderDiscoveryLookup {
   hasModelDiscovery(providerId: string): boolean;
 }
 

@@ -24,7 +24,7 @@ import { runAttemptLoop } from "./attempt-loop";
 
 import type { GatewayHandlerDeps } from "./handler-deps";
 
-export type WebsearchHandlerDeps = GatewayHandlerDeps;
+type WebsearchHandlerDeps = GatewayHandlerDeps;
 
 
 

@@ -158,7 +158,7 @@ function telemetryEventRow(event: TelemetryEventInput) {
   };
 }
 
-export interface TelemetryBatchBufferOptions {
+interface TelemetryBatchBufferOptions {
   readonly flushIntervalMs?: number;
   readonly maxBatch?: number;
   readonly maxItems?: number;

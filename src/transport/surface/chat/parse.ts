@@ -32,7 +32,7 @@ export interface JsonObject {
   [key: string]: unknown;
 }
 
-export interface ParsedToolCall {
+interface ParsedToolCall {
   id: string;
   name: string;
   arguments: string;
@@ -57,7 +57,7 @@ export interface ChunkBase {
 
 
 
-export function isSurfaceInput(value: unknown): value is SurfaceInput {
+function isSurfaceInput(value: unknown): value is SurfaceInput {
   return isRecord(value) && "body" in value && "path" in value && typeof value.path === "string";
 }
 
@@ -75,7 +75,7 @@ export function requestBody(input: unknown): unknown {
   return decodeBody(isSurfaceInput(input) ? input.body : input);
 }
 
-export function nonNegativeNumber(value: unknown): number | undefined {
+function nonNegativeNumber(value: unknown): number | undefined {
   const number = asNumber(value);
   return number !== undefined && number >= 0 ? number : undefined;
 }
@@ -87,13 +87,13 @@ const AUDIO_FORMAT_MEDIA_TYPE: Readonly<Record<string, string>> = {
   mpeg: "audio/mpeg",
 };
 
-export function audioFormatToMediaType(format: string | undefined): string {
+function audioFormatToMediaType(format: string | undefined): string {
   if (format === undefined || format.length === 0) return "audio/mpeg";
   if (format.includes("/")) return format;
   return AUDIO_FORMAT_MEDIA_TYPE[format.toLowerCase()] ?? "audio/mpeg";
 }
 
-export function parseContentPart(value: unknown): ContentPart {
+function parseContentPart(value: unknown): ContentPart {
   if (typeof value === "string") return textPart(value);
   if (!isRecord(value)) {
     throw new Error("Malformed content part: expected string or object");
@@ -173,7 +173,7 @@ export function parseContentPart(value: unknown): ContentPart {
   throw new Error(`Malformed content part: unsupported type "${type ?? "unknown"}"`);
 }
 
-export function parseContent(value: unknown): ContentPart[] {
+function parseContent(value: unknown): ContentPart[] {
   if (typeof value === "string") return [textPart(value)];
   if (!Array.isArray(value)) return [];
   return value.map((part) => parseContentPart(part));
@@ -271,7 +271,7 @@ export function parseMessage(value: unknown): CanonicalMessage {
 }
 
 
-export function addExtension(
+function addExtension(
   controls: GenerationControls,
   key: `extension:${string}`,
   value: unknown,

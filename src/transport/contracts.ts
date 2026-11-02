@@ -54,12 +54,12 @@ export interface CanonicalAdapter {
  */
 
 /** One native service: the path it is served at and the kind its models carry. */
-export interface NativeServiceRoute {
+interface NativeServiceRoute {
   readonly serviceKind: Exclude<ServiceKind, "llm">;
   readonly path: string;
 }
 
-export const NATIVE_SERVICES: readonly NativeServiceRoute[] = [
+const NATIVE_SERVICES: readonly NativeServiceRoute[] = [
   { serviceKind: "systemone", path: "/v1/systemone" },
   { serviceKind: "websearch", path: "/v1/search" },
   { serviceKind: "imageGeneration", path: "/v1/images/generations" },
@@ -75,7 +75,7 @@ export const NATIVE_SERVICE_PATHS: readonly string[] = NATIVE_SERVICES.map(
 );
 
 /** Whether `path` is served by a native service route. */
-export function isNativeServicePath(path: string | undefined): boolean {
+function isNativeServicePath(path: string | undefined): boolean {
   return path !== undefined && NATIVE_SERVICE_PATHS.includes(path);
 }
 

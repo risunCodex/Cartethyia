@@ -21,7 +21,6 @@ import { CONFIG_SPEC, readOptionalInt } from "./spec";
 /** Used when no limit is discoverable at all (native dev, macOS, Windows). */
 export const FALLBACK_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024;
 
-
 /**
  * How many copies of a request body are resident at once.
  *
@@ -30,14 +29,11 @@ export const FALLBACK_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024;
  * collection lags rather than keeping them to one. Budgeting one copy halves
  * the real peak and lets the process admit twice the concurrency it can hold.
  */
-export const REQUEST_BODY_TRANSIENT_COPIES = 2;
 
 /** Share of the memory limit all in-flight request bodies together may hold. */
-export const REQUEST_BODY_BUDGET_FRACTION = 0.25;
 
 /** Share of the memory limit kept free for allocation spikes and GC slack. */
 export const MEMORY_HEADROOM_FRACTION = 0.2;
-
 
 /**
  * Bytes kept free below the memory limit.
@@ -50,7 +46,6 @@ export const MEMORY_HEADROOM_FRACTION = 0.2;
 export function deriveMemoryHeadroomBytes(memoryLimitBytes: number): number {
   return Math.ceil(memoryLimitBytes * MEMORY_HEADROOM_FRACTION);
 }
-
 
 /**
  * Slack added on top of every key's concurrency limit.

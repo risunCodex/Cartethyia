@@ -7,7 +7,7 @@ import { hasOwn, parseResponsesRequest, unwrapBody } from "./parse";
 import { encodeResponsesEvents, encodeResponsesWireEvents } from "./encode";
 
 /** The OpenAI Responses public surface adapter. */
-export class ResponsesAdapter implements SurfaceAdapter {
+class ResponsesAdapter implements SurfaceAdapter {
   readonly surface = "responses" as const;
 
   /** Check only top-level Responses shape markers, never arbitrary prompt text. */

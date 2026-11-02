@@ -13,7 +13,7 @@
 // and never opens a socket of its own.
 
 /** Response metadata of one opened bidi stream. */
-export interface Http2BidiResponse {
+interface Http2BidiResponse {
   /** HTTP/2 `:status`; `0` before the response headers arrive. */
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;

@@ -2,7 +2,7 @@
 // not env knobs: these are safety margins, not deployment settings.
 
 /** Skip blobs smaller than this — compressing tiny tool results only adds noise. */
-export const RTK_MIN_COMPRESS_SIZE = 500;
+const RTK_MIN_COMPRESS_SIZE = 500;
 /** Never touch a blob larger than this; a multi-megabyte dump is not a tool result to prune. */
 export const RTK_RAW_CAP = 10 * 1024 * 1024;
 /** How many leading characters autodetect inspects when classifying a blob. */
@@ -22,7 +22,7 @@ export const RTK_DETECT_WINDOW = 1024;
 export const RTK_LEVELS = ["lite", "full", "ultra"] as const;
 export type RtkLevel = (typeof RTK_LEVELS)[number];
 
-export interface RtkProfile {
+interface RtkProfile {
   /** Blobs smaller than this are left alone at this level. */
   readonly minSize: number;
   /** Whether the generic fallbacks (dedup-log, smart-truncate) may classify a blob. */

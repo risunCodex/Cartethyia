@@ -57,7 +57,7 @@ const BAN_ROUTE_KEY = "#ban";
  * `banThreshold` is both the identity-wide escalation threshold and the
  * highest count either ring must keep observable.
  */
-export interface IpAbuseAttempt {
+interface IpAbuseAttempt {
   readonly identity: string;
   readonly route: string;
   readonly now: number;
@@ -67,7 +67,7 @@ export interface IpAbuseAttempt {
 }
 
 /** What one admission step decided. */
-export interface IpAbuseOutcome {
+interface IpAbuseOutcome {
   /** The identity was already banned; nothing was incremented. */
   readonly banned: boolean;
   /** Attempts now in this route's window, including this one. `0` when banned. */
@@ -115,13 +115,13 @@ export interface IpAbuseStore {
   checkAndRecord(attempt: IpAbuseAttempt): Promise<IpAbuseOutcome>;
 }
 
-export interface IpAbuseProtectionServiceOptions {
+interface IpAbuseProtectionServiceOptions {
   readonly maxRequestsPerWindow?: number;
   readonly banThreshold?: number;
   readonly banDurationMs?: number;
 }
 
-export interface InMemoryIpAbuseStoreOptions {
+interface InMemoryIpAbuseStoreOptions {
   readonly windowMs?: number;
   readonly clock?: () => number;
   /** Distinct (identity, route) keys tracked before the oldest is evicted. */

@@ -57,7 +57,7 @@ import type {
 /** Success rate below which a model is not routed to, when one is reported. */
 const MIN_SUCCESS_RATE_PCT = 80;
 
-export interface InferhubRoutesConfig {
+interface InferhubRoutesConfig {
   readonly accessResolver: (request: Request) => AccessDecision | undefined;
   /** Resolves the `config_read` key. Absent means the catalog cannot be read. */
   readonly resolveConfigKey?: () => Promise<string | undefined> | string | undefined;

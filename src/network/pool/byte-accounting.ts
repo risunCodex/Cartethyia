@@ -14,7 +14,7 @@
  */
 
 /** Running totals for one pool. */
-export interface PoolByteTotals {
+interface PoolByteTotals {
   /** Bytes sent to the proxy (uploads, TLS handshake, CONNECT). */
   readonly sent: number;
   /** Bytes received from the proxy (downloads). */

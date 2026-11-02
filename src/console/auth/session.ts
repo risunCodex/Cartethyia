@@ -13,12 +13,12 @@ import type { FirstBootSetupService } from "./setup-service";
 import { isTrustedProxyPeer, resolveClientIdentity } from "../../security/ip-boundary";
 import type { TrustedProxyBoundary } from "../../config/network";
 import { readSessionCookie } from "./session-resolver";
-export interface LoginRequest {
+interface LoginRequest {
   readonly username: string;
   readonly password: string;
 }
 
-export interface LoginResponse {
+interface LoginResponse {
   readonly status: "success" | "failed";
   /** Session secrets are cookie-only and are never returned in JSON. */
   readonly session_id?: never;
@@ -47,13 +47,13 @@ export type SessionStatusResponse =
     }
   | { readonly status: "unauthenticated" };
 
-export interface SetupRequest {
+interface SetupRequest {
   readonly password: string;
   readonly username?: string;
   readonly display_name?: string;
 }
 
-export interface SetupResponse {
+interface SetupResponse {
   readonly status: "success" | "failed";
   readonly message?: string;
 }
@@ -65,7 +65,7 @@ export interface SetupResponse {
  * report that instead of only "it worked".
  */
 /** A backup's cover, so the wizard can show what a file holds before restoring. */
-export interface SetupInspectResponse extends SetupResponse {
+interface SetupInspectResponse extends SetupResponse {
   readonly format?: "native" | "nine_router";
   readonly version?: number;
   readonly exportedAt?: string;
@@ -79,18 +79,18 @@ export interface SetupInspectResponse extends SetupResponse {
   readonly warnings?: readonly { readonly table?: string; readonly column?: string; readonly reason: string }[];
 }
 
-export interface SetupRestoreResponse extends SetupResponse {
+interface SetupRestoreResponse extends SetupResponse {
   readonly restored?: Record<string, number>;
   readonly warnings?: readonly { readonly table?: string; readonly column?: string; readonly reason: string }[];
   /** The administrator this install was given, since the file carries none. */
   readonly createdAdmin?: boolean;
 }
 
-export interface LogoutResponse {
+interface LogoutResponse {
   readonly status: "success";
 }
 
-export interface ChangePasswordResponse {
+interface ChangePasswordResponse {
   readonly status: "success" | "failed";
   readonly message?: string;
 }

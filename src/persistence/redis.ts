@@ -92,7 +92,7 @@ export function resolveRedisBackend(client: RedisClient | undefined): RedisBacke
   return client === undefined ? "memory" : "redis";
 }
 
-export interface CloseRedisOptions {
+interface CloseRedisOptions {
   /** Bounded wait for `QUIT` before falling back to `disconnect()`. Defaults to 2s. */
   readonly quitTimeoutMs?: number;
 }

@@ -205,7 +205,7 @@ function percentile(sorted: readonly number[], fraction: number): number {
   return Math.round(sorted[index] ?? 0);
 }
 
-export interface UsagePerformanceSummary {
+interface UsagePerformanceSummary {
   avgResolveMs: number;
   avgDurationMs: number;
   latencyP50Ms: number;

@@ -6,7 +6,7 @@ import { completeRequiredSchema } from "../../protocol/codecs";
 import type { ToolDefinition } from "../../protocol/canonical-model";
 
 /** Tool-definition dialects preserve each surface's distinct wire fields. */
-export type ToolDialect = "chat" | "responses" | "messages";
+type ToolDialect = "chat" | "responses" | "messages";
 
 /**
  * Parses a tool definition from one wire dialect.
@@ -165,7 +165,7 @@ function classifyNativeToolType(type: string): Exclude<ToolDefinition["tool_type
 
 export const CANONICAL_REASONING_EFFORTS: ReadonlySet<string> = new Set(REASONING_EFFORTS);
 
-export function isReasoningEffort(value: unknown): value is NonNullable<ReasoningIntent["effort"]> {
+function isReasoningEffort(value: unknown): value is NonNullable<ReasoningIntent["effort"]> {
   return typeof value === "string" && CANONICAL_REASONING_EFFORTS.has(value as NonNullable<ReasoningIntent["effort"]>);
 }
 

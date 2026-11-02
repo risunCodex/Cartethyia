@@ -31,7 +31,7 @@ const SHED_MARKER_TTL_SECONDS = 5;
 const SHED_MARKER_KEY = "gateway:shed:v1";
 const SHED_RETRY_MS = 1_000;
 
-export interface HeadroomGuardDeps {
+interface HeadroomGuardDeps {
   readonly store: ProxyRequestStateStore;
   /**
   * The last sampled memory state, published once per sample by

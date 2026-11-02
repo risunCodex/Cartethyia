@@ -132,7 +132,7 @@ export function createFileInjector(spec: InjectorSpec): ToolInjector {
 }
 
 /** Create a guide injector for a specific tool definition (any `configType: "guide"` entry). */
-export function guideInjectorFor(def: ToolDef): ToolInjector {
+function guideInjectorFor(def: ToolDef): ToolInjector {
   return {
     toolId: def.id,
 

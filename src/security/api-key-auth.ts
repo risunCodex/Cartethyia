@@ -118,7 +118,7 @@ function freezeList(
   return arr;
 }
 
-export function freezeSnapshot(s: ApiKeyAuthorizationSnapshot): ApiKeyAuthorizationSnapshot {
+function freezeSnapshot(s: ApiKeyAuthorizationSnapshot): ApiKeyAuthorizationSnapshot {
   const model_list = freezeList(s.model_list);
   const model_access_mode: ApiKeyModelAccessMode =
     s.model_access_mode === "blacklist" ? "blacklist" : "whitelist";

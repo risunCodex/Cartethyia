@@ -6,7 +6,7 @@ import {
 
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 
-export class ConsoleUserStore {
+class ConsoleUserStore {
   constructor(private readonly db: CartethyiaDatabase) {}
 
   async findByUsername(username: string): Promise<unknown | undefined> {

@@ -22,7 +22,7 @@ interface PayloadFrame {
   readonly payload: unknown;
 }
 
-export function isPayloadFileReference(value: unknown): value is PayloadFileReference {
+function isPayloadFileReference(value: unknown): value is PayloadFileReference {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
   return (

@@ -36,7 +36,7 @@ export const RELAY_TARGETS: readonly RelayTarget[] = ["cloudflare", "vercel", "d
  * The same handler body runs on Workers and Vercel Edge (`export default {
  * fetch }`); the Deno entry wraps it in `Deno.serve`.
  */
-export const RELAY_WORKER_SOURCE = `// Cartethyia hosted relay.
+const RELAY_WORKER_SOURCE = `// Cartethyia hosted relay.
 //
 // Forwards a request to the origin named by the x-relay-target header, at the
 // path named by x-relay-path. Deployed to Cloudflare Workers / Vercel Edge.
@@ -83,7 +83,7 @@ export default handler;
 `;
 
 /** A Deno Deploy entry wraps the shared handler in `Deno.serve`. */
-export const RELAY_DENO_SOURCE = `${RELAY_WORKER_SOURCE}
+const RELAY_DENO_SOURCE = `${RELAY_WORKER_SOURCE}
 Deno.serve((request) => handler.fetch(request));
 `;
 
@@ -111,7 +111,7 @@ export interface RelayDeployResult {
 }
 
 /** Outbound fetch seam (the validated fetch), so tests can stub deploys. */
-export type RelayFetch = (url: string, init: RequestInit) => Promise<Response>;
+type RelayFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 function generateName(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;

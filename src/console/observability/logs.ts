@@ -23,7 +23,7 @@ import {
 } from "../../observability/log-ring";
 import { consoleSseResponse, createConsoleSseStream } from "./sse";
 
-export interface LogsConfig {
+interface LogsConfig {
   readonly accessResolver: ConsoleAccessResolver;
   readonly auditSink?: AuditSink;
 }

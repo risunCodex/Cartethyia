@@ -45,7 +45,7 @@ function sameMemoKey(left: ReadinessMemoKey, right: ReadinessMemoKey): boolean {
  * Returns typed ready/not_ready response.
  */
 
-export type ReadinessStatus = "ready" | "not_ready";
+type ReadinessStatus = "ready" | "not_ready";
 
 export interface ReadinessCheckResult {
   readonly status: ReadinessStatus;

@@ -8,7 +8,7 @@ import {
 
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 
-export class ConsoleLockoutStore {
+class ConsoleLockoutStore {
   constructor(private readonly db: CartethyiaDatabase) {}
 
   async getLockedUntil(ip: string): Promise<Date | null | undefined> {

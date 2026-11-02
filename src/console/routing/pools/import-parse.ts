@@ -18,7 +18,7 @@
 import { POOL_KINDS, POOL_STATUSES } from "./contracts";
 
 /** One row that parsed, ready to become a pool. */
-export interface ParsedProxyRow {
+interface ParsedProxyRow {
   readonly kind: (typeof POOL_KINDS)[number];
   readonly endpoint: string;
   readonly credential: string | null;
@@ -26,12 +26,12 @@ export interface ParsedProxyRow {
 }
 
 /** One row that did not parse, with the reason. */
-export interface SkippedProxyRow {
+interface SkippedProxyRow {
   readonly line: number;
   readonly reason: string;
 }
 
-export interface ParsedProxyFile {
+interface ParsedProxyFile {
   readonly rows: readonly ParsedProxyRow[];
   readonly skipped: readonly SkippedProxyRow[];
 }

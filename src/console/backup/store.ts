@@ -618,7 +618,7 @@ export async function compressBackupStream(chunks: AsyncGenerator<string, void, 
 const GZIP_MAGIC = [0x1f, 0x8b] as const;
 
 /** Whether `bytes` starts with the gzip magic. */
-export function isGzipBytes(bytes: Uint8Array): boolean {
+function isGzipBytes(bytes: Uint8Array): boolean {
   return GZIP_MAGIC.every((byte, index) => bytes[index] === byte);
 }
 

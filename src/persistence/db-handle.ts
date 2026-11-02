@@ -17,7 +17,7 @@ export const fullSchema = schema;
 export type CartethyiaDatabase = NodePgDatabase<typeof fullSchema>;
 
 /** Raw rows from a parameter query, without driver-specific decoration. */
-export interface QueryRows {
+interface QueryRows {
   readonly rows: unknown[];
 }
 

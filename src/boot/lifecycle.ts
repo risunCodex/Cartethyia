@@ -6,10 +6,10 @@ import { withTimeout } from "./timeout";
 import { resolveShutdownDrainWindowMs } from "../config/runtime";
 
 export type ShutdownReason = "SIGTERM" | "SIGINT" | "reload" | "update";
-export type ShutdownState =
+type ShutdownState =
   "idle" | "stop_admitting" | "bounded_drain_wait" | "flush_telemetry" | "close_pools" | "done";
 
-export interface ShutdownHooks {
+interface ShutdownHooks {
   flushTelemetry?: (deadlineMs: number) => Promise<void>;
   closePools?: () => Promise<void>;
   abortInflight?: () => void;
@@ -189,7 +189,7 @@ export class ShutdownCoordinator {
   }
 }
 
-export interface ElyxiaServer {
+interface ElyxiaServer {
   stop(closeActiveConnections?: boolean): unknown;
 }
 

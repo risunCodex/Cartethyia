@@ -28,7 +28,7 @@ import { log } from "../../../observability/logger";
 import { ConsoleDomainError } from "../../shared/errors";
 
 /** A loopback endpoint a callback can actually be delivered to. */
-export interface LoopbackCallbackEndpoint {
+interface LoopbackCallbackEndpoint {
   readonly port: number;
   readonly path: string;
 }
@@ -44,7 +44,7 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
  * installed app and a remote host is delivered over the network; neither is
  * something this process can bind, and both keep the manual path.
  */
-export function loopbackCallbackEndpoint(redirectUri: string): LoopbackCallbackEndpoint | undefined {
+function loopbackCallbackEndpoint(redirectUri: string): LoopbackCallbackEndpoint | undefined {
   let url: URL;
   try {
     url = new URL(redirectUri);
@@ -59,7 +59,7 @@ export function loopbackCallbackEndpoint(redirectUri: string): LoopbackCallbackE
 }
 
 /** Completes one callback once its code and state have been read. */
-export interface OAuthCallbackCompleter {
+interface OAuthCallbackCompleter {
   complete(
     providerId: string,
     code: string,
@@ -86,7 +86,7 @@ type ServeFn = (options: {
   readonly fetch: (request: Request) => Response | Promise<Response>;
 }) => LoopbackServer;
 
-export interface CallbackListenerOptions {
+interface CallbackListenerOptions {
   readonly completer: OAuthCallbackCompleter;
   /** Injected in tests; defaults to `Bun.serve`. */
   readonly serve?: ServeFn;

@@ -27,7 +27,7 @@ import { BACKUP_SECTIONS, tablesForSection } from "./contracts";
 import { compressBackupStream, exportBackupStream } from "./store";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 
-export interface BackupExportDeps {
+interface BackupExportDeps {
   readonly db: CartethyiaDatabase;
   /** Shared secret; the route is registered only when this is set. */
   readonly token: string;

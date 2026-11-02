@@ -1,15 +1,6 @@
 import { GatewayError } from "../../../protocol/gateway-error";
 
 /** Typed failures for the OpenAI Responses surface. */
-export class ResponsesReasoningError extends GatewayError {
-  readonly field: "include" | "store" | "reasoning.encrypted_content";
-
-  constructor(field: "include" | "store" | "reasoning.encrypted_content", message: string) {
-    super("capability_unsupported", 400, message, { field });
-    this.name = "ResponsesReasoningError";
-    this.field = field;
-  }
-}
 
 /** Stable typed failure for malformed canonical sequence numbers. */
 export class ResponsesSequenceError extends GatewayError {

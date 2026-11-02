@@ -27,7 +27,7 @@ import { ConsoleDomainError } from "../shared/errors";
  * and share one process's home directory (they are not tenant-scoped).
  */
 
-export function toToolRegistryEntry(def: ToolDef): ToolRegistryEntry {
+function toToolRegistryEntry(def: ToolDef): ToolRegistryEntry {
   return {
     id: def.id,
     name: def.name,

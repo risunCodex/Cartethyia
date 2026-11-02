@@ -20,7 +20,7 @@ import { runAttemptLoop } from "./attempt-loop";
  */
 import type { GatewayHandlerDeps } from "./handler-deps";
 
-export type SystemoneHandlerDeps = GatewayHandlerDeps;
+type SystemoneHandlerDeps = GatewayHandlerDeps;
 
 /** Adapter that can serve a System One decision request. */
 type SystemoneAdapter = ProviderAdapter & {

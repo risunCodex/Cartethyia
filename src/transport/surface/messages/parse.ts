@@ -53,7 +53,7 @@ export interface MessagesStreamEvent extends MessagesWireObject {
     | "message_stop";
 }
 
-export function contentArray(value: unknown, label: string): unknown[] {
+function contentArray(value: unknown, label: string): unknown[] {
   if (stringValue(value)) return [value];
   if (!Array.isArray(value)) throw new Error(`Messages ${label} must be a string or block array`);
   return value;
@@ -165,7 +165,7 @@ export function parseBlock(value: unknown): ContentPart {
   };
 }
 
-export function parseBlocks(value: unknown, label: string): ContentPart[] {
+function parseBlocks(value: unknown, label: string): ContentPart[] {
   return contentArray(value, label).map(parseBlock);
 }
 
@@ -207,7 +207,7 @@ export function parseTools(value: unknown): ToolDefinition[] | undefined {
 
 
 /** Reads `thinking.block_binding.prefix_mismatch_behavior` when present. */
-export function prefixMismatchBehavior(value: unknown): "drop_block" | "error" | undefined {
+function prefixMismatchBehavior(value: unknown): "drop_block" | "error" | undefined {
   if (!isRecord(value)) return undefined;
   const behavior = value["prefix_mismatch_behavior"];
   if (behavior === "drop_block" || behavior === "error") return behavior;

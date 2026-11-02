@@ -5,12 +5,12 @@
  * the shared `buildSseEventFrame` core so the two layers cannot drift.
  */
 
-export interface SseSender {
+interface SseSender {
   send(event: string, data: unknown): void;
 }
 
 /** Register endpoint-specific SSE subscriptions; return their teardown callback. */
-export type SseSetup = (sender: SseSender) => () => void;
+type SseSetup = (sender: SseSender) => () => void;
 
 import { buildSseEventFrame as formatSseFrame } from "../../protocol/sse-frame";
 

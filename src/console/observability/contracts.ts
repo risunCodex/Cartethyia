@@ -173,7 +173,7 @@ export interface UsageCacheResponse {
   cacheWriteTokens: number;
   hitRate: number;
 }
-export type UsageRequestMode = "stream" | "non_stream";
+type UsageRequestMode = "stream" | "non_stream";
 export interface UsageRequestItem {
   requestId: string;
   surface?: string;

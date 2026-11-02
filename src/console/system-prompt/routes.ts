@@ -39,7 +39,7 @@ import {
 } from "./contracts";
 
 /** Route-group context injected by the composition root. */
-export interface SystemPromptRoutesConfig {
+interface SystemPromptRoutesConfig {
   readonly db: CartethyiaDatabase;
   readonly accessResolver: ConsoleAccessResolver;
   readonly auditSink?: AuditSink;

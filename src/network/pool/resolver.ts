@@ -50,7 +50,7 @@ const HTTP2_MAX_BUFFERED_BYTES = 64 * 1024 * 1024;
  */
 const HTTP2_SESSION_MAX_MEMORY_MB = 256;
 
-export interface PoolAgentResolverDeps {
+interface PoolAgentResolverDeps {
   readonly ssrfPolicy?: SsrfPolicy;
   readonly resolveFn?: (hostname: string, signal: AbortSignal) => Promise<readonly string[]>;
   /** Database used to load pool rows. */
