@@ -328,6 +328,12 @@ export function canonicalToResponsesPayload(
     if (request.reasoning.summary_mode !== undefined)
       reasoning.summary = request.reasoning.summary_mode;
     else if (request.reasoning.summary !== undefined) reasoning.summary = request.reasoning.summary;
+    else if (requestedEffort !== undefined) reasoning.summary = "detailed";
+    // When the caller asked for reasoning effort but expressed no summary
+    // preference, request a detailed summary. Upstreams (GitHub Copilot's
+    // gpt-6-luna etc.) only stream `reasoning_summary_text` when the request
+    // asks for it — without this the reasoning is present on the wire yet
+    // never reaches the client.
     if (Object.keys(reasoning).length > 0) payload.reasoning = reasoning;
   }
   const picked = pickWireSupportedControls(normalizeGenerationControls(request.generation_controls), "responses");

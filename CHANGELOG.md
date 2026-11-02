@@ -112,6 +112,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Responses wire requests a detailed reasoning summary by default when
+  reasoning effort is set.** GitHub Copilot's `gpt-6-luna` (and similar
+  Responses-only reasoning models) only stream `response.reasoning_summary_text.delta`
+  when the request body asks for a summary (`reasoning.summary`); when the
+  caller requested an effort but expressed no summary preference, the encoder
+  sent `effort` alone, so the reasoning summary that exists upstream never
+  reached the client. The encoder now defaults to `summary: "detailed"` when
+  effort is set (an explicit `summary`/`summary_mode` still wins). Verified
+  live against Copilot's `/auto` → `/responses` path.
 - **Provider list/detail and Usage pages no longer scan the whole telemetry
   window.** Three heavy DB reads were behind the slow page loads:
   - `listAccounts`/`listAllAccounts` read **today's** per-account usage via

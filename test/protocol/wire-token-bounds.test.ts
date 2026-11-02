@@ -62,6 +62,27 @@ describe("output-token bounds — the caller's stated limit is never invented ov
     expect(payload).not.toHaveProperty("max_completion_tokens");
   });
 
+  test("responses requests a detailed summary when reasoning effort is set", () => {
+    const payload = canonicalToResponsesPayload({
+      ...request({}),
+      reasoning: { effort: "high" },
+    });
+    expect(payload["reasoning"]).toEqual({ effort: "high", summary: "detailed" });
+  });
+
+  test("responses honors an explicit summary preference over the default", () => {
+    const payload = canonicalToResponsesPayload({
+      ...request({}),
+      reasoning: { effort: "high", summary_mode: "concise" },
+    });
+    expect(payload["reasoning"]).toEqual({ effort: "high", summary: "concise" });
+  });
+
+  test("responses does not invent reasoning when no effort or summary is requested", () => {
+    const payload = canonicalToResponsesPayload(request({}));
+    expect(payload).not.toHaveProperty("reasoning");
+  });
+
   test("chat forwards a limit above the old global ceiling", () => {
     expect(canonicalToChatPayload(request({ max_tokens: 128_000 }))["max_tokens"]).toBe(128_000);
   });
