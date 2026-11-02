@@ -43,13 +43,14 @@ export const GITHUB_DEFAULT_API_HOST = "api.individual.githubcopilot.com" as con
  * The API rejects a request that does not identify a Copilot client, so these
  * are a protocol requirement rather than cosmetic fingerprinting — unlike the
  * Codex/Claude CLI identities elsewhere in this repository, which exist to look
- * like a first-party client. The version pair is the Copilot Chat extension's,
- * which is what the upstream expects for this client id.
+ * like a first-party client. The version pair is the Copilot Chat extension's
+ * (0.72.0 on VS Code 1.144), which is what the upstream expects for this
+ * client id.
  */
 export const GITHUB_REQUEST_HEADERS: Readonly<Record<string, string>> = Object.freeze({
-  "user-agent": "GitHubCopilotChat/0.70.0",
-  "editor-version": "vscode/1.142.0",
-  "editor-plugin-version": "copilot-chat/0.70.0",
+  "user-agent": "GitHubCopilotChat/0.72.0",
+  "editor-version": "vscode/1.144.0",
+  "editor-plugin-version": "copilot-chat/0.72.0",
   "copilot-integration-id": "vscode-chat",
   "x-github-api-version": "2026-08-01",
 });

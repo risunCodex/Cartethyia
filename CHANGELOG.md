@@ -112,6 +112,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **GitHub Copilot adapter closes the Messages-wire and capability gaps found
+  by auditing the official Copilot Chat 0.72.0 extension (VS Code 1.144).**
+  - Discovery now routes `/v1/messages`-only rows (the premium Claude family)
+    to the native Messages wire instead of dropping them, and prefers chat
+    when a row supports both.
+  - `reasoning_effort` ladders from `/models` are carried onto the model
+    definition, so clamping honors the model's real effort list
+    (`claude-fable-*` declares `max`) instead of the provider-wide `high` cap.
+  - Upstream `token_prices` (per-1M-token rates) now feed the model cost so
+    the real per-account price is shown.
+  - Headers were bumped to the current extension identity (`GitHubCopilotChat/0.72.0`,
+    `vscode/1.144.0`) and `x-interaction-id`,
+    `x-vscode-user-agent-library-version`, and `anthropic-beta`
+    (`interleaved-thinking-2025-05-14`, Messages wire only) are now sent.
+  - Model exclusions were pruned: `kimi-k3-base`, `kimi-k3-copilot`, and the
+    `mai-code-1-flash-*` family are now available (the `gpt-5.6-luna` family
+    stays excluded — it is not routable).
 - **Responses wire requests a detailed reasoning summary by default when
   reasoning effort is set.** GitHub Copilot's `gpt-6-luna` (and similar
   Responses-only reasoning models) only stream `response.reasoning_summary_text.delta`

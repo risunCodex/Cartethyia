@@ -44,17 +44,34 @@ export const GITHUB_ENDPOINT_PATH = "/chat/completions" as const;
  */
 export const GITHUB_RESPONSES_ENDPOINT_PATH = "/responses" as const;
 
+/**
+ * Anthropic Messages surface. Copilot serves the premium Claude family
+ * (`claude-sonnet-*`, `claude-opus-*`, `claude-haiku-*`, `claude-fable-*`)
+ * on the native `/v1/messages` wire, and some SKUs are messages-only. The
+ * adapter's shared pipeline already speaks the messages codec; this constant
+ * lets discovery route those rows here instead of dropping them.
+ */
+export const GITHUB_MESSAGES_ENDPOINT_PATH = "/v1/messages" as const;
+
 
 
 /**
- * The highest reasoning effort Copilot serves. A caller asking for `max` or
- * `xhigh` is answered at `high` rather than refused: the model has no level
- * above it, and the request is otherwise valid.
+ * The highest reasoning effort Copilot serves as a fallback when a model does
+ * not declare its own ladder. A caller asking for `max` or `xhigh` is answered
+ * at `high` rather than refused: the model has no level above it, and the
+ * request is otherwise valid.
  */
 const GITHUB_REASONING_EFFORT_CAP = "high";
 const GITHUB_CAPPED_EFFORTS = new Set(["max", "xhigh"]);
 
-/** Rewrites an effort above Copilot's ceiling to `high`, on either wire. */
+/**
+ * Rewrites an effort above Copilot's ceiling to the highest level we know the
+ * model accepts. The shared encoder already pinned the effort to the model's
+ * declared ladder (`resolveSupportedReasoningEfforts` reads `reasoningEfforts`
+ * from the catalog); this hook only guards a bare fallback so a caller asking
+ * for `max`/`xhigh` on a model without a declared ladder is answered at `high`
+ * rather than refused.
+ */
 function clampGithubReasoningEffort(payload: Record<string, unknown>): void {
   const effort = payload["reasoning_effort"];
   if (typeof effort === "string" && GITHUB_CAPPED_EFFORTS.has(effort)) {
@@ -88,12 +105,6 @@ export const GITHUB_EXCLUDED_MODEL_IDS: ReadonlySet<string> = new Set([
   "gpt-6-luna-medium",
   "gpt-6-luna-high",
   "kimi-k3",
-  "kimi-k3-base",
-  "kimi-k3-copilot",
-  "mai-code-1-flash-4th",
-  "mai-code-1-flash-secondary",
-  "mai-code-1-flash-tertiary",
-  "mai-code-1.1-flash",
 ]);
 
 const modelRoutesByCredential = new Map<string, ReadonlyMap<string, GithubModelRoute>>();
@@ -122,7 +133,10 @@ function parseRouteMap(raw: string): Map<string, GithubModelRoute> | undefined {
       if (typeof modelId !== "string" || route === null || typeof route !== "object") continue;
       const wireFamily = (route as { wireFamily?: unknown }).wireFamily;
       const endpointPath = (route as { endpointPath?: unknown }).endpointPath;
-      if ((wireFamily === "chat" || wireFamily === "responses") && typeof endpointPath === "string") {
+      if (
+        (wireFamily === "chat" || wireFamily === "responses" || wireFamily === "messages") &&
+        typeof endpointPath === "string"
+      ) {
         map.set(modelId, { wireFamily, endpointPath });
       }
     }
@@ -162,7 +176,7 @@ async function writeSharedModelRoutes(
 }
 
 export interface GithubModelRoute {
-  readonly wireFamily: "chat" | "responses";
+  readonly wireFamily: "chat" | "responses" | "messages";
   readonly endpointPath: string;
 }
 const GITHUB_AUTO_SESSION_CACHE_MAX_ENTRIES = 50;
@@ -187,8 +201,8 @@ export function recordGithubModelRoutes(
   if (key === undefined) return;
   const routes = models
     .filter(
-      (model): model is ModelDefinition & { readonly wireFamily: "chat" | "responses" } =>
-        model.wireFamily === "chat" || model.wireFamily === "responses",
+      (model): model is ModelDefinition & { readonly wireFamily: "chat" | "responses" | "messages" } =>
+        model.wireFamily === "chat" || model.wireFamily === "responses" || model.wireFamily === "messages",
     )
     .map((model) => [
       model.modelId.toLowerCase(),
@@ -303,6 +317,9 @@ function routeFromAutoModel(value: unknown): GithubModelRoute | undefined {
   }
   if (endpoints.has("/responses")) {
     return { wireFamily: "responses", endpointPath: GITHUB_RESPONSES_ENDPOINT_PATH };
+  }
+  if (endpoints.has("/messages")) {
+    return { wireFamily: "messages", endpointPath: GITHUB_MESSAGES_ENDPOINT_PATH };
   }
   return undefined;
 }
@@ -640,10 +657,20 @@ class GithubAdapter extends OpenAICompatibleAdapter {
       "editor-device-id": await getOrCreateInstallId("github"),
       "openai-intent": "conversation-agent",
       "x-agent-task-id": requestId,
+      "x-interaction-id": requestId,
       "x-initiator": isAgentInitiated(request) ? "agent" : "user",
       "x-interaction-type": "conversation-agent",
       "x-request-id": requestId,
+      "x-vscode-user-agent-library-version": "vscode-chat/0.72.0",
     });
+    // The copy Claude family is served on the native Anthropic Messages wire,
+    // which gates feature betas behind `anthropic-beta` (mirroring the
+    // Copilot extension's `getAnthropicBetaHeader`). Adaptive thinking is the
+    // baseline the model roster declares, so it is requested for every messages
+    // route; the header is scoped to that wire and never sent elsewhere.
+    if (candidate?.wire_family === "messages") {
+      headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
+    }
     if (allParts(request).some(containsImage)) {
       headers["copilot-vision-request"] = "true";
     } else {
