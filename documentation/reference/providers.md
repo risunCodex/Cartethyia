@@ -198,7 +198,7 @@ spendable balance.
 An upstream reset timestamp of zero means no reset deadline is available, not
 a reset in January 1970.
 
-`zcode-start` is separate from `zcode` (the regular Z.AI Coding Plan). Sign in
+`zcode-start` (displayed as **ZCode Start**) is separate from `zcode` (the regular Z.AI Coding Plan). Sign in
 with its device flow or import the ZCode login JWT; a Coding Plan API key or
 the short-lived Z.AI access token is not interchangeable. There is no refresh
 grant: sign in again if the session is expired or revoked. Requests use

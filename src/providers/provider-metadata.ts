@@ -284,7 +284,7 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
     // due to unusual activity"); the integration adds the ZCode identity
     // headers and the system/date/cache-control dress in-process.
     id: "zcode-start",
-    displayName: "ZCode Start Plan",
+    displayName: "ZCode Start",
     baseUrl: "https://zcode.z.ai/api/v1/zcode-plan/anthropic",
     wireFamilyDefault: "messages",
     hasAdapterUserAgent: true,
