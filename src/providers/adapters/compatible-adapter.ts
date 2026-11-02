@@ -14,6 +14,7 @@ import { applyRouteUserAgent, type ProviderDispatchTarget, type ProviderId, type
 import { BaseProviderAdapter } from "./base-adapter";
 import { encodeWireRequest, decodeWireResponse, decodeWireStream } from "../../protocol/registry";
 import { resolveDialect } from "../../protocol/translation/dialect/resolver";
+import { resolveThinkingForModel } from "../../protocol/translation/dialect/thinking-ladder";
 import type { DialectPolicy } from "../../protocol/translation/dialect/types";
 import { postUpstreamJson } from "../../protocol/upstream/post-json";
 import { GATEWAY_USER_AGENT } from "../operations/gateway-user-agent";
@@ -221,6 +222,11 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
       wireFamily,
       candidate.dialect,
     );
+    const thinking = resolveThinkingForModel(
+      candidate.model_id,
+      candidate.provider_id,
+      wireFamily,
+    );
     const payload = await encodeWireRequest(wireFamily, effectiveRequest, {
       supportsPromptCaching: this.config.supports_prompt_caching !== false,
       ...(promptCacheKey === undefined ? {} : { promptCacheKey }),
@@ -232,6 +238,7 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
         ? {}
         : { maxBytesOverride: context.image_clamp_max_bytes }),
       dialectPolicy,
+      thinking,
     });
     if (
       wireFamily !== "messages" &&

@@ -5,7 +5,9 @@
 // so the native config (`thinking_type` + `budget_tokens`) is dropped while the
 // request-level effort intent (OpenAI `reasoning_effort`) survives — that field
 // is a property of the request, not of the turn.
-import type { CanonicalRequest, ReasoningIntent, WireFamily } from "../canonical-model";
+import type { CanonicalRequest, ReasoningIntent } from "../canonical-model";
+import type { ThinkingConfig } from "./dialect/thinking-ladder";
+import { clampThinkingLevelForModel } from "./dialect/model-thinking";
 
 /**
  * Canonical reasoning effort ladder, ordered least to most intensive.
@@ -200,248 +202,11 @@ export function withThinkingSuffixIntent(
 }
 
 /** Standard OpenAI Responses wire supported efforts (OpenAI, OpenCode, Azure). Responses API has no 'max' tier. */
-const RESPONSES_WIRE_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-];
 
-/** Full 6-tier effort scale for models that support 'max' (Claude, MiMo, Kimi, DeepSeek). */
-const EXTENDED_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
-
-/** Standard 4-tier effort scale (Gemini, Qwen). */
-const BASE_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-];
-
-/**
- * The `mimo-v2.6` family rejects every effort outside this set.
- *
- * Verified live against OpenCode's `/zen/v1` on 2026-09-22: `minimal`, `xhigh`,
- * and `max` each answer `500 {"type":"error","error":{"message":"Internal server
- * error"}}` — an opaque failure that names nothing, so the caller sees a dead
- * request rather than a bad parameter — while `low`/`medium`/`high` and an
- * omitted field answer `200`. Its siblings on the very same endpoint
- * (`mimo-v2.5-free`, `nemotron-3-ultra-free`, `big-pickle`) accept the full
- * ladder, so this is a property of the model rather than of the route.
- *
- * Narrowing is the safe direction: every level here is accepted by all hosts of
- * the id, so the worst case for a host that would also take `xhigh` is that the
- * request runs one tier below what the caller asked for instead of failing.
- */
-const MIMO_V26_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = ["low", "medium", "high"];
-
-/**
- * Mercury (Inception Labs) — the chat ladder is `{instant, low, medium,
- * high}`: `minimal`, `xhigh`, and `max` each answer a 400
- * `reasoning_effort must be one of: 'instant', 'low', 'medium', 'high'`.
- * `instant` is not on the canonical ladder, so it can only appear here; the
- * clamp steps down to `high` for any higher request.
- */
-const INCEPTION_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
-  "instant",
-  "low",
-  "medium",
-  "high",
-];
-
-/**
- * `low..max`: the OpenAI 5.6/6/daybreak generation and the new-gen Claude
- * adaptive models (`fable`/`mythos`/`opus-5`/`sonnet-5`/`opus-4-7`/`opus-4-8`)
- * all serve `max`, and none of them advertises `minimal`.
- */
-const LOW_TO_MAX_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
-
-/** `gpt-5.5` rows: neither `minimal` nor `max`. */
-const GPT55_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-];
-
-/** Claude adaptive 4.6 pair: `low..high`, no `xhigh`/`max`. */
-const CLAUDE_ADAPTIVE_46_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
-  "low",
-  "medium",
-  "high",
-];
-
-/**
- * Resolves the valid reasoning effort levels for a given model and wire family.
- *
- * Priority order:
- * 1. Explicit model-declared `reasoningEfforts` from the catalog.
- * 2. Wire family constraint: the Responses wire API (`/v1/responses`) does not
- *    support 'max' (capped at 'xhigh') unless the model's published ladder
- *    includes it.
- * 3. Model family heuristics, matching each family's published ladder:
- *    - Muse Spark (Meta on OpenCode / Fireworks): `["minimal", "low", "medium", "high", "xhigh"]`
- *    - Gemini: `["minimal", "low", "medium", "high"]`
- *    - Claude: per-generation — 4.6 adaptive stops at `high`, budget-era 4.5/4.1
- *      tops out at `xhigh`, new-gen adaptive is `low..max`.
- *    - DeepSeek, Kimi, MiMo: full extended ladder including 'max'
- *    - Default: extended ladder.
- */
-export function resolveSupportedReasoningEfforts(
-  modelId?: string,
-  wireFamily?: WireFamily,
-  declaredEfforts?: readonly string[],
-): readonly ReasoningEffortLevel[] {
-  if (declaredEfforts !== undefined && declaredEfforts.length > 0) {
-    const filtered = declaredEfforts.filter((e): e is ReasoningEffortLevel =>
-      REASONING_EFFORT_LADDER.includes(e as ReasoningEffortLevel),
-    );
-    if (filtered.length > 0) return filtered;
-  }
-
-  const id = (modelId ?? "").toLowerCase();
-
-  if (wireFamily === "responses") {
-    // Catalog ladders for the ChatGPT/OpenAI generations: `gpt-5.5`
-    // is the one row that stops at `xhigh`.
-    if (id.includes("gpt-5.5")) return GPT55_SUPPORTED_EFFORTS;
-    if (id.includes("gpt-5.6") || id.includes("gpt-6") || id.includes("daybreak")) {
-      return LOW_TO_MAX_SUPPORTED_EFFORTS;
-    }
-    return RESPONSES_WIRE_SUPPORTED_EFFORTS;
-  }
-
-  if (id.includes("muse")) {
-    return RESPONSES_WIRE_SUPPORTED_EFFORTS;
-  }
-  if (id.includes("gemini")) {
-    return BASE_SUPPORTED_EFFORTS;
-  }
-  // Checked before the generic default, which would hand this family `xhigh`
-  // and `max` — both of which it answers with an opaque 500.
-  if (id.includes("mimo-v2.6")) {
-    return MIMO_V26_SUPPORTED_EFFORTS;
-  }
-  // Checked before the generic default: Mercury's chat endpoint answers every
-  // effort outside {instant, low, medium, high} with a 400 that names the
-  // field (recorded live from request 40b60777).
-  if (id.includes("mercury") && wireFamily === "chat") {
-    return INCEPTION_SUPPORTED_EFFORTS;
-  }
-  // Claude catalog ladders: `output_config.effort` rides the
-  // Messages wire, so an out-of-ladder tier is an upstream rejection risk.
-  // Dot-tolerant (`cb/claude-opus-4.6`) because gateway-prefixed ids keep the
-  // upstream separator.
-  if (id.includes("claude")) {
-    const claudeId = id.replaceAll(".", "-");
-    if (claudeId.includes("opus-4-6") || claudeId.includes("sonnet-4-6")) {
-      return CLAUDE_ADAPTIVE_46_SUPPORTED_EFFORTS;
-    }
-    if (
-      claudeId.includes("fable") ||
-      claudeId.includes("mythos") ||
-      claudeId.includes("opus-5") ||
-      claudeId.includes("sonnet-5") ||
-      claudeId.includes("opus-4-7") ||
-      claudeId.includes("opus-4-8")
-    ) {
-      return LOW_TO_MAX_SUPPORTED_EFFORTS;
-    }
-    if (
-      claudeId.includes("opus-4-5") ||
-      claudeId.includes("sonnet-4-5") ||
-      claudeId.includes("haiku-4-5") ||
-      claudeId.includes("opus-4-1") ||
-      claudeId.includes("opus-4-0") ||
-      claudeId.includes("sonnet-4-0")
-    ) {
-      // Budget-mode rows: `minimal..xhigh`, no `max` — same shape as the
-      // responses-wire default.
-      return RESPONSES_WIRE_SUPPORTED_EFFORTS;
-    }
-  }
-
-  return EXTENDED_SUPPORTED_EFFORTS;
-}
-
-/**
- * Whether a Claude model wants *adaptive* thinking (`thinking.type: "adaptive"`
- * + `output_config.effort`) or *budget* thinking (`thinking.type: "enabled"` +
- * `budget_tokens`).
- *
- * The two generations reject each other's shape: an adaptive-era model answers
- * a budget block with `thinking.budget_tokens: Extra inputs are not permitted`,
- * and a budget-era model answers an adaptive block with `adaptive thinking is
- * not supported on this model` (verified live against the Anthropic OAuth
- * route — opus-4-5/sonnet-4-5/haiku-4-5 400 on adaptive, while
- * opus-4-6+/sonnet-4-6+/5-series accept it).
- *
- * Adaptive era, per the reference catalog: Opus 4.6+, Sonnet 4.6+, and the
- * 5-series (fable/mythos/opus-5/sonnet-5). Everything older is budget era.
- * The rule is stated once here so the Messages codec and the effort ladder
- * cannot disagree about which generation a model belongs to.
- */
-export function claudeUsesAdaptiveThinking(modelId: string): boolean {
-  const id = modelId.toLowerCase().replaceAll(".", "-");
-  if (id.includes("fable") || id.includes("mythos")) return true;
-  if (id.includes("opus-5") || id.includes("sonnet-5")) return true;
-  if (id.includes("opus-4-6") || id.includes("sonnet-4-6")) return true;
-  if (id.includes("opus-4-7") || id.includes("opus-4-8")) return true;
-  return false;
-}
-
-/**
- * Clamps a requested reasoning effort against a target model/wire's supported ladder.
- *
- * If the requested effort is not in the supported list, it gracefully steps down to the
- * highest supported level that is less than or equal to the requested index in the canonical ladder.
- * Synonyms are normalized: 'ultra' -> 'max', 'off' -> 'none'.
- * Returns undefined for 'none' / unrequested.
- */
-export function clampReasoningEffort(
-  requested: string | undefined,
-  supported: readonly ReasoningEffortLevel[],
-): ReasoningEffortLevel | undefined {
-  if (!requested || typeof requested !== "string") return undefined;
-  const raw = requested.toLowerCase().trim();
-  const normalized = raw === "ultra" ? "max" : raw === "off" ? "none" : raw;
-  if (normalized === "none") return undefined;
-
-  const reqLevel = normalized as ReasoningEffortLevel;
-  // Don't clamp if provider declares it supports the level but we haven't updated constants yet.
-  // Fall through to direct return for any ladder member the caller asked for.
-  if (supported.includes(reqLevel)) return reqLevel;
-  // Unknown string → drop, don't invent a fallback.
-  const requestedIndex = REASONING_EFFORT_LADDER.indexOf(reqLevel);
-  if (requestedIndex === -1) return undefined;
-
-  let clamped: ReasoningEffortLevel | undefined;
-  for (const level of supported) {
-    if (REASONING_EFFORT_LADDER.indexOf(level) > requestedIndex) break;
-    clamped = level;
-  }
-  // No smaller supported level exists (caller asked below floor): use floor rather than max.
-  return clamped ?? supported[0];
-}
 
 interface ThinkingNormalizationOptions {
-  readonly wireFamily?: WireFamily;
-  readonly modelId?: string;
-  readonly supportedEfforts?: readonly string[];
+  /** Resolved thinking config (from `resolveThinkingForModel`). Absent = no clamp. */
+  readonly thinking?: ThinkingConfig;
 }
 
 /**
@@ -504,15 +269,10 @@ export function normalizeThinkingConfig(
     }
   }
 
-  // Only clamp when caller actually set an effort AND provider declares a ladder.
-  // If provider doesn't declare supportedEfforts, don't invent a 32k clamp — pass through.
-  if (reasoning?.effort !== undefined && options?.supportedEfforts !== undefined && options.supportedEfforts.length > 0) {
-    const supported = resolveSupportedReasoningEfforts(
-      options?.modelId ?? request.model,
-      options?.wireFamily,
-      options?.supportedEfforts,
-    );
-    const clamped = clampReasoningEffort(reasoning.effort, supported);
+  // Only clamp when caller actually set an effort AND a thinking config is
+  // resolved (ladder known). Without one, don't invent a clamp — pass through.
+  if (reasoning?.effort !== undefined && options?.thinking !== undefined) {
+    const clamped = clampThinkingLevelForModel(options.thinking, reasoning.effort);
     if (clamped !== reasoning.effort) {
       reasoning = { ...reasoning };
       if (clamped === undefined) delete reasoning.effort;

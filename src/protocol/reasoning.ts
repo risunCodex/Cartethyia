@@ -1,6 +1,7 @@
 import type { CanonicalRequest, ReasoningEffort, ReasoningIntent } from "./canonical-model";
 import { budgetToLevel } from "./translation/thinking";
 import { isRecord } from "./codecs";
+import { DEEPSEEK_DEFAULT_EFFORT } from "./translation/dialect/thinking-ladder";
 
 /**
  * The effective reasoning effort for a canonical intent, deriving one from an
@@ -47,7 +48,7 @@ export function applyDeepSeekReasoning(payload: Record<string, unknown>): void {
   if (thinking === undefined) payload["thinking"] = { type: "enabled" };
   else if (type.length === 0) thinking["type"] = "enabled";
   if (typeof payload["reasoning_effort"] !== "string" || payload["reasoning_effort"].length === 0)
-    payload["reasoning_effort"] = "high";
+    payload["reasoning_effort"] = DEEPSEEK_DEFAULT_EFFORT;
 }
 
 /**
@@ -151,59 +152,13 @@ export function geminiThinkingOutputFloor(reasoning: CanonicalRequest["reasoning
 
 /**
  * Minimum output budget for a caller whose requested effort the ladder could
- * not serve as asked.
+ * not serve as asked. See the module doc for why both clamp directions need it.
+ * Only ever raises, and only to the model's own catalog limit.
  *
- * A wire ladder can only serve levels the upstream accepts, so a request for
- * `low` may be clamped up to whatever that model offers — `hy4-preview-f`
- * serves `high` and nothing else — and a request for `max` may be clamped down
- * to it. Either way the caller sized `max_tokens` for the effort it asked for,
- * and effort is not free: the applied level spends its budget on reasoning
- * before it writes the answer, so an answer that fit in 2048 tokens of visible
- * text no longer fits once the reasoning share is taken out of the same 2048.
- *
- * Both directions need the floor, because the mismatch is what costs tokens,
- * not its sign. A caller who asked for `max` with a 2048-token answer in mind
- * is owed the same headroom as one who asked for `low`: the applied level is
- * `high` either way, and `high` reasons out of that 2048 regardless.
- *
- * The symptom this removes is a truncated answer that an agent retries from
- * the top — reading as a loop ("let me do / let me go / let me do it") rather
- * than as a short limit.
- *
- * Only ever raises, and only to the model's own catalog limit: a caller whose
- * effort was served exactly as asked keeps its number, and no provider is
- * asked for more output than it declares.
+ * Re-exported from `translation/dialect/model-thinking` (the canonical helper);
+ * this shim keeps existing importers (e.g. buddy-chat-shared) stable.
  */
-export function clampedEffortOutputFloor(
-  requested: string | undefined,
-  applied: string | undefined,
-  modelOutputLimit: number | undefined,
-): number | undefined {
-  if (requested === undefined || applied === undefined) return undefined;
-  const from = BUDDY_LEVEL_RANK[requested.trim().toLowerCase()];
-  const to = BUDDY_LEVEL_RANK[applied.trim().toLowerCase()];
-  if (from === undefined || to === undefined || from === to) return undefined;
-  if (modelOutputLimit === undefined || !Number.isFinite(modelOutputLimit) || modelOutputLimit <= 0)
-    return undefined;
-  // Leave headroom instead of claiming the whole catalog limit: the caller's
-  // number was a real preference about answer size, and the goal is to stop
-  // truncating, not to spend the model's ceiling on every turn.
-  return Math.max(CLAMPED_EFFORT_MIN_OUTPUT_TOKENS, Math.floor(modelOutputLimit / 2));
-}
-
-const CLAMPED_EFFORT_MIN_OUTPUT_TOKENS = 16_384;
-
-const BUDDY_LEVEL_RANK: Readonly<Record<string, number>> = {
-  off: 0,
-  none: 0,
-  instant: 1,
-  minimal: 2,
-  low: 3,
-  medium: 4,
-  high: 5,
-  xhigh: 6,
-  max: 7,
-};
+export { outputFloorFor as clampedEffortOutputFloor } from "./translation/dialect/model-thinking";
 
 /** Builds the Anthropic thinking block from canonical reasoning intent. */
 export function buildAnthropicThinkingPayload(reasoning: ReasoningIntent): Record<string, unknown> {

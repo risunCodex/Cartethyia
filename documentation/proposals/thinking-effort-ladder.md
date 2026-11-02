@@ -1,6 +1,6 @@
 # Proposal — Effort & Thinking Ladder (desain ulang, pola oh-my-pi)
 
-**Status:** finalized — keputusan final di §6, siap implementasi (belum diimplementasikan).
+**Status:** implemented — dieksekusi di commit `cc799f69` (lihat §7). Proposal dipertahankan sebagai catatan desain.
 **Tanggal:** 2026-11-02
 **Scope:** protocol / routing / provider-catalog / dialect layer (backend). Dashboard & schema tidak tersentuh kecuali tercatat.
 **Referensi:** audit `oh-my-pi` (`packages/catalog/src/effort.ts`, `model-thinking.ts`, `compat/resolve.ts`, `compat/axes.ts`, `compat/rules/classes/*.kdl`) — output lengkap di catatan sesi ini.
@@ -236,3 +236,35 @@ export function clampThinkingLevelForModel(
 6. **Telemetry: fase 1 tanpa kolom baru.** Saat clamp mengubah effort → log
    `warn` + payload capture. Fase 2 opsional: kolom nullable
    `requested_effort`/`applied_effort` hanya bila operasional meminta.
+
+---
+
+## 7. Ringkasan implementasi (2026-11-02)
+
+Dieksekusi end-to-end sesuai keputusan final (commit `cc799f69`):
+
+- **Baru:** `src/protocol/translation/dialect/thinking-ladder.ts`
+  (`ThinkingConfig`, `ThinkingControlMode`, `THINKING_LADDER_RULES`,
+  `resolveThinkingForModel`, `DEEPSEEK_DEFAULT_EFFORT`).
+  `src/protocol/translation/dialect/model-thinking.ts`
+  (`clampThinkingLevelForModel`, `outputFloorFor`).
+- **Dihapus:** `resolveSupportedReasoningEfforts`, `clampReasoningEffort`,
+  `claudeUsesAdaptiveThinking`, konstanta ladder lama di `thinking.ts` —
+  tanpa wrapper (cutover repo). `clampedEffortOutputFloor`/`BUDDY_LEVEL_RANK`
+  di `reasoning.ts` diganti re-export `outputFloorFor` dari `model-thinking.ts`.
+- **Integrasi:** `CodecContext.thinking` + `encodeWireRequest` meneruskan ke
+  ketiga codec; `OpenAICompatibleAdapter.preparePayload` resolve sekali via
+  `resolveThinkingForModel`; `chat.ts`/`responses.ts`/`messages.ts` baca
+  `thinking` (fallback resolver saat dipanggil langsung tanpa context);
+  `messages.ts` pakai `thinking.mode` (anthropic-adaptive) menggantikan
+  `claudeUsesAdaptiveThinking`; `applyDeepSeekReasoning` default
+  `DEEPSEEK_DEFAULT_EFFORT`.
+- **Catalog:** `ModelDefinition.thinking?` + `ModelHelperRow.thinking?`
+  compile-time opsional, diteruskan `defineModel` — tanpa migration DB.
+- **Test:** `test/protocol/translation/thinking-ladder.test.ts`
+  (17 test: ladder, clamp, golden payload); `mercury-effort-clamp.test.ts`
+  dimigrasi ke API baru.
+- **Verifikasi:** typecheck backend+dashboard bersih; backend 4217 pass / 0
+  fail; protocol suite 591 pass / 0 fail.
+- **Deferred (sesuai keputusan):** telemetry kolom baru (fase 2), operator
+  override per-row (dashboard).

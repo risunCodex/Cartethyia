@@ -67,9 +67,9 @@ const GITHUB_CAPPED_EFFORTS = new Set(["max", "xhigh"]);
 /**
  * Rewrites an effort above Copilot's ceiling to the highest level we know the
  * model accepts. The shared encoder already pinned the effort to the model's
- * declared ladder (`resolveSupportedReasoningEfforts` reads `reasoningEfforts`
- * from the catalog); this hook only guards a bare fallback so a caller asking
- * for `max`/`xhigh` on a model without a declared ladder is answered at `high`
+ * declared ladder (`resolveThinkingForModel` reads `reasoningEfforts` from the
+ * catalog); this hook only guards a bare fallback so a caller asking for
+ * `max`/`xhigh` on a model without a declared ladder is answered at `high`
  * rather than refused.
  */
 function clampGithubReasoningEffort(payload: Record<string, unknown>): void {

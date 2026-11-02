@@ -10,10 +10,9 @@ import { normalizeWireMaxTokens } from "../../protocol/translation/normalize";
 import { resolveWireMaxTokens } from "../../protocol/translation/quirks";
 import { DEFAULT_DIALECT_POLICIES } from "../../protocol/translation/dialect/rules";
 import type { DialectPolicy } from "../../protocol/translation/dialect/types";
-import {
-  clampReasoningEffort,
-  resolveSupportedReasoningEfforts,
-} from "../../protocol/translation/thinking";
+import type { ThinkingConfig } from "../../protocol/translation/dialect/thinking-ladder";
+import { resolveThinkingForModel } from "../../protocol/translation/dialect/thinking-ladder";
+import { clampThinkingLevelForModel } from "../../protocol/translation/dialect/model-thinking";
 import { isClaudeBillingHeaderText, resolveImageSource } from "../codecs";
 import { resolvePromptCacheKey } from "../../providers/operations/session-resolution";
 import { reasoningEffortFromIntent } from "../../protocol/reasoning";
@@ -188,9 +187,11 @@ export function canonicalToChatPayload(
     readonly maxOutputTokens?: number;
     readonly promptCacheKey?: string;
     readonly dialectPolicy?: DialectPolicy;
+    readonly thinking?: ThinkingConfig;
   } = {},
 ): Record<string, unknown> {
   const policy = options.dialectPolicy ?? DEFAULT_CHAT_DIALECT_POLICY;
+  const resolvedThinking = options.thinking ?? resolveThinkingForModel(request.model, "", "chat");
   const supportsPromptCaching = options.supportsPromptCaching ?? true;
   const tokenLimitField = options.tokenLimitField ?? policy.maxTokensField;
   const reasoningField = policy.reasoningContentField;
@@ -505,9 +506,9 @@ export function canonicalToChatPayload(
   // is what the Codex encoder already uses); deriving it here instead of in
   // each codec is what keeps a translated request from silently losing it.
   if (request.reasoning !== undefined) {
-    const effort = clampReasoningEffort(
+    const effort = clampThinkingLevelForModel(
+      resolvedThinking,
       reasoningEffortFromIntent(request.reasoning),
-      resolveSupportedReasoningEfforts(request.model, "chat"),
     );
     if (effort !== undefined) payload["reasoning_effort"] = effort;
     // Qwen chat templates select thinking with `enable_thinking` (plus optional

@@ -1,5 +1,6 @@
 import type { CanonicalEvent, CanonicalRequest, WireFamily } from "./canonical-model";
 import type { DialectPolicy } from "./translation/dialect/types";
+import type { ThinkingConfig } from "./translation/dialect/thinking-ladder";
 
 interface CodecContext {
   readonly isOAuth?: boolean;
@@ -19,6 +20,11 @@ interface CodecContext {
    * own default behavior (today's exact bytes).
    */
   readonly dialectPolicy?: DialectPolicy;
+  /**
+   * Resolved thinking config (see `translation/dialect/thinking-ladder`).
+   * Absent = the codec's own default behavior (today's exact clamp/ladder).
+   */
+  readonly thinking?: ThinkingConfig;
 }
 
 /**
@@ -37,6 +43,7 @@ type CodecModule =
           readonly isOAuth?: boolean;
           readonly maxBytesOverride?: number;
           readonly dialectPolicy?: DialectPolicy;
+          readonly thinking?: ThinkingConfig;
         },
       ) => Record<string, unknown>;
       readonly decodeWireResponse: (
@@ -59,6 +66,7 @@ type CodecModule =
           readonly tokenLimitField?: "max_tokens" | "max_completion_tokens";
           readonly promptCacheKey?: string;
           readonly dialectPolicy?: DialectPolicy;
+          readonly thinking?: ThinkingConfig;
         },
       ) => Record<string, unknown>;
       readonly decodeWireResponse: (
@@ -80,6 +88,7 @@ type CodecModule =
           readonly supportsPromptCaching?: boolean;
           readonly promptCacheKey?: string;
           readonly dialectPolicy?: DialectPolicy;
+          readonly thinking?: ThinkingConfig;
         },
       ) => Record<string, unknown>;
       readonly decodeWireResponse: (
@@ -162,6 +171,7 @@ export async function encodeWireRequest(
         ? {}
         : { maxBytesOverride: context.maxBytesOverride }),
       ...(context?.dialectPolicy === undefined ? {} : { dialectPolicy: context.dialectPolicy }),
+      ...(context?.thinking === undefined ? {} : { thinking: context.thinking }),
     });
   }
   if (codec.family === "chat") {
@@ -179,6 +189,7 @@ export async function encodeWireRequest(
         ? {}
         : { promptCacheKey: context.promptCacheKey }),
       ...(context?.dialectPolicy === undefined ? {} : { dialectPolicy: context.dialectPolicy }),
+      ...(context?.thinking === undefined ? {} : { thinking: context.thinking }),
     });
   }
   return codec.encodeWireRequest(request, {
@@ -189,6 +200,7 @@ export async function encodeWireRequest(
       ? {}
       : { promptCacheKey: context.promptCacheKey }),
     ...(context?.dialectPolicy === undefined ? {} : { dialectPolicy: context.dialectPolicy }),
+    ...(context?.thinking === undefined ? {} : { thinking: context.thinking }),
   });
 }
 

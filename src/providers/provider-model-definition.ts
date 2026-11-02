@@ -54,6 +54,15 @@ export interface ModelDefinition {
   readonly reasoning: boolean;
   /** Explicitly supported reasoning effort scale (e.g. `["minimal", "low", "medium", "high", "xhigh"]`). */
   readonly reasoningEfforts?: readonly string[];
+  /**
+   * Optional thinking/effort override for this row. When present, the ladder
+   * resolver prefers these efforts and transport mode over the rule table.
+   * Compile-time only — no DB column (see `thinking-ladder.ts`).
+   */
+  readonly thinking?: {
+    readonly efforts?: readonly string[];
+    readonly mode?: "effort" | "budget" | "anthropic-adaptive" | "google-level";
+  };
   readonly toolCall: boolean;
   readonly cost: ModelCostDefinition;
   /**
@@ -174,6 +183,8 @@ export interface ModelHelperRow {
   readonly output?: readonly ModelDefinition["modalities"]["output"][number][];
   /** Explicitly supported reasoning effort scale. */
   readonly reasoningEfforts?: readonly string[];
+  /** Optional thinking/effort override; see `ModelDefinition.thinking`. */
+  readonly thinking?: ModelDefinition["thinking"];
   readonly toolCall?: boolean;
   /**
    * Marks a row served by a free plan tier. Such rows bill zero per token
@@ -291,6 +302,7 @@ export function defineModel(row: ModelHelperRow): ModelDefinition {
     },
     reasoning: row.reasoning ?? false,
     ...(row.reasoningEfforts !== undefined ? { reasoningEfforts: row.reasoningEfforts } : {}),
+    ...(row.thinking === undefined ? {} : { thinking: row.thinking }),
     toolCall: row.toolCall ?? true,
     cost,
     ...(row.freeTier === undefined ? {} : { freeTier: row.freeTier }),

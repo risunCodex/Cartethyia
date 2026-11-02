@@ -29,7 +29,10 @@ import {
 } from "../codecs";
 import { log } from "../../observability/logger";
 import { base64DecodedByteLength, clampImage } from "../image-clamp";
-import { clampReasoningEffort, claudeUsesAdaptiveThinking, LEVEL_TO_BUDGET, resolveSupportedReasoningEfforts } from "../../protocol/translation/thinking";
+import { LEVEL_TO_BUDGET } from "../../protocol/translation/thinking";
+import type { ThinkingConfig } from "../../protocol/translation/dialect/thinking-ladder";
+import { clampThinkingLevelForModel } from "../../protocol/translation/dialect/model-thinking";
+import { resolveThinkingForModel } from "../../protocol/translation/dialect/thinking-ladder";
 import { claudeResponseToEvents, parseClaudeSseStream } from "../response/messages";
 
 /**
@@ -561,6 +564,7 @@ export function canonicalToClaudeMessagesPayload(
     isOAuth?: boolean;
     maxBytesOverride?: number;
     dialectPolicy?: DialectPolicy;
+    thinking?: ThinkingConfig;
   } = {},
 ): ClaudeWireObject {
   const seen = new Map<string, number>();
@@ -680,11 +684,14 @@ export function canonicalToClaudeMessagesPayload(
   // Whether this model speaks adaptive thinking (`type: "adaptive"` +
   // `output_config.effort`) or budget thinking (`type: "enabled"` +
   // `budget_tokens`). The two generations reject each other's shape, so the
-  // choice is made from the model id, not from the caller's canonical intent —
-  // a chat/responses caller states only an effort, and a budget-era model
-  // answers the adaptive shape with "adaptive thinking is not supported on this
-  // model" (verified live: opus-4-5/sonnet-4-5/haiku-4-5).
-  const adaptiveThinking = claudeUsesAdaptiveThinking(request.model);
+  // choice is made from the resolved thinking config, not from the caller's
+  // canonical intent — a chat/responses caller states only an effort, and a
+  // budget-era model answers the adaptive shape with "adaptive thinking is not
+  // supported on this model" (verified live: opus-4-5/sonnet-4-5/haiku-4-5).
+  // When no config is supplied (direct-route callers), fall back to resolving
+  // it from the model/wire — the resolved `mode` IS the generation answer.
+  const resolvedThinking = options.thinking ?? resolveThinkingForModel(request.model, "", "messages");
+  const adaptiveThinking = resolvedThinking.mode === "anthropic-adaptive";
   let effectiveBudgetTokens = request.reasoning?.budget_tokens;
   // Derive a budget from the level whenever a budget-era model is asked to
   // reason by effort alone. The gate is NOT `isThinkingEnabled`: a chat/responses
@@ -841,9 +848,9 @@ export function canonicalToClaudeMessagesPayload(
     // is NOT a wire field — display rides on `thinking.display` above.
     // Clamp to the model's published ladder exactly like the chat/Responses
     // codecs: an out-of-ladder tier is an upstream 4xx.
-    const effort = clampReasoningEffort(
+    const effort = clampThinkingLevelForModel(
+      resolvedThinking,
       request.reasoning.effort,
-      resolveSupportedReasoningEfforts(request.model, "messages"),
     );
     const taskBudget = request.reasoning.task_budget;
     // `output_config.effort` rides every generation: budget-era models accept it

@@ -7,10 +7,10 @@ import { markLatestBreakpoint } from "../../protocol/translation/cache-controls"
 import { pickWireSupportedControls } from "../../protocol/translation/capabilities";
 import { normalizeGenerationControls } from "../../protocol/translation/normalize";
 import { resolveWireMaxTokens } from "../../protocol/translation/quirks";
-import {
-  clampReasoningEffort,
-  resolveSupportedReasoningEfforts,
-} from "../../protocol/translation/thinking";
+import type { DialectPolicy } from "../../protocol/translation/dialect/types";
+import type { ThinkingConfig } from "../../protocol/translation/dialect/thinking-ladder";
+import { resolveThinkingForModel } from "../../protocol/translation/dialect/thinking-ladder";
+import { clampThinkingLevelForModel } from "../../protocol/translation/dialect/model-thinking";
 import { isClaudeBillingHeaderText, resolveImageSource, resolveOutputVerbosity } from "../codecs";
 import { resolvePromptCacheKey } from "../../providers/operations/session-resolution";
 import { reasoningEffortFromIntent } from "../../protocol/reasoning";
@@ -63,9 +63,12 @@ export function canonicalToResponsesPayload(
   options: {
     readonly supportsPromptCaching?: boolean;
     readonly promptCacheKey?: string;
+    readonly dialectPolicy?: DialectPolicy;
+    readonly thinking?: ThinkingConfig;
   } = {},
 ): Record<string, unknown> {
   const supportsPromptCaching = options.supportsPromptCaching ?? true;
+  const resolvedThinking = options.thinking ?? resolveThinkingForModel(request.model, "", "responses");
   const input: Array<Record<string, unknown>> = [];
   // `pending_safety_checks` have no canonical content-part representation, so
   // `parseResponsesRequest` retains them per-item in the scoped item-metadata
@@ -317,10 +320,7 @@ export function canonicalToResponsesPayload(
     // this wire. Codex already derives its tier this way.
     const requestedEffort = reasoningEffortFromIntent(request.reasoning);
     if (requestedEffort !== undefined) {
-      const effort = clampReasoningEffort(
-        requestedEffort,
-        resolveSupportedReasoningEfforts(request.model, "responses"),
-      );
+      const effort = clampThinkingLevelForModel(resolvedThinking, requestedEffort);
       if (effort !== undefined) reasoning.effort = effort;
     }
     if (request.reasoning.mode !== undefined) reasoning.mode = request.reasoning.mode;
