@@ -24,7 +24,7 @@ or foundational notes stay at this root.
 | `copilot/` | Copilot capability/context/auto routing | 3 findings |
 | `kiro/` | Kiro 1.4.62 wire protocol + live verification + IDE/CLI unpack | 3 files |
 | `opencode/` | OpenCode free-tier wire/gate/sentinel + egress/TLS measurements (merged), desktop 2.2.5 binary evidence | 2 files |
-| `codebuddy/` | CodeBuddy intl chat dispatch headers + Turing device identity/binding (incl. archived reverse note) | 3 files |
+| `codebuddy/` | CodeBuddy intl chat dispatch headers + Turing device identity/binding (incl. archived reverse note) + CLI 2.179.2 unpack wire audit | 4 files |
 | `cursor/` | Cursor Run protocol + entitlement | 1 file |
 | `grok/` | Grok Build CLI 1.0.70 binary unpack — endpoint, headers, payload, quota | 1 file |
 
@@ -77,6 +77,7 @@ or foundational notes stay at this root.
 | 2026-10-19 | [Chat dispatch headers: required headers, errors, tier](codebuddy/2026-10-19-codebuddy-chat-dispatch-headers.md) |
 | 2026-10-28 | [TuringShield x-device-token reverse notes (archived — untrusted)](codebuddy/2026-10-28-turing-x-device-token-reverse.md) |
 | 2026-10-30 | [Buddy device identity: Turing token + per-account binding](codebuddy/2026-10-30-buddy-device-binding.md) |
+| 2026-11-02 | [CLI 2.179.2 unpack wire audit — headers + payload builders](codebuddy/2026-11-02-codebuddy-cli-2.179.2-unpack-wire-audit.md) |
 
 ## Cursor findings (`cursor/`)
 

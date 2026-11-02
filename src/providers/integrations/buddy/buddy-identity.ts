@@ -1,6 +1,8 @@
 import type { ProviderDispatchContext } from "../../provider-contracts";
 import { createHash } from "node:crypto";
 import { decodeJwtPayload } from "../../authentication/oauth-flow-store";
+import { buddyAccountUid } from "./buddy-oauth-shared";
+import type { CanonicalRequest } from "../../../protocol/canonical-model";
 
 /**
  * Which upstream client a buddy provider presents itself as.
@@ -41,8 +43,17 @@ export function resolveBuddyIdentity(
  * The reference CLI sends the literal `anonymous` when it has no uid rather
  * than omitting the header, so an unauthenticated dispatch still looks like a
  * client rather than like a caller that forgot a header.
+ *
+ * When the credential carries a JWT, the `sub` claim is the upstream uid and
+ * wins over the gateway's internal account id — the two can differ after an
+ * import, and the channel check keys on the upstream identity. Opaque API keys
+ * carry no identity, so the internal account id is the fallback.
  */
 export function buddyUserId(context?: ProviderDispatchContext): string {
+  const secret = context?.credential?.secret;
+  const token = secret ? new TextDecoder().decode(secret).trim() : "";
+  const uid = buddyAccountUid(token);
+  if (uid !== undefined) return uid;
   const accountId = context?.credential.account_id;
   return accountId !== undefined && accountId.length > 0 ? accountId : "anonymous";
 }
@@ -141,4 +152,79 @@ export function materializeBuddyDeviceBinding(
   if (accountId.length === 0) return undefined;
   const derived = createHash("sha256").update(`wb2a:qimei36:${accountId}`).digest("hex").slice(0, 32);
   return { ...(authState ?? {}), qimei36: derived };
+}
+
+/**
+ * The OAuth identity header family the reference ships on every cloud API call
+ * (`runIdentityHeaders`): `X-User-Id` plus the base64 `X-Userinfo` envelope and
+ * the auth-method / id-source markers.
+ *
+ * The JWT `sub` is the uid; the base64 envelope mirrors the reference exactly:
+ * `{ uin, owner_uin?, id_source?, token_source? }` — one leg per identity
+ * field that exists, so a personal account sends `{uin}` while an enterprise
+ * account adds `owner_uin`. `X-Auth-Method` / `X-Id-Source` are only sent when
+ * the operator pinned them in `auth_state` (there is no reliable source to
+ * invent them from). An opaque API key carries no uid and yields nothing.
+ */
+export function buddyOAuthIdentityHeaders(
+  context?: ProviderDispatchContext,
+): Record<string, string> {
+  const secret = context?.credential?.secret;
+  const token = secret ? new TextDecoder().decode(secret).trim() : "";
+  const uid = buddyAccountUid(token) ?? context?.credential.account_id ?? "";
+  if (uid.length === 0) return {};
+  const enterpriseId = buddyEnterprise(context);
+  const state = context?.credential.auth_state;
+  const idSource =
+    typeof state?.["idSource"] === "string" && (state["idSource"] as string).trim().length > 0
+      ? (state["idSource"] as string).trim()
+      : undefined;
+  const method =
+    typeof state?.["authMethod"] === "string" && (state["authMethod"] as string).trim().length > 0
+      ? (state["authMethod"] as string).trim()
+      : undefined;
+  const headers: Record<string, string> = { "X-User-Id": uid };
+  if (method !== undefined) headers["X-Auth-Method"] = method;
+  if (idSource !== undefined) headers["X-Id-Source"] = idSource;
+  if (enterpriseId !== undefined || idSource !== undefined || method !== undefined) {
+    const info: Record<string, string> = { uin: uid };
+    if (enterpriseId !== undefined) info["owner_uin"] = enterpriseId;
+    if (idSource !== undefined) info["id_source"] = idSource;
+    if (method !== undefined) info["token_source"] = method;
+    headers["X-Userinfo"] = Buffer.from(JSON.stringify(info), "utf-8").toString("base64");
+  }
+  return headers;
+}
+
+/**
+ * Whether this dispatch is in the reference's private-data mode. The CLI only
+ * sends `X-Private-Data: true` while the session is private; otherwise the
+ * header is deleted, never sent as `false`. The gateway has no session-level
+ * private flag, so the operator pins one per account in `auth_state.privateData`.
+ */
+export function buddyPrivateData(context?: ProviderDispatchContext): boolean {
+  return context?.credential.auth_state?.["privateData"] === true;
+}
+
+/**
+ * The effective agent purpose for one dispatch, matching the reference's
+ * `getEffectiveAgentPurpose` behavior as closely as the gateway can:
+ *
+ * - `PERSONAL_AGENT_ROLE` set → `person_agent` (same env the CLI reads);
+ * - otherwise an inbound `x-agent-purpose` header is preserved (the caller
+ *   already stated a purpose — same shape the reference passes through);
+ * - otherwise the header is omitted. The reference does not invent `conversation`.
+ */
+export function buddyAgentPurpose(
+  context?: ProviderDispatchContext,
+  request?: CanonicalRequest,
+): string | undefined {
+  if (process.env.PERSONAL_AGENT_ROLE && process.env.PERSONAL_AGENT_ROLE.trim().length > 0) {
+    return "person_agent";
+  }
+  const inbound = context?.request_headers?.["x-agent-purpose"]?.trim();
+  if (inbound !== undefined && inbound.length > 0) return inbound;
+  const fromRequest = request?.metadata?.["agent_purpose"];
+  if (typeof fromRequest === "string" && fromRequest.trim().length > 0) return fromRequest.trim();
+  return undefined;
 }

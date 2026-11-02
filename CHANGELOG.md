@@ -112,6 +112,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **CodeBuddy/WorkBuddy adapters close the eight wire gaps found by unpacking
+  the CodeBuddy CLI 2.179.2.** The reference CLI's chat request is the
+  authority, and the gateway now matches it:
+  - `cache_retention` is injected on every buddy chat body (`long` by default;
+    `short` when `CODEBUDDY_DISABLE_PROMPT_CACHING_1H` is set).
+  - `X-Agent-Purpose` is no longer hardcoded to `conversation`; it is sent
+    only when a purpose exists (`person_agent` under `PERSONAL_AGENT_ROLE`, or
+    the inbound `x-agent-purpose` header).
+  - `X-Private-Data` is no longer sent as a constant `false`; it is emitted
+    only when the dispatch is actually private (`auth_state.privateData`).
+  - The OAuth identity family is now sent: `X-User-Id` prefers the JWT `sub`
+    over the internal account id, and `X-Userinfo` (base64 `{uin, owner_uin?,
+    id_source?, token_source?}`), `X-Auth-Method`, and `X-Id-Source` are added
+    when their identity fields exist.
+  - `X-Root-Request-ID` and `X-Parent-Conversation-ID` are forwarded only when
+    the caller supplies them (subagent/root chains).
+  - The `x-stainless-*` fingerprint is no longer sent on CLI chat — the CLI's
+    chat transport is axios, not the OpenAI Node SDK. The desktop identity is
+    unchanged.
+  - The intl `auto` alias now resolves to `default-model` (confirmed from live
+    CLI session logs), matching the CN `auto` → `default` behavior.
 - **GitHub Copilot adapter closes the Messages-wire and capability gaps found
   by auditing the official Copilot Chat 0.72.0 extension (VS Code 1.144).**
   - Discovery now routes `/v1/messages`-only rows (the premium Claude family)

@@ -8,7 +8,15 @@ import type { ProviderDispatchContext, ProviderDispatchTarget, ProviderId } from
 import { resolveInboundSessionId } from "../../../operations/session-resolution";
 import { buddyConversationHeaders } from "../buddy-conversation-headers";
 import { buddyCliHeaders, buddyCliTraceHeaders } from "../buddy-cli-headers";
-import { buddyEnterprise, buddyUserId, resolveBuddyDeviceBinding, resolveBuddyIdentity } from "../buddy-identity";
+import {
+  buddyAgentPurpose,
+  buddyEnterprise,
+  buddyOAuthIdentityHeaders,
+  buddyPrivateData,
+  buddyUserId,
+  resolveBuddyDeviceBinding,
+  resolveBuddyIdentity,
+} from "../buddy-identity";
 import {
   buildWorkBuddyUserAgent,
   getWorkBuddyClientVersion,
@@ -86,7 +94,11 @@ export async function workbuddyHeaders(
     messageIdStyle: identity === "desktop" ? "uuid" : "hex",
   });
   const accountId = context?.credential.account_id;
+  const purpose = buddyAgentPurpose(context, request);
   if (identity === "cli") {
+    const inbound = context?.request_headers;
+    const rootRequestId = inbound?.["x-root-request-id"]?.trim();
+    const parentConversationId = inbound?.["x-parent-conversation-id"]?.trim();
     // The reference CLI: issued by the OpenAI Node SDK, so no browser
     // *transport* header (origin/referer/accept-language) and no device token,
     // and the machine/session device pair does not exist — only `X-User-Id`,
@@ -99,17 +111,23 @@ export async function workbuddyHeaders(
       "x-requested-with": "XMLHttpRequest",
       "x-codebuddy-request": "1",
       "x-domain": domain,
-      "x-agent-purpose": "conversation",
+      ...(purpose === undefined ? {} : { "x-agent-purpose": purpose }),
       "x-ide-name": "CLI",
       "x-ide-type": "CLI",
       "x-ide-version": getWorkBuddyCliVersion(),
       "x-product": "SaaS",
       "x-no-enterprise-id": "1",
       ...conversation,
+      ...(rootRequestId === undefined ? {} : { "x-root-request-id": rootRequestId }),
+      ...(parentConversationId === undefined
+        ? {}
+        : { "x-parent-conversation-id": parentConversationId }),
       ...buddyCliTraceHeaders(conversation),
+      ...buddyOAuthIdentityHeaders(context),
       ...buddyCliHeaders({
         userId: buddyUserId(context),
         enterpriseId: buddyEnterprise(context),
+        privateData: buddyPrivateData(context),
       }),
     };
   }
@@ -122,7 +140,7 @@ export async function workbuddyHeaders(
     "x-requested-with": "XMLHttpRequest",
     "x-codebuddy-request": "1",
     "x-domain": domain,
-    "x-agent-purpose": "conversation",
+    ...(purpose === undefined ? {} : { "x-agent-purpose": purpose }),
     "x-ide-name": "WorkBuddy",
     "x-ide-type": "WorkBuddy",
     "x-ide-version": clientVersion,

@@ -19,6 +19,16 @@ import { buddyEnterprise } from "../../src/providers/integrations/buddy/buddy-id
 import { buddyCliHeaders } from "../../src/providers/integrations/buddy/buddy-cli-headers";
 import type { ProviderDispatchContext } from "../../src/providers/provider-contracts";
 
+const STAINLESS = [
+  "x-stainless-lang",
+  "x-stainless-package-version",
+  "x-stainless-os",
+  "x-stainless-arch",
+  "x-stainless-runtime",
+  "x-stainless-runtime-version",
+  "x-stainless-retry-count",
+] as const;
+
 /** A JWT whose payload is `claims`, the shape `decodeJwtPayload` reads. */
 function jwt(claims: Record<string, unknown>): Uint8Array {
   const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
@@ -87,30 +97,38 @@ describe("buddyEnterprise", () => {
 });
 
 describe("buddyCliHeaders", () => {
-  test("an enterprise account names the enterprise and flips the flag", () => {
+  test("an enterprise account names the enterprise without implying private data", () => {
     const headers = buddyCliHeaders({ userId: "u1", enterpriseId: "ent_1" });
     expect(headers["X-Enterprise-Id"]).toBe("ent_1");
     expect(headers["X-Tenant-Id"]).toBe("ent_1");
-    expect(headers["X-Private-Data"]).toBe("true");
+    // Private data is an independent flag; enterprise does not imply it.
+    expect(headers["X-Private-Data"]).toBeUndefined();
   });
 
-  test("a personal account sends the flag false and no enterprise header", () => {
+  test("a personal account sends no enterprise header and no private flag", () => {
     const headers = buddyCliHeaders({ userId: "u1" });
-    expect(headers["X-Private-Data"]).toBe("false");
+    expect(headers["X-Private-Data"]).toBeUndefined();
     expect(headers["X-Enterprise-Id"]).toBeUndefined();
     expect(headers["X-Tenant-Id"]).toBeUndefined();
   });
 
+  test("private data is sent only when the dispatch is actually private", () => {
+    const headers = buddyCliHeaders({ userId: "u1", privateData: true });
+    expect(headers["X-Private-Data"]).toBe("true");
+    expect(headers["X-Enterprise-Id"]).toBeUndefined();
+  });
+
   test("a blank enterprise id is treated as personal", () => {
-    // The combination the upstream never sees: `true` with no id.
+    // The combination the upstream never sees: a named enterprise with a blank id.
     const headers = buddyCliHeaders({ userId: "u1", enterpriseId: "   " });
-    expect(headers["X-Private-Data"]).toBe("false");
+    expect(headers["X-Private-Data"]).toBeUndefined();
     expect(headers["X-Enterprise-Id"]).toBeUndefined();
   });
 
   test("the agent envelope is unchanged either way", () => {
-    // Scope guard: this change added two headers and flipped one. It must not
-    // have moved the identity the channel check reads.
+    // Scope guard: this change removed the stainless fingerprint and the
+    // constant private-data flag. It must not have moved the identity the
+    // channel check reads.
     for (const headers of [
       buddyCliHeaders({ userId: "u1" }),
       buddyCliHeaders({ userId: "u1", enterpriseId: "ent_1" }),
@@ -119,6 +137,8 @@ describe("buddyCliHeaders", () => {
       expect(headers["X-Agent-Type"]).toBe("main");
       expect(headers["X-Agent-Runtime"]).toBe("other");
       expect(headers["X-User-Id"]).toBe("u1");
+      // The CLI chat transport is axios, so no stainless fingerprint rides along.
+      for (const name of STAINLESS) expect(headers[name]).toBeUndefined();
     }
   });
 });
