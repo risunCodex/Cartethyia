@@ -34,6 +34,8 @@ import {
 } from "./candidate-index";
 import { totalRemainingCredit, totalRemainingPercent, type ProviderQuotaWindow } from "../../providers/quota/quota-contracts";
 import { getCachedQuotaEntry, quotaLens } from "../../providers/quota/cache";
+import { readQuotaSnapshot } from "../../providers/quota/snapshot";
+import type { CartethyiaDatabase } from "../../persistence/db-handle";
 import type { RedisClient } from "../../persistence/redis";
 import { sharedClaudeSlowLanes } from "../../providers/integrations/claude/claude-slow-lane";
 
@@ -349,6 +351,7 @@ export class RoutingEngine {
   constructor(
     private readonly admission: AdmissionController = new InMemoryAdmissionController(),
     private readonly redis?: RedisClient,
+    private readonly db?: CartethyiaDatabase,
   ) {}
 
   private getRoundRobin(key: string): RoundRobinState {
@@ -484,7 +487,17 @@ export class RoutingEngine {
       accountId,
       this.redis,
     ).catch(() => undefined);
-    const quotaWindows = cached?.quota.windows;
+    // The live cache is authoritative when warm; when it is cold (e.g. right
+    // after a restart, before the sweep re-reads accounts), fall back to the
+    // persisted quota snapshot — the durable source of truth — so routing
+    // still prefers accounts that actually have remaining credit. The snapshot
+    // is never fresher than the cache, but a stale balance beats an unknown
+    // one for ordering, and the sweep refreshes it on schedule.
+    let quotaWindows = cached?.quota.windows;
+    if (quotaWindows === undefined && this.db !== undefined) {
+      const snapshot = await readQuotaSnapshot(this.db, accountId).catch(() => null);
+      quotaWindows = snapshot?.quota.windows;
+    }
     return {
       ...candidate,
       ...(setting?.usageFloor == null

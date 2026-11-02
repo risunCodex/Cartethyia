@@ -256,6 +256,7 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
   const routingEngine = new RoutingEngine(
     redis ? new RedisAdmissionController(redis) : undefined,
     redis,
+    db,
   );
   // Peer processes' settings mutations arrive here. Subscribed once for the
   // process: the revision counter is process-global, and the handler only
