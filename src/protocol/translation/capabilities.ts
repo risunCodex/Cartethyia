@@ -9,7 +9,7 @@ import {
 } from "../canonical-model";
 
 /** Capabilities declared by one resolved provider/model/route candidate. */
-export interface RouteCapabilities {
+interface RouteCapabilities {
   readonly text: true;
   readonly image: boolean;
   /** Accepts non-image document payloads (PDF, plain files). */
@@ -45,7 +45,7 @@ export interface RouteCapabilities {
  * A bespoke adapter is not in this matrix at all — see
  * `BESPOKE_GENERATION_CONTROLS` for why it receives every control.
  */
-export const GENERATION_CONTROL_MATRIX: Readonly<
+const GENERATION_CONTROL_MATRIX: Readonly<
   Record<WireFamily, ReadonlySet<keyof GenerationControls>>
 > = {
   chat: new Set([
@@ -98,7 +98,7 @@ const BESPOKE_GENERATION_CONTROLS: ReadonlySet<keyof GenerationControls> = new S
  * and `web_search_tool_result` are Anthropic Messages blocks, so only the
  * Messages wire re-encodes them (`protocol/request/messages.ts`).
  */
-export const EXTENSION_MATRIX: Readonly<Record<WireFamily, ReadonlySet<string>>> = {
+const EXTENSION_MATRIX: Readonly<Record<WireFamily, ReadonlySet<string>>> = {
   chat: new Set(),
   responses: new Set(),
   messages: new Set(["server_tool_use", "search_result", "web_search_tool_result"]),
@@ -155,7 +155,7 @@ export function pickWireSupportedControls(
  * both the router (`routing/router.ts`) and the planner share one predicate
  * without a layering cycle.
  */
-export interface CapabilityProfileHolder {
+interface CapabilityProfileHolder {
   readonly capability_profile: Readonly<Record<string, boolean>>;
   readonly wire_family: WireFamily;
 }
@@ -288,7 +288,7 @@ export type RequiredCapability =
  * No field is silently removed: every unsupported semantic requirement has
  * already produced a typed rejection before this result exists.
  */
-export interface ProjectedRequest extends CanonicalRequest {
+interface ProjectedRequest extends CanonicalRequest {
   readonly requiredCapabilities: readonly RequiredCapability[];
 }
 
@@ -347,7 +347,7 @@ export function deriveRequiredCapabilities(
 }
 
 /** Anthropic and OpenAI 5.6+ both cap explicit cache breakpoints per request. */
-export const MAX_CACHE_BREAKPOINTS = 4;
+const MAX_CACHE_BREAKPOINTS = 4;
 
 /**
  * Validates the cache-breakpoint count at the preflight boundary — before

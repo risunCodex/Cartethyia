@@ -9,7 +9,7 @@ import { log } from "../../observability/logger";
  * and in the placeholder text the model sees, so each one has to be readable
  * on its own.
  */
-export type AttachmentDefect =
+type AttachmentDefect =
   /** The base64 payload is not a whole number of 4-char groups. */
   | "truncated_base64"
   /** Base64 is well-formed but the bytes behind it are not a decodable image. */
@@ -26,13 +26,13 @@ export type AttachmentDefect =
   | "unrecognized_signature";
 
 /** One attachment dropped from a request, and why. */
-export interface DroppedAttachment {
+interface DroppedAttachment {
   readonly defect: AttachmentDefect;
   /** Index of the message the part lived in, for the log line. */
   readonly messageIndex: number;
 }
 
-export interface AttachmentIntegrityResult {
+interface AttachmentIntegrityResult {
   /** The request with every defective inline attachment replaced by a note. */
   readonly request: CanonicalRequest;
   /** Non-empty only when something was actually dropped. */

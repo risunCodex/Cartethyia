@@ -41,7 +41,7 @@ export type ThinkingSuffixIntent =
  * A parsed model name: the bare id the router and upstream must see, plus the
  * thinking level the caller asked for (or null when they asked for none).
  */
-export interface ParsedThinkingSuffix {
+interface ParsedThinkingSuffix {
   readonly model: string;
   readonly intent: ThinkingSuffixIntent | null;
 }
@@ -200,7 +200,7 @@ export function withThinkingSuffixIntent(
 }
 
 /** Standard OpenAI Responses wire supported efforts (OpenAI, OpenCode, Azure). Responses API has no 'max' tier. */
-export const RESPONSES_WIRE_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
+const RESPONSES_WIRE_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
   "minimal",
   "low",
   "medium",
@@ -209,7 +209,7 @@ export const RESPONSES_WIRE_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] =
 ];
 
 /** Full 6-tier effort scale for models that support 'max' (Claude, MiMo, Kimi, DeepSeek). */
-export const EXTENDED_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
+const EXTENDED_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
   "minimal",
   "low",
   "medium",
@@ -219,7 +219,7 @@ export const EXTENDED_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
 ];
 
 /** Standard 4-tier effort scale (Gemini, Qwen). */
-export const BASE_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
+const BASE_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
   "minimal",
   "low",
   "medium",
@@ -438,7 +438,7 @@ export function clampReasoningEffort(
   return clamped ?? supported[0];
 }
 
-export interface ThinkingNormalizationOptions {
+interface ThinkingNormalizationOptions {
   readonly wireFamily?: WireFamily;
   readonly modelId?: string;
   readonly supportedEfforts?: readonly string[];
@@ -459,7 +459,7 @@ function isLastMessageFromUser(request: CanonicalRequest): boolean {
  * `thinking` config is also present, so a config drop must never leave them
  * orphaned.
  */
-export function hasReplayedThinkingBlocks(request: CanonicalRequest): boolean {
+function hasReplayedThinkingBlocks(request: CanonicalRequest): boolean {
   for (const message of request.messages) {
     for (const part of message.content) {
       if (part.kind !== "reasoning") continue;

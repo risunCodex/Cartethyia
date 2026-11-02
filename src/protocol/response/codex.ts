@@ -15,7 +15,7 @@ import { usageFromProvider, readResponsesReasoningDelta } from '../../providers/
 import { canonicalTerminal, decodeCodexToolCallId, isRecord, readOutputIndex } from '../codecs';
 import { gatewayErrorFromStreamError } from '../stream-error-frames';
 
-export function mapCodexStopReason(
+function mapCodexStopReason(
   status: unknown,
   hasToolCall: boolean,
   endTurn?: unknown,

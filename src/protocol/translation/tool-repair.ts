@@ -211,7 +211,7 @@ function toolCallIdsIn(message: CanonicalMessage): string[] {
  * and is repaired by synthesizing a result (`repairMissingToolResponses`), not
  * by deleting the call — the model should see that the tool was interrupted.
  */
-export function dropOrphanToolResults(
+function dropOrphanToolResults(
   messages: readonly CanonicalMessage[],
 ): CanonicalMessage[] {
   const callIds = new Set<string>();

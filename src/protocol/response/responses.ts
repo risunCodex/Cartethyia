@@ -10,7 +10,7 @@ import { gatewayErrorFromStreamError } from "../stream-error-frames";
 import { usageFromProvider, readResponsesReasoningDelta } from "../../providers/provider-usage";
 import { createToolEmitLedger } from "../tool-identity";
 
-export function mapResponsesStopReason(
+function mapResponsesStopReason(
   status: unknown,
   hasToolCall: boolean,
 ): "stop" | "length" | "tool_use" | "error" | undefined {

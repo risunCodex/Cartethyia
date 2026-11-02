@@ -614,7 +614,7 @@ export function hasEncryptedReasoning(parts: readonly ContentPart[]): boolean {
  * concurrent preflights would be an aliasing hazard; the memoized summary and
  * its extension set are treated as read-only.)
  */
-export interface PartSummary {
+interface PartSummary {
   readonly hasImage: boolean;
   readonly hasDocument: boolean;
   readonly hasAudio: boolean;

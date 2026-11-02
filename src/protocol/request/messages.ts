@@ -36,7 +36,7 @@ import { claudeResponseToEvents, parseClaudeSseStream } from "../response/messag
  * Gateway default when the caller sent no max_tokens (Anthropic requires
  * the field). Explicit and warned at the call site — never silent.
  */
-export const ANTHROPIC_DEFAULT_MAX_TOKENS = WIRE_TOKEN_BOUNDS["messages"]?.defaultMaxTokens ?? 4_096;
+const ANTHROPIC_DEFAULT_MAX_TOKENS = WIRE_TOKEN_BOUNDS["messages"]?.defaultMaxTokens ?? 4_096;
 
 /** Anthropic Messages' documented base64-image media-type allowlist. */
 const ANTHROPIC_IMAGE_MEDIA_TYPES = new Set([

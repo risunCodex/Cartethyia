@@ -71,7 +71,7 @@ export const DEFAULT_DIALECT_POLICIES: Readonly<Record<DialectId, DialectPolicy>
   gemini: OPENAI_POLICY,
 };
 
-export interface DialectRule {
+interface DialectRule {
   readonly dialect: DialectId;
   readonly match: (modelId: string, providerId: string, wireFamily: WireFamily) => boolean;
 }

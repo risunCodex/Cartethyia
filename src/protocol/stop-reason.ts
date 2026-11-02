@@ -35,14 +35,14 @@ const WIRE_STOP_REASONS = {
   },
 } satisfies Record<string, Record<CanonicalStopReason, string>>;
 
-export type StopReasonWireFamily = keyof typeof WIRE_STOP_REASONS;
+type StopReasonWireFamily = keyof typeof WIRE_STOP_REASONS;
 
 /**
  * Maps a canonical stop reason onto `wire`'s vocabulary, falling back when the
  * terminal carried none: Chat has no null finish_reason and defaults to `stop`,
  * while Messages omits `stop_reason` entirely.
  */
-export function canonicalStopReasonToWire(
+function canonicalStopReasonToWire(
   wire: StopReasonWireFamily,
   reason: CanonicalStopReason | undefined,
   fallback: string,

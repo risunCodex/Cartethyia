@@ -1,7 +1,7 @@
 import type { CanonicalEvent, CanonicalRequest, WireFamily } from "./canonical-model";
 import type { DialectPolicy } from "./translation/dialect/types";
 
-export interface CodecContext {
+interface CodecContext {
   readonly isOAuth?: boolean;
   readonly sessionId?: string;
   readonly supportsPromptCaching?: boolean;

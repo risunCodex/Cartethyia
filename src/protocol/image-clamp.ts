@@ -69,7 +69,7 @@ export interface ImageClampInput {
   readonly maxBytesOverride?: number;
 }
 
-export interface ImageClampDecision {
+interface ImageClampDecision {
   readonly action: ImageClampAction;
   readonly reason: ImageClampReason;
   /** Longest edge allowed for this image, given how many the request carries. */
@@ -96,7 +96,7 @@ export function base64DecodedByteLength(data: string): number {
 }
 
 /** The per-image longest-edge ceiling for a request carrying `imageCount` images. */
-export function imageClampMaxDimensionPx(imageCount: number): number {
+function imageClampMaxDimensionPx(imageCount: number): number {
   return imageCount > IMAGE_CLAMP_MANY_IMAGE_COUNT
     ? IMAGE_CLAMP_MANY_IMAGE_MAX_DIMENSION_PX
     : IMAGE_CLAMP_MAX_DIMENSION_PX;

@@ -27,7 +27,7 @@ const RESPONSES_CACHEABLE_BLOCK_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /** Marks the latest stable input block with an explicit prompt-cache breakpoint. */
-export function markLatestResponsesCacheBreakpoint(input: Array<Record<string, unknown>>): void {
+function markLatestResponsesCacheBreakpoint(input: Array<Record<string, unknown>>): void {
   markLatestBreakpoint(input, {
     isInputItem: (item) =>
       item["type"] === "message" && (item["role"] === "user" || item["role"] === "developer"),

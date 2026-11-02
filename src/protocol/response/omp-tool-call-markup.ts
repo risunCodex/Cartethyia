@@ -14,7 +14,7 @@ export interface OmpTextToolCall {
 }
 
 /** Text remaining after complete tool envelopes are removed. */
-export interface OmpTextToolCallResult {
+interface OmpTextToolCallResult {
   readonly text: string;
   readonly calls: readonly OmpTextToolCall[];
 }

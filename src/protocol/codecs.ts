@@ -89,7 +89,7 @@ export function hash32(input: string): number {
   return hash;
 }
 
-export const CLAUDE_TOOL_PREFIX = "_";
+const CLAUDE_TOOL_PREFIX = "_";
 
 export type ClaudeWireObject = Record<string, unknown>;
 
@@ -873,7 +873,7 @@ export const BARE_ROOT_ENDPOINTS: Partial<Record<WireFamily, string>> = {
 };
 
 /** An image part's provider-neutral source, resolved from any supported origin shape. */
-export interface ResolvedImageSource {
+interface ResolvedImageSource {
   /** URL or `data:` URI. Mutually usable with `fileId`. */
   url?: string;
   /** Files API reference (Chat/Responses `file_id`). */
@@ -883,7 +883,7 @@ export interface ResolvedImageSource {
 }
 
 /** An RFC 2397 base64 `data:` URL split into the media type and bytes it carries. */
-export interface DataUrlPayload {
+interface DataUrlPayload {
   /** The declared media type (the `image/png` of `data:image/png;base64,…`). */
   readonly mediaType: string;
   /** The base64 payload, with the `data:` prefix and media type removed. */

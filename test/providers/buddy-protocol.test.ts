@@ -16,7 +16,7 @@ import { readBuddyDeviceToken, workbuddyHeaders } from "../../src/providers/inte
 import { resolveBuddyDeviceBinding } from "../../src/providers/integrations/buddy/buddy-identity";
 import { fetchTencentBillingQuota } from "../../src/providers/integrations/buddy/buddy-quota-shared";
 import { fetchWorkBuddyCnQuota } from "../../src/providers/integrations/buddy/workbuddy/quota";
-import { parseDsmlToolCalls } from "../../src/protocol/response/dsml";
+import { parseDsmlToolCalls } from "../../src/protocol/dsml";
 import { parseChatResponseToEvents } from "../../src/protocol/response/chat";
 import { decodeChatSseStream } from "../../src/protocol/response/chat";
 import type { CanonicalRequest } from "../../src/protocol/canonical-model";

@@ -10,7 +10,7 @@ import { mergeResponsesUsage } from "./responses";
 import { usageFromProvider, readReasoningText } from "../../providers/provider-usage";
 import { createToolEmitLedger } from "../tool-identity";
 import { ThinkSplitter, stripThinkingTags } from "../think-split";
-import { DsmlToolCallParser, parseDsmlToolCalls } from "./dsml";
+import { DsmlStreamParser, parseDsmlToolCalls } from "../dsml";
 import {
   OmpToolCallMarkupParser,
   parseOmpToolCallMarkup,
@@ -85,9 +85,14 @@ export function parseChatResponseToEvents(
     const contentWithoutMarkup = recoveredMarkup?.text ?? content;
     const recovered =
       typeof contentWithoutMarkup === "string"
-        ? parseDsmlToolCalls(contentWithoutMarkup, declaredToolNames)
+        ? parseDsmlToolCalls(contentWithoutMarkup, { allowedNames: declaredToolNames })
         : undefined;
-    const visible = recovered === undefined ? contentWithoutMarkup : recovered.text;
+    const visible =
+      recovered === undefined
+        ? contentWithoutMarkup
+        : "text" in recovered
+          ? recovered.text
+          : recovered.clean;
     if (typeof visible === "string" && visible.includes("<think")) {
       const think = new ThinkSplitter();
       const split = think.push(visible);
@@ -274,7 +279,7 @@ export async function* decodeChatSseStream(
     (request.tools?.length ?? 0) > 0 ? new OmpToolCallMarkupParser(declaredToolNames) : undefined;
   const dsmlMarkup =
     (request.tools?.length ?? 0) > 0 && inbandDialect !== "qwen"
-      ? new DsmlToolCallParser(declaredToolNames)
+      ? new DsmlStreamParser({ allowedNames: declaredToolNames })
       : undefined;
   const qwenMarkup =
     (request.tools?.length ?? 0) > 0 && inbandDialect === "qwen"

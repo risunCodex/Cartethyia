@@ -27,7 +27,7 @@ import {
  * `provider_options` key that opts one request into the Daybreak
  * `access_programs.cyber` member. See the UNCONFIRMED note at its use site.
  */
-export const CODEX_ACCESS_PROGRAMS_CYBER_OPTION = "codex_access_programs_cyber";
+const CODEX_ACCESS_PROGRAMS_CYBER_OPTION = "codex_access_programs_cyber";
 
 /**
  * Removes `access_programs` from an already-built Codex Responses payload.

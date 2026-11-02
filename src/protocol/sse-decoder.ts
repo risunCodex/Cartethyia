@@ -31,7 +31,7 @@ export interface SseEvent {
   readonly data: string;
 }
 
-export interface SseDecodeOptions {
+interface SseDecodeOptions {
   /**
    * Max UTF-16 length of a single line; default equals `maxEventBytes`.
    *

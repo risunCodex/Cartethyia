@@ -32,7 +32,7 @@ export interface ParamQuirk {
 }
 
 /** Per-wire output-token policy, in one table instead of per-builder branches. */
-export interface WireTokenBound {
+interface WireTokenBound {
   /** Default when the caller sent no limit (undefined = leave absent). */
   readonly defaultMaxTokens?: number;
   /** Floor applied to any positive caller value below it (wire minimum). */
@@ -120,7 +120,7 @@ function modelGeneration(modelId: string): { family: string; major: number; mino
 }
 
 /** True when the model rejects `temperature`/`top_p`/`top_k` at any thinking setting. */
-export function rejectsSamplingParams(modelId: string): boolean {
+function rejectsSamplingParams(modelId: string): boolean {
   const generation = modelGeneration(modelId);
   if (generation === undefined) return false;
   // Opus turns strict at 4.7; the other families at 5.0.
@@ -157,7 +157,7 @@ const PARAM_QUIRKS: readonly ParamQuirk[] = [
 ];
 
 /** Finds the first quirk matching the provider/model pair, or undefined. */
-export function findParamQuirk(
+function findParamQuirk(
   providerId: string,
   modelId: string,
 ): ParamQuirk | undefined {

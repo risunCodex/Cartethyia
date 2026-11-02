@@ -1,6 +1,6 @@
 /** The reasoning-shaped part this reads. Structural, so any reasoning part —
  *  including a `ContentPart` narrowed to `kind: "reasoning"` — is accepted. */
-export interface ReasoningTextSource {
+interface ReasoningTextSource {
   readonly payload?: unknown;
   readonly summary?: string;
   readonly opaque?: boolean;

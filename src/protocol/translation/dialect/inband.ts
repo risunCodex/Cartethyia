@@ -6,11 +6,11 @@
  * `<tool_calls:8hex>`. Each is a pluggable codec; the codecs select one by
  * dialect id.
  */
-import { DsmlToolCallParser } from "../../response/dsml";
+import { DsmlStreamParser } from "./deepseek";
 import { QwenToolCallScanner } from "./qwen";
 import type { DialectId } from "./types";
 
-export interface InbandToolCall {
+interface InbandToolCall {
   readonly id: string;
   readonly name: string;
   readonly arguments: string;
@@ -32,8 +32,8 @@ export function createInbandScanner(
   allowedNames: ReadonlySet<string>,
 ): InbandScanner | undefined {
   if (dialect === "qwen") return new QwenToolCallScanner(allowedNames);
-  if (dialect === "deepseek") return new DsmlToolCallParser(allowedNames);
+  if (dialect === "deepseek") return new DsmlStreamParser({ allowedNames });
   return undefined;
 }
 
-export type { DsmlToolCall } from "../../response/dsml";
+export type { DsmlToolCall } from "../../dsml";

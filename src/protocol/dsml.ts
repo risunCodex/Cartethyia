@@ -24,7 +24,7 @@ export interface DsmlToolCall {
   readonly arguments: string;
 }
 
-export interface DsmlRecovery {
+interface DsmlRecovery {
   readonly calls: readonly DsmlToolCall[];
   readonly clean: string;
 }
@@ -63,7 +63,7 @@ const DEFAULT_MAX_BLOCK_BYTES = 256 * 1024;
 const TOOL_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,63}$/;
 
 /** Escapes regex metacharacters so a `|` separator is literal, not alternation. */
-export function escapeRegExp(value: string): string {
+function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
@@ -79,7 +79,7 @@ function uuidId(_call: { readonly name: string }, _index: number, _seq: number):
   return `call_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
 }
 
-export interface DsmlParseResult {
+interface DsmlParseResult {
   readonly text: string;
   readonly calls: readonly DsmlToolCall[];
 }
@@ -307,15 +307,6 @@ function parseFuzzyDsml(text: string, options: DsmlParseOptions): DsmlRecovery {
 }
 
 /**
- * Recovers DSML tool calls from one plain-text string using the Qoder fuzzy
- * dialect. Always returns `{ calls, clean }` — no-DSML input returns the text
- * unchanged with no calls.
- */
-export function parseFuzzyDsmlToolCalls(text: string): DsmlRecovery {
-  return parseFuzzyDsml(text, {});
-}
-
-/**
  * Recovers DSML tool calls from one plain-text string. The dialect is chosen
  * by `options.fuzzy`; each dialect keeps its exact public shape:
  *
@@ -337,41 +328,4 @@ export function parseDsmlToolCalls(
   const last = parser.flush();
   const recovered = [...first.calls, ...last.calls];
   return recovered.length === 0 ? undefined : { text: `${first.text}${last.text}`.trim(), calls: recovered };
-}
-
-/**
- * The holdable tail of a content chunk: a short suffix that looks like the
- * start of a DSML tag and may finish in the next frame. Empty when there is
- * nothing worth holding. Mirrors `_dsml_tail_hold` in the reference bridge.
- */
-export function dsmlTailHold(text: string): string {
-  const at = text.lastIndexOf("<");
-  if (at < 0 || text.length - at > 24) return "";
-  const tail = text.slice(at);
-  // A complete tag already — nothing to wait for.
-  if (tail.includes(">")) return "";
-  const body = tail.replace(/\uFF5C/g, "|").toUpperCase().slice(1).replace(/^\//, "");
-  if (body.length === 0) return tail; // bare "<" or "</"
-  if (!body.startsWith("|")) return "";
-  const rest = body.slice(1);
-  if (rest.length === 0) return tail;
-  if ("DSML".startsWith(rest) || rest.startsWith("DSML")) return tail;
-  return "";
-}
-
-const DSML_CLOSE_TAG_RE = /<\/(?:[^>]*DSML[^>]*|parameter|invoke|calls|tool_calls|function_calls)\s*>\s*$/i;
-
-/**
- * Removes leftover DSML closing tags from the tail of a text. Anchored to the
- * end and looped, so several trailing tags come off one per pass; a closing
- * tag in the middle of a text is not residue and is preserved.
- */
-export function stripDsmlCloseTags(text: string): string {
-  let previous: string | null = null;
-  let out = text.trimEnd();
-  while (previous !== out) {
-    previous = out;
-    out = out.replace(DSML_CLOSE_TAG_RE, "").trimEnd();
-  }
-  return out;
 }

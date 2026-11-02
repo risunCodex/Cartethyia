@@ -74,13 +74,13 @@ export function markLatestBreakpoint(
 // Anthropic Cache Control (Messages API)
 // ============================================================================
 
-export interface AnthropicCacheControl {
+interface AnthropicCacheControl {
   type: "ephemeral";
   /** Real Anthropic Messages wire field — NOT `budget_tokens` (that belongs only to `thinking`). */
   ttl?: AnthropicCacheTtl;
 }
 
-export type AnthropicCacheTtl = "5m" | "1h";
+type AnthropicCacheTtl = "5m" | "1h";
 
 interface AnthropicCacheControlOptions {
   ttl?: AnthropicCacheTtl;

@@ -9,7 +9,7 @@
 import type { CanonicalRequest } from "../canonical-model";
 
 /** Anthropic tool ID contract: alphanumerics, underscore, hyphen only. */
-export const TOOL_ID_PATTERN: RegExp = /^[a-zA-Z0-9_-]+$/;
+const TOOL_ID_PATTERN: RegExp = /^[a-zA-Z0-9_-]+$/;
 
 const INVALID_TOOL_ID_CHARS = /[^a-zA-Z0-9_-]/g;
 
@@ -21,7 +21,7 @@ const INVALID_TOOL_ID_CHARS = /[^a-zA-Z0-9_-]/g;
  * input is not a non-empty string or nothing valid remains, so callers can
  * fall back to a deterministic generated ID.
  */
-export function sanitizeToolId(id: unknown): string | null {
+function sanitizeToolId(id: unknown): string | null {
   if (typeof id !== "string" || id.length === 0) return null;
   const base = id.includes("|") ? (id.split("|")[0] ?? id) : id;
   const sanitized = base.replace(INVALID_TOOL_ID_CHARS, "");
@@ -33,7 +33,7 @@ export function sanitizeToolId(id: unknown): string | null {
  * identical histories produce byte-identical requests — cache-friendly and
  * directly testable.
  */
-export function generateToolCallId(msgIndex = 0, tcIndex = 0, toolName?: string): string {
+function generateToolCallId(msgIndex = 0, tcIndex = 0, toolName?: string): string {
   const name = toolName ? `_${toolName.replace(INVALID_TOOL_ID_CHARS, "")}` : "";
   return `call_msg${msgIndex}_tc${tcIndex}${name}`;
 }

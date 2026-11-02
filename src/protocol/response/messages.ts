@@ -185,7 +185,7 @@ export function withClaudeFallbackSignal(
   return { ...(stopDetails ?? {}), [CANONICAL_SERVED_BY_FALLBACK_KEY]: true };
 }
 
-export function eventContent(
+function eventContent(
   content: readonly ContentPart[],
   sequence: number,
 ): { events: CanonicalEvent[]; sequence: number } {
