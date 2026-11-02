@@ -25,10 +25,15 @@ Order of work, so a step never lands blind:
    `CARTETHYIA_DEV_ADMIN_PASSWORD`), and measures through the browser agent
    (`agent-browser`, not a hand-rolled CDP client). Live-by-nature answers are
    stubbed at the browser so they cannot drift a comparison: `/system/health`,
-   `/updates/release`, the `/system/usage/*` and `/quota/overview` telemetry, the
+   `/updates/release` (stubbed to `null` to keep the update badge quiet), the
+   `/system/usage/*` and `/quota/overview` telemetry, the
    `/logs` snapshot+stream, and the discovery-derived fields of
    `/console/api/providers` (`clientVersion`, `routeIdentityVersions`) that the
-   background npm/PyPI monitor fills. Client-side non-determinism is pinned by
+   background npm/PyPI monitor fills. `/updates/status` and
+   `/notifications/stream` are not stubbed — they stay live because the
+   baseline never triggers an update and the notification stream is
+   badge-only; if a future shell mounts them unconditionally, add them to the
+   stub list before trusting a baseline run. Client-side non-determinism is pinned by
    an init script too:
    - `Math.random` is pinned to **one fixed draw**, not a sequence. The Model Lab
      draws its session name twice — once in the `useState` initializer and again

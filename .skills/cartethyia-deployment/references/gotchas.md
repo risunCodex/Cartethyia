@@ -86,3 +86,13 @@ Then confirm with `git log --oneline -1` that the commit is the one you expect.
 Some providers expose `oauthFlows.import: false`, so a stored token cannot be
 enrolled — only a browser device flow. See
 [`proving-a-deployment.md`](proving-a-deployment.md).
+
+## Windows: killing package-dir holders before an update, and stopping without signals
+
+npm cannot rename the global package directory while a process holds it
+(EBUSY). The detached installer therefore runs `stopHoldingProcesses()`
+(`taskkill /F /T /IM cartethyia.exe`, `carte.exe`) first —
+`src/console/updates/apply-update.ts`. On a console-less Windows process
+where signals cannot reach you, the graceful-stop knob is
+`POST /admin/drain` with `CARTETHYIA_DRAIN_TOKEN` (drains in-flight streams,
+then exits).

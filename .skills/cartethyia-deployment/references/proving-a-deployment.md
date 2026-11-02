@@ -10,13 +10,13 @@ dispatch through an enrolled account.
 systemctl is-enabled cartethyia && systemctl is-active cartethyia
 # Regular VPS with Cartethyia-managed Caddy only:
 systemctl is-enabled caddy && systemctl is-active caddy
-ss -lnt | grep -E ':8080|:443'
+ss -lnt | grep -E ':12800|:443'
 ```
 
 On a regular VPS with managed Caddy, both units must be enabled to survive a
 reboot. NAT does not install/manage Caddy through Cartethyia; `--no-caddy`
 also leaves the external proxy outside this check. Match the configured port
-rather than assuming 8080.
+rather than assuming the default 12800.
 
 ## Layer 2 — TLS from a real client
 
@@ -30,7 +30,7 @@ Windows `curl` printing `000` next to a Python 200 means the deployment is fine
 ## Layer 3 — the gateway answers with your key
 
 ```bash
-curl -s http://127.0.0.1:8080/v1/models -H 'authorization: Bearer <key>'
+curl -s http://127.0.0.1:12800/v1/models -H 'authorization: Bearer <key>'
 ```
 
 An empty `data[]` is normal **before** accounts are enrolled: the model list is
@@ -42,7 +42,7 @@ per-tenant and grows as accounts are added. It is not a routing bug.
 curl -s --max-time 120 \
   -H 'content-type: application/json' -H 'authorization: Bearer <key>' \
   -d '{"model":"<providerId>/<model>","stream":false,"max_tokens":64,"messages":[{"role":"user","content":"Reply with the single word: ok"}]}' \
-  http://127.0.0.1:8080/v1/chat/completions
+  http://127.0.0.1:12800/v1/chat/completions
 ```
 
 A loopback 200 proves request parsing, the selected route, database-backed
@@ -67,7 +67,7 @@ Provider capability decides how an account can be added — check **before**
 trying, because the answer is per-provider:
 
 ```bash
-curl -s -H 'authorization: Bearer <key>' http://127.0.0.1:8080/console/api/providers \
+curl -s -H 'authorization: Bearer <key>' http://127.0.0.1:12800/console/api/providers \
   | python3 -c "import sys,json;[print(p['providerId'],p['oauthFlows']) for p in json.load(sys.stdin)]"
 ```
 
@@ -92,7 +92,7 @@ When a dispatch fails, get the record rather than guessing:
 
 ```bash
 curl -s -H 'authorization: Bearer <key>' \
-  'http://127.0.0.1:8080/console/api/system/usage/requests?limit=200' \
+  'http://127.0.0.1:12800/console/api/system/usage/requests?limit=200' \
   | python3 -c "import sys,json;[print(i['requestId'],i.get('model'),i.get('httpStatus'),i.get('errorKind')) for i in json.load(sys.stdin).get('items',[]) if i.get('httpStatus')!=200]"
 ```
 

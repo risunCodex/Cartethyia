@@ -35,10 +35,28 @@ safe.
 
 Credentials that arrive nameless — polished tokens, plain JWTs — are labelled
 `<providerId>-key-N` or `<providerId>-jwt-N` by `nextGeneratedAccountLabel`
-(`src/console/providers/catalog/store.ts`). Numbering is per kind and per
+(`src/console/providers/catalog/store-helpers.ts`). Numbering is per kind and per
 provider, case-insensitive against existing labels, so pasting five keys into
 one provider yields `dcint-key-1 … dcint-key-5` instead of five identical
 "<providerId> account" rows.
+
+## Wire dialects and the thinking ladder
+
+Below the wire family, a **dialect** resolves per model
+(`src/protocol/translation/dialect/resolver.ts`, memoized): DB override
+(`models.dialect`, migration `0040` in both backends) →
+`ModelDefinition.dialect` → `DIALECT_RULES` heuristic → family default. It
+owns provider quirks (reasoning-content field naming, max_tokens vs
+max_completion_tokens, in-band tool-call scanning, `enable_thinking`).
+Orthogonally, the **thinking ladder** (`dialect/thinking-ladder.ts` +
+`dialect/model-thinking.ts`) resolves each model + wire family to a
+`ThinkingConfig` from a declarative rule table; `ModelDefinition.thinking` /
+`reasoningEfforts` overrides the table. Feature docs:
+`documentation/features/09-wire-dialects.md`,
+`documentation/features/10-thinking-effort-ladder.md`. A catalog edit adds
+`dialect`/`thinking`/`reasoningEfforts` through `ModelHelperRow` →
+`ModelDefinition` (`src/providers/provider-model-definition.ts`) — see
+`references/capabilities.md` for the field table.
 
 ## Qoder identity, campaigns, and claim surfaces
 
@@ -166,10 +184,10 @@ reopens them. Exact strings live in the owning code, not here:
 - **CLI request markers** — the CLI identity keeps `x-requested-with` +
   `x-codebuddy-request` but drops browser *transport* headers and the device
   token (`codebuddy/shared.ts`, `workbuddy/shared.ts`).
-- **Stainless fingerprint is pinned to macOS** (`MacOS`/`x64`/a fixed Node), not
-  host-derived (`buddy-cli-headers.ts`). A deliberate owner choice; the donor
-  pins Linux. Unverified against the live upstream — if blocks appear, `arm64`
-  or host-derived are the first knobs to try.
+- **No stainless fingerprint on chat.** The CLI's chat transport is axios, not
+  the OpenAI Node SDK, so `x-stainless-*` headers are deliberately absent from
+  CLI chat (`buddy-cli-headers.ts`). Do not "restore" them — the donor's own
+  CLI does not send them on this path.
 
 Known open conflicts with the donor, **not** changed — do not flip without the
 owner's go-ahead or live evidence:

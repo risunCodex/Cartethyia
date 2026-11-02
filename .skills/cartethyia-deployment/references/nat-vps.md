@@ -25,7 +25,7 @@ host, and external port exactly:
 
 ```bash
 bash scripts/install.sh --vps --nat --lite \
-  --port 8080 --public-origin https://app.example.com:8080
+  --port 12800 --public-origin https://app.example.com:12800
 ```
 
 If the provider requires different internal and external ports, do not use the
@@ -61,7 +61,7 @@ Inside the VM:
 
 ```bash
 systemctl is-active cartethyia
-curl -fsS http://127.0.0.1:8080/health/ready
+curl -fsS http://127.0.0.1:12800/health/ready
 ss -lnt
 ```
 

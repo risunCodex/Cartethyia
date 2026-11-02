@@ -1,10 +1,21 @@
 # Qoder — identity, daily credits, and activity claims
 
-Durable knowledge for Qoder (intl realm) account work: where identity comes
+Durable knowledge for Qoder account work (both realms — intl and CN): where
+identity comes
 from, which claim surfaces exist, what has been proven dead, and the
 verification order for a new claim path. The full evidence trail lives in
 [`documentation/research/qoder/2026-10-29-qoder-credits-claims-identity.md`](../../../documentation/research/qoder/2026-10-29-qoder-credits-claims-identity.md)
 and [`documentation/research/qoder/2026-11-01-qoder-chat-wire-verification.md`](../../../documentation/research/qoder/2026-11-01-qoder-chat-wire-verification.md).
+
+**Two realms** (`src/providers/integrations/qoder/qoder-realm.ts`): intl
+(`api1/api2/api3.qoder.sh`, `openapi.qoder.sh`, client id `e883ade2-…`) and CN
+(provider id `qodercn`, `gateway.qoder.com.cn`, `openapi.qoder.com.cn`, client
+id `e93fe488-…`, UA `QoderWork/1.1.64`). Dispatch prefers the modern IDE chat
+surface (`https://api2-v2.qoder.sh/model/v1/chat/completions`, plain bearer,
+OpenAI-shaped) over the legacy COSY path; `/algo/**` COSY signing applies to
+the legacy path only. The device-login identity match (alphabet, client ids,
+machine id) is byte-for-byte with the desktop IDE, and the PKCE verifier is a
+fixed 64 chars from `randomBytes` (CSPRNG, RFC 7636).
 
 ## Identity
 
@@ -25,7 +36,8 @@ and [`documentation/research/qoder/2026-11-01-qoder-chat-wire-verification.md`](
 
 | Surface | Path(s) | Host | Status |
 | --- | --- | --- | --- |
-| Daily 100 credits | `GET /sash/api/v1/me/campaigns`, `POST …/{id}/claim`, `GET …/{id}/reward` | `openapi.qoder.sh` | Working; 404 `GRANT_NOT_FOUND` means the *provision* is absent, not the request |
+| Daily 100 credits (campaigns) | `GET /sash/api/v1/me/campaigns`, `POST …/{id}/claim`, `GET …/{id}/reward` | `openapi.qoder.sh` (intl; CN realm: `openapi.qoder.com.cn`) | Working; 404 `GRANT_NOT_FOUND` means the *provision* is absent, not the request |
+| Legacy daily check-in | `GET /sash/api/v1/me/daily-check-in/status`, `POST …/claim` | same realm host | Legacy surface alongside campaigns (`qoder-checkin.ts`) |
 | Activity claim family | `GET /algo/api/v2/activity` (Inference), `GET /api/v2/activity/claim/eligibility`, `POST /api/v2/activity/claim?activityId=`, `GET /api/v2/activity/quota/reset/latest` | `api2.qoder.sh` / `openapi.qoder.sh` | Live and callable; ids are **server-provisioned** — the client never enumerates them |
 | Pro trial (`pro-upgrade/eligibility`, `pro-upgrade/claim`) | `openapi.qoder.sh` | — | **Dead** (404 in every identity shape tested); superseded by the activity family |
 

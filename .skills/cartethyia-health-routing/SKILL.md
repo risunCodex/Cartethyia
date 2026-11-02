@@ -23,8 +23,11 @@ Before changing a status or timeout, trace every reader and branch that uses it.
 
 - A cooldown is not automatically an unhealthy account.
 - Account-wide cooldowns carry a class, defined in `HARD_COOLDOWN_CATEGORIES`
-  (`src/transport/routing/route-catalog.ts`) and projected as
-  `RouteCandidate.cooldown_kind`:
+  (`src/transport/routing/route-catalog.ts`) and projected onto the candidate
+  as `cooldown_kind` — the health/cooling/lane stamps are typed as
+  **`RoutedCandidate`** (`src/transport/routing/route-model.ts`), the shared
+  shape `EligibilityEvaluator.evaluate` takes; stamping sites must agree on it
+  rather than declaring local intersections:
   - **hard** — `quota_exhausted`, `policy_blocked`, `auth_invalidated`. When
     represented as a cooldown, excludes the account until its deadline.
     Non-recoverable `auth_invalidated` failures can instead disable the account
@@ -49,10 +52,20 @@ Before changing a status or timeout, trace every reader and branch that uses it.
     `ineligible`, max-wait exceeded) are the only slow-lane events that mutate
     health — as `quota_exhausted` at the stated reset.
 - `model_cooldown` is a hard exclusion per (account, model).
+- **Quota windows are filtered to the requested model's family** before the
+  usage-floor and exhausted-window checks (`filterCandidateQuotaWindows` in
+  `src/transport/routing/router.ts`): providers that report per-family windows
+  (Antigravity splits Gemini vs Claude/GPT; Grok uses per-`product:` buckets)
+  no longer block every model when one family is exhausted. A Claude
+  exhaustion still routes Gemini. Diagnosis note: "quota exhausted" is
+  family-scoped for those providers, not account-wide.
 - If every candidate is excluded, `plan()` answers **429
   `accounts_rate_limited`** when an exclusion reason is `cooldown_hard` or
-  `model_cooldown`; other all-excluded cases answer **503
-  `accounts_unavailable`**. Separately, account-wide soft cooldowns remain
+  `model_cooldown`, or `quota_exhausted` **carrying a stated window reset**
+  (`cooldown_until` derived from the quota window — a time-bounded floor
+  exclusion); a floor with no stated reset stays **503
+  `accounts_unavailable`**, as do the other all-excluded cases. Separately,
+  account-wide soft cooldowns remain
   eligible but are not dialed when all eligible accounts are cooling
   (`healthyCount === 0`); that case also answers 429. Both 429 paths let a
   client retry after the reset instead of reading a resting deployment as

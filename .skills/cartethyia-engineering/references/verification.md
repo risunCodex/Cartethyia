@@ -10,6 +10,7 @@ bun run typecheck                # always
 bun run dashboard:typecheck      # when dashboard/ changes
 bun run build                    # when an entry point or build contract changes
 bun run test                     # or scoped: test:backend, dashboard:test, test:watch
+bun test test/protocol           # when src/protocol/ or codecs change (no npm alias)
 bun run check:migrations         # when src/persistence/schema.ts or migrations/ changes
 ```
 
@@ -74,3 +75,12 @@ against development or production data.
 
 Report commands, relevant output, the boundary exercised, and limitations. Do
 not say a gate passed when it was not run.
+
+**Quote the verification baseline.** State the pass/fail counts per suite
+before the change and restate the after-state against them — "backend 4217
+pass / 0 fail, protocol 591 pass / 0 fail" is the shape. A report that says
+"tests pass" without counts proves nothing and cannot be diffed by the next
+session.
+
+**Git discipline.** Work is committed locally. Push only when the operator
+explicitly asks — never as a side effect of finishing a task.

@@ -117,8 +117,13 @@ scratch (`D:\tmp\scratch\`), redacting credentials.
 Per-provider findings produced with those techniques live in
 `documentation/research/<provider>/` — the canonical home for dated evidence
 ledgers, not this skill. The current inventory (Kiro, OpenCode, Cursor,
-CodeBuddy, Qoder) is in
+CodeBuddy, Qoder, Grok, Copilot) is in
 [`references/unpacking-and-wire-capture.md`](references/unpacking-and-wire-capture.md#5-where-per-provider-findings-live).
+
+When a reverse-engineered wire change lands in the adapter, remember it passes
+through `src/protocol/translation/dialect/` (dialect resolution + thinking
+ladder) between the canonical model and the adapter — "why did the payload
+change" questions usually resolve there before reaching integration code.
 
 ## Safety and scope
 

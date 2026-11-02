@@ -66,7 +66,7 @@ chown -R caddy:caddy /var/lib/caddy /var/log/caddy
 <domain> {
 	encode zstd gzip
 
-	reverse_proxy 127.0.0.1:8080 {
+	reverse_proxy 127.0.0.1:12800 {
 		# SSE / streaming must not be buffered.
 		flush_interval -1
 	}
@@ -87,6 +87,12 @@ chown -R caddy:caddy /var/lib/caddy /var/log/caddy
 
 No `local_certs`. It replaces the public certificate with a private one and is
 not a valid public-site workaround in either topology.
+
+**Installer-managed vs manual.** The installer writes a deliberately minimal
+managed Caddyfile (`encode` + `reverse_proxy` with `flush_interval -1` only);
+the security-`header` and `log` blocks above are for a hand-rolled setup. Do
+not "restore" them into an installer-managed file — the managed file is
+regenerated on rerun and the app sends its own security headers.
 
 ## 4. Caddy unit (`/etc/systemd/system/caddy.service`)
 

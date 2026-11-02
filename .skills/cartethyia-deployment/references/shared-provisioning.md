@@ -54,12 +54,18 @@ duplicate managed keys.
 A typical local-Full configuration is:
 
 ```dotenv
-PORT=8080
+PORT=12800
 DASHBOARD_DIST=/opt/cartethyia/dist/dashboard
 CARTETHYIA_PACKAGE_ROOT=/opt/cartethyia
 CARTETHYIA_PUBLIC_ORIGIN=https://<domain>
 # Only the local reverse proxy may assert a client IP.
 TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128
+```
+
+**Drain window vs systemd stop budget.** `CARTETHYIA_SHUTDOWN_DRAIN_WINDOW_MS`
+(default 20 000 ms) must fit inside the unit's `TimeoutStopSec=45`: raising the
+drain window past 45 s makes systemd SIGKILL mid-drain, cutting in-flight
+streams anyway. The `update` shutdown path (see below) uses the same budget.
 CARTETHYIA_DB_MODE=full
 DATABASE_URL=postgres://cartethyia:<generated>@127.0.0.1:5432/cartethyia
 CARTETHYIA_DATA_DIR=/opt/cartethyia/data
@@ -71,6 +77,22 @@ CARTETHYIA_ENCRYPTION_KEY=<base64 of 32 random bytes>
 For Lite, set `CARTETHYIA_DB_MODE=lite` and omit `DATABASE_URL`. Redis is
 optional in either mode: `REDIS_URL` set enables shared coordination; unset
 uses in-memory coordination. Do not add a `REDIS_MODE` setting.
+
+## Updates (`carte update` / console apply)
+
+`carte update` and the console `POST /console/api/updates/apply` share one
+detached installer (`src/console/updates/apply-update.ts`): it runs
+`npm install -g cartethyia@latest --prefer-online` in a detached shell, then
+restarts the gateway itself (`systemctl restart cartethyia` on Linux) — no
+manual restart needed. Progress lands in a status file
+(`update-status.json` + `update.log`) under the user config dir
+(`resolveUserConfigDir()` in `src/config/package-paths.ts` —
+`~/.config/Cartethyia` on Linux, `%APPDATA%\Cartethyia` on Windows), readable
+via `GET /console/api/updates/status`. Before exiting, the gateway drains
+in-flight streams through the shutdown coordinator (`"update"` reason;
+in-flight clients get the "back shortly" notice) — a failed install leaves the
+old version running with the failure recorded in the status file, not a dead
+gateway.
 
 `CARTETHYIA_PUBLIC_ORIGIN` must match the browser-facing scheme, host, and
 port. An `http://` origin behind an HTTPS front door breaks OAuth callback

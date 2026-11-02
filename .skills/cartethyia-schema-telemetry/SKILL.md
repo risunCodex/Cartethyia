@@ -84,8 +84,14 @@ ledger; report them separately.
 
 Per-request events are appended to one raw JSONL file per UTC hour under the
 data dir's `telemetry-events/` (`src/observability/event-log.ts`). Usage,
-breakdown, chart, request detail, and per-key spend read these events. No
-compaction worker, summary index, or watermark replaces the individual rows.
+breakdown, chart, request detail, and per-key spend read these events (per-key
+*lifetime* spend and share KPIs come from `telemetry_usage_totals`).
+Estimated `/count_tokens` answers also produce rows — `token-count.ts`
+finalizes them through `finalizeRequestTelemetry` with estimated, unpriced
+usage. No compaction worker, summary index, or watermark replaces the
+individual rows. Reconciliation bumps `files_completed` by one per processed
+file in the same transaction as its inserts — keep that increment when
+touching `telemetry-reconciliation.ts`.
 Legacy `<YYYY-MM-DD>.events.jsonl` files remain readable until retention;
 `.compacted.jsonl` and `.index.json` are never read as requests.
 
@@ -100,6 +106,15 @@ append-only file under `data/telemetry-payloads/`.
 A new usage field must pass through canonical usage, normalization, the file
 writer, event query/aggregation, console contract/store, dashboard validator,
 and Usage UI. Reject invalid upstream values; do not silently clamp them.
+`cachedInputTokens` is the live worked example of every hop: column on
+`telemetryEvents` (`schema.ts`), summed in `AGGREGATE_SELECT`
+(`event-query.ts`), chart/breakdown buckets read `bucket.cachedInputTokens`
+(`console/observability/store.ts`), dashboard validator
+(`dashboard/src/hooks/providers.ts`), matrix card. Follow that trail field by
+field. For a new *time-bucketed* aggregate, reuse the `bucketExpression`
+helper in `event-query.ts` (shared epoch-bucket SQL, inlined per dialect) —
+do not re-derive the expression; its comment explains the Postgres 42803
+pitfall.
 An aggregate that must survive retention needs the canonical schema and a
 forward migration in both backend directories. Update restore mapping when old
 backups do not carry the field or use a retired representation.

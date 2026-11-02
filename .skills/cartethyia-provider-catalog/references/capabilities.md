@@ -37,7 +37,9 @@ Fields to know, and what each one controls:
 | `audio` | accepts audio input parts |
 | `toolCall` | the model may be handed `tools`; a false value makes preflight drop them |
 | `reasoning` | emits reasoning alongside the answer |
-| `reasoningEfforts` | the explicit effort scale; only set when the provider states it |
+| `reasoningEfforts` | the explicit effort scale; only set when the provider states it; wins over the thinking-ladder rule table |
+| `thinking` | full `ThinkingConfig` override (mode + efforts) for the thinking ladder; wins over `reasoningEfforts` heuristics (`provider-model-definition.ts`) |
+| `dialect` | explicit wire-dialect id (`models.dialect` via migration 0040); beats the `DIALECT_RULES` heuristic, loses to the DB override |
 | `freeTier` | the provider publishes the row as free (billing tier, not cost) |
 | `proOnly` | the provider refuses the row on a free plan |
 

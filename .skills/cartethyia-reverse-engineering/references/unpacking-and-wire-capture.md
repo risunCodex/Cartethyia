@@ -148,7 +148,10 @@ The evidence ledgers produced with these techniques are consolidated in
 | Kiro | `documentation/research/kiro/` — `2026-11-02-kiro-ide-cli-protocol.md` (unpack evidence), `kiro-wire-protocol.md`, `2026-11-02-kiro-wire-verification.md` |
 | OpenCode | `documentation/research/opencode/` — `2026-11-02-desktop-2.2.5-binary-evidence.md` (unpack + capture + replay), `2026-11-02-opencode-free-tier.md` |
 | Cursor | `documentation/research/cursor/2026-10-20-cursor-run-protocol.md` |
-| CodeBuddy | `documentation/research/codebuddy/2026-10-19-codebuddy-chat-dispatch-headers.md` |
+| CodeBuddy | `documentation/research/buddy/2026-10-19-codebuddy-chat-dispatch-headers.md` — plus `2026-11-02-codebuddy-cli-2.179.2-unpack-wire-audit.md` and `2026-11-02-workbuddy-desktop-unpack-wire-audit.md` |
+| Qoder | `documentation/research/qoder/` — `2026-10-29-qoder-credits-claims-identity.md`, `2026-11-01-qoder-chat-wire-verification.md` (+ newer dated files in the same dir) |
+| Grok | `documentation/research/grok/2026-11-02-grok-build-1.0.70-unpack.md` |
+| Copilot | `documentation/research/copilot/` — `2026-10-15-copilot-chat-capability-map.md`, `-context-probe`, `-auto-routing`, `-auto-responses-500-repair-throw` |
 
 ## Cleanup
 

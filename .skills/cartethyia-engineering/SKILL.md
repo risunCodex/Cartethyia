@@ -18,6 +18,7 @@ Entry point for repo work. Most tasks belong to a focused skill — pick it firs
 | Remove a bundled provider and its leftover global row | `cartethyia-provider-catalog` → `references/provider-removal.md` |
 | Understand undocumented behavior by tracing this repo's own code | `cartethyia-reverse-engineering` |
 | Write a decision-ready implementation proposal (audit first, format, links) | `cartethyia-engineering-proposal` |
+| Multi-area campaign: parallel audit → composed proposal → approval → parallel execution → ✅/⛔ marking | `cartethyia-engineering-proposal` |
 | Image generation wires, catalog rows, and account entitlement | `cartethyia-provider-catalog` |
 | Account health, cooldown class, pool selection, retries, leases | `cartethyia-health-routing` |
 | Add/change a `src/console/` domain; contract→store→dashboard mirror | `cartethyia-console-api` |
@@ -27,6 +28,7 @@ Entry point for repo work. Most tasks belong to a focused skill — pick it firs
 | How to write the change: shape, names, types, errors | `references/taste.md` |
 | Bug-fix loop, proof, gates | `references/verification.md` |
 | Orientation, add a feature, first install, console boot | `references/development.md` |
+| How to update skills and docs after the code drifts from them | `references/self-improvement.md` |
 
 ## Fast path
 
@@ -38,7 +40,12 @@ Entry point for repo work. Most tasks belong to a focused skill — pick it firs
    `Grep` for a known literal. Re-verify hits when a file changed after the
    index sync.
 3. **Act immediately.** Read, search, reproduce, edit, or run a command. Never
-   spend a turn on planning alone.
+   spend a turn on planning alone. For a wide change (multiple owners, a
+   migration, a contract), the "act" is the proposal flow — see
+   `cartethyia-engineering-proposal`: parallel per-area audit subagents → one
+   composed proposal → operator approval → parallel execution on file-disjoint
+   clusters → full validation → honest ✅/⛔ markers → single local commit.
+   Do not implement a wide change by editing directly.
 
 ## Fix, don't hide
 

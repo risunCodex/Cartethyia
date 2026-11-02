@@ -12,7 +12,9 @@ Quick orientation while working:
   - **403 `FreeTierError` from every permutation, and the official client
     fails too** → egress IP is blocked (change egress; nothing in the request).
   - **403 only on one shape** → request shape (tools/stream/wire): `stream:true`
-    required, agent-tool fingerprint required (≥3 tools; we send the 11-set),
+    required, agent-tool fingerprint required (read the required count from
+    `FREE_AGENT_TOOL_NAMES_ORDERED` in `src/providers/integrations/opencode/provider.ts` —
+    currently the 11-tool set — not from any doc),
     `user-agent` version segment ≥1.18.0, `ses_` id with counter 1–63.
 - **429 `FreeUsageLimitError` is quota/IP state, not a wire refusal** — do not
   change the wire; check quota/egress.

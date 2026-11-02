@@ -59,8 +59,9 @@ One source of truth for each payload shape. The dashboard imports the backend
 contract as types; it does not keep a second, drifted copy
 (`dashboard/src/data/contracts.ts`). Value re-exports are allowed only from
 pure modules, because a value import drags whatever it reaches into the browser
-bundle — `observability/contracts` imports Elysia and reaches `node:crypto`, which
-is why `USAGE_DIMENSIONS` is re-exported from the pure `usage-dimensions.ts`
+bundle — `observability/contracts` transitively reaches Elysia (via
+`shared/errors`) and `node:crypto` (via `shared/read-through-cache`), which is
+why `USAGE_DIMENSIONS` is re-exported from the pure `usage-dimensions.ts`
 (`dashboard/src/data/contracts.ts`).
 
 ## Errors and status codes
@@ -122,9 +123,11 @@ their own suite; `test/console/query-limit.test.ts` is the model.
 - **Path shadowing.** `/:providerId` swallows a later literal. `connection-test`
   is declared before it in `providers/catalog/routes.ts` for exactly this
   reason; the comment says so.
-- **Optional `ctx` fields.** `modelStrikes` is optional, so the model-ban routes
-  are not mounted at all when it is absent. A route that silently disappears is
-  worse than one that 500s; keep that explicit.
+- **Optional `ctx` fields.** An optional field on `ConsoleDomainContext` means a
+  whole behavior can be absent at composition time. `shutdownCoordinator` is
+  the live example: when absent, `/updates/apply` answers 503 instead of
+  draining and exiting. A route that silently disappears is worse than one
+  that 500s; keep the absent-ctx behavior explicit and tested.
 - **`as unknown as Elysia` on every route factory.** The beta's route-tree types
   do not line up. It is load-bearing, not sloppiness — do not "fix" it.
 - **Do not import `transport/` into the console.** Declare the structural
@@ -134,6 +137,12 @@ their own suite; `test/console/query-limit.test.ts` is the model.
 - **Body-size checks must run before JSON parse** or the point of the limit is
   lost — `backup/routes.ts` measures the re-serialized body because a spoofed
   `content-length` would otherwise bypass the 413.
+- **`consoleSseResponse` owns the SSE headers.** A console SSE handler returns
+  the `Response` built by `consoleSseResponse`/`createConsoleSseStream`
+  (`src/console/observability/sse.ts`); writes to the injected `set.headers`
+  are discarded (the handler's return value replaces them). Do not re-add
+  `content-type`/`cache-control` writes to `set` — that dead code was removed
+  once already.
 - **A console read of a shared row uses `globalOrOwnedBy`, not `eq(tenantId)`.**
   Replacing it hides shared catalog rows. Quota and OAuth owner checks use `eq` on
   purpose.

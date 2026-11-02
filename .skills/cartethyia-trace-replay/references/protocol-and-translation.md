@@ -144,8 +144,9 @@ event's usage wins; a stream with none falls back to
 whose `estimated_cost` is `null`, not `0` — unpriced is not free, and the
 console's `partial` flag depends on that distinction. `repriceUsage`
 (`src/providers/provider-usage.ts`) applies the routed model's catalog rate before the
-record is committed, then the wire converters (`usageToChatWire` :357,
-`usageToResponsesWire` :385, `usageToMessagesWire` :411) render it per surface.
+record is committed, then the wire converters in the same file
+(`usageToChatWire` :356, `usageToResponsesWire` :384, `usageToMessagesWire`
+:410) render it per surface.
 
 ## Error mapping
 

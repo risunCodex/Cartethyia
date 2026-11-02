@@ -7,18 +7,14 @@ Payload retention is short; locate the frame quickly and never expose secrets.
 
 Telemetry identifies the request. Payload metadata points to an append-only file
 under the configured payload directory (default `data/telemetry-payloads/`;
-`CARTETHYIA_TELEMETRY_PAYLOAD_DIR` overrides it). A frame is:
-
-```text
-[4-byte big-endian body length][body]
-```
-
-The length header covers the body only; the indexed `length` covers both header
-and body. New `jsonl-file` frames store a gzipped JSON envelope; legacy
-`jsonb-file` frames store plain JSON. Use the reference's `storage` value to
-choose the decoder. Read the referenced slice, decompress when needed, parse
-the envelope, then inspect `.payload`; do not parse the whole file as one JSON
-value. Oversized payloads may only retain a truncation marker.
+`CARTETHYIA_TELEMETRY_PAYLOAD_DIR` overrides it). A frame is **one
+newline-terminated line: base64 of the gzipped JSON envelope** — there is no
+binary length header (frame extent is found by reading to the next `\n`;
+`jsonl-file` is the only storage kind). Read the referenced slice
+(the indexed `length` covers the stored line), base64-decode, gunzip,
+`JSON.parse` the envelope, then inspect `.payload`; do not parse the whole
+file as one JSON value. Oversized payloads may only retain a truncation
+marker.
 
 ## Compare the four surfaces
 

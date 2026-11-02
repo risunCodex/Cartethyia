@@ -12,7 +12,7 @@ curl -fsSL https://raw.githubusercontent.com/risunCodex/Cartethyia/dev/scripts/i
 # From a checkout
 bash scripts/install.sh --local --lite
 bash scripts/install.sh --vps --regular --lite --domain app.example.com
-bash scripts/install.sh --vps --nat --lite --port 8080 --public-origin https://app.example.com:8080
+bash scripts/install.sh --vps --nat --lite --port 12800 --public-origin https://app.example.com:12800
 bash scripts/install.sh --docker --lite
 ```
 

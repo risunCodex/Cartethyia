@@ -127,11 +127,16 @@ into the next.
 | `cli-tools/` | `/console/api/cli-tools/*` | Per-tool status, per-(tenant, tool, key) slot mappings, download, apply |
 | `settings/` | `/console/api/settings/runtime` | Per-tenant preferences: telemetry payloads, privacy mode, RTK prune, PonyTail |
 | `backup/` | `/console/api/backup/*` | Export, import, delete-all. Recognized legacy exports are converted without guessing provider ids |
-| `studio/` | `/console/api/studio/*` | Model lab sessions, bounded to 50 per tenant with oldest-first eviction |
+| `studio/` | — (no console domain) | Model Lab is dashboard-only and talks straight to the data plane (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/search`, `/v1/images/generations`, `/v1/videos/generations`) with a console-issued key |
 | `quota/` | `/console/api/quota/*`, `/console/api/accounts/*`, `/console/api/global/accounts/*` | Quota windows and refresh; cached readings also feed the per-account [Usage floor](../../../documentation/features/04-usage-floor.md) routing policy |
-| `observability/` | `/console/api/system/*` (including `/system/performance`), `/system/usage/requests/:id/download` (JSON attachment of the full detail incl. payloads), `/telemetry/*`, `/logs/*`, `/live/*` | File-log reads, log ring SSE, live in-flight gauge, pool health streams |
+| `observability/` | `/console/api/system/*` (including `/system/performance`), `/system/usage/requests/:requestId/download` (JSON attachment of the full detail incl. payloads), `/telemetry/*`, `/logs/*`, `/live/*` | File-log reads, log ring SSE, live in-flight gauge, pool health streams |
 | `audit/` | `/console/api/audit` | Cursor-paginated `admin_audit_log` read, `platform:admin` only |
-| `updates/` | `/console/api/updates/release` | Current release channel read |
+| `updates/` | `/console/api/updates/release`, `/updates/status`, `/updates/apply` | GitHub latest-release read (no scope); install status file read; apply + graceful drain (`dashboard:write`, 409 `update_in_progress` while a fresh install is running, drains via `ShutdownCoordinator("update")`) |
+| `inferhub/` | `/console/api/inferhub/*` | Summary, models, compare, providers, status, CSV export; writes are `platform:admin`-guarded |
+| `remote-support/` | `/console/api/remote-support/status` | Remote-support status read |
+| `system-prompt/` | `/console/api/system-prompt` | Per-tenant preset CRUD (GET/PUT/DELETE) |
+| `data-management/` | `/console/api/data-management/*` | Usage, reclaim, flush (backs `ctx.flushBuffers`), purge |
+| `notifications/stream` | `/console/api/notifications/stream` | Memory-growth + update-available SSE, owned by the updates domain; uses `consoleSseResponse` (headers owned by `observability/sse.ts`) |
 
 That table is the index. Four areas carry their own feature page — data,
 ownership, the routes behind the row, and where to change what:
@@ -158,6 +163,9 @@ routing, pools, CLI tools (mapping saves and remote routes), and backup restore.
 | New response field | The domain contract, then `dashboard/src/data/contracts.ts`, then the hook |
 | New access rule | `src/console/shared/errors.ts` guards; do not hand-roll a check in a route |
 | New list endpoint | `parseQueryLimit`, then the store query |
+| Omit-undefined field shaping | `pickDefined` in `src/console/shared/object.ts` — the canonical `...(x === undefined ? {} : {x})` spread |
+| Nested transaction cast | `asConsoleDb` in `src/console/shared/transaction.ts` |
+| Updates flow (apply/status) | `src/console/updates/apply-update.ts` (`readUpdateStatus`/`writeUpdateStatus`, `isFreshlyInstalling`, `spawnDetachedUpdate`) + `updates/routes.ts`; coordinator arrives via the optional `ctx.shutdownCoordinator` |
 | Egress/SSRF behaviour | `src/console/routing/pools/contracts.ts` `validateEndpoint` |
 | Error envelope | `src/console/shared/errors.ts` `errorResponse` |
 | CSRF, throttle | `console-router-guards.ts` |

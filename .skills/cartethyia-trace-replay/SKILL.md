@@ -118,7 +118,8 @@ compiled gateway or a cached adapter can answer with the old payload. Do not
 assign `$pid` in PowerShell; it is read-only.
 
 Capture the body at the last boundary that still owns it. For Codex, compare
-the object passed to `postUpstreamJson` with the string inside `pinnedFetch`.
+the object passed to `postUpstreamJson` with the string it hands to the
+validated `outboundFetch` (`src/protocol/upstream/post-json.ts`).
 If both contain `tools` and the upstream still says `tool_choice` must be
 specified with `tools`, those captures did not isolate a missing field. Check
 serialization, headers, endpoint, and account/endpoint expectations before

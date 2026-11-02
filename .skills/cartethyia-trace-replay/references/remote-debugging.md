@@ -65,7 +65,7 @@ is the usual explanation for a `404` on a model name.
 
 Console endpoints (`src/console/observability/routes.ts`):
 
-- `GET /system/usage/requests?period=…&limit=…&status=…` — the list the Usage
+- `GET /system/usage/requests?period=…&limit=…&httpStatus=…` — the list the Usage
   page reads; filter by the HTTP status you are chasing.
 - `GET /system/usage/requests/:requestId` — one record, with the error envelope.
 - `GET /system/usage/requests/:requestId/download` — the retained request detail

@@ -98,6 +98,19 @@ with it. The dashboard does not keep a second, drifted type.
 `consoleRequest` attaches the CSRF header on mutations. A 401 or 403 notifies
 `SessionTransitionBridge` through `setSessionTransitionListener`.
 
+Two surfaces are **streams, not polls** — do not wire a second polling loop
+for them:
+
+- `/console/api/notifications/stream` (SSE, subscribed on shell mount via
+  `hooks/system.ts`) carries memory-growth and update-available badges.
+- The update flow polls `GET /console/api/updates/status` every 3 s only while
+  an update is running (`apps/console/shell.tsx`): it reloads on `success`
+  **after verifying the `/system/health` version actually moved**, renders the
+  `UpdateDialog` failure panel on `failed` (the dialog takes an `error` prop)
+  and stops polling; `/updates/release` is the fallback poll target for
+  gateways without the status endpoint. `UpdateDialog.tsx` owns the dialog
+  state machine; the shell owns the poll loop.
+
 ## Feature layout
 
 | Directory | Holds |
@@ -237,5 +250,6 @@ rather than maintaining a second copy of that procedure.
 | New page | `App.tsx` route, feature directory, query key, console domain |
 | New API field | console contract, then `data/contracts.ts`, then the hook |
 | New dialog | `components/` dialog, `DialogSize`, both toast arms |
+| Update dialog / poll loop | `components/UpdateDialog.tsx` (`error` prop drives the failure panel), poll in `apps/console/shell.tsx`, `/updates/status` |
 | Share page behavior | `apps/share`, and the share API it reads |
 | Layout | `dashboard/src/styles/` and `dashboard/src/apps/console/shell.tsx` |
