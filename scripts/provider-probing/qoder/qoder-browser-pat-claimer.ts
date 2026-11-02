@@ -18,6 +18,10 @@
  *
  *   bun run scripts/provider-probing/qoder/qoder-browser-pat-claimer.ts \
  *     --cookies "C:\Users\Aria\Downloads\qoder.com_cookies_netscape.txt" \
+ *     --check
+ *
+ *   bun run scripts/provider-probing/qoder/qoder-browser-pat-claimer.ts \
+ *     --cookies "C:\Users\Aria\Downloads\qoder.com_cookies_netscape.txt" \
  *     --create --name cartethyia --days 365 \
  *     --out "D:\tmp\scratch\qoder-pat.json"
  *
@@ -36,6 +40,7 @@ const args = parseArgs({
   options: {
     cookies: { type: "string", required: true },
     list: { type: "boolean", default: false },
+    check: { type: "boolean", default: false },
     create: { type: "boolean", default: false },
     name: { type: "string", default: "" },
     days: { type: "string", default: "365" },
@@ -102,9 +107,19 @@ const baseHeaders = {
  * The console injects `window.csrfToken` into an inline script and the server
  * sets a `qoder_csrf_token` cookie on page load. Writes require both, and they
  * must agree (double-submit CSRF).
+ *
+ * The page redirects to `/users/sign-in` when the session cookie has expired.
+ * That is caught here as an explicit, actionable error instead of letting the
+ * sign-in page's own csrf token pass through and fail later on a write.
  */
 async function fetchCsrf(): Promise<{ token: string; cookieValue: string }> {
-  const res = await fetch(`${BASE}/account/integrations`, { headers: baseHeaders });
+  const res = await fetch(`${BASE}/account/integrations`, { headers: baseHeaders, redirect: "manual" });
+  if (res.status === 302 || res.status === 303) {
+    throw new Error(
+      "Qoder session cookie expired or invalid (HTTP 302 → /users/sign-in). " +
+        "Open qoder.com in your browser, sign in again, and re-export the cookies.txt.",
+    );
+  }
   if (!res.ok) throw new Error(`page fetch failed: ${res.status}`);
   const html = await res.text();
   const m = /window\.csrfToken\s*=\s*'([^']+)'/.exec(html);
@@ -205,6 +220,39 @@ async function revoke(tokenId: string): Promise<void> {
   console.log(`revoked PAT ${maskUuid(tokenId)}`);
 }
 
+/**
+ * Verifies the session is still alive and reports when the session cookie
+ * expires, so the operator knows when to refresh the page and re-export
+ * before it silently dies. The session cookie itself is not renewed by the
+ * server on ordinary requests (only `qoder_csrf_token` is), so re-exporting
+ * only helps while it is still valid.
+ */
+async function check(): Promise<void> {
+  const { token } = await fetchCsrf();
+  console.log(`session: valid (csrf ${token.slice(0, 6)}…)`);
+  const sessionCookie = cookies.find((c) => c.name === "qoder_session_cookie");
+  if (!sessionCookie) {
+    console.log("session cookie: not found in cookies.txt (qoder_session_cookie)");
+    return;
+  }
+  if (sessionCookie.expires === 0) {
+    console.log("session cookie: browser-session (no expiry) — re-export keeps it alive while the sign-in lives");
+    return;
+  }
+  const expiresMs = sessionCookie.expires * 1000;
+  const daysLeft = Math.floor((expiresMs - Date.now()) / 86_400_000);
+  const when = new Date(expiresMs).toISOString().slice(0, 10);
+  if (daysLeft <= 0) {
+    console.log(`session cookie: EXPIRED ${when} — sign in again and re-export`);
+  } else {
+    console.log(`session cookie: expires ${when} (${daysLeft}d left) — re-export after refreshing the page while it is still valid`);
+  }
+  if (daysLeft <= 2) {
+    console.log("hint: sign in again in the browser and re-export before the session dies.");
+  }
+}
+
 if (args.values.revoke) await revoke(args.values.revoke);
+else if (args.values.check) await check();
 else if (args.values.create) await create();
 else await list();
