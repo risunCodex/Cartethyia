@@ -24,8 +24,12 @@ export interface GatewayModelTestResult {
 }
 
 const TEST_TIMEOUT_MS = 20_000;
-const TEST_MAX_TOKENS = 32;
-const TEST_PROMPT = "ping";
+const TEST_MAX_TOKENS = 256;
+// Same probe prompt the model test always used (see buildProbeCanonicalRequest):
+// it passes content-policy review and produces a useful sample — the model
+// identifies itself and states its knowledge cutoff, instead of echoing a
+// canned reply.
+const TEST_PROMPT = "What model are you, and what is your knowledge cutoff date? Answer in one sentence.";
 
 export function useGatewaySignedModelTest() {
   const keys = useApiKeys();

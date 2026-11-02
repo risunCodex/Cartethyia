@@ -86,6 +86,14 @@ interface QoderModelConfig {
    * `false` marks the model as billed.
    */
   readonly is_free?: boolean;
+  /**
+   * The reasoning effort to send when the caller did not ask for one. The IDE
+   * surface follows the `reasoningEffort` field: a model marked `is_reasoning`
+   * may still stream no reasoning unless an effort is present (verified live:
+   * Sonus streams thinking only when effort is sent; DeepSeek thinks by
+   * default). Set only for models that need the push.
+   */
+  readonly default_reasoning_effort?: string;
 }
 
 /**
@@ -112,7 +120,7 @@ export const QODER_CN_MODEL_CONFIGS: Readonly<Record<string, QoderModelConfig>> 
 };
 
 /**
- * Global/intl roster (17 keys), from the donor's `qoder_catalog_intl.json`.
+ * Global/intl roster (18 keys), from the donor's `qoder_catalog_intl.json`.
  *
  * Note how the shared keys differ from CN — `auto` is non-reasoning here and
  * `qmodel` carries a 1M window. That is why the rosters are not merged.
@@ -127,8 +135,11 @@ export const QODER_INTL_MODEL_CONFIGS: Readonly<Record<string, QoderModelConfig>
   fast: { id: "fast", display_name: "Fast", max_input_tokens: 1000000, max_output_tokens: 64_000, is_vl: true, is_reasoning: false },
   performance: { id: "performance", display_name: "Performance", max_input_tokens: 1000000, max_output_tokens: 64_000, is_vl: true, is_reasoning: false },
   efficient: { id: "efficient", display_name: "Efficient", max_input_tokens: 200000, max_output_tokens: 64_000, is_vl: true, is_reasoning: false },
-  smodel: { id: "smodel", display_name: "Sonus", max_input_tokens: 1000000, max_output_tokens: 128_000, is_vl: true, is_free: false, is_reasoning: true },
-  cmodel: { id: "cmodel", display_name: "Cantus", max_input_tokens: 1000000, max_output_tokens: 128_000, is_vl: true, is_free: false, is_reasoning: true },
+  // Sonus/Cantus need an explicit effort on the IDE surface; without it the
+  // upstream streams text only, no reasoning (verified live). DeepSeek-family
+  // models think by default and are left untouched.
+  smodel: { id: "smodel", display_name: "Sonus", max_input_tokens: 1000000, max_output_tokens: 128_000, is_vl: true, is_free: false, is_reasoning: true, default_reasoning_effort: "high" },
+  cmodel: { id: "cmodel", display_name: "Cantus", max_input_tokens: 1000000, max_output_tokens: 128_000, is_vl: true, is_free: false, is_reasoning: true, default_reasoning_effort: "high" },
   qmodel_38max: { id: "qmodel_38max", display_name: "Qwen3.8-Max", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_reasoning: true },
   qfmodel: { id: "qfmodel", display_name: "Qwen3.8-Flash", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_free: true, is_reasoning: true },
   qmodel_latest: { id: "qmodel_latest", display_name: "Qwen3.7-Max", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_reasoning: false },
@@ -142,6 +153,9 @@ export const QODER_INTL_MODEL_CONFIGS: Readonly<Record<string, QoderModelConfig>
   // previously marked free. Display names are corrected from the same capture.
   dfmodel: { id: "dfmodel", display_name: "DeepSeek-Flash", max_input_tokens: 1000000, max_output_tokens: 384_000, is_vl: true, is_free: false, is_reasoning: true },
   mmodel: { id: "mmodel", display_name: "MiniMax-M3.1-Flash", max_input_tokens: 1000000, max_output_tokens: 512_000, is_vl: true, is_free: false, is_reasoning: false },
+  // `lite` is the free-tier plan package: same 1M window and multimodal input
+  // as `qmodel` (Qwen3.7-Plus), capped at 64k output, free tier.
+  lite: { id: "lite", display_name: "Lite-Qwen-3.7-Plus", max_input_tokens: 1000000, max_output_tokens: 65_536, is_vl: true, is_free: true, is_reasoning: false },
 };
 
 /**
@@ -213,13 +227,24 @@ export function qoderVirtualModels(
         // substitutes the shared unfiled fallback for null — the same marker a
         // hand-added row gets.
         ctx: target.contextLimit ?? null,
-        ...(target.outputLimit === null ? {} : { out: target.outputLimit }),
-        vision: target.modalities.input.includes("image"),
+        // A virtual override wins; otherwise inherit the target's ceiling.
+        ...(virtual.outputLimit !== undefined
+          ? { out: virtual.outputLimit }
+          : target.outputLimit === null
+            ? {}
+            : { out: target.outputLimit }),
+        vision: virtual.vision ?? target.modalities.input.includes("image"),
         reasoning: target.reasoning ?? false,
         toolCall: target.toolCall ?? false,
         // The same model under its caller-facing name belongs to the same tier,
-        // so the pill follows the roster row rather than being restated.
-        ...(target.freeTier === undefined ? {} : { free: target.freeTier, freeTier: target.freeTier }),
+        // so the pill follows the roster row rather than being restated —
+        // unless the virtual card explicitly overrides it (`lite` is a free
+        // plan package over a billed slot).
+        ...(virtual.free !== undefined
+          ? { free: virtual.free, freeTier: virtual.free }
+          : target.freeTier === undefined
+            ? {}
+            : { free: target.freeTier, freeTier: target.freeTier }),
       }),
     );
   }
@@ -457,7 +482,32 @@ export async function discoverQoderModels(input: {
         lastError = new Error("Qoder model list returned no usable models");
         continue;
       }
-      const models = enabled.map((entry) => qoderCatalogModel(entry, providerId));
+      const models = enabled.flatMap((entry) => {
+        // Publish caller-facing virtual ids (`sonus`, `lite-qwen-3.7-plus`, …)
+        // instead of the opaque roster keys (`smodel`, `qmodel`, …). A discovery
+        // row must look like what the UI offers and what a caller can type;
+        // keeping the raw key here made live-synced rows appear under names
+        // nobody can route to by display, and hid overridden cards like `lite`.
+        // More than one virtual may share a slot (`lite-qwen-3.7-plus` and
+        // `qwen3.7-plus` both dispatch to `qmodel`), so every match on the slot
+        // is published.
+        const virtuals = QODER_VIRTUAL_MODELS.filter((virtual) => virtual.target === entry.key);
+        if (virtuals.length === 0) return [qoderCatalogModel(entry, providerId)];
+        return virtuals.map((virtual) =>
+          defineModel({
+            id: virtual.id,
+            providerId,
+            wireFamily: "chat",
+            endpoint: QODER_CHAT_PATH,
+            ctx: entry.maxInputTokens ?? null,
+            vision: virtual.vision ?? entry.isVl,
+            reasoning: entry.isReasoning,
+            ...(virtual.outputLimit !== undefined ? { out: virtual.outputLimit } : {}),
+            free: virtual.free ?? entry.isFree,
+            freeTier: virtual.free ?? entry.isFree,
+          }),
+        );
+      });
       // Index the widest selectable window per key (from `context_config`,
       // already computed into `maxInputTokens` by `mapQoderCatalogResponse`) so
       // dispatch can send the maximum rather than the currently active one.

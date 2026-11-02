@@ -21,7 +21,7 @@ or foundational notes stay at this root.
 | Folder | Topic | Notes |
 |---|---|---|
 | `qoder/` | Qoder wire, identity, credits, IDE surface, plugin endpoint map | 3 findings |
-| `copilot/` | Copilot capability/context/auto routing | 3 findings |
+| `copilot/` | Copilot capability/context/auto routing | 4 findings |
 | `kiro/` | Kiro 1.4.62 wire protocol + live verification + IDE/CLI unpack | 3 files |
 | `opencode/` | OpenCode free-tier wire/gate/sentinel + egress/TLS measurements (merged), desktop 2.2.5 binary evidence | 2 files |
 | `buddy/` | Buddy family (CodeBuddy intl/CN + WorkBuddy desktop) — chat dispatch headers, device identity, CLI 2.179.2 + desktop app.asar unpack audits, 1:1 wire gaps | 6 files |
@@ -54,6 +54,7 @@ or foundational notes stay at this root.
 | 2026-10-15 | [Capability map](copilot/2026-10-15-copilot-chat-capability-map.md) |
 | 2026-10-16 | [Chat context and live API probe](copilot/2026-10-16-copilot-context-probe.md) |
 | 2026-10-30 | [Auto routing](copilot/2026-10-30-copilot-auto-routing.md) |
+| 2026-11-02 | [Auto → Responses 500: tool-argument repair throw](copilot/2026-11-02-copilot-auto-responses-500-repair-throw.md) |
 
 ## Kiro findings (`kiro/`)
 

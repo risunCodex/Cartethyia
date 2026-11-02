@@ -37,8 +37,8 @@ import type { ChatEncodeOptions, ChunkBase, JsonObject } from "./parse";
  */
 export function repairToolArguments(raw: string): string {
   if (raw.length === 0) return "{}";
-  const repaired = repairToolArgumentText(raw);
   try {
+    const repaired = repairToolArgumentText(raw);
     const parsed: unknown = JSON.parse(repaired);
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return raw;
     return repaired;

@@ -22,7 +22,7 @@ import type {
   ToolDefinition,
 } from "../../../protocol/canonical-model";
 import { toolResultParts, toolCallParts } from "../../../protocol/canonical-model";
-import { decodeSseEvents } from "../../../protocol/sse-decoder";
+import { decodeQoderSseEvents } from "./qoder-sse";
 import { usageFromProvider, readReasoningText } from "../../provider-usage";
 import { readCredentialSecret, assertWireFamily, type ProviderDispatchTarget, type ProviderAdapter, type ProviderDispatchContext, type ProviderId } from "../../provider-contracts";
 import type { ModelDefinition } from "../../provider-model-definition";
@@ -191,6 +191,11 @@ interface QoderModelConfig {
    */
   is_free?: boolean;
   source?: string;
+  /**
+   * Reasoning effort to send when the caller did not ask for one. Some models
+   * on the IDE surface stream no reasoning unless an effort is present.
+   */
+  default_reasoning_effort?: string;
 }
 
 function qoderMd5(value: string | Uint8Array): string {
@@ -464,7 +469,7 @@ function qoderEnvelopeMessage(rec: Record<string, unknown>): string {
   return extractUpstreamMessage(rec);
 }
 
-function qoderEnvelopeToFrames(data: string): Array<{ event: string | null; data: string }> {
+export function qoderEnvelopeToFrames(data: string): Array<{ event: string | null; data: string }> {
   if (data === "[DONE]") return [{ event: null, data: "[DONE]" }];
   let envelope: unknown;
   // The IDE surface sometimes embeds literal newlines inside JSON string
@@ -989,7 +994,11 @@ export function buildQoderRequest(
   // effort as a top-level camelCase field (`reasoningEffort`), derived from
   // the canonical intent when one is present. Omitted entirely when the
   // caller asked for no reasoning, matching the reference's conditional send.
-  const reasoningEffort = reasoningEffortFromIntent(request.reasoning);
+  // When the caller sends no intent but the model needs the push to think
+  // (verified live: Sonus/Cantus stream no reasoning without it), use the
+  // roster's default effort.
+  const reasoningEffort =
+    reasoningEffortFromIntent(request.reasoning) ?? modelConfig.default_reasoning_effort;
   const sessionId = qoderStableHash("qoder-session", auth.userId, modelId);
   const recordId = qoderStableRecordId(modelId, allMessages, maxTokens);
   return {
@@ -1090,6 +1099,16 @@ export function buildQoderIdeRequest(
     messages,
     stream: true,
     stream_options: { include_usage: true },
+    // The same reasoning-effort field the legacy surface uses; without it the
+    // IDE surface streams no thinking for models that need the push (Sonus,
+    // Cantus). Undefined when the caller asked for none and the roster has no
+    // default, matching the legacy builder.
+    ...(legacy.reasoningEffort === undefined ? {} : { reasoningEffort: legacy.reasoningEffort }),
+    // The full wire config (model key, window, output ceiling, tier) the legacy
+    // surface sends. The IDE surface reads the same block, so shipping it keeps
+    // the request the same shape for every Qoder model — including lite's 1M
+    // window and 64k output cap.
+    ...(legacy.model_config === undefined ? {} : { model_config: legacy.model_config }),
     metadata: {
       context: {
         request_id: legacy.request_id,
@@ -1171,6 +1190,120 @@ function qoderIdeEntitlementRefused(response: Response): boolean {
   return response.status === 402;
 }
 
+/**
+ * Qoder upstream streams are flaky: the IDE surface sometimes answers a full
+ * normal stop with reasoning only and no output text/tool calls (observed ~1
+ * in 4 runs with Sonus). That is not a valid completion — the lab would show a
+ * thought with "No text came back". Replay such a stream before committing to
+ * it. Buffering the body is required: the decision is only knowable after the
+ * stream ends, and the bytes are replayed to the canonical parser.
+ */
+interface QoderStreamDrain {
+  readonly bytes: Uint8Array;
+  readonly meaningful: boolean;
+  readonly thoughtOnly: boolean;
+}
+
+async function drainQoderResponse(
+  response: Response,
+  signal: AbortSignal,
+): Promise<QoderStreamDrain> {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const reader = response.body!.getReader();
+  try {
+    for (;;) {
+      if (signal.aborted) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        total += value.byteLength;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  let dataEvents = 0;
+  let meaningful = false;
+  let thoughtOnly = false;
+  const decoder = new TextDecoder();
+  const text = decoder.decode(bytes);
+  for (const frame of text.split(/\r?\n\r?\n/)) {
+    if (frame.trim().length === 0) continue;
+    const dataLines: string[] = [];
+    for (const line of frame.split(/\r?\n/)) {
+      if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+    }
+    const data = dataLines.join("\n").trim();
+    if (data.length === 0 || data === "[DONE]") continue;
+    dataEvents++;
+    for (const { data: frameData } of qoderEnvelopeToFrames(data)) {
+      if (frameData === "[DONE]") continue;
+      let json: Record<string, unknown>;
+      try {
+        json = JSON.parse(frameData) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      const choices = json["choices"];
+      if (!Array.isArray(choices)) continue;
+      for (const choice of choices as Array<Record<string, unknown>>) {
+        const delta = choice["delta"] as Record<string, unknown> | undefined;
+        if (delta === undefined) continue;
+        if (typeof delta["content"] === "string" && (delta["content"] as string).length > 0) {
+          meaningful = true;
+          return { bytes, meaningful, thoughtOnly };
+        }
+        if (Array.isArray(delta["tool_calls"]) && (delta["tool_calls"] as unknown[]).length > 0) {
+          meaningful = true;
+          return { bytes, meaningful, thoughtOnly };
+        }
+        if (
+          typeof delta["reasoning_content"] === "string" &&
+          (delta["reasoning_content"] as string).length > 0
+        ) {
+          thoughtOnly = true;
+        }
+      }
+    }
+  }
+  return { bytes, meaningful, thoughtOnly };
+}
+
+/**
+ * Runs the IDE request up to `1 + maxReplays` times, returning the first
+ * response whose stream carried real output (text or tool calls). A 200 with
+ * no output (empty or thought-only) is replayed rather than surfaced.
+ */
+async function fetchQoderIdeWithEmptyRecovery(
+  requestOnce: () => Promise<Response>,
+  signal: AbortSignal,
+  maxReplays = 2,
+): Promise<Response> {
+  let last: Response | undefined;
+  for (let attempt = 0; attempt <= maxReplays; attempt += 1) {
+    const res = await requestOnce();
+    if (!res.ok || !res.body) return res;
+    const drain = await drainQoderResponse(res, signal);
+    last = new Response(drain.bytes as BodyInit, {
+      status: 200,
+      headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
+    });
+    if (drain.meaningful) return last;
+  }
+  return last!;
+}
+
+export { fetchQoderIdeWithEmptyRecovery };
+
 // Stream transformation — decode SSE, unwrap COSY envelope, map OpenAI chat chunks to CanonicalEvent
 
 function mapQoderFinishReason(raw: unknown): CanonicalStopReason | undefined {
@@ -1187,7 +1320,7 @@ export async function* qoderBodyToCanonicalEvents(
   model: string,
 ): AsyncIterable<CanonicalEvent> {
   let seq = 1;
-  yield { type: "response_start", sequence_number: seq++, model } as CanonicalEvent;
+  let started = false;
   let finishReason: unknown = undefined;
   let rawUsage: Record<string, unknown> | undefined = undefined;
   let hasTerminal = false;
@@ -1202,7 +1335,7 @@ export async function* qoderBodyToCanonicalEvents(
   let leakBuf = "";
   let leakFrames = 0;
 
-  for await (const sse of decodeSseEvents(body, { signal })) {
+  for await (const sse of decodeQoderSseEvents(body, signal)) {
     const sseData = sse.data;
     let frames: Array<{ event: string | null; data: string }>;
     try {
@@ -1215,6 +1348,10 @@ export async function* qoderBodyToCanonicalEvents(
       if (!data) continue;
       if (data === "[DONE]") {
         hasTerminal = true;
+        if (!started) {
+          yield { type: "response_start", sequence_number: seq++, model } as CanonicalEvent;
+          started = true;
+        }
         continue;
       }
       let json: Record<string, unknown>;
@@ -1222,6 +1359,18 @@ export async function* qoderBodyToCanonicalEvents(
         json = JSON.parse(data) as Record<string, unknown>;
       } catch {
         continue;
+      }
+      // The upstream names the real model in each chunk. Use the first one we
+      // see for the opening event so the client sees the same model the
+      // provider actually served, not the (virtual) id that was requested.
+      if (!started && typeof json["model"] === "string") {
+        const upstreamModel = (json["model"] as string).trim();
+        yield {
+          type: "response_start",
+          sequence_number: seq++,
+          model: upstreamModel.length > 0 ? upstreamModel : model,
+        } as CanonicalEvent;
+        started = true;
       }
       // IDE surface error event: `{"code":"invalid_model_error","message":"..."}`
       // carries no choices. Surface it as an upstream failure instead of an
@@ -1426,10 +1575,13 @@ export async function* qoderBodyToCanonicalEvents(
     }
   }
   // A `[DONE]` frame from the IDE surface may be the only terminal signal (the
-  // per-delta `finish_reason` is empty and `raw_usage` is not always sent), so
+  // //-delta `finish_reason` is empty and `raw_usage` is not always sent), so
   // a clean end-of-stream with no finish reason is a normal stop, not a
   // truncation. If no terminal arrived at all, still synthesize one (prevents
   // truncation error).
+  if (!started) {
+    yield { type: "response_start", sequence_number: seq++, model } as CanonicalEvent;
+  }
   if (hasTerminal && finishReason === undefined) finishReason = "stop";
   const stopReason = mapQoderFinishReason(finishReason);
   const _providerStop = typeof finishReason === "string" ? finishReason : undefined;
@@ -1592,7 +1744,9 @@ class QoderAdapter implements ProviderAdapter {
       const cosyRequest = () =>
         callQoder(cosyUrl, buildQoderRequest(modelId, request, modelConfig, auth, this.realm), modelId, auth, lifecycle.signal, fetcher, version);
       let response =
-        this.surface === "ide" ? await ideRequest() : await cosyRequest();
+        this.surface === "ide"
+          ? await fetchQoderIdeWithEmptyRecovery(ideRequest, lifecycle.signal)
+          : await cosyRequest();
       if (
         !response.ok &&
         this.surface === "ide" &&

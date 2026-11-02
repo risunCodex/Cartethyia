@@ -18,6 +18,15 @@ export interface QoderVirtualModel {
   readonly target: string;
   /** Name shown where a human picks a model. */
   readonly displayName: string;
+  /**
+   * Tier/limit overrides for a virtual row whose upstream slot reports
+   * different numbers than the caller-facing card should show. `lite` is a
+   * free plan package over `qmodel` (Qwen3.7-Plus): same model, smaller
+   * output ceiling, free tier, and the full multimodal input set.
+   */
+  readonly free?: boolean;
+  readonly outputLimit?: number;
+  readonly vision?: boolean;
 }
 
 /**
@@ -42,6 +51,9 @@ export const QODER_VIRTUAL_MODELS: readonly QoderVirtualModel[] = [
   { id: "glm-5.3", target: "gmodel", displayName: "GLM-5.3" },
   { id: "glm-5.3-flash", target: "gfmodel", displayName: "GLM-5.3-Flash" },
   { id: "minimax-m3", target: "mmodel", displayName: "MiniMax-M3.1-Flash" },
+  // `lite` is the free-tier plan package over `qmodel` (Qwen3.7-Plus):
+  // same 1M window and multimodal input, capped at 64k output, free tier.
+  { id: "lite-qwen-3.7-plus", target: "lite", displayName: "Lite-Qwen-3.7-Plus", free: true, outputLimit: 65536, vision: true },
 ];
 
 /** Virtual id → roster key. */

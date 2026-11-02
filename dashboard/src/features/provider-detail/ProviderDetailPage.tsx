@@ -55,7 +55,7 @@ import {
   initialFieldValues,
   missingRequiredFields,
 } from "./sections/ImportCredentialDialog";
-import { AddModelModal, ModelGrid, ThinkingSelect } from "./sections/Models";
+import { AddModelModal, ModelGrid, ShowSelect, ThinkingSelect, type ModelShowFilter } from "./sections/Models";
 import { PROBE_REASONING_EFFORTS, type ProbeReasoningEffort } from "../../data/contracts";
 
 type DashboardServiceKind = "llm" | "websearch" | "imageGeneration" | "videoGeneration";
@@ -131,6 +131,25 @@ export default function ProviderDetail(): ReactNode {
     if (typeof window === "undefined" || !window.localStorage || !id) return;
     window.localStorage.setItem(CARTETHYIA_PROVIDER_THINKING_KEY(id), thinkingEffort);
   }, [id, thinkingEffort]);
+  // Which rows the Models grid shows. Defaults to `all`; `free` narrows the
+  // grid to the provider's published free tier. Persisted per provider, same
+  // rule as the reasoning effort, so navigating away and back restores it.
+  const CARTETHYIA_PROVIDER_SHOW_KEY = (pid: string) => `cartethyia:provider:${pid}:show-filter`;
+  const readShowFilter = (pid: string): ModelShowFilter => {
+    if (typeof window === "undefined" || !window.localStorage) return "all";
+    const raw = window.localStorage.getItem(CARTETHYIA_PROVIDER_SHOW_KEY(pid));
+    return raw === "free" ? "free" : "all";
+  };
+  const [showFilter, setShowFilter] = useState<ModelShowFilter>(() => readShowFilter(id));
+  useEffect(() => {
+    if (!id) return;
+    const next = readShowFilter(id);
+    if (next !== showFilter) setShowFilter(next);
+  }, [id]);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.localStorage || !id) return;
+    window.localStorage.setItem(CARTETHYIA_PROVIDER_SHOW_KEY(id), showFilter);
+  }, [id, showFilter]);
   const [deviceDialogOpen, setDeviceDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   // Which flow is collecting its declared fields before it starts. `null` means
@@ -592,10 +611,17 @@ export default function ProviderDetail(): ReactNode {
             icon={<Boxes size={16} />}
             action={
             <Inline gap="6px" className="flex-wrap items-center">
+              <ShowSelect
+                id="models-section-show-filter"
+                value={showFilter}
+                onChange={setShowFilter}
+                size="sm"
+              />
               <ThinkingSelect
                 id="models-section-thinking-effort"
                 value={thinkingEffort}
                 onChange={setThinkingEffort}
+                size="sm"
               />
               {/* Every provider gets the button, including one that publishes
                   no model-listing endpoint. Hiding it left the operator with no
@@ -692,6 +718,7 @@ export default function ProviderDetail(): ReactNode {
               models={llmModels}
               serviceKind="llm"
               thinkingEffort={thinkingEffort}
+              showFilter={showFilter}
               searchCapable={provider?.supportsWebSearch === true}
             />
           )}

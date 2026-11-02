@@ -55,4 +55,14 @@ describe("chat tool argument repair", () => {
     const raw = "not json at all";
     expect(repairToolArguments(raw)).toBe(raw);
   });
+
+  test("returns text that makes jsonrepair throw unchanged", () => {
+    // A multiline patch header is not near-JSON; `jsonrepair` throws on it
+    // ("Unexpected character" / "Object key expected") rather than returning a
+    // repaired string. That throw must not escape — it would bubble through the
+    // responses encoder into a 500 internal error. The raw text survives as the
+    // caller's tool-argument payload instead.
+    const raw = "*** Begin Patch\n*** Update File: src/x.ts\n@@\n- old line\n+ new line\n";
+    expect(repairToolArguments(raw)).toBe(raw);
+  });
 });

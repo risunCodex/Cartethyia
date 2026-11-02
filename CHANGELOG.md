@@ -70,6 +70,50 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   `[image]` placeholder and never fails because of the handoff. Config lives in
   the runtime Settings (global per tenant), no migration required; the Settings
   page gains a "Vision handoff models" card with multi-select, ordered picks.
+- **Qoder IDE stream decoding is tolerant of upstream JSON quirks.** A new
+  Qoder-specific SSE decoder (`decodeQoderSseEvents`) replaces the generic
+  `decodeSseEvents` for the IDE surface: upstream emits `data:` frames whose
+  JSON payload contains literal newlines and control bytes inside string values
+  (e.g. `raw_usage`), which the generic decoder rejected as "Malformed SSE
+  line". The tolerant decoder keeps event boundaries correct while passing
+  those embedded bytes through, eliminating the malformed-line 500s on
+  auto/efficient/sonus streams.
+- **Qoder response start echoes the upstream's real model key.** The
+  `response_start` event now carries the model the upstream chunk actually names
+  (`azure-gpt6-astra`, `cmodel`, `lite`, …) instead of the virtual requested id,
+  so reported models match reality. The requested path stays routable and
+  unchanged for dispatch.
+- **Qoder thought-only streams are replayed instead of ending empty.** When the
+  upstream answers with reasoning but no text content (Sonus/Cantus thought-only
+  turns), the adapter replays the request (max 2 attempts) via
+  `fetchQoderIdeWithEmptyRecovery` to salvage a content-bearing answer, instead
+  of surfacing an empty completion.
+- **Qoder Sonus/Cantus default to `reasoning_effort: high`.** When the caller
+  sends no reasoning intent, the IDE request now carries `reasoningEffort:
+  high` for the two models that need the explicit push (verified live: Sonus
+  streams thinking only when an effort is present); DeepSeek-family models that
+  think by default are left untouched.
+- **Qoder `lite` is now a real caller-facing id.** The free-tier plan package
+  slot is published as `lite-qwen-3.7-plus` (virtual id) instead of the opaque
+  `lite` roster key — 1M ctx, 64k output ceiling, free tier, multimodal input —
+  while dispatch still routes to the `lite` slot upstream. The alias/virtual
+  layer carries the rename; no schema or migration is involved.
+- **Providers page: Models card gains a Show filter.** A selector next to the
+  Thinking effort toggle switches the grid between **All models** (default) and
+  **Free tier** — the latter hides every row the provider does not publish as
+  free (including the disabled group). The choice persists per provider in
+  localStorage, and both selectors use the compact `sm` size so the header stays
+  tight on mobile.
+- **Providers page: Accounts toolbar is compact and one-row.** The account
+  toolbar now lays out in a single row — compact search on the left, then
+  Test all / Recover / Enable / Disable / Export / Delete in a stable order,
+  with sort/select pinned to the right edge. The search no longer stretches
+  full width on desktop, and the row wraps cleanly on narrow viewports with no
+  empty gutter.
+- **Gateway-signed model test asks for a real sample.** The provider detail
+  "Test" button now sends a 256-token budget and a prompt asking the model to
+  identify itself and its knowledge cutoff, producing a useful sample instead of
+  a canned `ping` echo.
 
 ### Changed
 
@@ -191,6 +235,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   reached the client. The encoder now defaults to `summary: "detailed"` when
   effort is set (an explicit `summary`/`summary_mode` still wins). Verified
   live against Copilot's `/auto` → `/responses` path.
+- **GitHub Copilot Auto → Responses no longer 500s on unrepairable tool
+  arguments.** A `github/gpt-6-luna` request that carried a tool call whose
+  argument was not near-JSON (e.g. a multiline `*** Begin Patch` fragment) hit
+  a 500 `internal_error` after the `/auto` selection succeeded: the Responses
+  encoder's `repairToolArguments` called `jsonrepair` outside its try/catch,
+  so the throw bubbled through `preparePayload` into the generic error
+  middleware. The raw argument is now returned unchanged when repair fails,
+  matching the documented non-object policy; the request streams normally.
 - **Provider list/detail and Usage pages no longer scan the whole telemetry
   window.** Three heavy DB reads were behind the slow page loads:
   - `listAccounts`/`listAllAccounts` read **today's** per-account usage via

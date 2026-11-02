@@ -162,11 +162,14 @@ export function ThinkingSelect({
   value,
   onChange,
   disabled,
+  size = "md",
   id = "probe-thinking-effort",
 }: {
   readonly value: ProbeReasoningEffort;
   readonly onChange: (value: ProbeReasoningEffort) => void;
   readonly disabled?: boolean;
+  /** Smaller height for a toolbar/header row; `md` for a form. */
+  readonly size?: "sm" | "md";
   /** Distinct per call site: the section header and the Add-Model dialog can be
    * mounted at once, and two triggers sharing one DOM id is invalid. */
   readonly id?: string;
@@ -174,15 +177,64 @@ export function ThinkingSelect({
   return (
     <div
       title="Reasoning effort every test in this section sends. Auto leaves the model's own reasoning default in place."
-      className="min-w-74 shrink-0"
+      className="min-w-74 shrink-0 max-sm:min-w-56"
     >
       <Select
         id={id}
         aria-label="Thinking effort"
         value={value}
         disabled={disabled}
+        size={size}
         onValueChange={(next) => onChange(next as ProbeReasoningEffort)}
         options={probeThinkingOptions()}
+      />
+    </div>
+  );
+}
+
+/** Which rows the Models grid shows. `all` is the default; `free` hides every
+ * row the provider does not publish as free tier. */
+export type ModelShowFilter = "all" | "free";
+
+/** The display filter options, in the order the selector renders them. */
+export function modelShowFilterOptions(): { value: ModelShowFilter; label: string }[] {
+  return [
+    { value: "all", label: "All models" },
+    { value: "free", label: "Free tier" },
+  ];
+}
+
+/** The "Show" filter in the Models card header, next to the Thinking effort
+ * selector. `all` shows every registered model; `free` narrows the grid to the
+ * provider's free-tier rows so the rest are hidden. */
+export function ShowSelect({
+  value,
+  onChange,
+  disabled,
+  size = "md",
+  id = "models-show-filter",
+}: {
+  readonly value: ModelShowFilter;
+  readonly onChange: (value: ModelShowFilter) => void;
+  readonly disabled?: boolean;
+  /** Smaller height for a toolbar/header row; `md` for a form. */
+  readonly size?: "sm" | "md";
+  /** Distinct per call site, same rule as `ThinkingSelect`. */
+  readonly id?: string;
+}): ReactNode {
+  return (
+    <div
+      title="Which models to show. Free tier hides every row the provider does not publish as free."
+      className="min-w-46 shrink-0 max-sm:min-w-40"
+    >
+      <Select
+        id={id}
+        aria-label="Show models"
+        value={value}
+        disabled={disabled}
+        size={size}
+        onValueChange={(next) => onChange(next as ModelShowFilter)}
+        options={modelShowFilterOptions()}
       />
     </div>
   );
@@ -1003,12 +1055,15 @@ export function ModelGrid({
   providerId,
   models,
   thinkingEffort,
+  showFilter = "all",
   serviceKind = "llm",
   searchCapable = false,
 }: {
   readonly providerId: string;
   readonly models: readonly ModelCatalogEntry[];
   readonly thinkingEffort: ProbeReasoningEffort;
+  /** `free` hides every row the provider does not publish as free tier. */
+  readonly showFilter?: ModelShowFilter;
   readonly serviceKind?: "llm" | "websearch";
   readonly searchCapable?: boolean;
 }): ReactNode {
@@ -1026,11 +1081,15 @@ export function ModelGrid({
   // routed. `enabled` defaults to true for a row written before the column
   // existed, matching the backend's own reading.
   const isRoutable = (model: ModelCatalogEntry): boolean => model.enabled !== false;
+  // The Show filter applies before grouping, so a hidden row never reaches any
+  // section — including the disabled group at the end.
+  const visibleModels =
+    showFilter === "free" ? models.filter((model) => model.freeTier === true) : models;
   const groups = MODEL_GROUPS.map((group) => ({
     ...group,
-    rows: models.filter((model) => isRoutable(model) && group.matches(model.source)),
+    rows: visibleModels.filter((model) => isRoutable(model) && group.matches(model.source)),
   })).filter((group) => group.rows.length > 0);
-  const disabledRows = models.filter((model) => !isRoutable(model));
+  const disabledRows = visibleModels.filter((model) => !isRoutable(model));
   const renderCard = (model: ModelCatalogEntry) => (
     <MemoModelCard
       key={`${model.modelId}::${model.route}`}

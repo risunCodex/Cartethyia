@@ -304,168 +304,170 @@ const TEST_ALL_CONCURRENCY = 3;
           it does not apply, instead of hiding behind a dropdown. A control that
           appears only once you have selected accounts hides what the toolbar
           can do, and moves the remaining buttons sideways every time the
-          selection changes. */}
-      <div className="flex min-w-0 flex-col gap-2 p-3 border border-inner-border rounded-control bg-surface-2">
-        <label className="relative w-full">
-            <Search
-              size={13}
-              aria-hidden="true"
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary"
-            />
-            <Input
-              id="accounts-search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search accounts..."
-              aria-label="Search accounts"
-              className="pl-9"
-            />
-          </label>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="primary"
-            icon={<FlaskConical size={12} />}
-            disabled={bulkBusy || accounts.length === 0}
-            onClick={testAllAccounts}
-            aria-label={
-              testAllProgress === null
-                ? "Test all accounts"
-                : `Testing accounts, ${testAllProgress.done} of ${testAllProgress.total} tested`
-            }
-            title="Test every account, regardless of selection or filters"
-          >
-            {testAllProgress === null
-              ? "Test all"
-              : `Tested ${testAllProgress.done}/${testAllProgress.total}`}
-          </Button>
-          {/* Selection-scoped actions. Each stays mounted and greys out when it
-              does not apply — `nothingSelected` and `bulkBusy` disable, they do
-              not remove — so the toolbar's shape never depends on what happens
-              to be selected. */}
+          selection changes.
+          One row: compact search on the left, bulk actions right after it in a
+          stable order, and sort/select pinned to the right edge. On narrow
+          viewports the search takes the full width and everything wraps
+          naturally, so no space is left empty on either side. */}
+      <div className="flex min-w-0 flex-wrap items-center gap-2 p-3 border border-inner-border rounded-control bg-surface-2">
+        <label className="relative w-full min-medium:w-56 shrink-0">
+          <Search
+            size={13}
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary"
+          />
+          <Input
+            id="accounts-search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search accounts..."
+            aria-label="Search accounts"
+            className="pl-9 h-15 py-0"
+          />
+        </label>
+        <Button
+          size="sm"
+          variant="primary"
+          icon={<FlaskConical size={12} />}
+          disabled={bulkBusy || accounts.length === 0}
+          onClick={testAllAccounts}
+          aria-label={
+            testAllProgress === null
+              ? "Test all accounts"
+              : `Testing accounts, ${testAllProgress.done} of ${testAllProgress.total} tested`
+          }
+          title="Test every account, regardless of selection or filters"
+        >
+          {testAllProgress === null
+            ? "Test all"
+            : `Tested ${testAllProgress.done}/${testAllProgress.total}`}
+        </Button>
+        {/* Selection-scoped actions. Each stays mounted and greys out when it
+            does not apply — `nothingSelected` and `bulkBusy` disable, they do
+            not remove — so the toolbar's shape never depends on what happens
+            to be selected. */}
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={<RotateCcw size={12} />}
+          disabled={bulkBusy || nothingSelected}
+          title={
+            nothingSelected
+              ? "Select at least one account to recover it"
+              : "Clear cooldowns and retry-wait states on the selected accounts"
+          }
+          onClick={() => void bulkRecover()}
+        >
+          Recover
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={<LockOpen size={12} />}
+          disabled={bulkBusy || !selectionHasDisabled}
+          title={
+            nothingSelected
+              ? "Select at least one disabled account to enable it"
+              : selectionHasDisabled
+                ? "Enable the selected accounts"
+                : "No selected account is currently disabled"
+          }
+          onClick={() => void bulkSetActive(true)}
+        >
+          Enable
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={<PowerOff size={12} />}
+          disabled={bulkBusy || !selectionHasEnabled}
+          title={
+            nothingSelected
+              ? "Select at least one enabled account to disable it"
+              : selectionHasEnabled
+                ? "Disable the selected accounts"
+                : "No selected account is currently enabled"
+          }
+          onClick={() => void bulkSetActive(false)}
+        >
+          Disable
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={<Download size={12} />}
+          disabled={bulkBusy || nothingSelected}
+          title={
+            nothingSelected
+              ? "Select at least one account to export"
+              : "Download the selected accounts as JSON"
+          }
+          onClick={() => void bulkExport()}
+        >
+          Export
+        </Button>
+        <Button
+          size="sm"
+          variant="danger"
+          icon={<Trash2 size={12} />}
+          disabled={bulkBusy || nothingSelected}
+          title={
+            nothingSelected
+              ? "Select at least one account to delete"
+              : `Delete ${selectedAccounts.length} selected account${selectedAccounts.length === 1 ? "" : "s"}`
+          }
+          onClick={() => setBulkDeleteOpen(true)}
+        >
+          Delete
+        </Button>
+        {/* Grok-only: the 407 streaming probe is meaningless on any other
+            provider, so it is not merely greyed out elsewhere — it is absent.
+            The actions above stay mounted because they are always meaningful
+            operations that only need a selection; this one is not an
+            operation a non-Grok provider has at all. */}
+        {showGrokProbe ? (
           <Button
             size="sm"
             variant="secondary"
-            icon={<RotateCcw size={12} />}
-            disabled={bulkBusy || nothingSelected}
-            title={
-              nothingSelected
-                ? "Select at least one account to recover it"
-                : "Clear cooldowns and retry-wait states on the selected accounts"
-            }
-            onClick={() => void bulkRecover()}
+            icon={<FlaskConical size={12} className={grokProbePending ? "animate-spin" : ""} />}
+            disabled={grokProbePending || accounts.length === 0}
+            onClick={onGrokProbe}
+            title="Probe every Grok account with the live 407 streaming request"
           >
-            Recover
+            {grokProbePending ? "Testing…" : "Test 407"}
           </Button>
-          <Button
+        ) : null}
+        <label className="inline-flex h-15 shrink-0 items-center gap-2 text-caption font-semibold text-text-secondary ml-auto max-small:ml-0 [&_.radix-select-trigger]:font-semibold [&_.radix-select-trigger]:bg-hover [&_.radix-select-trigger]:text-text-primary">
+          <Select
             size="sm"
-            variant="secondary"
-            icon={<LockOpen size={12} />}
-            disabled={bulkBusy || !selectionHasDisabled}
-            title={
-              nothingSelected
-                ? "Select at least one disabled account to enable it"
-                : selectionHasDisabled
-                  ? "Enable the selected accounts"
-                  : "No selected account is currently disabled"
-            }
-            onClick={() => void bulkSetActive(true)}
+            value={sort}
+            onValueChange={(value) => setSort(value as AccountSortValue)}
+            options={ACCOUNT_SORT_OPTIONS}
+            aria-label="Sort accounts by"
+          />
+        </label>
+        <label className="inline-flex h-15 shrink-0 items-center gap-2 text-caption font-semibold text-text-secondary">
+          <input
+            type="checkbox"
+            checked={allFilteredSelected}
+            onChange={toggleSelectAll}
+            aria-label="Select accounts"
+          />
+          <span>Select</span>
+        </label>
+        {/* The selection count doubles as the clear affordance, so clearing
+            does not cost a toolbar slot on every row width. */}
+        {nothingSelected ? null : (
+          <button
+            type="button"
+            onClick={() => setSelected(new Set())}
+            className="inline-flex h-15 shrink-0 items-center gap-1 rounded-control border border-inner-border px-3 text-badge font-semibold text-text-secondary hover:bg-hover"
+            title="Clear selection"
           >
-            Enable
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            icon={<PowerOff size={12} />}
-            disabled={bulkBusy || !selectionHasEnabled}
-            title={
-              nothingSelected
-                ? "Select at least one enabled account to disable it"
-                : selectionHasEnabled
-                  ? "Disable the selected accounts"
-                  : "No selected account is currently enabled"
-            }
-            onClick={() => void bulkSetActive(false)}
-          >
-            Disable
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            icon={<Download size={12} />}
-            disabled={bulkBusy || nothingSelected}
-            title={
-              nothingSelected
-                ? "Select at least one account to export"
-                : "Download the selected accounts as JSON"
-            }
-            onClick={() => void bulkExport()}
-          >
-            Export
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            icon={<Trash2 size={12} />}
-            disabled={bulkBusy || nothingSelected}
-            title={
-              nothingSelected
-                ? "Select at least one account to delete"
-                : `Delete ${selectedAccounts.length} selected account${selectedAccounts.length === 1 ? "" : "s"}`
-            }
-            onClick={() => setBulkDeleteOpen(true)}
-          >
-            Delete
-          </Button>
-          {/* Grok-only: the 407 streaming probe is meaningless on any other
-              provider, so it is not merely greyed out elsewhere — it is absent.
-              The actions above stay mounted because they are always meaningful
-              operations that only need a selection; this one is not an
-              operation a non-Grok provider has at all. */}
-          {showGrokProbe ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              icon={<FlaskConical size={12} className={grokProbePending ? "animate-spin" : ""} />}
-              disabled={grokProbePending || accounts.length === 0}
-              onClick={onGrokProbe}
-              title="Probe every Grok account with the live 407 streaming request"
-            >
-              {grokProbePending ? "Testing…" : "Test 407"}
-            </Button>
-          ) : null}
-          <label className="inline-flex h-15 shrink-0 items-center gap-2 text-caption font-semibold text-text-secondary [&_.radix-select-trigger]:font-semibold [&_.radix-select-trigger]:bg-hover [&_.radix-select-trigger]:text-text-primary">
-            <Select
-              size="sm"
-              value={sort}
-              onValueChange={(value) => setSort(value as AccountSortValue)}
-              options={ACCOUNT_SORT_OPTIONS}
-              aria-label="Sort accounts by"
-            />
-          </label>
-          <label className="inline-flex h-15 shrink-0 items-center gap-2 text-caption font-semibold text-text-secondary">
-            <input
-              type="checkbox"
-              checked={allFilteredSelected}
-              onChange={toggleSelectAll}
-              aria-label="Select accounts"
-            />
-            <span>Select</span>
-          </label>
-          {/* The selection count doubles as the clear affordance, so clearing
-              does not cost a toolbar slot on every row width. */}
-          {nothingSelected ? null : (
-            <button
-              type="button"
-              onClick={() => setSelected(new Set())}
-              className="inline-flex h-15 shrink-0 items-center gap-1 rounded-control border border-inner-border px-3 text-badge font-semibold text-text-secondary hover:bg-hover"
-              title="Clear selection"
-            >
-              {selectedAccounts.length} selected
-              <X size={11} aria-hidden="true" />
-            </button>
-          )}
-        </div>
+            {selectedAccounts.length} selected
+            <X size={11} aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       <div className="account-list flex flex-col gap-3 max-h-230 overflow-y-auto pr-1 [container-type:inline-size] [container-name:account-list]" role="list" aria-label="Provider accounts">
