@@ -127,6 +127,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   `{summary}`/`{text}` objects), silently dropped it. `readReasoningText`
   now accepts `reasoning_summary`, `reasoning_summary_text`,
   `reasoning_text`, and object/array shapes, so reasoning reaches the client.
+- **Trae free-tier quota (`4008`) is a 1-day model cooldown.** It fell to
+  the generic quota arm (1h account-wide fallback), so the account re-entered
+  rotation inside Trae's daily reset window and reproduced the refusal every
+  few minutes — the "cooldown not holding" report. It is now classified as a
+  model-scoped `model_unreachable` backoff of 24h (Trae's quota resets
+  daily), so a model stays parked for the day instead of flapping, and the
+  account keeps serving its other models.
 - **Dashboard: device-code login button renamed "Device OIDC" → "Device
   Code".** The provider-detail account action now labels the RFC 8628
   device flow correctly; the social pill (Google/GitHub) again renders in

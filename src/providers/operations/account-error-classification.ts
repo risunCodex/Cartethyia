@@ -66,6 +66,12 @@ const GROK_QUOTA_COOLDOWN_MS = 24 * 60 * 60 * 1000;
  */
 const TRAE_REGION_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 /**
+ * Trae's free-tier quota (`4008` / "exceeded the quota") resets daily, so its
+ * exhaustion is a full-day model backoff — never the generic 1h fallback,
+ * which let the account re-enter rotation inside the window.
+ */
+const TRAE_QUOTA_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+/**
  * Qoder's quota verdicts (`110` billing-daily-count, the upstream-499 close)
  * are per-model: one model's spend cap does not drain another. A day matches
  * the daily billing window the provider names.
@@ -1508,6 +1514,32 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
         // and without this the account stays in rotation to reproduce the
         // refusal for the whole window the region is closed for.
         true,
+      );
+    },
+  },
+  {
+    // Trae's free-tier quota (`4008` / "exceeded the quota") resets daily.
+    // Treating it like the generic quota cooldown (1h account-wide fallback)
+    // let the account re-enter rotation inside the window and reproduce the
+    // refusal every few minutes — the "cooldown not holding" report. The
+    // verdict is a full-day backoff on *any* model (the account's quota is
+    // spent, so every model on it shares the wall). Scoped to the model so
+    // the account is not disabled wholesale; the 1-day window means a model
+    // stays parked for the day instead of flapping. Must run before
+    // `quota-exhausted`, which would apply the generic shorter fallback.
+    name: "trae-quota-exhausted",
+    match: (s) =>
+      (s.providerId === "trae" || s.providerId === "traecn") &&
+      (s.providerCode === "4008" || s.lower.includes("have exceeded the quota")),
+    decide: (s) => {
+      const cooldownMs = s.statedCooldownMs ?? TRAE_QUOTA_COOLDOWN_MS;
+      return s.result(
+        "model_unreachable",
+        "cooldown",
+        cooldownMs,
+        new Date(Date.now() + cooldownMs),
+        s.reason("Trae quota exhausted for this model"),
+        s.origin === "upstream" && s.modelId !== undefined,
       );
     },
   },
