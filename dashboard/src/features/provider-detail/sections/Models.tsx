@@ -18,7 +18,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { memo, useMemo, useState, type ReactNode } from "react";
-import { probeFailureToast, probeFailureToastArgs } from "./probe-toast";
+import { useGatewaySignedModelTest } from "./gateway-model-test";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { Dialog } from "../../../components/ui/dialog";
@@ -683,7 +683,7 @@ function ModelCard({
   readonly onEditRequest?: ((model: ModelCatalogEntry) => void) | undefined;
   readonly deletePending: boolean;
 }): ReactNode {
-  const probe = useProbeModel();
+  const gatewayTest = useGatewaySignedModelTest();
   const setEnabled = useSetModelEnabled();
   const [copied, setCopied] = useState(false);
   const [probeResult, setProbeResult] = useState<{ ok: boolean; latencyMs: number } | null>(null);
@@ -701,58 +701,37 @@ function ModelCard({
   const copyId = `${providerId}/${qualifiedId}`;
   const pendingLabel = serviceKind === "websearch" ? "Searching…" : "Thinking…";
   const runProbe = () => {
-    probe.mutate(
-      {
-        providerId,
-        request: {
-          modelId: model.modelId,
-          route: model.route,
-          ...(serviceKind === "llm" ? { reasoningEffort: thinkingEffort } : {}),
-          serviceKind,
-        },
-      },
-      {
-        onSuccess: (result) => {
-          setProbeResult({ ok: result.ok, latencyMs: result.latencyMs });
-          if (!result.ok) {
-            const { title, detail } = probeFailureToast(providerId, qualifiedId, result.error);
-            toast.error(title, detail);
-            return;
-          }
-          const sample = result.sample?.trim() ?? "";
-          const reported = result.reportedModel?.trim() ?? "";
-          toast.successRich(
-            `${qualifiedId} · END ${formatProbeDuration(result.latencyMs)}`,
-            <span className="grid gap-2 min-w-0">
-              {reported ? (
-                // The model the upstream said it ran, verbatim. No prefix
-                // stripping and no comparison: a probe answered by a different
-                // model than it asked for is the finding, and normalising it
-                // would erase the only evidence.
-                <Inline gap="6px" align="center" className="min-w-0">
-                  <Cog size={12} aria-hidden="true" className="shrink-0 text-text-tertiary" />
-                  <span className="truncate font-mono text-badge text-text-secondary" title={reported}>
-                    {reported}
-                  </span>
-                </Inline>
-              ) : null}
-              <span>{sample || "No sample text in the response."}</span>
-            </span>,
-            [reported, sample].filter(Boolean).join("\n") || "No sample text in the response.",
-          );
-        },
-        onError: (err) => {
-          setProbeResult({ ok: false, latencyMs: 0 });
-          toast.error(
-            ...probeFailureToastArgs(
-              providerId,
-              qualifiedId,
-              (err as { message?: string }).message,
-            ),
-          );
-        },
-      },
-    );
+    void gatewayTest.test(copyId).then((result) => {
+      setProbeResult({ ok: result.ok, latencyMs: result.latencyMs });
+      if (!result.ok) {
+        toast.error(
+          `${providerId}/${qualifiedId} test failed`,
+          result.error ?? "Unknown error",
+        );
+        return;
+      }
+      const sample = result.sample ?? "";
+      const reported = result.reportedModel?.trim() ?? "";
+      toast.successRich(
+        `${qualifiedId} · END ${formatProbeDuration(result.latencyMs)}`,
+        <span className="grid gap-2 min-w-0">
+          {reported ? (
+            // The model the upstream said it ran, verbatim. No prefix
+            // stripping and no comparison: a test answered by a different
+            // model than it asked for is the finding, and normalising it
+            // would erase the only evidence.
+            <Inline gap="6px" align="center" className="min-w-0">
+              <Cog size={12} aria-hidden="true" className="shrink-0 text-text-tertiary" />
+              <span className="truncate font-mono text-badge text-text-secondary" title={reported}>
+                {reported}
+              </span>
+            </Inline>
+          ) : null}
+          <span>{sample || "No sample text in the response."}</span>
+        </span>,
+        [reported, sample].filter(Boolean).join("\n") || "No sample text in the response.",
+      );
+    });
   };
 
   const toggleEnabled = () => {
@@ -929,11 +908,11 @@ function ModelCard({
           <Button
             variant="secondary"
             size="sm"
-            disabled={probe.isPending}
+            disabled={gatewayTest.testing}
             onClick={runProbe}
             aria-label={`Test ${qualifiedId}`}
             title={
-              probe.isPending
+              gatewayTest.testing
                 ? `Probing ${qualifiedId}…`
                 : probeResult?.ok
                   ? `Last probe OK in ${formatProbeDuration(probeResult.latencyMs)} — click to re-test`
@@ -943,7 +922,7 @@ function ModelCard({
             }
             className="flex-1 justify-center"
             icon={
-              probe.isPending ? (
+              gatewayTest.testing ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : probeResult ? (
                 probeResult.ok ? (
@@ -960,7 +939,7 @@ function ModelCard({
               )
             }
           >
-            {probe.isPending
+            {gatewayTest.testing
               ? pendingLabel
               : probeResult?.ok
                 ? formatProbeDuration(probeResult.latencyMs)
