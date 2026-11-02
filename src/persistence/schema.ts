@@ -1541,6 +1541,22 @@ export const telemetryEvents = pgTable(
       table.accountId,
       table.createdAt,
     ),
+    // Provider usage matrix + `breakdownTelemetry("provider")`: equality on
+    // `provider_id`, range+aggregate on `created_at`. Was served by the
+    // tenant-range index, which scanned every event in the window for one
+    // provider's card.
+    index("telemetry_events_tenant_provider_created_idx").on(
+      table.tenantId,
+      table.providerId,
+      table.createdAt,
+    ),
+    // `breakdownTelemetry("model")` (top-model lists): equality on
+    // `requested_model`, range+aggregate on `created_at`.
+    index("telemetry_events_tenant_model_created_idx").on(
+      table.tenantId,
+      table.requestedModel,
+      table.createdAt,
+    ),
     /**
      * Serves the public share page's per-key aggregate (`share-usage.ts`):
      * equality on `api_key_id`, range and aggregate on `created_at`. Without

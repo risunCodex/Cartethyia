@@ -184,6 +184,14 @@ async function resolveProxyLabel(
 }
 const HEALTH_WINDOW_MS = 24 * 3_600_000;
 const TOP_N = 50;
+/**
+ * TTL for the usage analytics read-through (summary, chart, breakdown, totals).
+ * The dashboard polls these every 5–10s; a 30s TTL means the heavy telemetry
+ * window scans run once per 30s and the polls in between are answered from
+ * Redis (or the in-process fallback) with a `304`. Health stays on the
+ * default 10s — it feeds the live status tile.
+ */
+const USAGE_READ_THROUGH_TTL_SECONDS = 30;
 
 /**
  * Nearest-rank percentile over a sorted array — kept for the JS-side
@@ -389,6 +397,7 @@ export class DrizzleObservabilityStore implements ObservabilityStore {
   async usage(tenantId: string, period: string): Promise<CachedResult<UsageResponse>> {
     return this.readThroughWithEtag(this.usageCacheKey(tenantId, period, "usage"), () =>
       this.computeUsage(tenantId, period),
+    USAGE_READ_THROUGH_TTL_SECONDS,
     );
   }
 
@@ -405,8 +414,12 @@ export class DrizzleObservabilityStore implements ObservabilityStore {
    * configured — and returns the strong validator alongside it, so a repeated
    * poll can be answered with a `304` instead of the whole payload.
    */
-  private readThroughWithEtag<T>(key: string, compute: () => Promise<T>): Promise<CachedResult<T>> {
-    return cachedReadWithEtag(this.redis, key, compute);
+  private readThroughWithEtag<T>(
+    key: string,
+    compute: () => Promise<T>,
+    ttlSeconds?: number,
+  ): Promise<CachedResult<T>> {
+    return cachedReadWithEtag(this.redis, key, compute, ttlSeconds);
   }
 
   private async computeUsage(tenantId: string, period: string): Promise<UsageResponse> {
@@ -459,6 +472,7 @@ export class DrizzleObservabilityStore implements ObservabilityStore {
   async usageSummary(tenantId: string, period: string): Promise<CachedResult<UsageSummaryResponse>> {
     return this.readThroughWithEtag(this.usageCacheKey(tenantId, period, "summary"), () =>
       this.computeSummary(tenantId, period),
+    USAGE_READ_THROUGH_TTL_SECONDS,
     );
   }
 
@@ -499,6 +513,7 @@ export class DrizzleObservabilityStore implements ObservabilityStore {
   async usageChart(tenantId: string, period: string): Promise<CachedResult<UsageChartResponse>> {
     return this.readThroughWithEtag(this.usageCacheKey(tenantId, period, "chart"), () =>
       this.computeChart(tenantId, period),
+    USAGE_READ_THROUGH_TTL_SECONDS,
     );
   }
 
@@ -546,6 +561,7 @@ export class DrizzleObservabilityStore implements ObservabilityStore {
   ): Promise<CachedResult<UsageByResponse>> {
     return this.readThroughWithEtag(this.usageCacheKey(tenantId, `${dimension}:${period}`, "by"), () =>
       this.computeBy(tenantId, dimension, period),
+    USAGE_READ_THROUGH_TTL_SECONDS,
     );
   }
 

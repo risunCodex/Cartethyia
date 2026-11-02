@@ -112,6 +112,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Provider list/detail and Usage pages no longer scan the whole telemetry
+  window.** Three heavy DB reads were behind the slow page loads:
+  - `listAccounts`/`listAllAccounts` read **today's** per-account usage via
+    `breakdownTelemetry("account")`, which scanned every of today's events and
+    capped at 100 groups — so accounts past the cap silently read as "no usage
+    today". The read is now scoped to the accounts on the page
+    (`(tenant_id, account_id, created_at)` range), so one page costs one
+    index-only scan, no top-N ceiling.
+  - The provider usage matrix (`providerUsageMatrix`) and `usageBy`/top-model
+    breakdowns filtered on `tenant_id` + `created_at` alone; new indexes
+    `telemetry_events_tenant_provider_created_idx` and
+    `telemetry_events_tenant_model_created_idx` (migration 0039) make the
+    per-provider/per-model cards index-only range scans instead of window
+    scans.
+  - Usage analytics read-through TTL raised from 10s to 30s, so the dashboard's
+    5–10s polls hit Redis (or the in-process fallback) and answer with a
+    `304` instead of recomputing the window aggregates on every poll.
+  - The provider list and flat model picker only need "which providers have
+    accounts" and active-account counts; they were paying for full per-account
+    usage/inflight/pool derivation via `listAllAccounts`. A new lightweight
+    `listAllAccountSummaries` (provider id + status only) serves both, so
+    opening the Providers page no longer triggers every account's usage read.
 - **Cursor continuation rebases when the pinned account becomes unroutable.**
   A tool result pinned to a Cursor account that had since cooled (quota
   exhausted) refused with a hard 400 "no longer routable", so a complete

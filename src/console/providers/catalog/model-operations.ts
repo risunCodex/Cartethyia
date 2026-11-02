@@ -62,7 +62,7 @@ export function createModelCatalogOperations(config: ProviderCatalogConfig) {
       const a = requireTenantAnyScope(access, MODEL_READ_SCOPES);
       const [providers, allAccounts] = await Promise.all([
         config.store.list(a.tenantId),
-        config.store.listAllAccounts(a.tenantId),
+        config.store.listAllAccountSummaries(a.tenantId),
       ]);
       const accountsByProvider = new Map<string, number>();
       for (const account of allAccounts) {

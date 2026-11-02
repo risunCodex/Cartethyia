@@ -239,7 +239,7 @@ export function createProviderCatalogOperations(config: ProviderCatalogConfig) {
       const a = requireTenantAnyScope(access, PROVIDER_READ_SCOPES);
       const [records, accounts] = await Promise.all([
         config.store.list(a.tenantId),
-        config.store.listAllAccounts(a.tenantId),
+        config.store.listAllAccountSummaries(a.tenantId),
       ]);
       const configured = new Set(accounts.map((account) => account.providerId));
       return Promise.all(

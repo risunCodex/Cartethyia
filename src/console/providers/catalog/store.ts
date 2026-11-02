@@ -10,7 +10,7 @@ import { globalOrOwnedBy, ownedByOnly } from "../../../persistence/tenant-scope"
 import { nextSortIndex, reorderSortIndex } from "../../../persistence/sort-order";
 import type { CartethyiaDatabase } from "../../../persistence/db-handle";
 import { buddyTaskLedger, models, networkPools, providerAccounts, providerOauthStates, providerPoolAccounts, providers, telemetryEvents, telemetryUsageTotals, tenantDisabledModels } from "../../../persistence/schema";
-import { breakdownTelemetry, IS_GATEWAY_ERROR_SQL } from "../../../observability/event-query";
+import { IS_GATEWAY_ERROR_SQL } from "../../../observability/event-query";
 import type { WireFamily } from "../../../protocol/canonical-model";
 import { listAccountHealthEvents, recoverAccount, deleteAccountHealthEvents, type AccountHealthEventRecord } from "../../../providers/operations/account-health-service";
 import { invalidateCredentialCache } from "../../../providers/operations/provider-credential-service";
@@ -679,15 +679,13 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
     rows: readonly (typeof providerAccounts.$inferSelect)[],
   ): Promise<readonly ProviderAccountResponse[]> {
     if (rows.length === 0) return [];
-    const todayStart = new Date();
-    todayStart.setUTCHours(0, 0, 0, 0);
     const accountIds = rows.map((row) => row.id);
     // Today's per-account usage is one GROUP BY, not a read of every event
-    // since midnight. `breakdownTelemetry("account")` is capped at 100 groups;
-    // a page of accounts never exceeds it, and the lookup below is by id, so a
-    // group that fell outside the cap simply reads as "no usage today" — the
-    // same value an account with no traffic gets.
-    const todayGroups = await breakdownTelemetry(this.db, tenantId, "account", todayStart);
+    // since midnight. The read is scoped to the accounts on this page via the
+    // `(tenant, account, created_at)` index — a full-tenant breakdown scanned
+    // every of today's events and capped at 100 groups, so an account past
+    // the cap silently read as "no usage today".
+    const todayGroups = await this.accountTodayUsage(tenantId, accountIds);
     const todayByAccount = new Map(
       todayGroups.map((group) => [
         group.key,
@@ -737,6 +735,52 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
         allTime: mapUsage(lifetimeByAccount.get(row.id)),
         ...(inflight === undefined ? {} : { inflight }),
       });
+    });
+  }
+
+  /**
+   * Today's per-account usage for a concrete id set. Scoped to those ids so
+   * the `(tenant, account, created_at)` index serves the range instead of a
+   * full-tenant window scan; returns exactly one group per account with
+   * traffic, so an account is never lost to a top-N cap.
+   */
+  private async accountTodayUsage(
+    tenantId: string,
+    accountIds: readonly string[],
+  ): Promise<
+    Array<{ key: string; requests: number; errors: number; inputTokens: number; outputTokens: number }>
+  > {
+    if (accountIds.length === 0) return [];
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const rows = await this.db
+      .select({
+        accountId: telemetryEvents.accountId,
+        requests: sql<number>`count(*)`,
+        errors: sql<number>`sum(case when ${IS_GATEWAY_ERROR_SQL} then 1 else 0 end)`,
+        inputTokens: sql<number>`coalesce(sum(${telemetryEvents.inputTokens}), 0)`,
+        outputTokens: sql<number>`coalesce(sum(${telemetryEvents.outputTokens}), 0)`,
+      })
+      .from(telemetryEvents)
+      .where(
+        and(
+          eq(telemetryEvents.tenantId, tenantId),
+          gte(telemetryEvents.createdAt, todayStart),
+          inArray(telemetryEvents.accountId, accountIds),
+        ),
+      )
+      .groupBy(telemetryEvents.accountId);
+    return rows.flatMap((row) => {
+      if (row.accountId === null) return [];
+      return [
+        {
+          key: row.accountId,
+          requests: Number(row.requests),
+          errors: Number(row.errors),
+          inputTokens: Number(row.inputTokens),
+          outputTokens: Number(row.outputTokens),
+        },
+      ];
     });
   }
 
@@ -883,6 +927,16 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
     const poolAccounts = await this.listAllPoolAccounts(tenantId);
     if (poolAccounts.length === 0) return accounts;
     return [...accounts, ...poolAccounts];
+  }
+
+  async listAllAccountSummaries(
+    tenantId: string,
+  ): Promise<readonly { providerId: string; status: string }[]> {
+    const rows = await this.db
+      .select({ providerId: providerAccounts.providerId, status: providerAccounts.status })
+      .from(providerAccounts)
+      .where(globalOrOwnedBy(providerAccounts.tenantId, tenantId));
+    return rows.map((row) => ({ providerId: row.providerId, status: row.status }));
   }
 
   /**

@@ -808,6 +808,14 @@ export interface ProviderCatalogStore {
   listAccounts(tenantId: string, providerId: string): Promise<readonly ProviderAccountResponse[]>;
   listAllAccounts(tenantId: string): Promise<readonly ProviderAccountResponse[]>;
   /**
+   * Provider-id + status only, for every account the tenant can see. Much
+   * cheaper than `listAllAccounts` (which also fetches today/lifetime usage,
+   * inflight, pool rows): used by the provider list's "configured" marker and
+   * the flat model picker's active-account counts, neither of which reads
+   * usage.
+   */
+  listAllAccountSummaries(tenantId: string): Promise<readonly { providerId: string; status: string }[]>;
+  /**
    * Non-secret upstream auth configuration for the given owned accounts,
    * keyed by account id. Used by the account-export route so a re-import can
    * restore the upstream user id / region that refresh and dispatch are
