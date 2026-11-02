@@ -21,10 +21,8 @@ import { isGatewayError } from "../../src/observability/telemetry-status";
 import {
   breakdownTelemetry,
   chartTelemetry,
-  eventByRequestId,
-  healthTelemetry,
   queryTelemetryEvents,
-  summarizeTelemetry,
+  summarizeUsageWithPerformance,
   sumTelemetryTokens,
 } from "../../src/observability/event-query";
 import { apiKeys, providers, telemetryEvents, tenants } from "../../src/persistence/schema";
@@ -103,7 +101,7 @@ describe("canonical SQL telemetry reader", () => {
           cachedInputTokens: 1,
         });
       }
-      const summary = await summarizeTelemetry(fx.db, fx.tenantId, new Date(0));
+      const { summary } = await summarizeUsageWithPerformance(fx.db, fx.tenantId, new Date(0));
       expect(summary.requests).toBe(10);
       expect(summary.inputTokens).toBe(100);
       expect(summary.outputTokens).toBe(50);
@@ -128,7 +126,7 @@ describe("canonical SQL telemetry reader", () => {
       await insertEvent(fx, { status: "failed", httpStatus: 500 });
       await insertEvent(fx, { status: "failed", httpStatus: 503 });
       await insertEvent(fx, { status: null, httpStatus: 500 });
-      const summary = await summarizeTelemetry(fx.db, fx.tenantId, new Date(0));
+      const { summary } = await summarizeUsageWithPerformance(fx.db, fx.tenantId, new Date(0));
       expect(summary.requests).toBe(3);
       expect(summary.errors).toBe(1);
       // The row-level predicate agrees with the SQL aggregate on each row.
@@ -195,11 +193,11 @@ describe("canonical SQL telemetry reader", () => {
     try {
       await insertEvent(fx, { inputTokens: 10, outputTokens: 5 });
       await insertEvent(fx, { inputTokens: 10, outputTokens: 5 });
-      const health = await healthTelemetry(fx.db, fx.tenantId, new Date(0));
+      const { summary: health } = await summarizeUsageWithPerformance(fx.db, fx.tenantId, new Date(0));
       expect(health.requests).toBe(2);
       expect(health.inputTokens).toBe(20);
       expect(health.outputTokens).toBe(10);
-      expect(health.latencyAvgMs).toBe(100);
+      expect(health.latencyMs.avg).toBe(100);
       const spend = await sumTelemetryTokens(fx.db, fx.tenantId, {
         apiKeyIds: [fx.apiKeyId],
         since: new Date(0),
@@ -354,10 +352,20 @@ describe("canonical SQL telemetry reader", () => {
     try {
       const requestId = crypto.randomUUID();
       await insertEvent(fx, { requestId });
-      const event = await eventByRequestId(fx.db, fx.tenantId, requestId);
+      const result = await queryTelemetryEvents(fx.db, {
+        tenantId: fx.tenantId,
+        since: new Date(0),
+        requestId,
+      });
+      const event = result.events[0];
       expect(event?.requestId).toBe(requestId);
       expect(event?.requestedModel).toBe("p/m");
-      expect(await eventByRequestId(fx.db, fx.tenantId, crypto.randomUUID())).toBeUndefined();
+      const missing = await queryTelemetryEvents(fx.db, {
+        tenantId: fx.tenantId,
+        since: new Date(0),
+        requestId: crypto.randomUUID(),
+      });
+      expect(missing.events).toHaveLength(0);
     } finally {
       fx.cleanup();
     }
@@ -379,7 +387,7 @@ describe("canonical SQL telemetry reader", () => {
         status: "completed",
         inputTokens: 999,
       });
-      const summary = await summarizeTelemetry(fx.db, fx.tenantId, new Date(0));
+      const { summary } = await summarizeUsageWithPerformance(fx.db, fx.tenantId, new Date(0));
       expect(summary.requests).toBe(1);
       expect(summary.inputTokens).toBe(10);
       const rows = await fx.db
@@ -402,7 +410,7 @@ describe("canonical SQL telemetry reader", () => {
       // must never take the Postgres branch (percentile_cont / :: casts) just
       // because the process env says `full` — that broke every chart/usage
       // read on a migrated SQLite file under a full-mode process.
-      const summary = await summarizeTelemetry(fx.db, fx.tenantId, new Date(0));
+      const { summary } = await summarizeUsageWithPerformance(fx.db, fx.tenantId, new Date(0));
       expect(summary.requests).toBe(1);
       expect(summary.inputTokens).toBe(7);
     } finally {

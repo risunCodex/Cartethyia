@@ -16,7 +16,6 @@ import { storedGrokRateLimit } from "./grok-ratelimit-store";
 import type { QuotaCollectionContext } from "../../quota/quota-support";
 
 const BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
-const BILLING_SOURCE = "cli-chat-proxy.grok.com/v1/billing";
 const USER_URL = "https://cli-chat-proxy.grok.com/v1/user?include=subscription";
 const GRPC_CREDITS_URL = "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig";
 const GRPC_EMPTY_FRAME = new Uint8Array([0, 0, 0, 0, 0]);
@@ -287,5 +286,3 @@ export async function fetchGrokQuota(
   // broken; the authoritative window below is what carries the verdict.
   return { source: "grok", plan, windows: ordered, error: null };
 }
-
-export { BILLING_SOURCE as GROK_BILLING_SOURCE };

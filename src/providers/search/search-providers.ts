@@ -9,7 +9,8 @@
  * normalization, which is what makes a provider's wire local to one spec.
  */
 import type { SearchParams, SearchProviderSpec, SearchRequestInit } from "./search-provider";
-import { asRecord, stringField } from "./search-provider";
+import { stringField } from "./search-provider";
+import { asRecord } from "../../shared/coerce";
 
 function domainFilterParams(filter: readonly string[] | undefined): {
   includes: string[];

@@ -136,6 +136,112 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** One candidate the sweep considers: the target plus its cache age. */
+type SweepEntry = { target: QuotaRefreshTarget; ageMs: number };
+
+/**
+ * Selects the batch for one pass: eligible (due or queued) accounts first,
+ * buddy accounts pulled ahead of age ordering so the check-in ride-along is
+ * not starved by older non-buddy rows, capped at `maxPerPass`.
+ */
+function selectBatch(
+  entries: readonly SweepEntry[],
+  minAgeMs: number,
+  maxPerPass: number,
+  listPendingCheckins: () => readonly PendingCheckinRequest[],
+): { batch: SweepEntry[]; skipped: number } {
+  // An account added since the last pass is admitted regardless of cache
+  // age: it has no quota reading at all yet, so the normal freshness gate
+  // would make a brand-new buddy account wait a full sweep cycle before it
+  // could claim its credit — the import enqueued it precisely so it would
+  // not have to. Only the check-in needs this; the quota leg is happy to
+  // fill a cold cache the moment it is asked to.
+  const queued = new Set(
+    listPendingCheckins()
+      .filter((request) => supportsDailyCheckin(request.providerId))
+      .map((request) => request.accountId),
+  );
+  const due = entries.filter(
+    (entry) => entry.ageMs >= minAgeMs || queued.has(entry.target.accountId),
+  );
+  due.sort((left, right) => {
+    const leftQueued = queued.has(left.target.accountId) ? 0 : 1;
+    const rightQueued = queued.has(right.target.accountId) ? 0 : 1;
+    if (leftQueued !== rightQueued) return leftQueued - rightQueued;
+    const leftBuddy = supportsDailyCheckin(left.target.providerId) ? 0 : 1;
+    const rightBuddy = supportsDailyCheckin(right.target.providerId) ? 0 : 1;
+    if (leftBuddy !== rightBuddy) return leftBuddy - rightBuddy;
+    return right.ageMs - left.ageMs;
+  });
+  const batch = due.slice(0, maxPerPass);
+  return { batch, skipped: entries.length - due.length + (due.length - batch.length) };
+}
+
+/**
+ * Runs the daily check-in ride-along for one batch item: claims its slot
+ * before the first await (the wave runs concurrently, so the count read after
+ * resolution would let the whole wave through), then attempts the growth pass
+ * and records the outcome. Bounded by the per-pass cap.
+ */
+async function runCheckinRideAlong(
+  deps: QuotaRefreshSweepDeps,
+  entry: SweepEntry,
+  resolveCredentialCached: (providerId: ProviderId, accountId: string) => Promise<string>,
+  state: { checkins: number; claimed: number; maxCheckins: number },
+  checkinOutcomes: Map<string, DailyCheckinResult>,
+): Promise<void> {
+  // The provider filter comes *before* the slot is consumed. The batch is
+  // oldest-first across every provider, so checking the cap first spends the
+  // whole per-pass budget on non-buddy accounts that the next line would
+  // skip anyway — a buddy account past the cap (a cbcn row behind ten older
+  // non-buddy rows) is never checked in automatically, only when an operator
+  // presses the button, which bypasses this cap entirely.
+  if (!checkinSlotAvailable(entry.target.providerId, state.checkins, state.maxCheckins)) return;
+  // Claim the slot before the first await. The wave runs its items
+  // concurrently, and reading `checkins` only after the growth pass
+  // resolves lets every item in the wave pass the cap check against the
+  // same stale count — the cap then bounds nothing.
+  state.checkins += 1;
+  try {
+    // A `ValidatedFetch` shares the fetch call signature; the only
+    // difference is Bun's `preconnect` static, so a single assertion is
+    // enough (the double cast added nothing).
+    const pooled: typeof fetch | undefined = deps.checkinFetcherFor
+      ? ((await deps.checkinFetcherFor(
+          entry.target.accountId,
+          entry.target.tenantId,
+        )) as typeof fetch)
+      : undefined;
+    const fetcher = pooled ?? deps.checkinFetcher;
+    const pass = await attemptDailyGrowthPass({
+      db: deps.db,
+      redis: deps.redis,
+      providerId: entry.target.providerId as ProviderId,
+      accountId: entry.target.accountId,
+      resolveCredential: resolveCredentialCached,
+      ...(fetcher ? { fetcher } : {}),
+    });
+    // The request has been served: the pass either ran and wrote its own
+    // day marker, or declined because today's slot was already settled.
+    // Holding the entry would only make the next pass re-admit an account
+    // it just handled.
+    dequeueCheckin(entry.target.accountId);
+    if (pass !== null) {
+      if (pass.checkin.state === "claimed") state.claimed += 1;
+      checkinOutcomes.set(entry.target.accountId, pass.checkin);
+    }
+  } catch (error) {
+    checkinOutcomes.set(entry.target.accountId, {
+      providerId: entry.target.providerId,
+      accountId: entry.target.accountId,
+      state: "error",
+      credit: null,
+      streakDays: null,
+      error: getErrorMessage(error),
+    });
+  }
+}
+
 /** `provider/identity` — the account's own label, else its id. */
 function accountName(target: QuotaRefreshTarget): string {
   const label = (target.label ?? "").trim();
@@ -278,9 +384,10 @@ export async function quotaRefreshSweep(deps: QuotaRefreshSweepDeps): Promise<vo
   };
 
   let failed = 0;
-  let claimed = 0;
-  let checkins = 0;
   const maxCheckins = deps.maxCheckinsPerPass ?? DEFAULT_MAX_CHECKINS_PER_PASS;
+  // The ride-along mutates this shared object (not local copies), so its
+  // counters stay visible to the summary and the tick report after the wave.
+  const checkinState = { checkins: 0, claimed: 0, maxCheckins };
 
   /**
    * One log line per account, emitted after the wave completes so the quota
@@ -361,33 +468,7 @@ export async function quotaRefreshSweep(deps: QuotaRefreshSweepDeps): Promise<vo
     // happened when an operator pressed the button. Attendance is once a day
     // and quota is refreshed every pass, so letting the check-in go first
     // costs the quota leg nothing.
-    select: (entries) => {
-      // An account added since the last pass is admitted regardless of cache
-      // age: it has no quota reading at all yet, so the normal freshness gate
-      // would make a brand-new buddy account wait a full sweep cycle before it
-      // could claim its credit — the import enqueued it precisely so it would
-      // not have to. Only the check-in needs this; the quota leg is happy to
-      // fill a cold cache the moment it is asked to.
-      const queued = new Set(
-        listPendingCheckins()
-          .filter((request) => supportsDailyCheckin(request.providerId))
-          .map((request) => request.accountId),
-      );
-      const due = entries.filter(
-        (entry) => entry.ageMs >= minAgeMs || queued.has(entry.target.accountId),
-      );
-      due.sort((left, right) => {
-        const leftQueued = queued.has(left.target.accountId) ? 0 : 1;
-        const rightQueued = queued.has(right.target.accountId) ? 0 : 1;
-        if (leftQueued !== rightQueued) return leftQueued - rightQueued;
-        const leftBuddy = supportsDailyCheckin(left.target.providerId) ? 0 : 1;
-        const rightBuddy = supportsDailyCheckin(right.target.providerId) ? 0 : 1;
-        if (leftBuddy !== rightBuddy) return leftBuddy - rightBuddy;
-        return right.ageMs - left.ageMs;
-      });
-      const batch = due.slice(0, maxPerPass);
-      return { batch, skipped: entries.length - due.length + (due.length - batch.length) };
-    },
+    select: (entries) => selectBatch(entries, minAgeMs, maxPerPass, listPendingCheckins),
     run: async (entry) => {
       attemptedTargets.push(entry.target);
       const outcome = await refreshAccountQuota(
@@ -418,56 +499,13 @@ export async function quotaRefreshSweep(deps: QuotaRefreshSweepDeps): Promise<vo
       // `attemptDailyGrowthPass`). Bounded per pass, and skipped for providers
       // without the billing route — a day marker makes this a no-op on every
       // pass after the first of the day.
-      //
-      // The provider filter comes *before* the slot is consumed. The batch is
-      // oldest-first across every provider, so checking the cap first spends the
-      // whole per-pass budget on non-buddy accounts that the next line would
-      // skip anyway — a buddy account past the cap (a cbcn row behind ten older
-      // non-buddy rows) is never checked in automatically, only when an operator
-      // presses the button, which bypasses this cap entirely.
-      if (!checkinSlotAvailable(entry.target.providerId, checkins, maxCheckins)) return;
-      // Claim the slot before the first await. The wave runs its items
-      // concurrently, and reading `checkins` only after the growth pass
-      // resolves lets every item in the wave pass the cap check against the
-      // same stale count — the cap then bounds nothing.
-      checkins += 1;
-      try {
-        // is only for the `preconnect` static Bun adds to its own fetch (the
-        // same cast the adapters use for `outbound_fetch`).
-        const pooled = deps.checkinFetcherFor
-          ? ((await deps.checkinFetcherFor(
-              entry.target.accountId,
-              entry.target.tenantId,
-            )) as unknown as typeof fetch)
-          : undefined;
-        const fetcher = pooled ?? deps.checkinFetcher;
-        const pass = await attemptDailyGrowthPass({
-          db: deps.db,
-          redis: deps.redis,
-          providerId: entry.target.providerId as ProviderId,
-          accountId: entry.target.accountId,
-          resolveCredential: resolveCredentialCached,
-          ...(fetcher ? { fetcher } : {}),
-        });
-        // The request has been served: the pass either ran and wrote its own
-        // day marker, or declined because today's slot was already settled.
-        // Holding the entry would only make the next pass re-admit an account
-        // it just handled.
-        dequeueCheckin(entry.target.accountId);
-        if (pass !== null) {
-          if (pass.checkin.state === "claimed") claimed += 1;
-          checkinOutcomes.set(entry.target.accountId, pass.checkin);
-        }
-      } catch (error) {
-        checkinOutcomes.set(entry.target.accountId, {
-          providerId: entry.target.providerId,
-          accountId: entry.target.accountId,
-          state: "error",
-          credit: null,
-          streakDays: null,
-          error: getErrorMessage(error),
-        });
-      }
+      await runCheckinRideAlong(
+        deps,
+        entry,
+        resolveCredentialCached,
+        checkinState,
+        checkinOutcomes,
+      );
     },
     onItemError: (entry, error) => {
       failed += 1;
@@ -486,7 +524,7 @@ export async function quotaRefreshSweep(deps: QuotaRefreshSweepDeps): Promise<vo
     now,
   });
 
-  logSweepAccounts(attemptedTargets, quotaOutcomes, checkinOutcomes, failed, claimed);
+  logSweepAccounts(attemptedTargets, quotaOutcomes, checkinOutcomes, failed, checkinState.claimed);
 
   // Release the slots for the accounts whose check-in errored, in one
   // round-trip. Releasing inline per account makes a pass that budgets out with
@@ -507,6 +545,6 @@ export async function quotaRefreshSweep(deps: QuotaRefreshSweepDeps): Promise<vo
     attempted: result.attempted,
     skipped: result.skipped,
     failed,
-    checkins,
+    checkins: checkinState.checkins,
   });
 }

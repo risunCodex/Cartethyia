@@ -102,3 +102,16 @@ The following parts were inspected fully and show no dead symbols, duplication, 
 - `src/security/admission/**` — Lua scripts + stores agree on key shapes; `reasons.ts`/`ttl.ts`/`buckets.ts`/`contracts.ts` all consumed; `lease-sweep.ts` bounded.
 - `src/security/abuse.ts` — Redis + in-memory stores parallel by design; `RingCounter` amortized; fail-closed.
 - `src/security/client-router-fingerprint.ts` / `cli-client-fingerprint.ts` — only the UA-read duplication noted (U5).
+
+---
+
+## Execution status
+
+- **Area execution:** 14 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** Stale comments (S1–S3) removed; agentCount (D2) and selector re-exports (D3/D4) confirmed handled.
+- **Not done / skipped (⛔):**
+  - D1 response-headers.ts module still present in src — not deleted ⛔
+  - U1–U3 IP/IPv6/CIDR shared `ip-utils.ts` — NOT created (duplication still present) ⛔
+  - U4 double DNS timeout wrapper — not verified
+  - O1 ValidatedFetch closure cache — not verified
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

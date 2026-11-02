@@ -153,3 +153,14 @@ Each finding cites file + line. Dead-code claims were verified with repo-wide gr
 - **`backup/nine-router.ts`** — conversions are thorough and reported; no dead exports (`convert9RouterBackup` used by `service.ts:49`; `ImportReport` re-exported to dashboard). Clean.
 - **`backup/service.ts`, `backup/validate.ts`, `backup/contracts.ts`** — exports all used; caching in `contracts.ts` (`COLUMN_CACHE`, `DROPPED_CACHE`) is good practice. Clean apart from the specific findings above.
 - **`backup/routes.ts`** — route wiring is consistent; the only finding is the duplicated 413 check (#8).
+
+---
+
+## Execution status
+
+- **Area execution:** 17 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** `pickDefined` shared helper extracted and used by contracts (finding 7); failed-login branches consolidated into `rejectLogin` (6); 413 body-limit shared (8); `BackupExportResult` untouched (23 ⛔).
+- **Not done / skipped (⛔):**
+  - #23 BackupExportResult name collision (still duplicated)
+  - #21 reasonLabel audit — not verified
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

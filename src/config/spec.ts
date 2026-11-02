@@ -330,8 +330,10 @@ export function readText(name: string, entry: TextConfigEntry): string {
 }
 
 /** Reads an optional string; empty or whitespace reads as absent. */
-export function readOptionalText(name: string, entry: OptionalTextConfigEntry): string | undefined {
-  void entry;
+export function readOptionalText(name: string, entry: ConfigEntry): string | undefined {
+  if (entry.kind !== "optional-text") {
+    throw new Error(`${name} must be declared optional-text in CONFIG_SPEC`);
+  }
   const raw = process.env[name]?.trim();
   return raw && raw.length > 0 ? raw : undefined;
 }
@@ -355,14 +357,18 @@ export function readRequired(name: string, entry: RequiredTextConfigEntry): stri
 }
 
 /** Reads a flag: enabled unless the literal `"false"` is set. */
-export function readFlag(name: string, entry: FlagConfigEntry): boolean {
-  void entry;
+export function readFlag(name: string, entry: ConfigEntry): boolean {
+  if (entry.kind !== "flag") {
+    throw new Error(`${name} must be declared flag in CONFIG_SPEC`);
+  }
   return process.env[name] !== "false";
 }
 
 /** Reads a comma-separated list, dropping empty entries. */
-export function readList(name: string, entry: ListConfigEntry): readonly string[] | undefined {
-  void entry;
+export function readList(name: string, entry: ConfigEntry): readonly string[] | undefined {
+  if (entry.kind !== "list") {
+    throw new Error(`${name} must be declared list in CONFIG_SPEC`);
+  }
   const entries = process.env[name]
     ?.split(",")
     .map((value) => value.trim())

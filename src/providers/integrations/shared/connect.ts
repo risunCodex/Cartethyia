@@ -5,24 +5,6 @@
 // end-of-stream trailer. Compression and trailer semantics stay at the call
 // sites; this module owns only the envelope arithmetic.
 
-/** Payload is gzip-compressed. */
-export const CONNECT_COMPRESSED_FLAG = 0x01;
-/** Frame carries the end-of-stream trailer rather than a message. */
-export const CONNECT_END_STREAM_FLAG = 0x02;
-
-/** One decoded Connect envelope. */
-interface ConnectFrame {
-  readonly flags: number;
-  readonly payload: Uint8Array;
-}
-
-interface ConsumeConnectFramesOptions {
-  /** Reject frames whose declared payload exceeds this many bytes. */
-  readonly maxPayloadBytes?: number;
-  /** Builds the error thrown for an oversized frame; defaults to a plain `Error`. */
-  readonly oversizeError?: (declaredLength: number) => Error;
-}
-
 /** Initial allocation for a frame buffer that has not received a chunk yet. */
 const FRAME_BUFFER_MIN_BYTES = 4096;
 /** Ceiling on the spare capacity kept above the live length when growing. */
@@ -83,40 +65,4 @@ export class FrameBuffer {
     this.end -= this.start;
     this.start = 0;
   }
-}
-
-/** Wraps `payload` in a 5-byte Connect envelope. */
-export function frameConnectMessage(payload: Uint8Array, flags = 0) {
-  const frame = Buffer.alloc(5 + payload.length);
-  frame.writeUInt8(flags, 0);
-  frame.writeUInt32BE(payload.length, 1);
-  frame.set(payload, 5);
-  return frame;
-}
-
-/**
- * Splits every complete Connect frame out of `buffer`, in order. Returns the
- * trailing bytes that do not yet form a complete frame so a streaming caller
- * can prepend them to the next chunk and call again.
- */
-export function consumeConnectFrames(
-  buffer: Buffer,
-  options: ConsumeConnectFramesOptions = {},
-): { frames: ConnectFrame[]; rest: Buffer } {
-  const frames: ConnectFrame[] = [];
-  let pending = buffer;
-  while (pending.length >= 5) {
-    const flags = pending[0] ?? 0;
-    const length = pending.readUInt32BE(1);
-    if (options.maxPayloadBytes !== undefined && length > options.maxPayloadBytes) {
-      throw (
-        options.oversizeError?.(length) ??
-        new Error(`Connect frame length ${length} exceeds cap`)
-      );
-    }
-    if (pending.length < 5 + length) break;
-    frames.push({ flags, payload: pending.subarray(5, 5 + length) });
-    pending = pending.subarray(5 + length);
-  }
-  return { frames, rest: pending };
 }

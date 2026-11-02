@@ -15,7 +15,7 @@ import { fetchProviderQuota } from "./quota-support";
 import { type FetchLike, type ProviderQuotaResult } from "./quota-contracts";
 import type { ProviderId } from "../provider-contracts";
 import type { ProviderRegistry } from "../provider-registry";
-import { GLOBAL_QUOTA_LENS, setCachedQuota } from "./cache";
+import { quotaLens, setCachedQuota } from "./cache";
 import { persistQuotaSnapshot } from "./snapshot";
 import { asJsonbRecord } from "../../shared/coerce";
 import { KIRO_DEFAULT_LABELS } from "../integrations/kiro/kiro-oauth";
@@ -232,7 +232,7 @@ export interface QuotaRefreshTarget {
 
 /** Cache lens an account's quota belongs under. */
 export function targetLens(target: QuotaRefreshTarget): string {
-  return target.tenantId ?? GLOBAL_QUOTA_LENS;
+  return quotaLens(target.tenantId);
 }
 
 const TARGET_COLUMNS = {

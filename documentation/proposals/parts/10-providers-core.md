@@ -62,3 +62,14 @@ The following parts were read in full and showed no dead exports, duplication, t
 - `search/search-catalog.ts`, `search/search-providers.ts` (per-spec logic), `discovery/openrouter-free-roster.ts`
 - `discovery/catalog/catalog-format.ts` (excluding the LRU/FIFO note, #32), `discovery/catalog/catalog-blob.ts` (generated)
 - `discovery/openai-model-discovery.ts`, `provider-model-definition.ts`, `configured-provider.ts`, `provider-contracts.ts` leaf helpers, `provider-usage.ts` (core normalization/repricing: used by 6+ call sites)
+
+---
+
+## Execution status
+
+- **Area execution:** 21 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** Dead exports removed (jwt verifier reset, client-versions, discovery-backed ids, credential-service raw exports); composeAbortSignal reuse; withTransaction helper; probing-service systemone → dispatchNativeService call site updated.
+- **Not done / skipped (⛔):**
+  - #15 adapter `systemone` alias kept for /v1/systemone route (outside scope) ⛔
+  - #25 resolveDialect recomputed in transformStream — not verified
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

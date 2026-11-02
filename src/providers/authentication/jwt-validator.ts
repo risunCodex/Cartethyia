@@ -340,11 +340,6 @@ export function jwksVerifierFor(
   return verifier;
 }
 
-/** Test hook: forgets cached JWKS verifiers. */
-export function resetJwksVerifiersForTests(): void {
-  jwksVerifiers.clear();
-}
-
 interface IssuedTokenValidation {
   readonly jwksUrl?: string;
   readonly issuer?: string | readonly string[];

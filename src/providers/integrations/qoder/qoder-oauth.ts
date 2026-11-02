@@ -111,9 +111,7 @@ export function readQoderUserInfo(body: Record<string, unknown>): QoderUserInfo 
 }
 
 /** Global/intl endpoints. Kept as the default realm's values, unchanged. */
-export const QODER_LOGIN_URL = "https://qoder.com/device/selectAccounts" as const;
 export const QODER_DEVICE_TOKEN_URL = "https://openapi.qoder.sh/api/v1/deviceToken/poll" as const;
-export const QODER_USERINFO_URL = "https://openapi.qoder.sh/api/v1/userinfo" as const;
 
 /**
  * Per-realm device endpoints, derived from `QODER_REALMS`.

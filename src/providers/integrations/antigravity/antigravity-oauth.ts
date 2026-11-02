@@ -212,4 +212,3 @@ export class AntigravityOAuthClient extends OAuthClient {
 }
 
 export const antigravityOAuthClient = new AntigravityOAuthClient();
-export { exchangeCodeForToken };

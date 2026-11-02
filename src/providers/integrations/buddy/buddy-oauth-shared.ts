@@ -120,7 +120,7 @@ export function buddyAccountUid(accessToken: string): string | undefined {
  * Falls back to `undefined` when the token carries no usable identity, letting
  * the console keep the operator-supplied label.
  */
-export function buddyAccountLabel(accessToken: string): string | undefined {
+function buddyAccountLabel(accessToken: string): string | undefined {
   const claims = decodeJwtPayload(accessToken);
   if (!claims) return undefined;
   const email = nonEmptyTrimmedString(claims.email) ?? nonEmptyTrimmedString(claims.preferred_username);

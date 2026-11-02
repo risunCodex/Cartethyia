@@ -174,3 +174,14 @@ The `telemetry_reconciliation_state.files_completed` column exists (schema.ts li
 | **Total** | **30** |
 
 Notes on counts: D1 counts as one finding covering six dead exports; U2 counts the 3× duplicated bucket block as one. The most actionable items are **D1/D2** (delete superseded telemetry readers), **O1** (the `filesCompleted + 0` bug), and **D7/S3** (the never-incremented metric).
+
+---
+
+## Execution status
+
+- **Area execution:** 3 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** Dead SQL readers (D1) and event-log file readers (D2) removed; `summarizeUsageWithPerformance` is the live reader; tests migrated; O1 `filesCompleted + 0` → `+ 1` (fixed by orchestrator).
+- **Not done / skipped (⛔):**
+  - S2 payload-capture doc '15 minutes' vs 60 — not verified
+  - U4 flush-buffer skeleton duplication — not verified
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

@@ -5,7 +5,6 @@
 // protocol was verified against: they are declared once so the auth flow, the
 // unary catalog calls, and the Run stream cannot drift apart on host, path, or
 // client id.
-import type { WireFamily } from "../../../protocol/canonical-model";
 
 /** Canonical bundled provider id. */
 export const CURSOR_PROVIDER_ID = "cursor";
@@ -71,9 +70,6 @@ export const SESSION_REFRESH_TIMEOUT_MS = 20_000;
  * a pool slot for the life of the process.
  */
 export const RUN_IDLE_TTL_MS = 10 * 60_000;
-
-/** Chat wire is the declared default; the adapter owns the native protocol. */
-export const CURSOR_WIRE_FAMILY: WireFamily = "chat";
 
 /**
  * Any HTTPS subdomain of `cursor.sh` is an acceptable Run host: the region

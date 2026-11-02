@@ -119,6 +119,30 @@ function parseSections(raw: string | undefined): readonly BackupSection[] | unde
 }
 
 /**
+ * Enforces the byte bound against actual received bytes, not just the declared
+ * header: a missing or spoofed content-length would otherwise bypass the 413
+ * and buffer an unbounded file into JSON.parse. Elysia has already parsed the
+ * body here, so measure the re-serialized form — an over-limit file still
+ * fails closed before any restore/inspection touches the DB. Returns the 413
+ * response when over the limit, or `null` when the body is accepted.
+ */
+function enforceBodyLimit(request: Request, body: unknown, set: { status?: number | string }): { error: string; code: string } | null {
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  const actualBytes = JSON.stringify(body ?? null).length;
+  if (
+    (Number.isFinite(declared) && declared > MAX_BACKUP_BYTES) ||
+    actualBytes > MAX_BACKUP_BYTES
+  ) {
+    set.status = 413;
+    return {
+      error: `backup exceeds the ${MAX_BACKUP_BYTES} byte limit`,
+      code: "request_too_large",
+    };
+  }
+  return null;
+}
+
+/**
  * Streams the export document into the response body as it is written; one
  * row-page of the tenant's data is in memory at a time.
  */
@@ -194,23 +218,8 @@ export function createBackupRoutes(config: BackupRoutesConfig): AnyElysia {
         if (access.tenantId === null) {
           throw new ConsoleDomainError("tenant_required", 403, "Tenant isolation required");
         }
-        // Enforce against actual received bytes, not just the declared header:
-        // a missing or spoofed content-length would otherwise bypass the 413
-        // and buffer an unbounded file into JSON.parse. Elysia has already
-        // parsed the body here, so measure the re-serialized form — an
-        // over-limit file still fails closed before restore touches the DB.
-        const declared = Number(request.headers.get("content-length") ?? "0");
-        const actualBytes = JSON.stringify(body ?? null).length;
-        if (
-          (Number.isFinite(declared) && declared > MAX_BACKUP_BYTES) ||
-          actualBytes > MAX_BACKUP_BYTES
-        ) {
-          set.status = 413;
-          return {
-            error: `backup exceeds the ${MAX_BACKUP_BYTES} byte limit`,
-            code: "request_too_large",
-          };
-        }
+        const tooLarge = enforceBodyLimit(request, body, set);
+        if (tooLarge !== null) return tooLarge;
         // The restoring tenant comes from the caller's own access decision and
         // from nowhere else. A request body may not name the tenant it writes
         // into: that would let any holder of the scope import into, and
@@ -283,21 +292,8 @@ export function createBackupRoutes(config: BackupRoutesConfig): AnyElysia {
         if (access.tenantId === null) {
           throw new ConsoleDomainError("tenant_required", 403, "Tenant isolation required");
         }
-        // Same byte bound as the import, for the same reason: the file is
-        // parsed here too, and an unbounded one would be buffered before any
-        // validation could refuse it.
-        const declared = Number(request.headers.get("content-length") ?? "0");
-        const actualBytes = JSON.stringify(body ?? null).length;
-        if (
-          (Number.isFinite(declared) && declared > MAX_BACKUP_BYTES) ||
-          actualBytes > MAX_BACKUP_BYTES
-        ) {
-          set.status = 413;
-          return {
-            error: `backup exceeds the ${MAX_BACKUP_BYTES} byte limit`,
-            code: "request_too_large",
-          };
-        }
+        const tooLarge = enforceBodyLimit(request, body, set);
+        if (tooLarge !== null) return tooLarge;
         // Reads nothing and writes nothing: the checklist the restore wizard
         // shows, so an operator can pick sections before typing a password.
         return config.backupFor(request).inspect(body.backup);

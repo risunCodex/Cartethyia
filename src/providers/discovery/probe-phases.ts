@@ -367,6 +367,30 @@ export type ProbeAccountSelection =
   | { readonly ok: false; readonly error: string };
 
 /**
+ * Selects the first usable account row: status ≠ disabled, cooldown elapsed
+ * (unless `allowCoolingAccount`), preferring a tenant-owned account over a
+ * shared global one. Shared by the discovery and probing paths so both
+ * agree on which account a provider answers as.
+ */
+export function selectUsableAccount<T extends {
+  readonly tenantId: string | null;
+  readonly status: string;
+  readonly cooldownUntil: Date | null;
+}>(
+  rows: readonly T[],
+  allowCoolingAccount = false,
+  now = Date.now(),
+): T | undefined {
+  return rows
+    .filter(
+      (row) =>
+        row.status !== "disabled" &&
+        (allowCoolingAccount || row.cooldownUntil === null || row.cooldownUntil.getTime() <= now),
+    )
+    .sort((left, right) => Number(right.tenantId !== null) - Number(left.tenantId !== null))[0];
+}
+
+/**
  * Phase 2 — pick the account the probe runs as. Snapshot-equivalent health
  * filtering: disabled accounts and live cooldowns never route, so probes must
  * not select them either. Tenant-owned accounts win over shared global ones.
@@ -406,15 +430,8 @@ export async function selectProbeAccount(args: {
           ),
         )
     : [];
-  const now = Date.now();
-  const usableAccounts = accountRows
-    .filter(
-      (row) =>
-        row.status !== "disabled" &&
-        (allowCoolingAccount || row.cooldownUntil === null || row.cooldownUntil.getTime() <= now),
-    )
-    .sort((left, right) => Number(right.tenantId !== null) - Number(left.tenantId !== null));
-  const accountId = requestedAccountId ?? usableAccounts[0]?.id;
+  const usableAccount = selectUsableAccount(accountRows, allowCoolingAccount);
+  const accountId = requestedAccountId ?? usableAccount?.id;
   if (!accountId && requiresAccount) {
     return {
       ok: false,

@@ -295,7 +295,7 @@ export async function resolveCredentialForAccount(
   return value;
 }
 
-export async function resolveAccountSecretString(
+async function resolveAccountSecretString(
   db: CartethyiaDatabase,
   providerId: string,
   accountId: string,
@@ -306,7 +306,7 @@ export async function resolveAccountSecretString(
 }
 
 /** Decrypts the stored provider tokens after refreshing an expired OAuth access token. */
-export async function resolveAccountCredentialsForExport(
+async function resolveAccountCredentialsForExport(
   db: CartethyiaDatabase,
   providerId: string,
   accountId: string,

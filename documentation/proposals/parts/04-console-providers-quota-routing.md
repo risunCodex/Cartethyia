@@ -95,3 +95,13 @@ Scope: `src/console/providers/`, `src/console/quota/`, `src/console/remote-suppo
 - `src/console/updates/version-compare.ts` / `repository-updates.ts` — pure, dependency-free, test-covered (finding 22 is the only concern, in `routes.ts`).
 
 Evidence note: no `.codegraph/` directory exists at repo root, so all relationship checks were done via `grep` over the full repo (`src/`, `test/`, `scripts/`, `dashboard/src/`).
+
+---
+
+## Execution status
+
+- **Area execution:** 17 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** Console-wide shared helpers landed (escapeHtml, tokenUsage, loadOwnedAccount patterns).
+- **Not done / skipped (⛔):**
+  - #22 POST /updates/apply destructive `process.exit` — deliberately skipped (needs operator-confirmed design) ⛔
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

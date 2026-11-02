@@ -2,8 +2,7 @@
  * HTTP listener, dashboard runtime, and graceful-shutdown drain resolvers.
  */
 
-import { CONFIG_SPEC, readInt, readOptionalText } from "./spec";
-import { resolvePackagePath } from "./package-paths";
+import { CONFIG_SPEC, readInt, readOptionalText, readText } from "./spec";
 
 /** Resolves the HTTP listener port from the process environment. */
 export function resolvePort(): number {
@@ -12,9 +11,7 @@ export function resolvePort(): number {
 
 /** Resolves the dashboard static asset directory. */
 export function resolveDashboardDist(): string {
-  const raw = process.env.DASHBOARD_DIST?.trim();
-  if (!raw) return resolvePackagePath("dist", "dashboard");
-  return raw;
+  return readText("DASHBOARD_DIST", CONFIG_SPEC.DASHBOARD_DIST);
 }
 
 /**

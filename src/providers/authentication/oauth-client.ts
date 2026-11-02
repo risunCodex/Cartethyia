@@ -6,6 +6,7 @@
  */
 import {
   buildPkceAuthorizeUrl as buildPkceAuthorizeUrlShared,
+  expiryFromSeconds,
   nonEmptyString,
   postFormTokenRequest,
   record,
@@ -144,7 +145,7 @@ export abstract class OAuthClient implements OAuthLoginClient, OAuthTokenRefresh
       typeof expiresIn === "number" && Number.isFinite(expiresIn) && expiresIn >= 0
         ? expiresIn
         : fallbackSeconds;
-    return new Date(Date.now() + Math.max(0, seconds) * 1000);
+    return expiryFromSeconds(seconds);
   }
 
   /**

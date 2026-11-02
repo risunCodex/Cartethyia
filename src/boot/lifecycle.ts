@@ -4,6 +4,7 @@ import { buildProductionDeps } from "./dependencies";
 import type { ProductionDeps } from "./dependencies";
 import { withTimeout } from "./timeout";
 import { resolveShutdownDrainWindowMs } from "../config/runtime";
+import { log } from "../observability/logger";
 
 export type ShutdownReason = "SIGTERM" | "SIGINT" | "reload" | "update";
 type ShutdownState =
@@ -107,7 +108,10 @@ export class ShutdownCoordinator {
         if (this.inflight.size > 0) {
           try {
             this.hooks.abortInflight?.();
-          } catch {
+          } catch (error) {
+            // A failed abort must not be silent: it leaks in-flight work into
+            // close_pools, which then closes pools under live requests.
+            log.warn("[shutdown] abort in-flight failed", error as Error);
           }
         }
         await this.waitForDrain(Date.now() + this.drainTimeoutMs);
@@ -156,14 +160,9 @@ export class ShutdownCoordinator {
     const remaining = Math.max(0, deadlineMs - Date.now());
     // No budget left: invoking the hook would start work with zero deadline
     // that withTimeout immediately cancels; skip straight to pool close.
-    if (remaining <= 0 || !this.hooks.flushTelemetry) {
-      if (remaining > 0 && !this.hooks.flushTelemetry) {
-        // bounded small delay to simulate flush
-        const wait = Math.min(remaining, 5);
-        await new Promise<void>((r) => setTimeout(r, wait));
-      }
-      return;
-    }
+    // Without a hook there is nothing to flush either — both cases return
+    // here and the drain proceeds to pool close.
+    if (remaining <= 0 || !this.hooks.flushTelemetry) return;
     try {
       await withTimeout(
         this.hooks.flushTelemetry(deadlineMs),

@@ -295,6 +295,3 @@ function concat(left: Uint8Array, right: Uint8Array): Uint8Array {
   out.set(right, left.byteLength);
   return out;
 }
-
-/** Heartbeat cadence while a Run is held open waiting for a tool result. */
-export const RUN_HEARTBEAT_INTERVAL_MS = 20_000;

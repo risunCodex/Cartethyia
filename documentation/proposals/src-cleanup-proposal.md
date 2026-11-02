@@ -1,6 +1,6 @@
 # Proposal — src/ code cleanup & optimization (12-area audit)
 
-**Status:** ready for execution — audit complete, findings composed from 12 per-area reports.
+**Status:** executed (partial) — 12-area audit executed by parallel subagents; verification + status marking in `parts/01-12.md` (see §7).
 **Tanggal:** 2026-11-03
 **Scope:** `src/` (semua area). Tanpa perubahan behavior; murni refactor + dead-code removal + optimasi.
 **Method:** 12 subagent explore paralel, masing-masing membaca lengkap semua `.ts` di areanya, verifikasi dead-symbol via grep seluruh repo (`src/`, `test/`, `scripts/`, `dashboard/src/`), dan menulis report per-area di `documentation/proposals/parts/`.
@@ -118,3 +118,34 @@ Hilangkan `as unknown as` / `as never` / `as string` yang melubangi strict typin
 - **05 D1** — `src/network/response-headers.ts` seluruhnya mati; konfirmasi header stripping memang superseded oleh upstream projection sebelum hapus.
 - **04 #22** — `POST /updates/apply` spawn `npm install` detached lalu `process.exit(1500)` tanpa cek exit: jalur destruktif, butuh perbaikan (blokir atau tangani proper).
 - **10 #29/#31** — stale: legacy envelope versions v2–v4 di quota cache; daftar paralel id/spec yang harus sinkron.
+
+---
+
+## 7. Execution status (2026-11-03)
+
+Dieksekusi sebagian oleh 6 subagent implementasi paralel + fix verifikasi oleh orchestrator. **Penandaan jujur per temuan ada di `documentation/proposals/parts/01-12.md`** (bagian "## Execution status" di tiap part).
+
+### Verifikasi
+- `bunx tsc --noEmit` — **bersih (0 error)** setelah seluruh perubahan.
+- Backend suite — **4217 pass / 0 fail** (wilayah 378 files).
+- Protocol suite — **591 pass / 0 fail**; dashboard typecheck bersih.
+- 96 file source berubah + 3 file baru (`console/shared/object.ts`, `console/shared/transaction.ts`, `transport/dispatch/native-shared.ts`).
+
+### Yang terkonfirmasi dieksekusi (✅)
+- **Dead-code removal** di banyak area: boot/config/workers (createNoopMaintenanceLeaseStore, growthClientToken, requirePublicOrigin, FALLBACK_MEMORY_LIMIT_BYTES), console (isAlsoAccountCredential, CliToolMappingStore.listAll, 12 empty imports, summarizeUsagePerformance, formatSseFrame), event-query/event-log superseded readers, providers core (jwt reset, client-versions, discovery-backed ids, raw credential exports), integrations (cursor/commandcode/codex/factory/grok/muse/qoder/trae/kiro/xai/kilo dead exports).
+- **Duplikasi**: `cachedCooldownMs` (cooldown resolvers), `pickDefined` (console object-shaping), `rejectLogin` (failed-login branches), native-shared helpers (resolveAttemptCredential/networkFetchContext/jsonResponse/requireRecordBody/stripThinkingSuffix/hasScope dipakai websearch+token-count), `composeAbortSignal` reuse, event-query `bucketExpression` helper.
+- **Bug fix bernilai**: `filesCompleted + 0` → `+ 1` (telemetry reconciliation); usage chart `cached` kini membaca `cachedInputTokens` (SQL + store); `resolveThinkingForModel` di-memoize.
+
+### Yang belum / sengaja dilewati (⛔)
+- **08 #22** `estimatedCountResponse` telemetry bypass — sengaja (butuh konfirmasi kontrak telemetry).
+- **04 #22** `POST /updates/apply` process.exit destruktif — sengaja (butuh desain operator-confirmed).
+- **10 #15** adapter `systemone` alias dipertahankan (route `/v1/systemone` di luar scope).
+- **05 U1–U3** shared IP/IPv6/CIDR `ip-utils.ts` belum dibuat; **05 D1** `response-headers.ts` masih ada.
+- **07 #5/#17/#23** preloadCodec belum diwire; toWellFormedString double-cast masih ada; ensureMaxTokensForThinking unreachable throw masih ada.
+- **09 #1–#8** capabilityUnsupportedError dll masih ada.
+- **11 #1/#4** antigravityEndpointOrderIndex, decodeMessageSparse masih ada.
+- **12 #1/#2/#3** session-cache shared belum, AWS-region regex ×4 belum, PKCE length masih Math.random.
+- Item duplikasi/anti-pattern/optimasi lain di luar daftar ini belum diverifikasi satuan — lihat "## Execution status" per part.
+
+### Catatan
+Eksekusi parsial: subagent implementasi tidak menyelesaikan seluruh 345 temuan; status per-part mencatat yang terverifikasi masih ada. Proposal ini tetap menjadi daftar kerja untuk lanjutan (Tier 1–4 di §3).

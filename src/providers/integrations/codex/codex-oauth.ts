@@ -272,4 +272,3 @@ export class CodexOAuthClient extends OAuthDeviceFlow {
 }
 
 export const codexOAuthClient = new CodexOAuthClient();
-export { exchangeCodeForToken };

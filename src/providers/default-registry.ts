@@ -5,7 +5,7 @@
 import {
   GENERIC_API_KEY_SPECS,
 } from "./configured-openai-providers";
-import { createDiscoveryBackedProviderCapabilities } from "./bundled-discovery-providers";
+import { createDiscoveryBackedProviderCapabilities, discoveryBackedCapabilities } from "./bundled-discovery-providers";
 import { createApiKeyAdapter } from "./configured-provider";
 import type { ApiKeyProviderSpec } from "./configured-provider";
 import { oauthCapability, quotaCapability, type ProviderModuleCapabilities } from "./provider-capabilities";
@@ -130,39 +130,6 @@ function qoderDiscovery(
   };
 }
 
-
-/**
- * Builds the `loadAdapter` + `loadModelDiscovery` pair every plain bearer
- * provider needs.
- *
- * Only the base URL differs between them, so both halves are shared: the
- * adapter is the generic spec and the discovery call is a bearer
- * `GET {base}/models`. Keeping them in one function is what stops the pairing
- * from drifting — registering a provider with one half and not the other is
- * exactly how `gmi`, `nvidia`, and `fireworks` came to ship with no catalog
- * *and* no discovery, which is a provider that lists zero models with no way to
- * fetch any. `test/providers/generic-provider-completeness.test.ts` holds both.
- */
-function discoveryBacked(
-  providerId: string,
-  spec: ApiKeyProviderSpec,
-): ProviderModuleCapabilities {
-  return {
-    // The registry map is what discovery and probing read
-    // (`discoveryPathsFor`), while the spec's copy is what the adapter
-    // dispatches on. Setting only the spec leaves a discovered model resolving
-    // its wire from the generic default instead of the path the adapter will
-    // actually call, which is how a probe verifies one endpoint while dispatch
-    // hits another.
-    ...(spec.endpoint_paths_by_wire_family === undefined
-      ? {}
-      : { endpointPathsByWireFamily: spec.endpoint_paths_by_wire_family }),
-    loadAdapter: async () => createApiKeyAdapter(spec),
-    loadModelDiscovery: openAIModelDiscovery(providerId, {
-      headers: (credential) => ({ authorization: `Bearer ${credential}` }),
-    }),
-  };
-}
 
 function openAIModelDiscovery(
   providerId: string,
@@ -765,7 +732,7 @@ export const PROVIDER_CAPABILITIES = {
   // synced account sees whatever the plan currently serves. The catalog keeps
   // the provider usable before anyone syncs.
   dashscope: {
-    ...discoveryBacked("dashscope", GENERIC_API_KEY_SPECS.dashscope),
+    ...discoveryBackedCapabilities("dashscope", GENERIC_API_KEY_SPECS.dashscope, openAIModelDiscovery),
     loadModels: async () => (await import("./integrations/dashscope-models")).DASHSCOPE_MODELS,
   },
 

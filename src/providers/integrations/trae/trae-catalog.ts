@@ -12,7 +12,7 @@
 // intl stays on its static roster and says so via `modelListSupported`.
 
 import { defineModel, type ModelDefinition } from "../../provider-model-definition";
-import { TRAE_AGENT_CHAT_PATH, TRAE_CHAT_PATH, type TraeRealm } from "./trae-realm";
+import { TRAE_AGENT_CHAT_PATH, TRAE_CHAT_PATH } from "./trae-realm";
 
 /** One roster row, as upstream describes it. */
 export interface TraeModelRow {
@@ -134,11 +134,6 @@ function traeModels(rows: readonly TraeModelRow[], providerId: string): readonly
 
 export const TRAE_CN_MODELS: readonly ModelDefinition[] = traeModels(TRAE_CN_ROWS, "traecn");
 export const TRAE_INTL_MODELS: readonly ModelDefinition[] = traeModels(TRAE_INTL_ROWS, "trae");
-
-/** Roster for a realm. */
-export function traeStaticModels(realm: TraeRealm): readonly ModelDefinition[] {
-  return realm === "cn" ? TRAE_CN_MODELS : TRAE_INTL_MODELS;
-}
 
 /**
  * Reads the largest context window out of one upstream model object.

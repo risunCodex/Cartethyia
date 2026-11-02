@@ -34,6 +34,30 @@ export interface AccountHealthEventRecord {
   readonly createdAt: string;
 }
 
+/**
+ * Runs a write against the db handle, wrapping it in a transaction when the
+ * handle supports one. Kept as a capability probe, not a correctness guard:
+ * health writes are reachable with a partially-implemented database handle
+ * (the dispatch tests pass a narrow double), and a transaction is an
+ * optimization here, not a requirement — the same writes are correct without
+ * one. Returns `fallback` when the write throws; health must never fail
+ * requests.
+ */
+async function withTransaction<T>(
+  db: CartethyiaDatabase,
+  mutate: (tx: CartethyiaDatabase) => Promise<T>,
+  fallback: T,
+): Promise<T> {
+  try {
+    if (typeof db.transaction === "function") {
+      return await db.transaction((tx) => mutate(tx as CartethyiaDatabase));
+    }
+    return await mutate(db);
+  } catch {
+    return fallback;
+  }
+}
+
 /** Persists one classified failure to the account row and appends a health event. */
 export async function recordAccountFailure(
   db: CartethyiaDatabase,
@@ -260,18 +284,7 @@ export async function recordAccountFailure(
     return { ...classification, routesVisible: true };
   };
 
-  try {
-    // Kept as a capability probe, not a correctness guard: this function is
-    // reachable with a partially-implemented database handle (the dispatch
-    // tests pass a narrow double), and a transaction is an optimization here,
-    // not a requirement — the same writes are correct without one.
-    if (typeof db.transaction === "function") {
-      return await db.transaction((tx) => persist(tx as CartethyiaDatabase));
-    }
-    return await persist(db);
-  } catch {
-    return null;
-  }
+  return withTransaction(db, persist, null);
 }
 
 /** Clears failure state after a successful dispatch; true when the account changed. */
@@ -333,14 +346,7 @@ export async function recordAccountSuccess(
     }
     return hadFailures;
   };
-  try {
-    if (typeof db.transaction === "function") {
-      return await db.transaction((tx) => mutate(tx as CartethyiaDatabase));
-    }
-    return await mutate(db);
-  } catch {
-    return false;
-  }
+  return withTransaction(db, mutate, false);
 }
 
 /** Operator-initiated recovery: forces the account back to active and logs the transition. */
@@ -393,14 +399,7 @@ export async function recoverAccount(
     }
     return true;
   };
-  try {
-    if (typeof db.transaction === "function") {
-      return await db.transaction((tx) => recover(tx as CartethyiaDatabase));
-    }
-    return await recover(db);
-  } catch {
-    return false;
-  }
+  return withTransaction(db, recover, false);
 }
 
 /** Recovers accounts whose cooldown elapsed and prunes expired per-model keys. */
@@ -481,14 +480,7 @@ export async function sweepExpiredCooldowns(db: CartethyiaDatabase): Promise<num
       .where(pruning.changed);
     return expired.length + affectedRows(pruned);
   };
-  try {
-    if (typeof db.transaction === "function") {
-      return await db.transaction((tx) => recover(tx as CartethyiaDatabase));
-    }
-    return await recover(db);
-  } catch {
-    return 0;
-  }
+  return withTransaction(db, recover, 0);
 }
 
 /**
@@ -519,8 +511,8 @@ async function writeHealthEvent(
   row: {
     readonly entityKind: "account";
     readonly accountId: string;
-    readonly fromStatus: string;
-    readonly toStatus: string;
+    readonly fromStatus: "active" | "cooldown" | "disabled" | null;
+    readonly toStatus: "active" | "cooldown" | "disabled";
     readonly reason: string;
     readonly errorCategory: string | null;
     readonly modelId?: string | null;
@@ -533,7 +525,7 @@ async function writeHealthEvent(
     return;
   }
   if (typeof client.insert !== "function") return;
-  await client.insert(healthEvents).values({ id: randomUUID(), ...row } as never);
+  await client.insert(healthEvents).values({ id: randomUUID(), ...row });
 }
 
 export async function reportAttemptOutcome(

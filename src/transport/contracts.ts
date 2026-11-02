@@ -98,6 +98,15 @@ function isNativeServicePath(path: string | undefined): boolean {
 export const TOKEN_COUNT_PATH = "/v1/messages/count_tokens";
 
 /**
+ * The native Codex compaction route (`POST /v1/responses/compact`).
+ *
+ * Not a native service (it has no `serviceKind` of its own — Codex rows are
+ * `llm`-adjacent), so it is declared separately from `NATIVE_SERVICE_PATHS`,
+ * but its body is equally opaque and must skip the canonical chat stage.
+ */
+export const RESPONSES_COMPACT_PATH = "/v1/responses/compact";
+
+/**
  * Whether `path` reads a JSON body that is *not* a canonical chat request.
  *
  * These bodies are opaque to the surface codecs by contract: the route handler
@@ -105,7 +114,7 @@ export const TOKEN_COUNT_PATH = "/v1/messages/count_tokens";
  * will either reject a body the upstream accepts or plan it twice.
  */
 export function isOpaqueBodyRoute(path: string | undefined): boolean {
-  return isNativeServicePath(path) || path === TOKEN_COUNT_PATH;
+  return isNativeServicePath(path) || path === TOKEN_COUNT_PATH || path === RESPONSES_COMPACT_PATH;
 }
 
 /** The route path serving `serviceKind`, when one is declared. */

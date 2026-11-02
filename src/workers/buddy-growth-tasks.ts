@@ -18,7 +18,6 @@
  *    models out of rotation for a growth-page problem.
  */
 import { and, eq } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import type { CartethyiaDatabase } from "../persistence/db-handle";
 import { buddyTaskLedger, providerAccounts } from "../persistence/schema";
 import { log } from "../observability/logger";
@@ -338,9 +337,4 @@ export async function syncBuddyUsage(deps: BuddyTaskDeps): Promise<number> {
     stored += await saveBuddyUsageSnapshots(deps.db, account.id, usage.rows);
   }
   return stored;
-}
-
-/** A stable idempotency token, for callers that need one outside a task. */
-export function growthClientToken(prefix: string): string {
-  return `${prefix}-${randomUUID()}`;
 }

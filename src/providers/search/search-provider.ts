@@ -1,5 +1,3 @@
-import { asRecord } from "../../shared/coerce";
-
 /**
  * Declarative web-search provider adapters.
  *
@@ -161,4 +159,4 @@ function jsonFromEventStream(raw: string): unknown {
 
 }
 
-export { asRecord, stringField };
+export { stringField };

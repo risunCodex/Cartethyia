@@ -112,8 +112,7 @@ export async function fetchWithEmptyStreamRecovery(
 
   for (let endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex++) {
     const endpoint = endpoints[endpointIndex]!;
-    const isLastEndpoint = endpointIndex === endpoints.length - 1;
-    const replaysAllowed = isLastEndpoint ? maxReplays : maxReplays;
+    const replaysAllowed = maxReplays;
 
     for (let replay = 0; replay <= replaysAllowed; replay++) {
       // Check abort before each fetch
@@ -167,12 +166,7 @@ export async function fetchWithEmptyStreamRecovery(
       // Empty — replay if we haven't exhausted this endpoint's budget
       if (replay < replaysAllowed) {
         const delay = fallbackRetryDelayMs(replay);
-        try {
-          await sleep(delay, deps.signal);
-        } catch (error) {
-          if (error instanceof GatewayError) throw error;
-          throw error;
-        }
+        await sleep(delay, deps.signal);
       }
     }
   }
@@ -196,9 +190,22 @@ async function fetchWithTimeout(
   signal: AbortSignal,
   timeoutMs: number,
 ): Promise<Response> {
-  // Race the fetch against a first-event timeout
+  // Race the fetch against a first-event timeout. The timer and the abort
+  // listener are both cleaned up once the race settles, so a successful fetch
+  // leaves neither behind.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const onAbort = (): void => {
+    if (timer !== undefined) clearTimeout(timer);
+    // A client cancellation is the caller's signal; the fetch already races the
+    // same abort signal, so rejecting here only surfaces the 499 envelope.
+    timeoutPromiseReject(
+      new GatewayError("transport_closed", 499, "The request was aborted (request {requestId}). Send it again whenever ready 🙃"),
+    );
+  };
+  let timeoutPromiseReject!: (reason: unknown) => void;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    const timer = setTimeout(() => {
+    timeoutPromiseReject = reject;
+    timer = setTimeout(() => {
       // A first-event timeout is the gateway waiting on a silent upstream (e.g.
       // a provider that holds the request in a queue), not the client leaving.
       // It must surface as a deadline failure, never as a `transport_closed`
@@ -206,19 +213,15 @@ async function fetchWithTimeout(
       // otherwise hide a real upstream wait behind "cancelled by client".
       reject(new GatewayError("deadline_exceeded", 504, "First event timeout (request {requestId}). Some things just take longer 🐢", {}, "upstream"));
     }, timeoutMs);
-    signal.addEventListener("abort", () => {
-      clearTimeout(timer);
-      reject(new GatewayError("transport_closed", 499, "The request was aborted (request {requestId}). Send it again whenever ready 🙃"));
-    }, { once: true });
   });
-
+  signal.addEventListener("abort", onAbort, { once: true });
   try {
     return await Promise.race([
       fetch(url, { headers: request.headers, body: request.body, signal }),
       timeoutPromise,
     ]);
-  } catch (error) {
-    if (error instanceof GatewayError) throw error;
-    throw error;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    signal.removeEventListener("abort", onAbort);
   }
 }

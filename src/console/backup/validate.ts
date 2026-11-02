@@ -101,12 +101,17 @@ function normalizeLegacyCiphertext(table: Table, row: Record<string, unknown>): 
   return normalized;
 }
 
+const COLUMN_TYPES_CACHE = new WeakMap<Table, ReadonlyMap<string, string>>();
+
 /** Column name → its Drizzle data type, so validation knows what may nest. */
 function columnTypes(table: Table): ReadonlyMap<string, string> {
+  const cached = COLUMN_TYPES_CACHE.get(table);
+  if (cached) return cached;
   const out = new Map<string, string>();
   for (const column of Object.values(getTableColumns(table))) {
     out.set(column.name, column.dataType);
   }
+  COLUMN_TYPES_CACHE.set(table, out);
   return out;
 }
 
@@ -122,7 +127,11 @@ function columnTypes(table: Table): ReadonlyMap<string, string> {
  * would write a row the operator never had, and guessing wrong on a credential
  * column is worse than not restoring that one row.
  */
+const REQUIRED_COLUMNS_CACHE = new WeakMap<Table, ReadonlySet<string>>();
+
 function requiredColumns(table: Table): ReadonlySet<string> {
+  const cached = REQUIRED_COLUMNS_CACHE.get(table);
+  if (cached) return cached;
   const out = new Set<string>();
   for (const column of Object.values(getTableColumns(table))) {
     if (!column.notNull || column.hasDefault) continue;
@@ -132,6 +141,7 @@ function requiredColumns(table: Table): ReadonlySet<string> {
     if (column.name === "tenant_id") continue;
     out.add(column.name);
   }
+  REQUIRED_COLUMNS_CACHE.set(table, out);
   return out;
 }
 

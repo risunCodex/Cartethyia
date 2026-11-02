@@ -23,7 +23,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { GatewayError } from "../../protocol/gateway-error";
 import { isLoopbackPeer, tokenMatches } from "../../transport/drain-endpoint";
-import { BACKUP_SECTIONS, tablesForSection } from "./contracts";
+import { tablesForSection } from "./contracts";
 import { compressBackupStream, exportBackupStream } from "./store";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 
@@ -37,7 +37,8 @@ interface BackupExportDeps {
   readonly resolvePeerAddress: (request: Request) => string | null;
 }
 
-export interface BackupExportResult {
+/** The file-write result of an operator export, distinct from the payload shape `BackupExportResult` in `contracts.ts`. */
+export interface BackupExportFileResult {
   readonly path: string;
   readonly bytes: number;
   readonly counts: Record<string, number>;
@@ -89,7 +90,7 @@ export function createBackupExportHandler(
       );
     }
 
-    const result: BackupExportResult = { path, bytes: gzipped.byteLength, counts };
+    const result: BackupExportFileResult = { path, bytes: gzipped.byteLength, counts };
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: { "content-type": "application/json", "cache-control": "no-store" },
@@ -108,5 +109,3 @@ function downloadDirectory(): string {
         : join(process.env.XDG_DOWNLOAD_DIR ?? join(home, "Downloads"));
   return candidate;
 }
-
-export { BACKUP_SECTIONS };

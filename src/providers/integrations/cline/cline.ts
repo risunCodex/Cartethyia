@@ -28,7 +28,7 @@ const CLINE_MODELS_CATALOG_PATH = "/ai/cline/models" as const;
 
 
 
-export function workosToken(token: string): string {
+function workosToken(token: string): string {
   return token.startsWith("workos:") ? token : `workos:${token}`;
 }
 

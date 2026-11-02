@@ -16,51 +16,44 @@
  */
 import type { ProviderAdapter, ProviderDispatchTarget } from "../../providers/provider-contracts";
 import { GatewayError } from "../../protocol/gateway-error";
-import { resolveCredentialForAccount } from "../../providers/operations/provider-credential-service";
 import { metrics } from "../../observability/metrics";
-import { parseThinkingSuffix } from "../../protocol/translation/thinking";
 import { completeAttempt, estimatedUsage, nativeCompletionBase } from "./attempt-finalize";
 import { runAttemptLoop } from "./attempt-loop";
+import {
+  hasScope,
+  jsonResponse,
+  networkFetchContext,
+  requireRecordBody,
+  resolveAttemptCredential,
+  stripThinkingSuffix,
+} from "./native-shared";
 
 import type { GatewayHandlerDeps } from "./handler-deps";
 
 type WebsearchHandlerDeps = GatewayHandlerDeps;
-
-
 
 /** Adapter that can serve a web-search request. */
 type WebsearchAdapter = ProviderAdapter & {
   websearch: NonNullable<ProviderAdapter["websearch"]>;
 };
 
-function jsonResponse(payload: unknown, status: number, requestId: string): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: {
-      "content-type": "application/json",
-      "cache-control": "no-store",
-      "x-request-id": requestId,
-    },
-  });
-}
-
 export function createWebsearchHandler(deps: WebsearchHandlerDeps) {
   return async ({ request }: { request: Request }): Promise<Response> => {
     const state = deps.stateStore.require(request);
     const authorization = state.authorization;
-    const body = state.ingressBody;
-    if (!authorization || body === null || typeof body !== "object" || Array.isArray(body))
-      throw new GatewayError("invalid_request", 400, "The search body must be a JSON object (request {requestId}). Send one with at least a model and a query. Check the shape of what you sent — then resend 🪞");
-    const search = body as Record<string, unknown>;
+    const search = requireRecordBody(state, "The search body must be a JSON object (request {requestId}). Send one with at least a model and a query. Check the shape of what you sent — then resend 🪞");
+    // `requireRecordBody` already refused a missing authorization; this guard
+    // exists only to narrow the type for the code below.
+    if (!authorization) {
+      throw new GatewayError("invalid_request", 400, "authentication required (request {requestId})");
+    }
     if (typeof search.model !== "string" || search.model.trim().length === 0)
       throw new GatewayError("invalid_request", 400, "A model is required (request {requestId}): it names the search provider to use. Check the shape of what you sent — then resend 🪞");
     // The search "model" names the provider (or an alias/combo of one). A
     // thinking suffix is stripped for the same reason the canonical preparer
     // strips it: it is not part of any registered id.
-    const { model: bareModel } = parseThinkingSuffix(search.model);
-    const searchBody: Record<string, unknown> =
-      bareModel === search.model ? search : { ...search, model: bareModel };
-    if (!authorization.snapshot.scopes?.includes("search:invoke" as never)) {
+    const { bareModel, body: searchBody } = stripThinkingSuffix(search.model, search);
+    if (!hasScope(authorization?.snapshot.scopes, "search:invoke")) {
       throw new GatewayError("policy_rejected", 403, "search not allowed for this key (request {requestId}) — enable search:invoke on the API key. Not allowed by policy — no hard feelings 🫂");
     }
     // Trust boundary only: the query must be a non-empty string. The adapter
@@ -91,19 +84,7 @@ export function createWebsearchHandler(deps: WebsearchHandlerDeps) {
       strictPoolSelection: false,
       exhaustedError: new GatewayError("route_unavailable", 503, "no eligible search route (request {requestId}). The bouncer stepped out — come back shortly 🚪"),
       prepare: async (candidate) => {
-        const credential = candidate.provider_account_id
-          ? await resolveCredentialForAccount(
-              deps.db,
-              candidate.provider_id,
-              candidate.provider_account_id,
-              deps.oauthRefreshService && deps.resolveOAuthRefresher
-                ? { refreshService: deps.oauthRefreshService, resolveRefresher: deps.resolveOAuthRefresher }
-                : undefined,
-            )
-          : {
-              provider_id: candidate.provider_id as ProviderAdapter["provider_id"],
-              credential_kind: "none" as const,
-            };
+        const credential = await resolveAttemptCredential(deps, candidate);
         const adapter = (await deps.resolveProviderAdapter?.(candidate.provider_id)) as WebsearchAdapter | undefined;
         if (!adapter || typeof adapter.websearch !== "function")
           throw new GatewayError(
@@ -132,14 +113,7 @@ export function createWebsearchHandler(deps: WebsearchHandlerDeps) {
           deadline: state.deadlineMs,
           abort_signal: state.abortController.signal,
           ...(candidate.user_agent === undefined ? {} : { user_agent: candidate.user_agent }),
-          ...(deps.networkBindingFactory
-            ? {
-                outbound_fetch: deps.networkBindingFactory.fetch(
-                  leases.proxySlot?.poolId,
-                  authorization.tenantId,
-                ),
-              }
-            : {}),
+          ...networkFetchContext(deps, leases.proxySlot?.poolId, authorization.tenantId),
         });
         const payload = {
           provider: candidate.provider_id,

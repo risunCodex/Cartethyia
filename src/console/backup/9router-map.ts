@@ -106,9 +106,6 @@ export const PROXY_KINDS: Readonly<Record<string, "http" | "https" | "socks5">> 
   workers: "https",
 };
 
-/** Proxy types we recognize but cannot represent, with the reason. */
-export const REFUSED_PROXY_KINDS: Readonly<Record<string, string>> = {};
-
 /**
  * Router combo strategy → ours.
  *

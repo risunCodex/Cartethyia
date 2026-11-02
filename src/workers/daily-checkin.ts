@@ -270,6 +270,38 @@ export async function markCheckinAttempted(args: {
  * An account absent from the result was not attempted, matching the single
  * read's "absent means unknown, never claimed".
  */
+/**
+ * Shared Redis marker read. One `MGET` when the client supports it; otherwise
+ * (a minimal double, or a client without the command) a `GET` loop. Returns
+ * `undefined` when the ledger is unreadable — unknown, never "not claimed".
+ */
+async function readRedisMarkers(
+  redis: RedisClient,
+  dayKey: string,
+  accountIds: readonly string[],
+): Promise<Map<string, boolean> | undefined> {
+  const attempted = new Map<string, boolean>();
+  try {
+    if (typeof redis.mget === "function") {
+      // One command for every account: one key per account is small, and a
+      // single `MGET` keeps the cost flat instead of linear in the count.
+      const values = await redis.mget(
+        ...accountIds.map((id) => ledgerKey(dayKey, id)),
+      );
+      accountIds.forEach((accountId, index) => {
+        attempted.set(accountId, values[index] != null);
+      });
+      return attempted;
+    }
+    for (const accountId of accountIds) {
+      attempted.set(accountId, (await redis.get(ledgerKey(dayKey, accountId))) !== null);
+    }
+    return attempted;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function checkinAttemptedTodayBatch(args: {
   readonly db: CartethyiaDatabase | undefined;
   readonly redis: RedisClient | undefined;
@@ -279,23 +311,11 @@ export async function checkinAttemptedTodayBatch(args: {
   const attempted = new Map<string, boolean>();
   if (args.accountIds.length === 0) return attempted;
   const dayKey = checkinDayKey(args.now?.() ?? new Date());
-  // A client without MGET (the memory backend) takes the DB path below, or
-  // reports unknown when there is no DB either.
-  if (args.redis !== undefined && typeof args.redis.mget === "function") {
-    try {
-      // One command for every account: one key per account is small, and a
-      // single `MGET` keeps the cost flat instead of linear in the count.
-      const values = (await args.redis.mget(
-        ...args.accountIds.map((id) => ledgerKey(dayKey, id)),
-      )) as Array<string | null>;
-      args.accountIds.forEach((accountId, index) => {
-        attempted.set(accountId, values[index] != null);
-      });
-      return attempted;
-    } catch {
-      // Fall through: an unreadable ledger means unknown, and the DB path is
-      // the only other place the marker could be.
-    }
+  if (args.redis !== undefined) {
+    const fromRedis = await readRedisMarkers(args.redis, dayKey, args.accountIds);
+    if (fromRedis !== undefined) return fromRedis;
+    // Fall through: an unreadable ledger means unknown, and the DB path is
+    // the only other place the marker could be.
   }
   if (args.db === undefined) return attempted;
   try {
@@ -326,11 +346,8 @@ export async function checkinAttemptedToday(args: {
 }): Promise<boolean> {
   const dayKey = checkinDayKey(args.now?.() ?? new Date());
   if (args.redis !== undefined) {
-    try {
-      return (await args.redis.get(ledgerKey(dayKey, args.accountId))) !== null;
-    } catch {
-      return false;
-    }
+    const fromRedis = await readRedisMarkers(args.redis, dayKey, [args.accountId]);
+    if (fromRedis !== undefined) return fromRedis.get(args.accountId) ?? false;
   }
   if (args.db === undefined) return false;
   try {

@@ -332,8 +332,18 @@ export class ScheduledTaskRegistry {
         log.error(`[scheduled-task:${task.name}] failed`, error as Error);
         // Released on failure too: the error is this process's, not the
         // fleet's, and holding the lease until it expires would block the
-        // next tick for no reason.
-        if (lease !== undefined) await lease.release().catch(() => undefined);
+        // next tick for no reason. A failed release is logged — the TTL is
+        // the backstop, but the failure should stay visible.
+        if (lease !== undefined) {
+          try {
+            await lease.release();
+          } catch (releaseError) {
+            log.warn(
+              `[scheduled-task:${task.name}] lease release failed after task error`,
+              releaseError as Error,
+            );
+          }
+        }
       } finally {
         // No-ops for an absent handle, and the renewal timer is always
         // assigned before this runs.

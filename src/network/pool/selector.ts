@@ -36,8 +36,7 @@ import {
   type ProxyCooldownEntry,
 } from "./pool-state";
 
-export type { PoolRotation, PoolUsageSnapshot, ProxyCooldownEntry };
-export { parseCooldownEntry };
+export type { PoolRotation, ProxyCooldownEntry };
 
 // Pool selector
 /**
@@ -206,6 +205,39 @@ export class NetworkPoolSelector {
   }
 
   /**
+   * One local slot acquisition: checks every map's ceiling, bumps each counter,
+   * and returns a release that decrements all of them exactly once. Shared by
+   * `acquire` (single pool counter) and `acquireProvider` (pool + provider
+   * share) so the release closure and the local bookkeeping live in one place.
+   */
+  private acquireLocalSlot(
+    increments: ReadonlyArray<{
+      readonly map: Map<string, number>;
+      readonly key: string;
+      readonly capacity: number;
+    }>,
+  ): { acquired: boolean; release: () => void } {
+    for (const increment of increments) {
+      const current = increment.map.get(increment.key) ?? 0;
+      if (current >= increment.capacity) return { acquired: false, release: () => {} };
+    }
+    for (const increment of increments) {
+      enforceInflightLimit(increment.map);
+      increment.map.set(increment.key, (increment.map.get(increment.key) ?? 0) + 1);
+    }
+    this.notifyPoolUsage();
+
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      for (const increment of increments) decrementLocal(increment.map, increment.key);
+      this.notifyPoolUsage();
+    };
+    return { acquired: true, release };
+  }
+
+  /**
    * Raise this provider's share of a pool, enforcing both the pool ceiling and
    * the provider ceiling. The pool half is still checked here so a caller that
    * already admitted the pool through `acquire` does not double-count it — use
@@ -217,56 +249,23 @@ export class NetworkPoolSelector {
     poolCapacity: number,
     providerCapacity: number,
   ): { acquired: boolean; release: () => void } {
-    const current = this.getInflight(poolId);
-    if (current >= poolCapacity) return { acquired: false, release: () => {} };
-    const key = providerInflightStateKey(poolId, providerId);
-    const providerCurrent = this.state.providerInflight.get(key) ?? 0;
-    if (providerCurrent >= providerCapacity) return { acquired: false, release: () => {} };
-
-    enforceInflightLimit(this.state.inflight);
-    enforceInflightLimit(this.state.providerInflight);
-    this.state.inflight.set(poolId, current + 1);
-    this.state.providerInflight.set(key, providerCurrent + 1);
-    this.notifyPoolUsage();
-
-    let released = false;
-    const release = () => {
-      if (released) return;
-      released = true;
-      decrementLocal(this.state.inflight, poolId);
-      decrementLocal(this.state.providerInflight, key);
-      this.notifyPoolUsage();
-    };
-    return { acquired: true, release };
+    return this.acquireLocalSlot([
+      { map: this.state.inflight, key: poolId, capacity: poolCapacity },
+      {
+        map: this.state.providerInflight,
+        key: providerInflightStateKey(poolId, providerId),
+        capacity: providerCapacity,
+      },
+    ]);
   }
 
   acquire(
     poolId: string,
     maxInflight = DEFAULT_PROXY_CONCURRENCY,
   ): { acquired: boolean; release: () => void } {
-    const current = this.getInflight(poolId);
-    if (current >= maxInflight) {
-      return { acquired: false, release: () => {} };
-    }
-
-    enforceInflightLimit(this.state.inflight);
-    this.state.inflight.set(poolId, current + 1);
-    this.notifyPoolUsage();
-    let released = false;
-
-    const release = () => {
-      if (released) return;
-      released = true;
-      const val = this.state.inflight.get(poolId) ?? 1;
-      if (val <= 1) {
-        this.state.inflight.delete(poolId);
-      } else {
-        this.state.inflight.set(poolId, val - 1);
-      }
-      this.notifyPoolUsage();
-    };
-
-    return { acquired: true, release };
+    return this.acquireLocalSlot([
+      { map: this.state.inflight, key: poolId, capacity: maxInflight },
+    ]);
   }
 
   private cooldownKey(poolId: string, providerId: string): string {
@@ -578,6 +577,98 @@ export class NetworkPoolSelector {
   }
 
   /**
+   * Tries one local candidate: bump the local counters (pool, and provider
+   * share when a ceiling is set) and return its release. `undefined` when the
+   * candidate is full or the provider share is exhausted.
+   */
+  private localAcquire(
+    candidate: { readonly poolId: string; readonly capacity: number },
+    providerId: string,
+    providerCapacity: number | undefined,
+  ): { poolId: string; release: () => void } | undefined {
+    const slot =
+      providerCapacity === undefined
+        ? this.acquire(candidate.poolId, candidate.capacity)
+        : this.acquireProvider(candidate.poolId, providerId, candidate.capacity, providerCapacity);
+    return slot.acquired ? { poolId: candidate.poolId, release: slot.release } : undefined;
+  }
+
+  /**
+   * One atomic Redis admit (the compare-and-increment script) for a candidate:
+   * bumps both the remote and local counters on success and returns a release
+   * that decrements both. `undefined` when the pool or provider share is full
+   * (1 admitted; 0 pool full; 2 provider full — either full result fails over
+   * to the next pool, which is the whole point of the ceiling).
+   */
+  private async redisAdmit(
+    redis: RedisClient,
+    candidate: { readonly poolId: string; readonly capacity: number },
+    providerId: string,
+    providerCapacity: number | undefined,
+  ): Promise<{ poolId: string; release: () => void } | undefined> {
+    const providerKey =
+      providerCapacity === undefined
+        ? undefined
+        : proxyProviderInflightKey(candidate.poolId, providerId);
+    const result =
+      providerKey === undefined
+        ? await redisEvalNumber(
+            redis,
+            POOL_ADMIT_SCRIPT,
+            1,
+            proxyInflightKey(candidate.poolId),
+            String(candidate.capacity),
+            String(poolInflightTtlSeconds()),
+          )
+        : await redisEvalNumber(
+            redis,
+            POOL_PROVIDER_ADMIT_SCRIPT,
+            2,
+            proxyInflightKey(candidate.poolId),
+            providerKey,
+            String(candidate.capacity),
+            String(providerCapacity),
+            String(poolInflightTtlSeconds()),
+          );
+    if (result !== 1) return undefined;
+    enforceInflightLimit(this.state.inflight);
+    this.state.inflight.set(candidate.poolId, this.getInflight(candidate.poolId) + 1);
+    if (providerKey !== undefined) {
+      enforceInflightLimit(this.state.providerInflight);
+      const localProviderKey = providerInflightStateKey(candidate.poolId, providerId);
+      this.state.providerInflight.set(
+        localProviderKey,
+        this.getProviderInflight(candidate.poolId, providerId) + 1,
+      );
+    }
+    this.notifyPoolUsage();
+    let released = false;
+    return {
+      poolId: candidate.poolId,
+      release: () => {
+        if (released) return;
+        released = true;
+        decrementLocal(this.state.inflight, candidate.poolId);
+        if (providerKey !== undefined) {
+          decrementLocal(
+            this.state.providerInflight,
+            providerInflightStateKey(candidate.poolId, providerId),
+          );
+        }
+        this.notifyPoolUsage();
+        const script = providerKey === undefined ? POOL_RELEASE_SCRIPT : POOL_PROVIDER_RELEASE_SCRIPT;
+        const keys =
+          providerKey === undefined
+            ? [proxyInflightKey(candidate.poolId)]
+            : [proxyInflightKey(candidate.poolId), providerKey];
+        void redisEvalNumber(redis, script, keys.length, ...keys).catch((error: unknown) => {
+          log.error("[pool-selector] failed to release distributed slot", error as Error);
+        });
+      },
+    };
+  }
+
+  /**
    * Distributed pool admission — the selection algorithm:
    *
    * 1. Eligibility: a pool is skipped while it (or any pool) has an active
@@ -652,17 +743,8 @@ export class NetworkPoolSelector {
         shuffleArray(scored);
         for (const candidate of scored) {
           if (this.getInflight(candidate.poolId) >= candidate.capacity) continue;
-          const slot =
-            providerCapacity === undefined
-              ? this.acquire(candidate.poolId, candidate.capacity)
-              : this.acquireProvider(
-                  candidate.poolId,
-                  providerId,
-                  candidate.capacity,
-                  providerCapacity,
-                );
-          if (!slot.acquired) continue;
-          return { poolId: candidate.poolId, release: slot.release };
+          const slot = this.localAcquire(candidate, providerId, providerCapacity);
+          if (slot) return slot;
         }
         return undefined;
       }
@@ -677,18 +759,10 @@ export class NetworkPoolSelector {
           const candidate = scored[absolute];
           if (!candidate) continue;
           if (this.getInflight(candidate.poolId) >= candidate.capacity) continue;
-          const slot =
-            providerCapacity === undefined
-              ? this.acquire(candidate.poolId, candidate.capacity)
-              : this.acquireProvider(
-                  candidate.poolId,
-                  providerId,
-                  candidate.capacity,
-                  providerCapacity,
-                );
-          if (!slot.acquired) continue;
+          const slot = this.localAcquire(candidate, providerId, providerCapacity);
+          if (!slot) continue;
           advanceRotation(this.state.rotationCursors, rotation.key, scored.length, absolute, rotation.rotateCount);
-          return { poolId: candidate.poolId, release: slot.release };
+          return slot;
         }
         return undefined;
       }
@@ -716,11 +790,7 @@ export class NetworkPoolSelector {
         }
       }
       if (!bestPool) return undefined;
-      const slot =
-        providerCapacity === undefined
-          ? this.acquire(bestPool.poolId, bestPool.capacity)
-          : this.acquireProvider(bestPool.poolId, providerId, bestPool.capacity, providerCapacity);
-      return slot.acquired ? { poolId: bestPool.poolId, release: slot.release } : undefined;
+      return this.localAcquire(bestPool, providerId, providerCapacity);
     }
 
     const redis = this.redis;
@@ -795,34 +865,8 @@ export class NetworkPoolSelector {
       });
     }
     for (const candidate of withCounts) {
-      const providerKey =
-        providerCapacity === undefined
-          ? undefined
-          : proxyProviderInflightKey(candidate.poolId, providerId);
-      const result =
-        providerKey === undefined
-          ? await redisEvalNumber(
-              redis,
-              POOL_ADMIT_SCRIPT,
-              1,
-              proxyInflightKey(candidate.poolId),
-              String(candidate.capacity),
-              String(poolInflightTtlSeconds()),
-            )
-          : await redisEvalNumber(
-              redis,
-              POOL_PROVIDER_ADMIT_SCRIPT,
-              2,
-              proxyInflightKey(candidate.poolId),
-              providerKey,
-              String(candidate.capacity),
-              String(providerCapacity),
-              String(poolInflightTtlSeconds()),
-            );
-      // 1 admitted; 0 pool full; 2 provider full. Either full result fails over
-      // to the next pool, which is the whole point of the ceiling: the request
-      // moves to an egress that still has room for this provider.
-      if (result !== 1) continue;
+      const admitted = await this.redisAdmit(redis, candidate, providerId, providerCapacity);
+      if (admitted === undefined) continue;
       if (rotation && rotation.strategy !== "random") {
         advanceRotation(
           this.state.rotationCursors,
@@ -832,37 +876,7 @@ export class NetworkPoolSelector {
           rotation.rotateCount,
         );
       }
-      enforceInflightLimit(this.state.inflight);
-      this.state.inflight.set(candidate.poolId, this.getInflight(candidate.poolId) + 1);
-      if (providerKey !== undefined) {
-        enforceInflightLimit(this.state.providerInflight);
-        const localProviderKey = providerInflightStateKey(candidate.poolId, providerId);
-        this.state.providerInflight.set(
-          localProviderKey,
-          this.getProviderInflight(candidate.poolId, providerId) + 1,
-        );
-      }
-      this.notifyPoolUsage();
-      let released = false;
-      return {
-        poolId: candidate.poolId,
-        release: () => {
-          if (released) return;
-          released = true;
-          decrementLocal(this.state.inflight, candidate.poolId);
-          if (providerKey !== undefined) {
-            decrementLocal(this.state.providerInflight, providerInflightStateKey(candidate.poolId, providerId));
-          }
-          this.notifyPoolUsage();
-          const script = providerKey === undefined ? POOL_RELEASE_SCRIPT : POOL_PROVIDER_RELEASE_SCRIPT;
-          const keys = providerKey === undefined ? [proxyInflightKey(candidate.poolId)] : [proxyInflightKey(candidate.poolId), providerKey];
-          void redisEvalNumber(redis, script, keys.length, ...keys).catch(
-            (error: unknown) => {
-              log.error("[pool-selector] failed to release distributed slot", error as Error);
-            },
-          );
-        },
-      };
+      return admitted;
     }
     return undefined;
   }

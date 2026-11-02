@@ -44,10 +44,10 @@ const XAI_AUTH_SERVER = {
 } as const;
 
 export { XAI_AUTH_SERVER };
-export const XAI_CLIENT_ID = XAI_AUTH_SERVER.clientId;
-export const XAI_DEVICE_URL = XAI_AUTH_SERVER.deviceUrl;
-export const XAI_TOKEN_URL = XAI_AUTH_SERVER.tokenUrl;
-export const XAI_USERINFO_URL = XAI_AUTH_SERVER.userinfoUrl;
+const XAI_CLIENT_ID = XAI_AUTH_SERVER.clientId;
+const XAI_DEVICE_URL = XAI_AUTH_SERVER.deviceUrl;
+const XAI_TOKEN_URL = XAI_AUTH_SERVER.tokenUrl;
+const XAI_USERINFO_URL = XAI_AUTH_SERVER.userinfoUrl;
 
 /**
  * Scopes the subscription token needs.
@@ -56,7 +56,7 @@ export const XAI_USERINFO_URL = XAI_AUTH_SERVER.userinfoUrl;
  * what admits the token to `api.x.ai`. The rest are the OIDC identity scopes the
  * userinfo label is read from.
  */
-export const XAI_SCOPE = [
+const XAI_SCOPE = [
   "openid",
   "profile",
   "email",

@@ -1,7 +1,6 @@
 import type { FetchLike } from "../quota/quota-contracts";
 import type { ModelDefinition } from "../provider-model-definition";
 import type { ServiceKind } from "../../protocol/canonical-model";
-
 /**
  * Credential-scoped model-discovery input.
  *

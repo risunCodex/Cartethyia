@@ -10,39 +10,13 @@ import { createApiKeyAdapter, type ApiKeyProviderSpec } from "./configured-provi
  * OpenAI-compatible contract. Providers with static catalogs or additional
  * upstream behavior remain declared beside their special handling.
  */
-export const DISCOVERY_BACKED_PROVIDER_IDS = [
-  "groq",
-  "together",
-  "deepinfra",
-  "siliconflow",
-  "siliconflowcn",
-  "novita",
-  "larprouter",
-  "venice",
-  "nanogpt",
-  "baseten",
-  "synthetic",
-  "stepfun",
-  "sakana",
-  "helmcode",
-  "coralbricks",
-  "aiand",
-  "wafer",
-  "firepass",
-  "zhipucoding",
-  "dashscope",
-  "qianfan",
-] as const;
-
-export type DiscoveryBackedProviderId = (typeof DISCOVERY_BACKED_PROVIDER_IDS)[number];
-
 type DiscoveryBackedCapabilities = Pick<
   ProviderModule,
   "endpointPathsByWireFamily" | "loadAdapter" | "loadModelDiscovery"
 >;
 
 type ModelDiscoveryFactory = NonNullable<ProviderModule["loadModelDiscovery"]>;
-type OpenAIModelDiscoveryFactory = (
+export type OpenAIModelDiscoveryFactory = (
   providerId: string,
   options?: {
     readonly headers?: (credential: string) => Readonly<Record<string, string>>;
@@ -71,10 +45,12 @@ const DISCOVERY_BACKED_PROVIDER_SPECS = {
   zhipucoding: VERSIONED_ROOT_API_KEY_SPECS.zhipucoding,
   dashscope: GENERIC_API_KEY_SPECS.dashscope,
   qianfan: VERSIONED_ROOT_API_KEY_SPECS.qianfan,
-} satisfies Readonly<Record<DiscoveryBackedProviderId, ApiKeyProviderSpec>>;
+} satisfies Readonly<Record<string, ApiKeyProviderSpec>>;
 
-function discoveryBackedCapabilities(
-  providerId: DiscoveryBackedProviderId,
+type DiscoveryBackedProviderId = keyof typeof DISCOVERY_BACKED_PROVIDER_SPECS;
+
+export function discoveryBackedCapabilities(
+  providerId: string,
   spec: ApiKeyProviderSpec,
   openAIModelDiscovery: OpenAIModelDiscoveryFactory,
 ): DiscoveryBackedCapabilities {

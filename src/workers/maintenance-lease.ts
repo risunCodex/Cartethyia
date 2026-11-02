@@ -16,6 +16,7 @@
  */
 import { randomUUID } from "node:crypto";
 
+import { redisEvalNumber } from "../persistence/redis";
 import type { RedisClient } from "../persistence/redis";
 
 /** Key prefix; the task name is the discriminator. */
@@ -98,29 +99,6 @@ export function leaseTtlMs(intervalMs: number): number {
   return Math.min(MAX_LEASE_TTL_MS, Math.max(MIN_LEASE_TTL_MS, Math.trunc(intervalMs)));
 }
 
-/** A store that hands out no lease — used when Redis is absent. */
-export function createNoopMaintenanceLeaseStore(): MaintenanceLeaseStore {
-  return {
-    async tryAcquire(taskName) {
-      return {
-        taskName,
-        // Held = true: with no shared store this process cannot coordinate, so
-        // the local registry's own re-entrancy rule is the only guard. The
-        // alternative — reporting not-held — would silently disable every
-        // maintenance task on single-process deployments, which is most of
-        // them.
-        held: true,
-        async renew() {
-          return true;
-        },
-        async release() {
-          /* nothing to give back */
-        },
-      };
-    },
-  };
-}
-
 /**
  * A Redis-backed lease store.
  *
@@ -134,18 +112,7 @@ export function createRedisMaintenanceLeaseStore(redis: RedisClient): Maintenanc
     script: string,
     key: string,
     args: readonly (string | number)[],
-  ): Promise<number> => {
-    const raw = await (
-      redis as unknown as {
-        eval: (
-          script: string,
-          numKeys: number,
-          ...args: (string | number)[]
-        ) => Promise<unknown>;
-      }
-    ).eval(script, 1, key, ...args);
-    return Number(raw);
-  };
+  ): Promise<number> => redisEvalNumber(redis, script, 1, key, ...args);
 
   return {
     async tryAcquire(taskName, ttlMs) {

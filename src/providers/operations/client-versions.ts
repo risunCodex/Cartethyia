@@ -635,11 +635,8 @@ export function buildGrokAuthUserAgent(version = getGrokVersion()): string {
 }
 
 
-export const getClineClientVersion = accessor("clineClient").get;
 export const getClineSdkVersion = accessor("clineSdk").get;
 export const getClineCliVersion = accessor("clineCli").get;
-export const _resetClineClientVersionCache = accessor("clineClient").reset;
-export const _resetClineSdkVersionCache = accessor("clineSdk").reset;
 export const _resetClineCliVersionCache = accessor("clineCli").reset;
 
 export const getCodexVersion = accessor("codex").get;
@@ -703,7 +700,6 @@ export const _resetCodeBuddyCnVersionCache = accessor("codebuddyCn").reset;
 
 export const getClaudeCliVersion = accessor("claudeCli").get;
 export const adoptClaudeCliVersion = accessor("claudeCli").adopt;
-export const _resetClaudeCliVersionCache = accessor("claudeCli").reset;
 export const getClaudeSdkVersion = accessor("claudeSdk").get;
 
 export const getKiroVersion = accessor("kiro").get;

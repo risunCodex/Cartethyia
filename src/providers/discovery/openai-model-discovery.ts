@@ -3,6 +3,7 @@ import { isRecord } from "../../protocol/codecs";
 import { boundedUpstreamArray, boundedUpstreamNumber, sanitizeUpstreamLabel } from "../provider-sanitize";
 import { modelsDevCatalog } from "./models-dev-catalog";
 import { isResponsesNativeModelId } from "../provider-model-definition";
+import { composeAbortSignal } from "../authentication/oauth-flow-store";
 interface FetchModelsOptions {
   readonly baseUrl: string;
   /**
@@ -27,8 +28,7 @@ export async function fetchOpenAICompatibleModels(
 ): Promise<readonly ModelDefinition[] | null> {
   const fetcher = options.fetcher ?? fetch;
   const url = `${options.baseUrl.replace(/\/+$/, "")}/models`;
-  const timeoutSignal = AbortSignal.timeout(10_000);
-  const signal = options.signal === undefined ? timeoutSignal : AbortSignal.any([options.signal, timeoutSignal]);
+  const signal = composeAbortSignal(options.signal, 10_000);
   try {
     const response = await fetcher(url, {
       headers: {

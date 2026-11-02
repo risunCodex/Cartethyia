@@ -12,12 +12,11 @@
  * only call the synchronous `get`/`snapshot` accessors and never fetch.
  */
 import { getCachedVersion, resetVersionCacheForTesting } from "./provider-version-cache";
+import type { OutboundFetch } from "../provider-contracts";
+import { composeAbortSignal } from "../authentication/oauth-flow-store";
 
 /** Structural fetch contract for providers that inject lightweight transports. */
-export type ClientVersionFetcher = (
-  input: RequestInfo | URL,
-  init?: RequestInit,
-) => Promise<Response>;
+export type ClientVersionFetcher = OutboundFetch;
 
 /** One ordered upstream probe. Earlier entries win. */
 export interface ClientVersionSource {
@@ -156,10 +155,9 @@ export function createClientVersionResolver(
   }
 
   async function probe(source: ClientVersionSource, fetcher: ClientVersionFetcher, signal?: AbortSignal): Promise<string | null> {
-    const timeoutSignal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
     const response = await fetcher(source.url, {
       headers: { accept: "application/json, text/plain, */*" },
-      signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
+      signal: composeAbortSignal(signal, FETCH_TIMEOUT_MS),
     });
     if (!response.ok) return null;
     return (source.extract ?? defaultExtract)(response);

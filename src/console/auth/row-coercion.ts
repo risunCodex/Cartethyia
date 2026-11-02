@@ -14,30 +14,75 @@ function asDate(value: unknown): Date | undefined {
 
 export function sessionRecord(value: unknown): ConsoleSession | undefined {
   if (!isRecord(value)) return undefined;
+  const id = value.id;
+  const userId = value.userId;
+  const sessionToken = value.sessionToken;
+  const ipAddress = value.ipAddress;
+  const userAgent = value.userAgent;
   if (
-    typeof value.id !== "string" ||
-    typeof value.userId !== "string" ||
-    typeof value.sessionToken !== "string"
+    typeof id !== "string" ||
+    typeof userId !== "string" ||
+    typeof sessionToken !== "string"
   ) {
     return undefined;
   }
   const expiresAt = asDate(value.expiresAt);
   const createdAt = asDate(value.createdAt);
   if (!expiresAt || !createdAt) return undefined;
-  return { ...value, expiresAt, createdAt } as unknown as ConsoleSession;
+  // Construct the result explicitly field-by-field so the output shape is
+  // exactly what was validated — arbitrary extra keys on a driver row must
+  // not survive into the typed session.
+  return {
+    id,
+    userId,
+    sessionToken,
+    ...(ipAddress === null || typeof ipAddress === "string" ? { ipAddress } : { ipAddress: null }),
+    ...(userAgent === null || typeof userAgent === "string" ? { userAgent } : { userAgent: null }),
+    expiresAt,
+    createdAt,
+  };
 }
 
 export function userRecord(value: unknown): ConsoleUser | undefined {
   if (!isRecord(value)) return undefined;
+  const id = value.id;
+  const username = value.username;
+  const passwordHash = value.passwordHash;
+  const isActive = value.isActive;
   if (
-    typeof value.id !== "string" ||
-    typeof value.username !== "string" ||
-    typeof value.passwordHash !== "string" ||
-    typeof value.isActive !== "boolean"
+    typeof id !== "string" ||
+    typeof username !== "string" ||
+    typeof passwordHash !== "string" ||
+    typeof isActive !== "boolean"
   ) {
     return undefined;
   }
-  return value as unknown as ConsoleUser;
+  // Timestamps are coerced through `asDate` because SQLite hands them back as
+  // text; a login path that rejects non-Date values must still work there.
+  const createdAt = asDate(value.createdAt);
+  const updatedAt = asDate(value.updatedAt);
+  if (!createdAt || !updatedAt) return undefined;
+  const tenantId = value.tenantId;
+  const email = value.email;
+  const displayName = value.displayName;
+  const isFirstBoot = value.isFirstBoot;
+  const isPlatformAdmin = value.isPlatformAdmin;
+  // Construct the result explicitly field-by-field so the output shape is
+  // exactly what was validated — arbitrary extra keys on a driver row must
+  // not survive into the typed user.
+  return {
+    id,
+    tenantId: typeof tenantId === "string" ? tenantId : "",
+    username,
+    email: typeof email === "string" ? email : null,
+    passwordHash,
+    displayName: typeof displayName === "string" ? displayName : null,
+    isActive,
+    isPlatformAdmin: isPlatformAdmin === true,
+    isFirstBoot: isFirstBoot === true,
+    createdAt,
+    updatedAt,
+  };
 }
 
 function mutationAffectedRows(value: unknown): number | undefined {

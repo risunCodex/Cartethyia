@@ -42,7 +42,6 @@ export function attemptState(requestId: string, deadlineMs = Date.now() + 600_00
     releaseIngressBody: () => undefined,
     extendDeadline: () => undefined,
     cleanup: () => undefined,
-    addCleanup: () => undefined,
   };
 }
 

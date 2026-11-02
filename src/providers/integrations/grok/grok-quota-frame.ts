@@ -17,7 +17,7 @@ const WIRE_TYPE_FIXED32 = 5;
 const GRPC_WEB_TRAILER_FLAG_BIT = 0x80;
 const MAX_VARINT_SHIFT_BITS = 70n;
 
-export function probeFrameHeader(
+function probeFrameHeader(
   buffer: Uint8Array,
   offset = 0,
 ): { flag: number; payloadStart: number; payloadLength: number } | null {

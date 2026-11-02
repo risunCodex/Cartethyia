@@ -92,11 +92,18 @@ export function assertWireFamily(
   );
 }
 
-/** Fetch capability that validates DNS answers and redirects before each request. */
-export type ValidatedOutboundFetch = (
+/**
+ * Minimal fetch surface accepted by provider adapters, collectors, and
+ * discovery paths. One canonical shape shared across modules that plug a
+ * transport into a provider boundary.
+ */
+export type OutboundFetch = (
   input: RequestInfo | URL,
   init?: RequestInit,
 ) => Promise<Response>;
+
+/** Fetch capability that validates DNS answers and redirects before each request. */
+export type ValidatedOutboundFetch = OutboundFetch;
 
 /** Provider WebSocket session over validated WSS egress. */
 export interface ProviderWebSocketSession {

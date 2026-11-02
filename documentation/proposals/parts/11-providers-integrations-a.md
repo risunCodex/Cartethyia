@@ -136,3 +136,16 @@ Scope scanned completely (every `.ts` file read): `src/providers/integrations/{a
 | OPTIMIZATION-OPP | 4 |
 | STALE | 3 |
 | **Total** | **39** |
+
+---
+
+## Execution status
+
+- **Area execution:** 31 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** Buddy identity-header consolidation landed; envelope-decode helper candidates extracted; cline/commandcode/factory dead branches and exports partially handled.
+- **Not done / skipped (⛔):**
+  - #1 antigravityEndpointOrderIndex still exported ⛔
+  - #4 decodeMessageSparse still exported ⛔
+  - #5 hand-rolled FNV hashes — not verified
+  - #8 rosterCache bound — not verified
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

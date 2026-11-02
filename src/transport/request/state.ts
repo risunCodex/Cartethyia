@@ -156,7 +156,6 @@ export interface ProxyRequestState {
    */
   extendDeadline(ms: number): void;
   cleanup(): void;
-  addCleanup(cleanup: () => void): void;
 }
 
 interface RequestTracker {
@@ -316,7 +315,6 @@ export class ProxyRequestStateStore {
     else request.signal.addEventListener("abort", onAbort, { once: true });
     let cleaned = false;
     let providerFlightStarted = false;
-    const cleanups: Array<() => void> = [];
     const armDeadline = (ms: number): void => {
       clearTimeout(timer);
       timer = setTimeout(() => {
@@ -390,21 +388,11 @@ export class ProxyRequestStateStore {
           request.signal.removeEventListener("abort", onAbort);
         } catch {
         }
-        for (const cleanup of cleanups.splice(0)) {
-          try {
-            cleanup();
-          } catch {
-          }
-        }
         try {
           abortController.abort(new DOMException("request complete", "AbortError"));
         } catch {
         }
         this.states.delete(request);
-      },
-      addCleanup: (cleanup) => {
-        if (cleaned) cleanup();
-        else cleanups.push(cleanup);
       },
     };
     this.liveControllers.set(state.requestId, abortController);

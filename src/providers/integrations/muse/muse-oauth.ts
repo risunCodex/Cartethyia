@@ -199,4 +199,3 @@ export class MuseCodeOAuthClient extends OAuthDeviceFlow {
 }
 
 export const museCodeOAuthClient = new MuseCodeOAuthClient();
-export { requestMuseCodeKey };

@@ -20,6 +20,7 @@ import {
 import { resolveDefaultGatewayApiKey } from "../../config/runtime";
 import { TENANT_KEY_SCOPES } from "../../security/access-control";
 import { isRecord } from "../../protocol/codecs";
+import { asConsoleDb } from "../shared/transaction";
 import { BackupService } from "../backup/service";
 import type { BackupInspection } from "../backup/service";
 import type { RestoreWarning } from "../backup/contracts";
@@ -171,7 +172,7 @@ export class FirstBootSetupService {
     // unserialized lets two boots both pass the check.
     await this.db.transaction(async (transaction) => {
       await transaction.execute(firstBootSetupLock());
-      await create(transaction as unknown as CartethyiaDatabase);
+      await create(asConsoleDb(transaction));
     });
   }
 

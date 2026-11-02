@@ -21,12 +21,6 @@ export function createApiKeyAuthenticationMiddleware(deps: {
   readonly db: CartethyiaDatabase;
   readonly stateStore: ProxyRequestStateStore;
   /**
-   * Model-abuse ban gate. A banned IP or key is refused here, before the
-   * canonical parse and route preparation, and before `state.authorization` is
-   * assigned — so a banned caller's attempts produce no telemetry row and no
-   * console error, which is exactly the noise this layer exists to stop.
-   */
-  /**
    * Tenant invoke kill switch. Checked after the key resolves, because the
    * tenant is a property of the key: the same gateway serves several tenants
    * and one switching itself off must not stop the others.

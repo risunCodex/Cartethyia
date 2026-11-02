@@ -93,3 +93,11 @@ Scope audited: `src/boot/` (app.ts, dependencies.ts, elysia-typebox-bridge.ts, l
 | OPTIMIZATION-OPP | 3 |
 | STALE | 2 |
 | **Total** | **25** |
+---
+
+## Execution status
+
+- **Area execution:** 14 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** Dead exports (D1–D5) removed; cooldown resolvers consolidated via `cachedCooldownMs` (U1); withTimeout dedupe (U2); daily-checkin batch merging (U4); main.ts hoisted consts (O1); A2/A3 casts cleaned.
+- **Not done / skipped (⛔):** none verified remaining in this scope.
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

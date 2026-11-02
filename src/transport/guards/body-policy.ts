@@ -4,7 +4,7 @@ import { GatewayError } from "../../protocol/gateway-error";
 import { assertBoundedJsonDepth } from "../../protocol/codecs";
 import type { ProxyRequestStateStore } from "../request/state";
 import { fastPathname } from "../pathname";
-import { NATIVE_SERVICE_PATHS, TOKEN_COUNT_PATH } from "../contracts";
+import { NATIVE_SERVICE_PATHS, RESPONSES_COMPACT_PATH, TOKEN_COUNT_PATH } from "../contracts";
 import { bodyTooLargeError } from "./guard-errors";
 
 /** Whether this request is a gateway (`/v1/*`) request. */
@@ -33,7 +33,7 @@ const PROXY_JSON_ROUTES = [
   "/v1/chat/completions",
   "/v1/responses",
   "/v1/completions",
-  "/v1/responses/compact",
+  RESPONSES_COMPACT_PATH,
   "/v1/messages",
   // Reads a JSON body through the ingress policy but skips the canonical chat
   // stage — see `isOpaqueBodyRoute`. Listed here because this table must mirror

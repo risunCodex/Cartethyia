@@ -61,7 +61,7 @@ function probeRequest(): CanonicalRequest {
     stream: true,
     source_surface: "chat",
     generation_controls: {},
-  } as unknown as CanonicalRequest;
+  };
 }
 
 /**
@@ -118,7 +118,7 @@ export async function buildProviderProbeRequest(
   );
   const headers = (await spec.buildExtraHeaders?.(probeContext(providerId), source)) ?? {};
   return {
-    url: `${providerBaseUrl(providerId).replace(/\/+$/, "")}/inference/openai/v1/chat/completions`,
+    url: `${providerBaseUrl(providerId)}/inference/openai/v1/chat/completions`,
     headers: { "content-type": "application/json", ...headers },
     body: payload,
   };

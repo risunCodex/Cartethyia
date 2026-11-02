@@ -13,6 +13,7 @@ import type { FirstBootSetupService } from "./setup-service";
 import { isTrustedProxyPeer, resolveClientIdentity } from "../../security/ip-boundary";
 import type { TrustedProxyBoundary } from "../../config/network";
 import { readSessionCookie } from "./session-resolver";
+import { asConsoleDb } from "../shared/transaction";
 interface LoginRequest {
   readonly username: string;
   readonly password: string;
@@ -183,6 +184,31 @@ async function lockedOutMessage(
   };
 }
 
+/**
+ * Records one failed login and answers with the 429/401 result, including the
+ * `retry-after` header when the failure took the lock. Shared by the unknown /
+ * inactive-user and wrong-password branches, which differ only in the audit
+ * reason string.
+ */
+async function rejectLogin(
+  lockoutService: ConsoleLockoutService,
+  lockoutKey: string,
+  reason: string,
+  set: { status?: number | string; headers: Record<string, string | number | string[]> },
+): Promise<LoginResponse> {
+  const isBanned = await lockoutService.recordFailure(lockoutKey, reason);
+  if (isBanned) {
+    set.status = 429;
+    set.headers["retry-after"] = String(await lockoutService.remainingLockSeconds(lockoutKey));
+    return lockedOutMessage(lockoutService, lockoutKey);
+  }
+  set.status = 401;
+  return {
+    status: "failed",
+    message: await failedLoginMessage(lockoutService, lockoutKey),
+  } satisfies LoginResponse;
+}
+
 function parseLoginRequest(body: unknown): LoginRequest | undefined {
   if (!isRecord(body) || typeof body.password !== "string") {
     return undefined;
@@ -266,32 +292,12 @@ export function createConsoleAuthRoutes(
       const rows = await readUsers(database, input.username);
       const user = userRecord(rows[0]);
       if (!user || !user.isActive) {
-        const isBanned = await lockoutService.recordFailure(lockoutKey, "unknown_user");
-        if (isBanned) {
-          set.status = 429;
-          set.headers["retry-after"] = String(await lockoutService.remainingLockSeconds(lockoutKey));
-          return lockedOutMessage(lockoutService, lockoutKey);
-        }
-        set.status = 401;
-        return {
-          status: "failed",
-          message: await failedLoginMessage(lockoutService, lockoutKey),
-        } satisfies LoginResponse;
+        return rejectLogin(lockoutService, lockoutKey, "unknown_user", set);
       }
 
       const valid = await credentialService.verifyPassword(input.password, user.passwordHash);
       if (!valid) {
-        const isBanned = await lockoutService.recordFailure(lockoutKey, "invalid_password");
-        if (isBanned) {
-          set.status = 429;
-          set.headers["retry-after"] = String(await lockoutService.remainingLockSeconds(lockoutKey));
-          return lockedOutMessage(lockoutService, lockoutKey);
-        }
-        set.status = 401;
-        return {
-          status: "failed",
-          message: await failedLoginMessage(lockoutService, lockoutKey),
-        } satisfies LoginResponse;
+        return rejectLogin(lockoutService, lockoutKey, "invalid_password", set);
       }
 
       await lockoutService.clearFailures(lockoutKey);
@@ -526,7 +532,7 @@ export function createConsoleAuthRoutes(
         });
         return invalidated;
       };
-      await database.transaction((tx) => rotateInScope(tx as unknown as CartethyiaDatabase));
+      await database.transaction((tx) => rotateInScope(asConsoleDb(tx)));
       set.status = 200;
       return { status: "success" } satisfies ChangePasswordResponse;
     },

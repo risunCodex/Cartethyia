@@ -17,7 +17,6 @@ import {
   TRAE_AGENT_CHAT_PATH,
   TRAE_AGENT_FUNCTION,
   TRAE_CHAT_PATH,
-  TRAE_MODEL_LIST_PATH,
   TRAE_REALMS,
   type TraeRealm,
 } from "./trae-realm";
@@ -272,13 +271,8 @@ export function buildTraeChatBody(
 }
 
 /** Body for the live model list. Upstream requires a body even to list. */
-export function buildTraeModelListBody(): Record<string, unknown> {
-  return { type: "chat" };
-}
-
 export const TRAE_CHAT_ENDPOINT = TRAE_CHAT_PATH;
 export const TRAE_AGENT_ENDPOINT = TRAE_AGENT_CHAT_PATH;
-export const TRAE_MODEL_LIST_ENDPOINT = TRAE_MODEL_LIST_PATH;
 
 /**
  * Rewrites a chat-surface body into the agent surface's shape.

@@ -170,9 +170,15 @@ const SEALED_COLUMNS: Readonly<Record<string, Readonly<Record<string, string>>>>
   share_links: { token_encrypted: "share_token" },
 };
 
+const SEALED_COLUMNS_CACHE = new WeakMap<Table, ReadonlySet<string>>();
+
 /** The sealed columns of `table`, by column name. */
 export function sealedColumns(table: Table): ReadonlySet<string> {
-  return new Set(Object.keys(SEALED_COLUMNS[getTableName(table)] ?? {}));
+  const cached = SEALED_COLUMNS_CACHE.get(table);
+  if (cached) return cached;
+  const names = new Set(Object.keys(SEALED_COLUMNS[getTableName(table)] ?? {}));
+  SEALED_COLUMNS_CACHE.set(table, names);
+  return names;
 }
 
 /**

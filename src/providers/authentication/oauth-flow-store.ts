@@ -247,12 +247,12 @@ function positiveSeconds(value: unknown, fallbackSeconds: number): number {
  * True when a device-token poll error means "keep polling": the user has not
  * approved yet, or the client is polling faster than the server allows.
  */
-export function isDevicePollPending(error: string | undefined): boolean {
+function isDevicePollPending(error: string | undefined): boolean {
   return error === "authorization_pending";
 }
 
 /** RFC 8628 `slow_down`: the client must widen its polling interval. */
-export function isDevicePollSlowDown(error: string | undefined): boolean {
+function isDevicePollSlowDown(error: string | undefined): boolean {
   return error === "slow_down";
 }
 

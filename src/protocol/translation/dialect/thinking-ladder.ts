@@ -180,7 +180,14 @@ function familyDefaultMode(wireFamily: WireFamily): ThinkingControlMode {
 /**
  * Resolves the thinking config for a model + wire family. Pure, never throws,
  * always returns a config (the family default is the floor).
+ *
+ * The rule table is deterministic and the codecs call this once per encode, so
+ * the no-declared-efforts result (the common case) is memoized per
+ * model/wire/provider key. Declared efforts bypass the cache because the
+ * `declared` object identity changes per call.
  */
+const THINKING_RESOLVE_CACHE = new Map<string, ThinkingConfig>();
+
 export function resolveThinkingForModel(
   modelId: string,
   providerId: string,
@@ -202,6 +209,10 @@ export function resolveThinkingForModel(
     }
   }
 
+  const cacheKey = `${id}|${providerId}|${wireFamily}`;
+  const cached = THINKING_RESOLVE_CACHE.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   for (const rule of THINKING_LADDER_RULES) {
     if (rule.wireFamily !== undefined && rule.wireFamily !== wireFamily) continue;
     if (rule.id !== undefined) {
@@ -209,13 +220,17 @@ export function resolveThinkingForModel(
       if (!rule.id.test(source)) continue;
     }
     if (rule.provider !== undefined && !rule.provider.test(providerId)) continue;
-    return {
+    const resolved: ThinkingConfig = {
       mode: rule.mode ?? familyDefaultMode(wireFamily),
       efforts: rule.efforts,
       ...(rule.defaultLevel === undefined ? {} : { defaultLevel: rule.defaultLevel }),
       ...(rule.requiresEffort === undefined ? {} : { requiresEffort: rule.requiresEffort }),
     };
+    THINKING_RESOLVE_CACHE.set(cacheKey, resolved);
+    return resolved;
   }
 
-  return { mode: familyDefaultMode(wireFamily), efforts: EXTENDED_SUPPORTED_EFFORTS };
+  const fallback: ThinkingConfig = { mode: familyDefaultMode(wireFamily), efforts: EXTENDED_SUPPORTED_EFFORTS };
+  THINKING_RESOLVE_CACHE.set(cacheKey, fallback);
+  return fallback;
 }

@@ -4,20 +4,7 @@
  * public origin.
  */
 
-import { CONFIG_SPEC, readInt, readOptionalText, readRequired, readText } from "./spec";
-
-/** Reads and normalizes the public OAuth origin. */
-export function requirePublicOrigin(): string {
-  return readRequired("CARTETHYIA_PUBLIC_ORIGIN", CONFIG_SPEC.CARTETHYIA_PUBLIC_ORIGIN).replace(
-    /\/+$/,
-    "",
-  );
-}
-
-/** Builds the fixed OAuth callback URL for a provider id. */
-export function oauthCallbackUrl(providerId: string): string {
-  return `${requirePublicOrigin()}/console/api/providers/${providerId}/oauth/callback`;
-}
+import { CONFIG_SPEC, readInt, readOptionalText, readText } from "./spec";
 
 /**
  * Browser-authorize redirect URI for a provider.

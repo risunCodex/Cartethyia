@@ -393,7 +393,7 @@ async function insertChunk(
       .set({
         fileName,
         byteOffset,
-        filesCompleted: sql`${telemetryReconciliationState.filesCompleted} + 0`,
+        filesCompleted: sql`${telemetryReconciliationState.filesCompleted} + 1`,
         eventsExamined: sql`${telemetryReconciliationState.eventsExamined} + ${events.length}`,
         eventsInserted: sql`${telemetryReconciliationState.eventsInserted} + ${rows.length}`,
         conflicts: sql`${telemetryReconciliationState.conflicts} + ${events.length - rows.length}`,

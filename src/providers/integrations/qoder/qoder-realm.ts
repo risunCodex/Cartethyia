@@ -118,30 +118,3 @@ export function qoderInferenceCandidates(
   }
   return [config.gateway, ...config.gatewayFallbacks];
 }
-
-/**
- * Model keys that exist in exactly one realm.
- *
- * From the donor's `INTL_EXCLUSIVE` / `CN_EXCLUSIVE` tables. A request for one
- * of these on the wrong realm does not degrade — it is refused — so the roster
- * each realm publishes is the authority, not a union.
- */
-export const QODER_INTL_EXCLUSIVE: ReadonlySet<string> = new Set([
-  "fast",
-  "efficient",
-  "cmodel",
-  "smodel",
-  "ultimate",
-  "performance",
-]);
-
-export const QODER_CN_EXCLUSIVE: ReadonlySet<string> = new Set([
-  "q37fmodel",
-  "gm51model",
-]);
-
-/** True when this model key is served only by the other realm. */
-export function isForeignQoderModel(realm: QoderRealm, modelId: string): boolean {
-  const foreign = realm === "cn" ? QODER_INTL_EXCLUSIVE : QODER_CN_EXCLUSIVE;
-  return foreign.has(modelId.trim().toLowerCase());
-}

@@ -118,26 +118,6 @@ export const MODERN_PROFILE: QoderModeProfile = {
 
 const QODER_PROVIDER_ID = "qoder" as const;
 
-export const QODER_MODEL_CONFIGS: Record<
-  string,
-  { id: string; display_name: string; max_input_tokens: number; max_output_tokens?: number; is_vl: boolean; is_reasoning: boolean; source?: string }
-> = {
-  auto: { id: "auto", display_name: "Auto", max_input_tokens: 180000, is_vl: true, is_reasoning: false },
-  ultimate: { id: "ultimate", display_name: "Ultimate", max_input_tokens: 180000, is_vl: true, is_reasoning: true },
-  performance: { id: "performance", display_name: "Performance", max_input_tokens: 272000, is_vl: true, is_reasoning: false },
-  efficient: { id: "efficient", display_name: "Efficient", max_input_tokens: 180000, is_vl: true, is_reasoning: false },
-  lite: { id: "lite", display_name: "Lite", max_input_tokens: 180000, is_vl: false, is_reasoning: true },
-  qmodel: { id: "qmodel", display_name: "Qwen 3.6 Plus", max_input_tokens: 180000, is_vl: true, is_reasoning: false },
-  qmodel_latest: { id: "qmodel_latest", display_name: "Qwen 3.7 Max", max_input_tokens: 1000000, is_vl: true, is_reasoning: false },
-  qmodel_preview: { id: "qmodel_preview", display_name: "Qwen 3.8 Max", max_input_tokens: 1000000, is_vl: true, is_reasoning: false },
-  dmodel: { id: "dmodel", display_name: "DeepSeek V4 Pro", max_input_tokens: 180000, is_vl: true, is_reasoning: true },
-  dfmodel: { id: "dfmodel", display_name: "DeepSeek V4 Flash", max_input_tokens: 180000, is_vl: true, is_reasoning: true },
-  gm51model: { id: "gm51model", display_name: "GLM 5.1", max_input_tokens: 180000, is_vl: true, is_reasoning: true },
-  kmodel: { id: "kmodel", display_name: "Kimi K2.6", max_input_tokens: 256000, is_vl: true, is_reasoning: false },
-  mmodel: { id: "mmodel", display_name: "MiniMax M2.7", max_input_tokens: 180000, is_vl: true, is_reasoning: false },
-  kmodel_latest: { id: "kmodel_latest", display_name: "Kimi K2.7 Latest", max_input_tokens: 256000, is_vl: true, is_reasoning: false },
-};
-
 const QODER_APPCODE = "cosy";
 const QODER_SIG_SECRET = "d2FyLCB3YXIgbmV2ZXIgY2hhbmdlcw==";
 /**
@@ -1596,17 +1576,13 @@ export async function* qoderBodyToCanonicalEvents(
   } as CanonicalEvent;
 }
 
-// Model catalog — maps QODER_MODEL_CONFIGS (provider) to Cartethyia ModelDefinition
+// Model catalog — maps the realm's roster to Cartethyia ModelDefinition
 
 /**
  * The intl catalog this provider publishes.
  *
- * `QODER_MODEL_CONFIGS` is not the source here: it freezes most rows at 180k
- * while the upstream reports 1M for the same keys. That number is not
- * cosmetic: it is sent upstream as `model_config.max_input_tokens`, so a stale
- * low value tells Qoder the conversation window is small and makes it behave
- * that way. Both the published catalog and the dispatched request come from the
- * realm's roster, which carries the upstream's own numbers.
+ * The published catalog and the dispatched request both come from the realm's
+ * roster, which carries the upstream's own numbers.
  */
 export const QODER_MODELS: readonly ModelDefinition[] = QODER_INTL_MODELS;
 

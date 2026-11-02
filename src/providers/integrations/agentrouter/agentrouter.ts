@@ -16,9 +16,19 @@ import { readCredentialSecret, assertWireFamily, type ProviderDispatchTarget, ty
 import { providerBaseUrl } from "../../provider-metadata";
 import { buildClaudeMessagesRequest } from "../shared/claude-messages";
 import { sendClaudeMessagesRequest } from "../../../protocol/upstream/send-claude-messages";
+import { ANTHROPIC_BETA_CAPABILITIES } from "../claude/claude-betas";
 
 export const AGENTROUTER_PROVIDER_ID = "agentrouter" as const;
-export const AGENTROUTER_BASE_URL = `${providerBaseUrl("agentrouter")}/v1/messages?beta=true`;
+const AGENTROUTER_BASE_URL = `${providerBaseUrl("agentrouter")}/v1/messages?beta=true`;
+
+/** The CLI beta set, typed against the canonical Anthropic beta vocabulary. */
+const AGENTROUTER_ANTHROPIC_BETAS: ReadonlyArray<
+  keyof typeof ANTHROPIC_BETA_CAPABILITIES
+> = [
+  "claude-code-20250219",
+  "interleaved-thinking-2025-05-14",
+  "effort-2025-11-24",
+];
 
 /**
  * The AgentRouter CLI fingerprint headers. Every value is part of the
@@ -29,7 +39,7 @@ export const AGENTROUTER_BASE_URL = `${providerBaseUrl("agentrouter")}/v1/messag
  */
 function agentRouterFingerprintHeaders(stream: boolean): Record<string, string> {
   return {
-    "anthropic-beta": "claude-code-20250219,interleaved-thinking-2025-05-14,effort-2025-11-24",
+    "anthropic-beta": AGENTROUTER_ANTHROPIC_BETAS.join(","),
     "anthropic-dangerous-direct-browser-access": "true",
     "x-app": "cli",
     "user-agent": "claude-cli/2.1.195 (external, sdk-cli)",

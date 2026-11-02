@@ -36,12 +36,12 @@
 import type { ProviderAdapter, ProviderDispatchTarget } from "../../providers/provider-contracts";
 import { GatewayError } from "../../protocol/gateway-error";
 import { isRecord } from "../../protocol/codecs";
-import { resolveCredentialForAccount } from "../../providers/operations/provider-credential-service";
 import { metrics } from "../../observability/metrics";
 import type { ProxyRequestState } from "../request/state";
 import type { PreparedNativeRequest } from "../request/preparer";
 import { completeAttempt, estimatedUsage, nativeCompletionBase } from "./attempt-finalize";
 import { runAttemptLoop } from "./attempt-loop";
+import { hasScope, networkFetchContext, requireRecordBody, resolveAttemptCredential } from "./native-shared";
 
 import type { GatewayHandlerDeps } from "./handler-deps";
 
@@ -52,15 +52,15 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
   return async ({ request }: { request: Request }): Promise<Response> => {
     const state = deps.stateStore.require(request);
     const authorization = state.authorization;
-    const body = state.ingressBody;
-    if (!authorization || body === null || typeof body !== "object" || Array.isArray(body)) {
-      throw new GatewayError(
-        "invalid_request",
-        400,
-        "The count_tokens body must be a JSON object (request {requestId}), the same shape POST /v1/messages accepts. Check the shape of what you sent — then resend 🪞",
-      );
+    const countBody = requireRecordBody(
+      state,
+      "The count_tokens body must be a JSON object (request {requestId}), the same shape POST /v1/messages accepts. Check the shape of what you sent — then resend 🪞",
+    );
+    // `requireRecordBody` already refused a missing authorization; this guard
+    // exists only to narrow the type for the code below.
+    if (!authorization) {
+      throw new GatewayError("invalid_request", 400, "authentication required (request {requestId})");
     }
-    const countBody = body as Record<string, unknown>;
 
     // `model` names the route and `messages` is what gets counted; both are the
     // upstream's own required fields, so the gateway does not restate its own
@@ -71,7 +71,7 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
     if (!Array.isArray(countBody.messages)) {
       throw new GatewayError("invalid_request", 400, "messages must be an array (request {requestId}) — there is nothing to count without it. Check the shape of what you sent — then resend 🪞");
     }
-    if (!authorization.snapshot.scopes?.includes("routing:invoke" as never)) {
+    if (!hasScope(authorization?.snapshot.scopes, "routing:invoke")) {
       throw new GatewayError(
         "policy_rejected",
         403,
@@ -116,19 +116,7 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
         "no eligible route can count tokens for this model (request {requestId}). The bouncer stepped out — come back shortly 🚪",
       ),
       prepare: async (candidate) => {
-        const credential = candidate.provider_account_id
-          ? await resolveCredentialForAccount(
-              deps.db,
-              candidate.provider_id,
-              candidate.provider_account_id,
-              deps.oauthRefreshService && deps.resolveOAuthRefresher
-                ? { refreshService: deps.oauthRefreshService, resolveRefresher: deps.resolveOAuthRefresher }
-                : undefined,
-            )
-          : {
-              provider_id: candidate.provider_id as ProviderAdapter["provider_id"],
-              credential_kind: "none" as const,
-            };
+        const credential = await resolveAttemptCredential(deps, candidate);
         const adapter = await deps.resolveProviderAdapter?.(candidate.provider_id);
         if (!adapter) {
           throw new GatewayError("capability_unsupported", 400, "token counting is unavailable for this provider (request {requestId}). Know your tools — this one just isn't in the box 🧰");
@@ -167,14 +155,7 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
           deadline: state.deadlineMs,
           abort_signal: state.abortController.signal,
           ...(candidate.user_agent === undefined ? {} : { user_agent: candidate.user_agent }),
-          ...(deps.networkBindingFactory
-            ? {
-                outbound_fetch: deps.networkBindingFactory.fetch(
-                  leases.proxySlot?.poolId,
-                  authorization.tenantId,
-                ),
-              }
-            : {}),
+          ...networkFetchContext(deps, leases.proxySlot?.poolId, authorization.tenantId),
         });
 
         // A count is free and generates nothing, so nothing is reserved or

@@ -60,3 +60,14 @@ Total findings: **27**.
 - `src/transport/request/preparer.ts`: `#planNative` correctly centralizes the three native prep paths; no duplicated native-plan logic.
 
 Primary caveat / unverified: the `estimatedCountResponse` telemetry gap (finding 22) is behavior-affecting; the intent is not provable from code alone and should be confirmed against the telemetry contract before changing.
+
+---
+
+## Execution status
+
+- **Area execution:** 10 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** native-shared.ts helpers created (resolveAttemptCredential, networkFetchContext, jsonResponse, requireRecordBody, stripThinkingSuffix, hasScope); websearch + token-count migrated to them; state.ts addCleanup removed.
+- **Not done / skipped (⛔):**
+  - #22 estimatedCountResponse telemetry bypass — deliberately skipped (needs telemetry-contract confirmation) ⛔
+  - #4 generation/systemone not yet migrated to native-shared ⛔
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

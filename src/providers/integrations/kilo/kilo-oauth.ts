@@ -30,7 +30,7 @@ import type { OAuthTokenRefreshResult } from "../../authentication/oauth-refresh
 import { OAuthDeviceFlow } from "../../authentication/oauth-device-flow";
 import type { FetchLike } from "../../authentication/oauth-client";
 
-export const KILO_API_BASE_URL = "https://api.kilo.ai" as const;
+const KILO_API_BASE_URL = "https://api.kilo.ai" as const;
 export const KILO_DEVICE_CODES_URL = `${KILO_API_BASE_URL}/api/device-auth/codes` as const;
 export const KILO_PROFILE_URL = `${KILO_API_BASE_URL}/api/profile` as const;
 

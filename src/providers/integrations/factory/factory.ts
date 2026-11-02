@@ -106,7 +106,7 @@ function factoryClientHeaders(orgId: string): Record<string, string> {
  * (`packages/ai/src/providers/factory-droid.ts:271` — `"x-api-provider":
  * input.upstream`), so a value outside it has no meaning on this wire.
  */
-export const FACTORY_DROID_UPSTREAMS = [
+const FACTORY_DROID_UPSTREAMS = [
   "fireworks",
   "baseten",
   "mistral",
@@ -123,7 +123,7 @@ export const FACTORY_DROID_UPSTREAMS = [
   "databricks",
 ] as const;
 
-export type FactoryDroidUpstream = (typeof FACTORY_DROID_UPSTREAMS)[number];
+type FactoryDroidUpstream = (typeof FACTORY_DROID_UPSTREAMS)[number];
 
 const FACTORY_DROID_UPSTREAM_SET: ReadonlySet<string> = new Set(FACTORY_DROID_UPSTREAMS);
 
@@ -154,7 +154,7 @@ function logDroppedUpstream(reason: string, value: string): void {
  * unmapped failure. Omitting falls back to Factory's default routing, which is
  * the behavior a request that names no upstream already gets.
  */
-export function factoryApiProviderHeader(
+function factoryApiProviderHeader(
   options: Readonly<Record<string, unknown>> | undefined,
 ): Record<string, string> {
   const value = options?.["factory_api_provider"];
@@ -179,7 +179,7 @@ export function factoryApiProviderHeader(
  * `/api/cli/whoami` reported. An account with no recorded residency is the
  * global host, which is Factory's default.
  */
-export function factoryBaseUrl(context: ProviderDispatchContext): string {
+function factoryBaseUrl(context: ProviderDispatchContext): string {
   const region = context.credential.auth_state?.["region"];
   return region === "eu" ? FACTORY_DROID_EU_BASE_URL : FACTORY_DROID_BASE_URL;
 }
@@ -200,7 +200,7 @@ export function factoryBaseUrl(context: ProviderDispatchContext): string {
  * operator wrote into `auth_state`. The two-axis read is kept because the donor
  * needs it, not because we currently populate the second axis.
  */
-export function factoryInferenceRegion(
+function factoryInferenceRegion(
   context: ProviderDispatchContext,
 ): "global" | "us" | "eu" {
   const state = context.credential.auth_state;
@@ -266,7 +266,7 @@ const REGION_UPSTREAMS: Readonly<Record<"global" | "us" | "eu", readonly Factory
  * is, which is a property of the route rather than of the request. The donor's
  * own message text is preserved as the `reason` so the mapping is traceable.
  */
-export function factoryRegionUnavailable(modelId: string, region: string): GatewayError {
+function factoryRegionUnavailable(modelId: string, region: string): GatewayError {
   return new GatewayError(
     "capability_unsupported",
     400,
@@ -294,7 +294,7 @@ export function factoryRegionUnavailable(modelId: string, region: string): Gatew
  * Sending `configured_order` without that discovery would claim a rotation we
  * never resolved.
  */
-export function factoryRoutingSourceHeader(request: CanonicalRequest): Record<string, string> {
+function factoryRoutingSourceHeader(request: CanonicalRequest): Record<string, string> {
   const continuing = request.messages.some((message) => message.role === "assistant");
   return { "x-provider-routing-source": continuing ? "session_lock" : "registry_default" };
 }
@@ -313,7 +313,7 @@ export function factoryRoutingSourceHeader(request: CanonicalRequest): Record<st
  * donor's own region-unavailable error rather than an upstream 4xx this layer
  * cannot explain.
  */
-export function factoryRegionCheckedApiProviderHeader(
+function factoryRegionCheckedApiProviderHeader(
   request: CanonicalRequest,
   context: ProviderDispatchContext,
 ): Record<string, string> {
@@ -330,7 +330,7 @@ export function factoryRegionCheckedApiProviderHeader(
 }
 
 /** The two routing headers together, as every Factory wire sends them. */
-export function factoryRoutingHeaders(
+function factoryRoutingHeaders(
   request: CanonicalRequest,
   context: ProviderDispatchContext,
 ): Record<string, string> {

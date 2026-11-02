@@ -152,7 +152,7 @@ export function workbuddyPrePayload(
 // declared reasoning-effort scale.
 const WORKBUDDY_RAW: readonly BuddyRawEntry[] = BUDDY_SHARED_RAW;
 
-export function makeWorkBuddyModels(providerId: "workbuddy" | "workbuddycn"): readonly ModelDefinition[] {
+function makeWorkBuddyModels(providerId: "workbuddy" | "workbuddycn"): readonly ModelDefinition[] {
   return [
     ...WORKBUDDY_RAW.filter(
       (entry) => !BUDDY_IMAGE_MODEL_ID_SET.has(entry[0]) && !BUDDY_VIDEO_MODEL_ID_SET.has(entry[0]),

@@ -303,17 +303,6 @@ export function buildHeartbeat(): Uint8Array {
   return encodeMessage("AgentClientMessage", { client_heartbeat: {} });
 }
 
-/**
- * `ACM#5 exec_client_control_message.heartbeat{id}`: Cursor CLI sends one every
- * few seconds for each exec it is still running. A zero id is left out, as
- * proto3 does for a default scalar.
- */
-export function buildExecHeartbeat(execId: number): Uint8Array {
-  return encodeMessage("AgentClientMessage", {
-    exec_client_control_message: { heartbeat: execId === 0 ? {} : { id: execId } },
-  });
-}
-
 /** `ACM#5 exec_client_control_message.stream_close{id}` after an exec result. */
 export function buildExecStreamClose(execId: number, execIdString?: string): Uint8Array {
   return encodeMessage("AgentClientMessage", {
@@ -422,82 +411,6 @@ export function buildMcpResult(input: {
       mcp_result: { success: { content, is_error: input.isError } },
     },
   });
-}
-
-/**
- * `ACM#2 exec_client_message{shell_result|write_result|read_result}` for a host
- * exec the canonical client executed locally.
- *
- * Cursor's executor replies to its own host requests with the variant's typed
- * result frame (the generic `mcp_result` leaves the server unmatched on a frame
- * it did rank), and after every exec result it sends `stream_close` — without
- * it the cloud waits forever on shell execs. `is_error` keeps the failure as
- * the variant's error/failure case rather than a crafted success.
- */
-export type CursorHostExecResultVariant = "shell" | "write" | "read";
-
-export function buildHostExecResult(input: {
-  readonly execId: number;
-  readonly execIdString?: string;
-  readonly variant: CursorHostExecResultVariant;
-  readonly text: string;
-  readonly isError: boolean;
-  readonly host: {
-    readonly command?: string;
-    readonly workingDirectory?: string;
-    readonly path?: string;
-    readonly lines?: number;
-    readonly fileSize?: number;
-  };
-}): Uint8Array[] {
-  const id = { id: input.execId, exec_id: input.execIdString ?? "" };
-  const variant = input.variant;
-  const text = input.text;
-  let result: Record<string, unknown>;
-  if (variant === "shell") {
-    result = {
-      shell_result: input.isError
-        ? { failure: { command: input.host.command ?? "", exit_code: 1, stderr: text } }
-        : {
-            success: {
-              command: input.host.command ?? "",
-              exit_code: 0,
-              stdout: text,
-              ...(input.host.workingDirectory === undefined ? {} : { working_directory: input.host.workingDirectory }),
-            },
-          },
-    };
-  } else if (variant === "write") {
-    result = {
-      write_result: input.isError
-        ? { error: { path: input.host.path ?? "", error: text } }
-        : {
-            success: {
-              path: input.host.path ?? "",
-              lines_created: input.host.lines ?? 0,
-              file_size: input.host.fileSize ?? 0,
-            },
-          },
-    };
-  } else {
-    result = {
-      read_result: input.isError
-        ? { error: { path: input.host.path ?? "", error: text } }
-        : {
-            success: {
-              path: input.host.path ?? "",
-              content: text,
-              total_lines: text.length > 0 ? text.split("\n").length : 0,
-            },
-          },
-    };
-  }
-  return [
-    encodeMessage("AgentClientMessage", { exec_client_message: { ...id, ...result } }),
-    // The real CLI pairs every typed exec result with stream_close — the cloud
-    // waits on it for shell execs specifically.
-    buildExecStreamClose(input.execId, input.execIdString),
-  ];
 }
 
 /**

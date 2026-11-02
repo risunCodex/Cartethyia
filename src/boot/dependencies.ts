@@ -4,6 +4,7 @@ import { poolMaxFromEnv } from "../persistence/db-pg";
 import type { CartethyiaDatabase } from "../persistence/db-handle";
 import { resolveRedisBackend, resolveRedisClient } from "../persistence/redis";
 import { resolveProcessTopology, type ProcessTopology } from "../config/runtime";
+import { withTimeout } from "./timeout";
 import { createRedisMaintenanceLeaseStore } from "../workers/maintenance-lease";
 import { resolveDbMode } from "../persistence/db-mode";
 import type { RedisClient } from "../persistence/redis";
@@ -136,16 +137,6 @@ const CLIENT_VERSION_INITIAL_DELAY_MS = 10_000;
 
 /** Bound on the boot-time Redis probe: a start must fail, not hang. */
 const REDIS_PROBE_TIMEOUT_MS = 2_000;
-
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  const { promise: timeout, reject } = Promise.withResolvers<never>();
-  const timer = setTimeout(() => reject(new Error("timeout")), ms);
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 /** Bounded Redis reachability probe: fails rather than hangs. */
 async function redisIsReachable(): Promise<boolean> {
@@ -417,25 +408,33 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
   // The account-inflight reader the console queries. It lives after the deps
   // it closes over (telemetry buffer, binding factory), so the closure never
   // touches a TDZ binding; it also reuses one catalog store per tenant instead
-  // of constructing a fresh store object on every console read.
-  let lastInflightTenant = "";
-  let lastInflightStore: DrizzleProviderCatalogStore | undefined;
+  // of constructing a fresh store object on every console read. Multi-tenant
+  // console polling rotates the tenant id, so the memo is keyed by tenant with
+  // a small bound — a single-entry memo rebuilt the heavy store on every
+  // switch, and an unbounded map would leak one store per tenant forever.
+  const MAX_INFLIGHT_STORES = 16;
+  const inflightStores = new Map<string, DrizzleProviderCatalogStore>();
   const readRoutingAccountInflight = async (
     providerId: string,
     tenantId: string | null,
   ): Promise<readonly { accountId: string; inflight: number }[]> => {
     if (providerId === "" || tenantId === null) return [];
-    if (tenantId !== lastInflightTenant || lastInflightStore === undefined) {
-      lastInflightStore = new DrizzleProviderCatalogStore(db, {
+    let inflightStore = inflightStores.get(tenantId);
+    if (inflightStore === undefined) {
+      inflightStore = new DrizzleProviderCatalogStore(db, {
         telemetryBuffer,
         bundledModelCatalog: bundledCatalog,
         providerRegistry: registry,
         outboundFetchFor: async () => ({ fetch: networkBindingFactory.fetch(undefined, tenantId) }),
         snapshotInvalidator: snapshotService,
       });
-      lastInflightTenant = tenantId;
+      inflightStores.set(tenantId, inflightStore);
+      if (inflightStores.size > MAX_INFLIGHT_STORES) {
+        const oldest = inflightStores.keys().next().value;
+        if (oldest !== undefined) inflightStores.delete(oldest);
+      }
     }
-    const accounts = await lastInflightStore.listAccounts(tenantId, providerId);
+    const accounts = await inflightStore.listAccounts(tenantId, providerId);
     const owned = new Set(accounts.map((account) => account.id));
     // Scoped read: only the provider's own candidates for this tenant are
     // queried, so the console read costs one exact MGET over the accounts it

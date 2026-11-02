@@ -33,6 +33,12 @@ const boot = Manifest.isCapturing()
   ? undefined
   : (globalThis.__cartethyiaBoot ??= await bootstrap());
 
+// Hoisted once: each resolver is an env parse + range check on a cold path, and
+// the values are boot-stable, so computing them repeatedly buys nothing.
+const maxBodyBytes = resolveMaxBodyBytes();
+const topology = resolveProcessTopology();
+const drainToken = resolveDrainToken();
+
 const app = boot
   ? createGatewayApp({
       mode: "production",
@@ -49,7 +55,7 @@ const app = boot
       telemetryBuffer: boot.deps.telemetryBuffer,
       resolveOAuthRefresher: boot.deps.resolveOAuthRefresher,
       oauthRefreshService: boot.deps.oauthRefreshService,
-      maxBodyBytes: resolveMaxBodyBytes(),
+      maxBodyBytes,
       scheduledTasks: boot.deps.scheduledTasks,
       // The sampler is constructed in the dependency graph and already
       // sampling on its own interval; without passing it here the app cannot
@@ -60,8 +66,8 @@ const app = boot
       shutdownCoordinator: boot.shutdownCoordinator,
       // Signal-free graceful stop for platforms where a catchable signal cannot
       // be delivered (Windows). Off unless `CARTETHYIA_DRAIN_TOKEN` is set.
-      ...(resolveDrainToken() !== undefined
-        ? { drainToken: resolveDrainToken() as string, triggerDrain: () => shutdown("SIGTERM") }
+      ...(drainToken !== undefined
+        ? { drainToken, triggerDrain: () => shutdown("SIGTERM") }
         : {}),
       // The console mounts in every boot: without REDIS_URL it runs on the
       // in-process memory backend like the rest of the gateway.
@@ -141,10 +147,10 @@ if (boot) {
       // left always-on: with one process declared, enabling it lets an
       // unrelated process on the same port silently take half the traffic —
       // which is worse than a bind error, because nothing reports it.
-      reusePort: resolveProcessTopology().multiProcess,
+      reusePort: topology.multiProcess,
       // 8 MiB cap on request bodies keeps a rogue client from allocating
       // gigabytes of memory in the ingress path before validation rejects.
-      maxRequestBodySize: resolveMaxBodyBytes(),
+      maxRequestBodySize: maxBodyBytes,
     },
     () => {
       log.info(`Cartethyia listening on :${port} (Bun ${Bun.version})`);

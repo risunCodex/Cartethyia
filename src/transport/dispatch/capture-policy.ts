@@ -1,7 +1,34 @@
 // Tenant payload-capture policy resolved once and shared by dispatch attempts.
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
-import { payloadRetentionMs, resolvePayloadCapture } from "../../observability/payload-capture";
+import { resolvePayloadCapture } from "../../observability/payload-capture";
 import type { TelemetryPayloadDepth, TelemetryPayloadMode } from "../../console/settings/contracts";
+
+/** The resolved payload-capture preference, memoized on the request state. */
+export type PayloadCapturePreference =
+  | {
+      readonly ok: true;
+      readonly mode: TelemetryPayloadMode;
+      readonly depth: TelemetryPayloadDepth;
+      readonly retentionMs: number;
+    }
+  | { readonly ok: false };
+
+/** The slice of request state that memoizes the capture preference. */
+export type CapturePreferenceState = { payloadCapturePreference?: PayloadCapturePreference };
+
+/** Resolves the tenant's capture preference once, memoized on the request state. */
+async function resolveCapturePreference(
+  db: CartethyiaDatabase,
+  tenantId: string | null,
+  state: CapturePreferenceState,
+): Promise<PayloadCapturePreference> {
+  let preference = state.payloadCapturePreference;
+  if (preference === undefined) {
+    preference = await resolvePayloadCapture(db, tenantId);
+    state.payloadCapturePreference = preference;
+  }
+  return preference;
+}
 
 /** Per-stage body cap for the provider request/response tee. */
 export function providerCaptureMaxBytes(depth?: TelemetryPayloadDepth): number {
@@ -14,14 +41,9 @@ export function providerCaptureMaxBytes(depth?: TelemetryPayloadDepth): number {
 export async function shouldCaptureProviderBodyForRequest(
   db: CartethyiaDatabase,
   tenantId: string | null,
-  state: { payloadCapturePreference?: unknown },
+  state: CapturePreferenceState,
 ): Promise<boolean> {
-  if (state.payloadCapturePreference === undefined) {
-    state.payloadCapturePreference = await resolvePayloadCapture(db, tenantId);
-  }
-  const resolved = state.payloadCapturePreference as
-    | { readonly ok: true; readonly mode: string }
-    | { readonly ok: false };
+  const resolved = await resolveCapturePreference(db, tenantId, state);
   return resolved.ok === true && resolved.mode === "full";
 }
 
@@ -29,14 +51,9 @@ export async function shouldCaptureProviderBodyForRequest(
 export async function resolveCaptureModeForRequest(
   db: CartethyiaDatabase,
   tenantId: string | null,
-  state: { payloadCapturePreference?: unknown },
+  state: CapturePreferenceState,
 ): Promise<TelemetryPayloadMode> {
-  if (state.payloadCapturePreference === undefined) {
-    state.payloadCapturePreference = await resolvePayloadCapture(db, tenantId);
-  }
-  const resolved = state.payloadCapturePreference as
-    | { readonly ok: true; readonly mode: TelemetryPayloadMode }
-    | { readonly ok: false };
+  const resolved = await resolveCapturePreference(db, tenantId, state);
   return resolved.ok === true ? resolved.mode : "none";
 }
 
@@ -44,30 +61,10 @@ export async function resolveCaptureModeForRequest(
 export async function resolveCaptureDepthForRequest(
   db: CartethyiaDatabase,
   tenantId: string | null,
-  state: { payloadCapturePreference?: unknown },
+  state: CapturePreferenceState,
 ): Promise<TelemetryPayloadDepth> {
-  if (state.payloadCapturePreference === undefined) {
-    state.payloadCapturePreference = await resolvePayloadCapture(db, tenantId);
-  }
-  const resolved = state.payloadCapturePreference as
-    | { readonly ok: true; readonly depth: TelemetryPayloadDepth }
-    | { readonly ok: false };
+  const resolved = await resolveCapturePreference(db, tenantId, state);
   return resolved.ok === true ? resolved.depth : "minimum";
-}
-
-/** Resolve the tenant's payload retention once per request. */
-export async function resolveCaptureRetentionForRequest(
-  db: CartethyiaDatabase,
-  tenantId: string | null,
-  state: { payloadCapturePreference?: unknown },
-): Promise<number> {
-  if (state.payloadCapturePreference === undefined) {
-    state.payloadCapturePreference = await resolvePayloadCapture(db, tenantId);
-  }
-  const resolved = state.payloadCapturePreference as
-    | { readonly ok: true; readonly retentionMs: number }
-    | { readonly ok: false };
-  return resolved.ok === true ? resolved.retentionMs : payloadRetentionMs();
 }
 
 /** Combined body cap for the four payload panels at one configured depth. */

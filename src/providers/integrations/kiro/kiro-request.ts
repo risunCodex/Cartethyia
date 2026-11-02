@@ -198,8 +198,7 @@ export function buildKiroWireRequest(
  * This text is deliberately the *only* thing the opening turn carries besides
  * the caller's own words, because it is the prefix the upstream caches: every
  * request in a conversation repeats it byte-for-byte on that same turn. A value
- * that changes per request belongs on the current turn instead — see
- * `buildCurrentTimeLine`.
+ * that changes per request belongs on the current turn instead.
  */
 function buildStablePrefix(request: CanonicalRequest, options: KiroWireRequestOptions): string {
   const parts: string[] = [];
@@ -222,9 +221,6 @@ function buildStablePrefix(request: CanonicalRequest, options: KiroWireRequestOp
  * prefix differ on every request, so the upstream could never reuse the cached
  * one and the whole conversation would be re-read each turn.
  */
-export function buildCurrentTimeLine(now: Date = new Date()): string {
-  return `[Context: Current time is ${now.toISOString()}]`;
-}
 
 /** The marker the upstream reads to enable thinking with a budget. */
 export function buildThinkingMarker(budget: number): string {

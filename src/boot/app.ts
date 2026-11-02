@@ -160,6 +160,23 @@ interface ProductionAppDeps {
 /** Either app mode. The discriminant decides which builder path runs. */
 type GatewayAppDeps = GatewayShellDeps | ProductionAppDeps;
 
+/**
+ * Adapts the static handler's `Uint8Array | undefined` body to `BodyInit`.
+ *
+ * Typed-array buffers are `ArrayBufferLike` (may be a SharedArrayBuffer), but
+ * `BodyInit` only accepts `ArrayBuffer`-backed views, so a direct assignment
+ * does not type-check. The common case reuses the same bytes without copying;
+ * the exotic SharedArrayBuffer case falls back to a copy. This replaces the
+ * old `as unknown as BodyInit` double cast with a structural guard.
+ */
+function staticBodyToInit(body: Uint8Array | undefined): BodyInit | null {
+  if (body === undefined) return null;
+  if (body.buffer instanceof ArrayBuffer) {
+    return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+  }
+  return new Uint8Array(body);
+}
+
 function checkDatabaseConnection(): Promise<void> {
   return getDbHandle()
     .query("SELECT 1")
@@ -206,7 +223,7 @@ export function createGatewayApp(deps: GatewayAppDeps) {
     // The client's `accept-encoding` is what decides whether a precompressed
     // `.gz` sibling can be served instead of the plain asset.
     const result = await staticHandler(pathname, request.headers.get("accept-encoding"));
-    return new Response(result.body ? (result.body as unknown as BodyInit) : null, {
+    return new Response(staticBodyToInit(result.body), {
       status: result.status,
       headers: result.headers,
     });

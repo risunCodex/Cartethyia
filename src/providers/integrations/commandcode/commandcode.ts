@@ -37,10 +37,6 @@ export const COMMANDCODE_HOST = "https://api.commandcode.ai" as const;
  * generate.
  */
 export const COMMANDCODE_GENERATE_PATH = "/alpha/generate" as const;
-/** The three routes the Provider API serves, one per wire family. */
-export const COMMANDCODE_CHAT_PATH = "/chat/completions" as const;
-export const COMMANDCODE_RESPONSES_PATH = "/responses" as const;
-export const COMMANDCODE_MESSAGES_PATH = "/messages" as const;
 
 /**
  * Command Code's roster, as the Provider API publishes it.

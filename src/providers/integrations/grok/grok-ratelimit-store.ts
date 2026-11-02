@@ -62,11 +62,6 @@ export function storedGrokRateLimit(accountId: string, now = Date.now()): readon
   return snapshot.windows;
 }
 
-/** Whether a fresh reading exists, so the collector can skip its probe. */
-export function hasFreshGrokRateLimit(accountId: string, now = Date.now()): boolean {
-  return storedGrokRateLimit(accountId, now) !== null;
-}
-
 /** Test seam. */
 export function clearGrokRateLimitSnapshots(): void {
   snapshots.clear();

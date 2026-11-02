@@ -13,6 +13,7 @@ import { isValidTenantKeyScope, type AccessScope } from "../../security/access-c
 import { normalizeClientRouterId } from "../../security/client-router-fingerprint";
 import type { ShareActivityPort } from "../share/share-usage";
 import { ConsoleDomainError } from "../shared/errors";
+import { pickDefined } from "../shared/object";
 import type { ConsoleAccessResolver } from "../auth/access";
 import type { ApiKeyAdmissionService } from "../../security/admission/service";
 import {
@@ -248,16 +249,20 @@ export function generateApiKeySecret(prefix = DEFAULT_API_KEY_PREFIX): {
   return { secret, hash: hashSecret(secret), prefix };
 }
 
-/** Normalizes a caller-supplied prefix; falls back to the default. */
-export function resolveKeyPrefix(raw: string | undefined): string {
+/** Normalizes a caller-supplied prefix; falls back to `fallback`. */
+function resolvePrefix(raw: string | undefined, fallback: string): string {
   const trimmed = raw?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_API_KEY_PREFIX;
+  return trimmed && trimmed.length > 0 ? trimmed : fallback;
 }
 
-/** Resolves the share-key prefix; falls back to the default. */
+/** Normalizes a caller-supplied prefix; falls back to the personal default. */
+export function resolveKeyPrefix(raw: string | undefined): string {
+  return resolvePrefix(raw, DEFAULT_API_KEY_PREFIX);
+}
+
+/** Resolves the share-key prefix; falls back to the share default. */
 export function resolveShareKeyPrefix(raw: string | undefined): string {
-  const trimmed = raw?.trim();
-  return !trimmed ? DEFAULT_SHARE_API_KEY_PREFIX : trimmed;
+  return resolvePrefix(raw, DEFAULT_SHARE_API_KEY_PREFIX);
 }
 
 /** Maximum hint the enroll page accepts; the dashboard caps its input there. */
@@ -430,35 +435,33 @@ export function sanitizeApiKeyResponse(record: ApiKeyRecord): ApiKeyResponse {
      * renaming the key cannot change which key is the default.
      */
     isDefault: isDefaultGatewayApiKey(record),
-    ...(keyPrefix === undefined ? {} : { keyPrefix }),
-    ...(record.parentKeyId === undefined ? {} : { parentKeyId: record.parentKeyId }),
-    ...(record.notesTitle === undefined ? {} : { notesTitle: record.notesTitle }),
-    ...(record.notesSubtitle === undefined ? {} : { notesSubtitle: record.notesSubtitle }),
-    ...(record.notesBody === undefined ? {} : { notesBody: record.notesBody }),
-    ...(record.sharePopupEnabled === undefined ? {} : { sharePopupEnabled: record.sharePopupEnabled }),
-    ...(record.sharePopupImageMime === undefined
-      ? {}
-      : { sharePopupImageMime: record.sharePopupImageMime }),
-    ...(record.sharePopupTitle === undefined ? {} : { sharePopupTitle: record.sharePopupTitle }),
-    ...(record.sharePopupBody === undefined ? {} : { sharePopupBody: record.sharePopupBody }),
-    ...(record.requestsPerMinute === undefined ? {} : { requestsPerMinute: record.requestsPerMinute }),
-    ...(record.dailyTokenLimit === undefined ? {} : { dailyTokenLimit: record.dailyTokenLimit }),
-    ...(record.monthlyTokenLimit === undefined ? {} : { monthlyTokenLimit: record.monthlyTokenLimit }),
-    ...(record.lifetimeTokenBudget === undefined ? {} : { lifetimeTokenBudget: record.lifetimeTokenBudget }),
-    ...(record.maxConcurrentRequests === undefined ? {} : { maxConcurrentRequests: record.maxConcurrentRequests }),
-    ...(record.concurrencyScope === undefined ? {} : { concurrencyScope: record.concurrencyScope }),
-    ...(record.maxChildren === undefined ? {} : { maxChildren: record.maxChildren }),
-    ...(record.modelPrefix === undefined ? {} : { modelPrefix: record.modelPrefix }),
-    ...(record.modelAccessMode === undefined ? {} : { modelAccessMode: record.modelAccessMode }),
-    ...(record.modelList === undefined ? {} : { modelList: record.modelList }),
-    ...(record.clientRouterDenylist === undefined
-      ? {}
-      : { clientRouterDenylist: record.clientRouterDenylist }),
+    ...pickDefined({
+      keyPrefix,
+      parentKeyId: record.parentKeyId,
+      notesTitle: record.notesTitle,
+      notesSubtitle: record.notesSubtitle,
+      notesBody: record.notesBody,
+      sharePopupEnabled: record.sharePopupEnabled,
+      sharePopupImageMime: record.sharePopupImageMime,
+      sharePopupTitle: record.sharePopupTitle,
+      sharePopupBody: record.sharePopupBody,
+      requestsPerMinute: record.requestsPerMinute,
+      dailyTokenLimit: record.dailyTokenLimit,
+      monthlyTokenLimit: record.monthlyTokenLimit,
+      lifetimeTokenBudget: record.lifetimeTokenBudget,
+      maxConcurrentRequests: record.maxConcurrentRequests,
+      concurrencyScope: record.concurrencyScope,
+      maxChildren: record.maxChildren,
+      modelPrefix: record.modelPrefix,
+      modelAccessMode: record.modelAccessMode,
+      modelList: record.modelList,
+      clientRouterDenylist: record.clientRouterDenylist,
+      revokedAt: record.revokedAt?.toISOString(),
+      bannedAt: record.bannedAt?.toISOString(),
+      banReason: record.banReason,
+      bannedUntil: record.bannedUntil?.toISOString(),
+    }),
     createdAt: record.createdAt.toISOString(),
-    ...(record.revokedAt === undefined ? {} : { revokedAt: record.revokedAt.toISOString() }),
-    ...(record.bannedAt === undefined ? {} : { bannedAt: record.bannedAt.toISOString() }),
-    ...(record.banReason === undefined ? {} : { banReason: record.banReason }),
-    ...(record.bannedUntil === undefined ? {} : { bannedUntil: record.bannedUntil.toISOString() }),
     tokensConsumed: record.tokensConsumed,
   };
 }

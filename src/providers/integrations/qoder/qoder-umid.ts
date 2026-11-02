@@ -37,9 +37,6 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join } from "node:path";
 import { log } from "../../../observability/logger";
 
-/** Valid environment codes (kept for validation/console surface). */
-export const QODER_ENV_CODES = ["0", "3", "4", "5", "6", "7"] as const;
-
 /** Environment code: an upstream "region/flavor", not a device identity. */
 const ENV_CODE = "3";
 
@@ -89,11 +86,6 @@ function pickBridge(): Bridge | null {
   const arch = process.arch === "arm64" ? "elf-aarch64" : "elf-x86_64";
   if (existsSync(join(umidpackDir(), arch, "runtime-info"))) return { kind: "elf" };
   return existsSync(join(umidpackDir(), "elf-x86_64", "runtime-info")) ? { kind: "elf" } : null;
-}
-
-/** True when a genuine bridge can run on this host. */
-export function hasGenuineBridge(): boolean {
-  return pickBridge() !== null;
 }
 
 /** Generated (software) identity — deterministic per account id, NOT SG-signed. */
@@ -278,17 +270,6 @@ export function replayQoderNativeIdentity(seed: string, accountId: string): Qode
   return null; // pe: cannot replay a seed on a hardware-bound identity
 }
 
-/** Reads the current seed file content (diagnostics). */
-export function readCurrentQoderSeed(): string {
-  const path = seedPath();
-  try {
-    if (process.platform === "win32") return wsl(`cat ${WSL_SEED} 2>/dev/null`);
-    return existsSync(path) ? readFileSync(path, "utf8") : "";
-  } catch {
-    return "";
-  }
-}
-
 /** The six native machine headers for one identity. */
 export function qoderMachineHeaders(identity: QoderNativeIdentity): Record<string, string> {
   return {
@@ -299,9 +280,4 @@ export function qoderMachineHeaders(identity: QoderNativeIdentity): Record<strin
     "cosy-machineos": "x86_64_linux",
     "cosy-machinehostname": "DESKTOP-QODER",
   };
-}
-
-/** For tests: force re-mint (identities are pure functions of their seed). */
-export function resetQoderNativeIdentityCache(): void {
-  // no persistent in-process identity cache remains
 }

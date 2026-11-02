@@ -7,6 +7,7 @@ import {
 } from "../../persistence/schema";
 
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
+import { log } from "../../observability/logger";
 
 class ConsoleLockoutStore {
   constructor(private readonly db: CartethyiaDatabase) {}
@@ -143,8 +144,11 @@ export class ConsoleLockoutService {
           enforcement: "full_network_lockout",
         },
       });
-    } catch {
-      // Best-effort audit logging; the ban itself remains enforced via the DB row.
+    } catch (error) {
+      // Best-effort audit logging; the ban itself remains enforced via the DB
+      // row. A failed write is logged — for a security-relevant event
+      // (`security.ip_banned`) total silence would hide a broken audit trail.
+      log.error(`[auth] failed to record ip_banned audit for ${ip}`, error as Error, reason);
     }
   }
 

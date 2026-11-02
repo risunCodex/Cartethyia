@@ -164,3 +164,14 @@ Highest-impact first: A1 (mislabeled chart data), D2/D1 (dead code), O1 (double 
 - **observability/performance.ts + performance-contracts.ts** — minimal; no issues found.
 - **observability/routes.ts + logs.ts** — scopes, 304/conditional handling, and SSE header patterns are consistent; no dead routes.
 - No `any` or suppression directives were found in the audited directories; the only casts are narrow, local `as Record<string, unknown>` for untrusted JSON, which fits the codebase's defensive parsing standard.
+
+---
+
+## Execution status
+
+- **Area execution:** 17 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** Usage chart `cached` now reads `bucket.cachedInputTokens` (A1 — fixed by orchestrator, SQL + store); dead `summarizeUsagePerformance` removed (D4); `formatSseFrame` re-export dropped (D5).
+- **Not done / skipped (⛔):**
+  - S2 dead header writes on SSE route — not verified
+  - O4 UA client-name cache — not verified
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

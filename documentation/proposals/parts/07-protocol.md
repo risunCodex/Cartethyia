@@ -92,3 +92,16 @@ Scope: `src/protocol/` scanned completely (47 `.ts` files incl. `request/`, `res
 - `translation/dialect/` — the declarative resolver/rules/thinking-ladder split is clean; `model-thinking.ts` is the single clamp source and `reasoning.ts` re-exports it via a documented shim.
 - `translation/quirks.ts`, `normalize.ts`, `capabilities.ts` — declarative tables, single owners; `WIRE_TOKEN_BOUNDS` is the one place max-token bounds live.
 - `upstream/post-json.ts` / `send-claude-messages.ts` — small executors with proper deadline/abort cleanup; no divergence between the Claude paths.
+
+---
+
+## Execution status
+
+- **Area execution:** 3 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** `resolveThinkingForModel` memoized via Map (finding 20 — fixed by orchestrator); event-query bucket helper extracted (finding 06-U2).
+- **Not done / skipped (⛔):**
+  - #5 preloadCodec still unused — not wired ⛔
+  - #17 toWellFormedString double-cast + fallback still present ⛔
+  - #23 ensureMaxTokensForThinking unreachable throw still present ⛔
+  - #24 anthropicCacheControl redundant branch — not verified
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

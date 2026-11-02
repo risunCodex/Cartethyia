@@ -98,3 +98,14 @@ Scope: src/transport/routing/ (9 files) and src/transport/surface/ (20 files), r
 | OPTIMIZATION-OPP | 3 |
 | STALE | 3 |
 | **Total** | **28** |
+
+---
+
+## Execution status
+
+- **Area execution:** 10 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** Route-catalog candidate builders + surface helpers reviewed; transport-wide changes contained.
+- **Not done / skipped (⛔):**
+  - #1 capabilityUnsupportedError still exported ⛔
+  - #4 EligibilityEvaluator structural cast — not verified
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

@@ -10,8 +10,6 @@ import {
 } from "./muse-oauth";
 import { parseMuseCodeCredential } from "./muse";
 
-const SOURCE = "api.meta.ai/muse-code/key";
-
 interface MuseSubscriptionWindow {
   used_percent?: unknown;
   usedPercent?: unknown;
@@ -132,5 +130,3 @@ export async function fetchMuseQuota(
     error: null,
   };
 }
-
-export { SOURCE as MUSE_QUOTA_SOURCE };

@@ -129,4 +129,4 @@ export function kiroContextWindow(modelId: string): number {
 }
 
 /** Window used for a model this catalog does not name; the Anthropic rows' value. */
-export const KIRO_DEFAULT_CONTEXT_WINDOW = 200_000;
+const KIRO_DEFAULT_CONTEXT_WINDOW = 200_000;

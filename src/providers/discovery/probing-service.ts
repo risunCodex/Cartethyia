@@ -50,6 +50,7 @@ import {
   resolveProbeAdapter,
   resolveProbeTarget,
   selectProbeAccount,
+  selectUsableAccount,
   wireContextFrom,
   type ProbeProviderRow,
 } from "./probe-phases";
@@ -1004,14 +1005,7 @@ export class ProviderProbingService {
           globalOrOwnedBy(providerAccounts.tenantId, tenantId),
         ),
       );
-    const now = Date.now();
-    const usable = rows
-      .filter(
-        (row) =>
-          row.status !== "disabled" &&
-          (row.cooldownUntil === null || row.cooldownUntil.getTime() <= now),
-      )
-      .sort((left, right) => Number(right.tenantId !== null) - Number(left.tenantId !== null))[0];
+    const usable = selectUsableAccount(rows);
     if (!usable?.credentialCiphertext) return undefined;
     const authState = isRecord(usable.authState) ? usable.authState as Readonly<Record<string, unknown>> : undefined;
     return {

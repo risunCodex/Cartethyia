@@ -256,11 +256,6 @@ export class PoolAgentResolver {
 
   }
 
-  /** Observable cache size for the runtime metrics sampler. */
-  agentCount(): number {
-    return this.agents.size;
-  }
-
   async releasePool(poolId: string, tenantId: string): Promise<void> {
     const cacheKey = `${tenantId}:${poolId}`;
     const pending = this.agents.get(cacheKey);
@@ -274,10 +269,6 @@ export class PoolAgentResolver {
       }
     }
   }
-  async resolveWebSocketAgent(poolId: string, tenantId: string): Promise<PoolAgent> {
-    return this.resolveAgent(poolId, tenantId);
-  }
-
   private async buildAgent(poolId: string, tenantId: string): Promise<PoolAgent> {
     const row = await this.loader.load(poolId);
     if (!row) throw new PoolBindingError(`network pool ${poolId} not found`);
@@ -959,6 +950,14 @@ class WsSession implements ProviderWebSocketSession {
 }
 export class ValidatedNetworkBindingFactory {
   private readonly directFetch: ValidatedFetch;
+  /**
+   * One `ValidatedFetch` per resolved pool agent. Building the closure (dialer,
+   * relay setup, redirect loop) on every request through a pool was pure
+   * churn; keying by the agent object means a released agent is naturally
+   * collected (new builds mint a new agent) so no explicit invalidation is
+   * needed.
+   */
+  private readonly pooledFetchCache = new WeakMap<PoolAgent, ValidatedFetch>();
 
   constructor(
     private readonly policy: SsrfPolicy = {},
@@ -991,7 +990,12 @@ export class ValidatedNetworkBindingFactory {
     return async (input, init) => {
       try {
         const agent = await poolResolver.resolveAgent(networkPoolId, tenantId);
-        return await createValidatedFetch({ policy, agent })(input, init);
+        let validated = this.pooledFetchCache.get(agent);
+        if (validated === undefined) {
+          validated = createValidatedFetch({ policy, agent });
+          this.pooledFetchCache.set(agent, validated);
+        }
+        return await validated(input, init);
       } catch (error) {
         if (error instanceof PoolBindingError) {
           throw new GatewayError(
@@ -1026,7 +1030,7 @@ export class ValidatedNetworkBindingFactory {
           throw new GatewayError("proxy_pool_unhealthy", 503, "configured WebSocket proxy pool could not be established (request {requestId}). This bridge looks shaky — repair or reroute 🔧");
         }
         try {
-          agent = await this.poolResolver.resolveWebSocketAgent(networkPoolId, tenantId);
+          agent = await this.poolResolver.resolveAgent(networkPoolId, tenantId);
         } catch (error) {
           if (error instanceof PoolBindingError) {
             throw new GatewayError("proxy_pool_unhealthy", 503, "configured WebSocket proxy pool could not be established (request {requestId}). This bridge looks shaky — repair or reroute 🔧");

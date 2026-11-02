@@ -29,7 +29,6 @@ import {
   isNodeProviderId,
   NODE_WIRE_FAMILIES,
   PROXY_KINDS,
-  REFUSED_PROXY_KINDS,
   UNSUPPORTED_PROVIDERS,
   UPSTREAM_PROVIDERS,
 } from "./9router-map";
@@ -479,11 +478,6 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
       return;
     }
     const rawKind = text(entry.type) ?? "http";
-    const refused = REFUSED_PROXY_KINDS[rawKind];
-    if (refused !== undefined) {
-      skipped.push(`proxy pool "${label}": type "${rawKind}" (${refused})`);
-      return;
-    }
     const kind = PROXY_KINDS[rawKind];
     if (kind === undefined) {
       skipped.push(`proxy pool "${label}": unknown type "${rawKind}"`);

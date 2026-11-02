@@ -88,7 +88,6 @@ export const TRAE_AUTH_CODE_EXCHANGE_PATHS: readonly string[] = [
   "/trae/api/v3/oauth/ExchangeToken",
   "/cloudide/api/v3/public/oauth/ExchangeToken",
 ];
-export const TRAE_TEMP_TOKEN_PATH = "/cloudide/api/v3/trae/GenerateTempToken";
 export const TRAE_GET_USER_INFO_PATH = "/cloudide/api/v3/trae/GetUserInfo";
 
 /** Browser-login path on the host `GetLoginGuidance` names. */
@@ -123,13 +122,7 @@ export const TRAE_LOGIN_GUIDANCE_URLS: readonly string[] = [
 
 /** Usage / entitlement paths, relative to the realm's `pay` host. */
 export const TRAE_SESSION_USAGE_PATH = "/api/v1/commercial/get_session_usage";
-export const TRAE_ACTIVITY_PATH = "/api/v1/commercial/get_user_activity";
 export const TRAE_ENT_USAGE_PATH = "/trae/api/v1/pay/ide_user_ent_usage";
-export const TRAE_PAY_STATUS_PATH = "/trae/api/v1/pay/ide_user_pay_status";
-
-/** Growth paths, relative to the realm's `ug` host. CN-only upstream. */
-export const TRAE_CHECKIN_STATUS_PATH = "/trae/api/v2/ug/checkin_credits/status";
-export const TRAE_CHECKIN_CLAIM_PATH = "/trae/api/v2/ug/checkin_credits/claim";
 
 /**
  * Realm → deployment.

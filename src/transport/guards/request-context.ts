@@ -148,8 +148,7 @@ export function createCanonicalRequestMiddleware(deps: {
       // the JSON routes table, so the body-policy predicate covers it.
       // Native routes (compact, System One) read a body but are never parsed
       // into a canonical request — their bodies are opaque by contract.
-      if (!isJsonProxyRoutePath(path) || path === "/v1/responses/compact" || isOpaqueBodyRoute(path))
-        return;
+      if (!isJsonProxyRoutePath(path) || isOpaqueBodyRoute(path)) return;
       // Model discovery and other GET/multimodal routes must not go through canonical parsing.
       const state = deps.stateStore.require(request);
       // Single-read invariant: the ingress policy middleware already decoded the
@@ -221,25 +220,21 @@ export function createProxyRoutePreparationMiddleware(deps: {
       if (!path.startsWith("/v1/")) return;
       if (request.method === "GET" || request.method === "HEAD") return;
       const isJsonRoute = isJsonProxyRoutePath(path);
-      if (!isJsonRoute || path === "/v1/responses/compact" || isOpaqueBodyRoute(path)) return;
+      if (!isJsonRoute || isOpaqueBodyRoute(path)) return;
       const state = deps.stateStore.require(request);
       if (!state.authorization || !state.canonicalRequest)
         throw new GatewayError("route_unavailable", 503, "The request was not authenticated and parsed, so this route cannot be served (request {requestId}). Resend the request. The bouncer stepped out — resend shortly 🚪");
       // The key rides along so a strike is charged to the caller that made it.
       // Without it, one recipient of a shared link could escalate a ban onto
-      try {
-        state.preparedRequest = await deps.preparer.prepare({
-          canonicalRequest: state.canonicalRequest,
-          authorization: state.authorization,
-          deadlineMs: state.deadlineMs,
-          signal: state.abortController.signal,
-          ...(state.clientUserAgent === undefined
-            ? {}
-            : { clientUserAgent: state.clientUserAgent }),
-        });
-      } catch (error) {
-        throw error;
-      }
+      state.preparedRequest = await deps.preparer.prepare({
+        canonicalRequest: state.canonicalRequest,
+        authorization: state.authorization,
+        deadlineMs: state.deadlineMs,
+        signal: state.abortController.signal,
+        ...(state.clientUserAgent === undefined
+          ? {}
+          : { clientUserAgent: state.clientUserAgent }),
+      });
     })
     .as("plugin");
 }

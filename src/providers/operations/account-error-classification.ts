@@ -606,20 +606,10 @@ interface AccountErrorSignals {
   readonly staticToken: boolean;
   readonly credentialKind: string | undefined;
   /** Buddy-family provider: the only family with provider-specific codes below. */
-  readonly buddy: boolean;
-  /**
-   * The upstream named a restriction on this account, not a refusal of the
-   * request. Only the `11140` shape carries `displayMsg` about the account
-   * being restricted, so the policy arm can tell a ban from a bad request
-   * instead of treating both as one cooldown.
-   */
   readonly buddyBanned: boolean;
   readonly priceRefusal: boolean;
-  readonly deploymentInfraError: boolean;
   readonly quotaSignal: boolean;
   readonly policyRejection: boolean;
-  readonly requestScoped: boolean;
-  readonly channelRejection: boolean;
   readonly hostedToolFailure: boolean;
   readonly modelEntitlementFailure: boolean;
   readonly queuedUpstream: boolean;
@@ -813,7 +803,6 @@ export function classifyAccountError(
   const modelBlockHits = Math.max(1, Math.floor(options?.modelBlockHits ?? 1));
   const staticToken = options?.staticToken === true;
   const credentialKind = options?.credentialKind;
-  const buddy = BUDDY_PROVIDER_IDS.has(options?.providerId?.toLowerCase() ?? "");
 
   // A price refusal is a verdict on the *request*, not on the account. inferhub
   // answers 402 with `no provider's ask matches your max-per-mtok bid`: the
@@ -1152,14 +1141,10 @@ export function classifyAccountError(
     modelBlockHits,
     staticToken,
     credentialKind,
-    buddy,
     buddyBanned,
     priceRefusal,
-    deploymentInfraError,
     quotaSignal,
     policyRejection,
-    requestScoped,
-    channelRejection,
     hostedToolFailure,
     modelEntitlementFailure,
     queuedUpstream,
@@ -1245,101 +1230,6 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
         // Never mutates: the pool owns this failure, not the account.
         false,
       ),
-  },
-  {
-    name: "deployment-infrastructure",
-    match: (s) => s.deploymentInfraError,
-    decide: (s) =>
-      s.result(
-        "server_error",
-        "cooldown",
-        60_000,
-        null,
-        `Proxy deployment error: ${s.message.slice(0, 160)}`,
-        false,
-      ),
-  },
-  {
-    name: "model-frequency-window",
-    match: (s) => s.lower.includes("frequency limit") && s.lower.includes("switch to the other models"),
-    decide: (s) => {
-      const cooldownMs = s.statedCooldownMs ?? DEFAULT_QUOTA_COOLDOWN_MS();
-      return s.result(
-        "rate_limit_transient",
-        "cooldown",
-        cooldownMs,
-        new Date(Date.now() + cooldownMs),
-        s.reason("Provider frequency limit for this model"),
-        // Provider-scoped evidence still has to reach the writer: a stream frame
-        // carries no credential detail, so `canMutate` is false and without this
-        // the pair would be retried for the whole window it was closed for.
-        s.origin === "upstream" && s.scope === "provider",
-      );
-    },
-  },
-  {
-    name: "content-policy-block",
-    match: (s) => s.policyRejection && s.buddy,
-    decide: (s) => {
-      // A ban is a verdict on the credential, and cooldown cannot answer it:
-      // the account is refused, not throttled. Disabling is the fix, and
-      // disabling *immediately* is a feature — a client's retry budget is spent
-      // in seconds, so a banned account that merely cooled stayed in the plan
-      // and burned sibling accounts that were still healthy before the window
-      // expired.
-      //
-      // The two shapes are told apart by the body, not the code alone: `11140`
-      // names a restriction on the account, `11-128` refuses the request.
-      if (s.buddyBanned) {
-        return s.result(
-          "policy_blocked_banned",
-          "disabled",
-          0,
-          null,
-          s.reason("Account banned by upstream"),
-          // A ban is evidence about the credential even at provider scope, for
-          // the same reason a named revocation is: the message is the evidence.
-          // Without this a stream frame's missing credential detail would leave
-          // a banned account serving.
-          true,
-        );
-      }
-      // Not a ban: the upstream refused this request. The account is fine, so
-      // the only correct move is to stop retrying it verbatim. Cooling the
-      // account here was the bug that made one malformed request look like a
-      // dead credential.
-      return s.result(
-        "policy_blocked_invalid_request",
-        "cooldown",
-        0,
-        null,
-        s.reason("Upstream refused this request"),
-        // Never mutates: a malformed body fails identically on every account,
-        // so cooling would burn a healthy credential on the gateway's own fault.
-        false,
-      );
-    },
-  },
-  {
-    name: "request-scoped-rejection",
-    match: (s) => s.requestScoped && s.buddy,
-    decide: (s) =>
-      s.result("unknown", "cooldown", 0, null, s.reason("Request-scoped upstream rejection"), false),
-  },
-  {
-    name: "channel-rejection",
-    match: (s) => s.channelRejection && s.buddy,
-    decide: (s) => {
-      const channelBlockMs = resolveAccountPolicyBlockCooldownMs();
-      return s.result(
-        "policy_blocked",
-        "cooldown",
-        channelBlockMs,
-        new Date(Date.now() + channelBlockMs),
-        s.reason("Provider channel rejection"),
-        s.origin === "upstream",
-      );
-    },
   },
   {
     name: "validation-required",

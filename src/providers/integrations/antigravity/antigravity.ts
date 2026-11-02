@@ -758,7 +758,7 @@ export class AntigravitySessionStore {
  * `"-" + (sha256(first-user-text)[0:8] & INT63 | random <9e18)`.
  * A positive or hyphenated-UUID value here is a one-glance synthetic signal.
  */
-export function signedAntigravitySessionId(seed?: string): string {
+function signedAntigravitySessionId(seed?: string): string {
   if (seed !== undefined && /^-?\d+$/.test(seed)) return seed;
   const text = seed !== undefined && seed.length > 0 ? seed : randomUUID();
   const head = BigInt(`0x${createHash("sha256").update(text).digest("hex").slice(0, 8)}`);
@@ -769,7 +769,7 @@ export function signedAntigravitySessionId(seed?: string): string {
 }
 
 /** Thinking budget per wire model, matching the client's effort tiers. */
-export function antigravityThinkingBudget(modelId: string): number | undefined {
+function antigravityThinkingBudget(modelId: string): number | undefined {
   if (!modelId.includes("claude") && !modelId.includes("gemini-3")) return undefined;
   if (modelId.endsWith("-low")) return 1_000;
   if (modelId.endsWith("-medium")) return 4_000;

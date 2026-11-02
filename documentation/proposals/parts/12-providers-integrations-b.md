@@ -121,3 +121,15 @@ Scope scanned completely (every `.ts` file read): `src/providers/integrations/{g
 | OPTIMIZATION-OPP | 3 |
 | STALE | 3 |
 | **Total** | **34** |
+
+---
+
+## Execution status
+
+- **Area execution:** 31 file(s) changed in this scope during the cleanup pass; `bunx tsc --noEmit` clean and full backend suite green (4217 pass / 0 fail, protocol 591 pass / 0 fail).
+- **Confirmed done (✅):** Grok/muse/qoder/trae/kiro/xai/kilo dead exports partially removed; qoder SSE drain reuse; shadowed seed renamed.
+- **Not done / skipped (⛔):**
+  - #1 kiro/trae session-cache estimator — shared module NOT created ⛔
+  - #2 AWS region regex ×4 — not consolidated ⛔
+  - #3 PKCE length still uses Math.random ⛔
+- **Note:** this status reflects the orchestrator's verification of representative findings, not an item-by-item re-audit of every finding in this report.

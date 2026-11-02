@@ -38,6 +38,7 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { getTableColumns, type Column, type SQL, type Table } from "drizzle-orm";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 import { decryptCredentialToString, encryptCredential } from "../../security/crypto";
+import { asConsoleDb } from "../shared/transaction";
 import {
   apiKeys,
   cliToolMappings,
@@ -187,11 +188,15 @@ function decodeCell(value: unknown, dataType: string): unknown {
 }
 
 /** Column name → the object key Drizzle uses for it, and its data type. */
+const COLUMN_INDEX_CACHE = new WeakMap<Table, ReadonlyMap<string, { key: string; dataType: string }>>();
 function columnIndex(table: Table): ReadonlyMap<string, { key: string; dataType: string }> {
+  const cached = COLUMN_INDEX_CACHE.get(table);
+  if (cached) return cached;
   const out = new Map<string, { key: string; dataType: string }>();
   for (const [key, column] of Object.entries(getTableColumns(table))) {
     out.set(column.name, { key, dataType: column.dataType });
   }
+  COLUMN_INDEX_CACHE.set(table, out);
   return out;
 }
 
@@ -386,13 +391,6 @@ async function* pagedTelemetryEvents(
   }
 }
 
-/**
- * Streams the payload document: the requested tables, grouped into their
- * sections, written membrane-incrementally so the process never holds a table
- * — let alone every table and a second JSON copy — in memory. Consumed
- * chunks concatenated are exactly the JSON the buffered variant used to
- * stringify in one piece.
- */
 /**
  * Streams the payload document: the requested tables, grouped into their
  * sections, written incrementally so the process never holds a table — let
@@ -722,7 +720,6 @@ function createdAtIso(value: unknown): string {
  * timestamps are normalised in SQL to the same ISO spelling the payload uses,
  * so the two sides are comparable regardless of how the driver types them.
  */
-/** Natural keys already present in the event file, so a re-import skips them. */
 async function existingEventFileKeys(db: CartethyiaDatabase, tenantId: string, rows: readonly BackupRow[]): Promise<Set<string>> {
   const wanted = new Set(rows.map((row) => row.request_id).filter((id): id is string => typeof id === "string"));
   if (wanted.size === 0) return new Set();
@@ -894,9 +891,8 @@ async function insertRows(
       // stays writable and the per-row path can isolate the offending row.
       const count = await tx.transaction(async (innerTx) => {
         // Drizzle types the nested transaction callback with the dialect's
-        // own transaction handle; cast once to a named local with a reason,
-        // never inline on member access.
-        const inner = innerTx as unknown as CartethyiaDatabase; // nested-tx handle; mirrors applyRestore's outer `scoped` cast on line 607.
+        // own transaction handle; normalize once via the shared helper.
+        const inner = asConsoleDb(innerTx);
         const statement = inner.insert(table).values(chunk as never);
         if (options.ignoreConflicts) {
           if (options.conflictTarget === undefined) {
@@ -1070,7 +1066,7 @@ export async function applyRestore(
   const skipped: Record<string, number> = {};
 
   await db.transaction(async (tx) => {
-    const scoped = tx as unknown as CartethyiaDatabase;
+    const scoped = asConsoleDb(tx);
 
     // The tenant row is ensured, never replaced: it almost always exists, and
     // its PK is `id`, so a conflict means "already there" rather than an error.
@@ -1223,7 +1219,7 @@ export async function deleteAll(
   const apiKeyIds: string[] = [];
 
   await db.transaction(async (tx) => {
-    const scoped = tx as unknown as CartethyiaDatabase;
+    const scoped = asConsoleDb(tx);
     const remove = async (table: Table, filter: SQL, name = tableName(table)): Promise<void> => {
       const rows = await scoped.delete(table).where(filter).returning();
       if (rows.length > 0) deleted[name] = (deleted[name] ?? 0) + rows.length;
@@ -1265,5 +1261,3 @@ export async function deleteAll(
 
   return { deleted, apiKeyIds };
 }
-
-export { and, eq };
