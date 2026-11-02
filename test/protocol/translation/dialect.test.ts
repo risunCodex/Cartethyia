@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { resolveDialect } from "../../../src/protocol/translation/dialect/resolver";
 import type { CanonicalRequest } from "../../../src/protocol/canonical-model";
 import { canonicalToChatPayload } from "../../../src/protocol/request/chat";
+import { canonicalToClaudeMessagesPayload } from "../../../src/protocol/request/messages";
 
 function req(): CanonicalRequest {
   return {
@@ -50,5 +51,29 @@ describe("canonicalToChatPayload dialect policy", () => {
     });
     expect(defaulted).toEqual(plain);
     expect(openai).toEqual(plain);
+  });
+});
+
+describe("canonicalToClaudeMessagesPayload dialect policy", () => {
+  test("messages default output is identical with and without a policy", () => {
+    const plain = canonicalToClaudeMessagesPayload(req());
+    const anthro = canonicalToClaudeMessagesPayload(req(), {
+      dialectPolicy: resolveDialect("x", "anthropic", "messages"),
+    });
+    expect(anthro).toEqual(plain);
+  });
+
+  test("supportsToolChoice=false drops tool_choice", () => {
+    const withTools = req();
+    withTools.tools = [{ name: "t", description: "", jsonSchema: { type: "object", properties: {} } }];
+    withTools.tool_choice = { type: "tool", name: "t" };
+    const deepseek = canonicalToClaudeMessagesPayload(withTools, {
+      dialectPolicy: resolveDialect("deepseek-v4-pro", "deepseek", "messages"),
+    });
+    expect((deepseek as Record<string, unknown>)["tool_choice"]).toBeUndefined();
+    const openai = canonicalToClaudeMessagesPayload(withTools, {
+      dialectPolicy: resolveDialect("x", "openai", "messages"),
+    });
+    expect((openai as Record<string, unknown>)["tool_choice"]).toBeDefined();
   });
 });

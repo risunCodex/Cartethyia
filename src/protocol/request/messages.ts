@@ -2,6 +2,7 @@
  * Canonical → Claude Messages request builder.
  */
 import { allParts, type CanonicalRequest, type ContentPart } from "../canonical-model";
+import type { DialectPolicy } from "../translation/dialect/types";
 import { buildAnthropicThinkingPayload } from "../../protocol/reasoning";
 import { anthropicCacheControl } from "../../protocol/translation/cache-controls";
 import {
@@ -556,7 +557,11 @@ export function claudeFallbacksChain(
 
 export function canonicalToClaudeMessagesPayload(
   request: CanonicalRequest,
-  options: { isOAuth?: boolean; maxBytesOverride?: number } = {},
+  options: {
+    isOAuth?: boolean;
+    maxBytesOverride?: number;
+    dialectPolicy?: DialectPolicy;
+  } = {},
 ): ClaudeWireObject {
   const seen = new Map<string, number>();
   const idMap = new Map<string, string>();
@@ -748,7 +753,8 @@ export function canonicalToClaudeMessagesPayload(
   }
   const parallelToolCallsDisabled =
     request.generation_controls.parallel_tool_calls === false;
-  if (rawToolChoice !== undefined || parallelToolCallsDisabled) {
+  const supportsToolChoice = options.dialectPolicy?.supportsToolChoice ?? true;
+  if (supportsToolChoice && (rawToolChoice !== undefined || parallelToolCallsDisabled)) {
     const baseChoice = rawToolChoice as Record<string, unknown> | undefined;
     const choice: Record<string, unknown> = baseChoice
       ? { ...baseChoice }
