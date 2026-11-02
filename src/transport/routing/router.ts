@@ -518,16 +518,17 @@ export class RoutingEngine {
       accountId,
       this.redis,
     ).catch(() => undefined);
-    const quotaWindows = filterCandidateQuotaWindows(
-      cached?.quota.windows ?? [],
-      candidate,
-    );
+    const rawWindows = cached?.quota.windows;
+    const quotaWindows =
+      rawWindows === undefined
+        ? undefined
+        : filterCandidateQuotaWindows(rawWindows, candidate);
     return {
       ...candidate,
       ...(setting?.usageFloor == null
         ? {}
         : { usage_floor: setting.usageFloor, usage_floor_unit: setting.usageFloorUnit }),
-      quota_windows: quotaWindows,
+      ...(quotaWindows === undefined ? {} : { quota_windows: quotaWindows }),
     };
   }
 
