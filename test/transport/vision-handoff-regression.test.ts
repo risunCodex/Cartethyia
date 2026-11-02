@@ -8,6 +8,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { getDb } from "../../src/persistence/boot";
 import { consoleSettings } from "../../src/persistence/schema";
 import { bumpSettingsRevision } from "../../src/persistence/settings-revision";
+import { clearCachedVisionDescriptions } from "../../src/transport/vision-handoff-cache";
 import { createTestGateway, type TestGateway } from "../helpers/gateway";
 import { createWorld, type GatewayWorld } from "../helpers/fixtures";
 import { dbDescribe, requireDatabase } from "../helpers/database";
@@ -48,6 +49,7 @@ dbDescribe("vision handoff regression", () => {
   let vision: { providerId: string; modelId: string; accountId: string };
 
   beforeAll(async () => {
+    clearCachedVisionDescriptions();
     world = await createWorld();
     gateway = await createTestGateway();
     vision = await world.addProvider({
@@ -96,9 +98,24 @@ dbDescribe("vision handoff regression", () => {
     const visionBefore = gateway.adapters.get(vision.providerId)!.dispatches.length;
     const response = await gateway.json(
       "/v1/chat/completions",
-      chatWithImage(world.qualifiedModel, {
+      {
+        // A different image than the streaming test above: the handoff cache
+        // is keyed by the active image set, so exercising the tool path with
+        // the same image would (correctly) be served from the cache instead of
+        // dispatching a fresh vision call.
+        model: world.qualifiedModel,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "what is in this image?" },
+              { type: "image_url", image_url: "https://example.com/tools.png" },
+            ],
+          },
+        ],
         tools: [{ type: "function", function: { name: "f", parameters: { type: "object", properties: {} } } }],
-      }),
+        stream: false,
+      },
       { token: world.token },
     );
     if (response.status !== 200) {

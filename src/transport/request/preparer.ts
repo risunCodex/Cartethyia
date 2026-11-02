@@ -3,6 +3,7 @@ import type { CanonicalRequest, ServiceKind, ContentPart } from "../../protocol/
 import { toolResultParts } from "../../protocol/canonical-model";
 import type { ApiKeyAdmissionService } from "../../security/admission/service";
 import type { VisionHandoffCall, VisionHandoffResult } from "../vision-handoff";
+import { isImageOrPlaceholderPart, lastImageCarryingUserTurnIndex } from "../vision-handoff";
 import type { CallerIdentity } from "../../security/access-control";
 import type { RouteCandidate as RouteCandidate, InMemoryRouteSnapshotService, RoutePlan } from "../routing/route-model";
 import type { RouteContinuationAffinity } from "../routing/route-model";
@@ -48,22 +49,29 @@ export function replaceImagePartsWithText(
   request: CanonicalRequest,
   description: string,
 ): CanonicalRequest | null {
+  const activeIndex = lastImageCarryingUserTurnIndex(request);
   const strip = (parts: readonly ContentPart[]): readonly ContentPart[] => {
-    const hasImage = parts.some(
-      (part) => part.kind === "image" || (part.kind === "text" && part.text === "[image]"),
-    );
+    const hasImage = parts.some(isImageOrPlaceholderPart);
     if (!hasImage) return parts;
     return parts.flatMap((part): ContentPart[] =>
-      part.kind === "image" || (part.kind === "text" && part.text === "[image]")
+      isImageOrPlaceholderPart(part)
         ? [{ kind: "text", text: description }]
         : [part],
     );
   };
-  const nextMessages = request.messages.map((message) =>
-    message.role === "user"
-      ? { ...message, content: strip(message.content) }
-      : message,
-  );
+  const nextMessages = request.messages.map((message, i) => {
+    if (message.role !== "user") return message;
+    // The active turn (the one the handoff actually described) gets the
+    // description; older image-carrying history turns are dropped — they are
+    // not part of the current context the vision model saw, and leaving a
+    // stale image on a text-only route would risk an upstream rejection.
+    if (i === activeIndex) {
+      return { ...message, content: strip(message.content) };
+    }
+    const hasImage = message.content.some(isImageOrPlaceholderPart);
+    if (!hasImage) return message;
+    return { ...message, content: message.content.filter((part) => !isImageOrPlaceholderPart(part)) };
+  });
   const unchangedMessages = nextMessages.every(
     (message, i) => message === request.messages[i],
   );
