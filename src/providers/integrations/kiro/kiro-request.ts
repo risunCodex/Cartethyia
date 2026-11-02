@@ -55,15 +55,10 @@ interface KiroToolSpecification {
   };
 }
 
-/** The checkpoint the upstream keys its prompt cache on. */
-interface KiroCachePoint {
-  readonly cachePoint: { readonly type: "default" };
-}
-
 /** One entry of `currentMessage.userInputMessage.userInputMessageContext`. */
 interface KiroUserInputContext {
   readonly toolResults?: readonly KiroToolResult[];
-  readonly tools?: readonly (KiroToolSpecification | KiroCachePoint)[];
+  readonly tools?: readonly KiroToolSpecification[];
 }
 
 interface KiroToolResult {
@@ -111,6 +106,8 @@ export interface KiroConversationError {
 /** Options the adapter supplies that are not part of the canonical request. */
 export interface KiroWireRequestOptions {
   readonly conversationId: string;
+  /** Root conversation id; defaults to `conversationId`, mirroring the client's `rootConversationId ?? conversationId`. */
+  readonly rootConversationId?: string | undefined;
   readonly modelId: string;
   readonly profileArn: string;
   /** Reasoning effort the routed model advertises, already validated by the adapter. */
@@ -176,6 +173,10 @@ export function buildKiroWireRequest(
       agentContinuationId: randomUUID(),
       chatTriggerType: "MANUAL",
       conversationId: options.conversationId,
+      // The client always sends the root conversation id, defaulting to the
+      // conversation id when the conversation is self-rooted (1.4.62 bundle:
+      // `rootConversationId: A ?? S`).
+      rootConversationId: options.rootConversationId ?? options.conversationId,
       currentMessage: { userInputMessage: currentMessage },
       history,
     },

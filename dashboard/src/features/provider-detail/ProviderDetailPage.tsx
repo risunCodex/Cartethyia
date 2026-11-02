@@ -498,10 +498,10 @@ export default function ProviderDetail(): ReactNode {
                     size="sm"
                     icon={<ExternalLink size={13} />}
                     disabled={startAuthorize.isPending}
-                    onClick={() => beginFlow("browser")}
-                    title="Browser OAuth login — opens the provider authorize page in a popup"
+                    onClick={() => handleOAuthBrowser()}
+                    title="Social login — Google / GitHub / OIDC via the provider's sign-in portal"
                   >
-                    {startAuthorize.isPending ? "Starting..." : "Login with browser"}
+                    {startAuthorize.isPending ? "Starting..." : "Social login"}
                   </Button>
                 )}
                 {provider.oauthFlows?.device && (
@@ -510,9 +510,9 @@ export default function ProviderDetail(): ReactNode {
                     size="sm"
                     icon={<KeyRound size={13} />}
                     onClick={() => beginFlow("device")}
-                    title="Device-code login — enter the shown code on the provider site"
+                    title="Device OIDC — enter the shown code on the provider site"
                   >
-                    Login with device code
+                    Device OIDC
                   </Button>
                 )}
                 {provider.oauthFlows?.import && (

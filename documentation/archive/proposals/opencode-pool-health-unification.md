@@ -1,6 +1,6 @@
 # Proposal — OpenCode pool health unification ("Proxy Account Pool")
 
-Status: implemented (working tree, uncommitted)
+Status: implemented (committed — `6769a664` et al.)
 Owner skill when implementing: `.skills/cartethyia-health-routing/`
 Owner areas: `src/transport/routing/`, `src/network/`, `src/providers/discovery/probing-service.ts`,
 `src/console/routing/pools/`, `dashboard/src/features/proxy/`, provider detail accounts UI.

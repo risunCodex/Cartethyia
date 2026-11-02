@@ -22,6 +22,7 @@ or foundational notes stay at this root.
 |---|---|---|
 | `qoder/` | Qoder wire, identity, credits, IDE surface, plugin endpoint map | 3 findings |
 | `copilot/` | Copilot capability/context/auto routing | 3 findings |
+| `kiro/` | Kiro 1.4.62 wire protocol + live verification | 2 findings |
 
 ## Root notes
 
@@ -51,3 +52,10 @@ or foundational notes stay at this root.
 | 2026-10-15 | [Capability map](copilot/2026-10-15-copilot-chat-capability-map.md) |
 | 2026-10-16 | [Chat context and live API probe](copilot/2026-10-16-copilot-context-probe.md) |
 | 2026-10-30 | [Auto routing](copilot/2026-10-30-copilot-auto-routing.md) |
+
+## Kiro findings (`kiro/`)
+
+| Date | Note |
+|---|---|
+| 2026-11-01 | [Wire protocol reconstruction (bundle)](kiro/kiro-wire-protocol.md) |
+| 2026-11-02 | [Live wire verification (probes)](kiro/2026-11-02-kiro-wire-verification.md) |

@@ -49,6 +49,8 @@
     "doctor": "bun run scripts/cli/doctor.ts",
     "probe:egress": "bun run scripts/tools/probe-egress.ts",
     "probe:qoder": "bun run scripts/provider-probing/qoder/probe-qoder.ts",
+    "probe:kiro": "bun run scripts/provider-probing/kiro/probe-kiro.ts",
+    "probe:kiro-oauth": "bun run scripts/provider-probing/kiro/probe-kiro-oauth.ts",
     "restart": "bun run scripts/build/restart.ts",
     "build:aot": "bun run scripts/build/aot.ts",
     "dev:stack": "concurrently -n BACKEND,DASHBOARD -c cyan,magenta --kill-others-on-fail \"bun run dev:backend\" \"bun run dashboard:dev\"",

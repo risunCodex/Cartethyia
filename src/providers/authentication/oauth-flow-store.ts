@@ -25,6 +25,8 @@ export interface OAuthAuthorizeRequest {
 export interface OAuthCodeExchangeContext {
   readonly state?: string;
   readonly parameters?: Readonly<Record<string, string>>;
+  /** Server-side provider continuation state for a multi-step browser login. */
+  readonly providerState?: string;
 }
 
 export interface OAuthExchangeResult {
@@ -197,6 +199,8 @@ const DEFAULT_DEVICE_EXPIRY_SECONDS = 900;
  * so each caller keeps its own error text. Missing or non-positive
  * `interval`/`expires_in` fall back to the caller's defaults (or the shared
  * ones); present values are floored at one second.
+ * Both wire shapes are accepted: the RFC snake_case (`device_code`) and the
+ * AWS SSO OIDC camelCase (`deviceCode`), which Kiro's OIDC device flow speaks.
  */
 export function parseDeviceAuthStart(
   payload: unknown,
@@ -204,10 +208,17 @@ export function parseDeviceAuthStart(
 ): DeviceAuthStart | undefined {
   const root = record(payload);
   if (!root) return undefined;
-  const deviceCode = nonEmptyTrimmedString(root.device_code);
-  const userCode = nonEmptyTrimmedString(root.user_code);
-  const complete = nonEmptyTrimmedString(root.verification_uri_complete);
-  const verificationUri = nonEmptyTrimmedString(root.verification_uri) ?? complete;
+  const deviceCode =
+    nonEmptyTrimmedString(root.device_code) ?? nonEmptyTrimmedString(root.deviceCode);
+  const userCode =
+    nonEmptyTrimmedString(root.user_code) ?? nonEmptyTrimmedString(root.userCode);
+  const complete =
+    nonEmptyTrimmedString(root.verification_uri_complete) ??
+    nonEmptyTrimmedString(root.verificationUriComplete);
+  const verificationUri =
+    nonEmptyTrimmedString(root.verification_uri) ??
+    nonEmptyTrimmedString(root.verificationUri) ??
+    complete;
   if (!deviceCode || !userCode || !verificationUri) return undefined;
   return {
     deviceCode,
@@ -219,7 +230,7 @@ export function parseDeviceAuthStart(
       defaults?.intervalSeconds ?? DEFAULT_DEVICE_INTERVAL_SECONDS,
     ),
     expiresInSeconds: positiveSeconds(
-      root.expires_in,
+      root.expires_in ?? root.expiresIn,
       defaults?.expiresInSeconds ?? DEFAULT_DEVICE_EXPIRY_SECONDS,
     ),
   };
@@ -498,6 +509,8 @@ export interface OAuthFlowStorage {
   savePending(state: string, flow: PendingOAuthFlow): Promise<void>;
   consumePendingByProvider(providerId: string): Promise<PendingOAuthFlow | undefined>;
   consumePending(state: string): Promise<PendingOAuthFlow | undefined>;
+  /** Reads a pending flow without consuming it (for a retry-safe callback path). */
+  peekPending(state: string): Promise<PendingOAuthFlow | undefined>;
   saveDevice(deviceAuthId: string, correlation: DeviceFlowCorrelation): Promise<void>;
   getDevice(deviceAuthId: string): Promise<DeviceFlowCorrelation | undefined>;
   deleteDevice(deviceAuthId: string): Promise<void>;
@@ -583,6 +596,17 @@ export class OAuthFlowStore implements OAuthFlowStorage {
       // Clear the provider pointer so a consumed state cannot be looked up again.
       await this.#redis.del(PENDING_PROVIDER_PREFIX + flow.providerId);
       return flow;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Reads a pending flow without consuming it — used to replay a callback. */
+  async peekPending(state: string): Promise<PendingOAuthFlow | undefined> {
+    const raw = await this.#redis.get(PENDING_PREFIX + state);
+    if (!raw) return undefined;
+    try {
+      return JSON.parse(raw) as PendingOAuthFlow;
     } catch {
       return undefined;
     }
@@ -686,6 +710,17 @@ export class InMemoryOAuthFlowStore implements OAuthFlowStorage {
       const flow = JSON.parse(raw) as PendingOAuthFlow;
       this.pending.delete(PENDING_PROVIDER_PREFIX + flow.providerId);
       return flow;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Reads a pending flow without consuming it — used to replay a callback. */
+  async peekPending(state: string): Promise<PendingOAuthFlow | undefined> {
+    const raw = this.pending.get(PENDING_PREFIX + state);
+    if (!raw) return undefined;
+    try {
+      return JSON.parse(raw) as PendingOAuthFlow;
     } catch {
       return undefined;
     }

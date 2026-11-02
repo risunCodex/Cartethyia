@@ -1,6 +1,6 @@
 # Proposal — Proxy pool routing transparency: surface the selection mode
 
-Status: design (not implemented)
+Status: implemented (see `c0e93b56` — pool strategy surfaced in the dashboard)
 Owner skill when implementing: `.skills/cartethyia-health-routing/`, `.skills/cartethyia-dashboard/`
 Owner areas: `src/console/routing/pools/` (store, operations, routes), `src/network/pool/selector.ts`,
 `dashboard/src/features/provider-detail/sections/RoutingStrategyCard.tsx`,

@@ -13,6 +13,19 @@ export const KIRO_PROVIDER_ID = "kiro" as const;
 export const KIRO_GENERATE_PATH = "/generateAssistantResponse" as const;
 
 /**
+ *  Runtime service host template (generation). `{region}` is interpolated.
+ *
+ *  The 1.4.62 IDE targets the Kiro runtime service (`KiroRuntimeService`,
+ *  apiVersion 2026-01-13) at `https://runtime.{region}.kiro.dev` instead of the
+ *  legacy `q.{region}.amazonaws.com` AWS surface. Discovery/usage use the
+ *  control-plane `management` host; generation uses `runtime`.
+ */
+export const KIRO_RUNTIME_HOST_TEMPLATE = "https://runtime.{region}.kiro.dev" as const;
+
+/** Control-plane (management) service host template (models/usage). */
+export const KIRO_MANAGEMENT_HOST_TEMPLATE = "https://management.{region}.kiro.dev" as const;
+
+/**
  * Effort tiers the Kiro models that accept an effort field advertise.
  *
  * The upstream has no `minimal` or `max` tier on either schema, so the ladder

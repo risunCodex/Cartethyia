@@ -115,10 +115,12 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
   },
   {
     // Kiro frames its own conversation ledger over an AWS EventStream wire and
-    // has no chat-shaped endpoint to route through.
+    // has no chat-shaped endpoint to route through. Generation is the Kiro
+    // runtime service (`https://runtime.{region}.kiro.dev`), not the legacy
+    // `q.{region}.amazonaws.com` AWS surface.
     id: "kiro",
     displayName: "Kiro",
-    baseUrl: "https://q.us-east-1.amazonaws.com",
+    baseUrl: "https://runtime.us-east-1.kiro.dev",
     bespokeWire: true,
     hasAdapterUserAgent: true,
     defaultSkipProxy: true,

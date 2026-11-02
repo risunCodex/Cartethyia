@@ -508,6 +508,13 @@ export interface ProviderAccountResponse {
   label: string;
   credentialKind: CredentialKind;
   credentialMode?: CredentialMode;
+  /**
+   * Which sign-in family issued this credential, read from the account's
+   * `auth_state` (e.g. `social`/`oidc`/`api_key` for Kiro). Surfaced so the
+   * console can badge an account by how it logged in without shipping the
+   * whole auth state to the browser.
+   */
+  authMethod?: string;
   tokenExpiresAt?: string;
   /**
    * Who issued this credential, read from the JWT `iss` claim at registration

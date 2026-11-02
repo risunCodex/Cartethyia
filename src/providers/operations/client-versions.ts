@@ -200,7 +200,7 @@ async function githubReleaseVersion(response: Response): Promise<string | null> 
  * The discovery source below only supplies the *IDE* version that follows the
  * `KiroIDE` device marker.
  */
-const KIRO_RUNTIME_SDK_VERSION = "1.0.39";
+const KIRO_RUNTIME_SDK_VERSION = "1.0.44";
 
 /**
  * AWS SSO OIDC SDK version stamped into login and token-refresh User-Agents.

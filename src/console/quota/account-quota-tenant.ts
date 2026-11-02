@@ -509,7 +509,13 @@ export function registerAccountQuotaTenantRoutes(
       // page open never issues two requests for the same account.
       const outcome = await refreshAccountQuota(
         refreshDeps,
-        { accountId, providerId: account.providerId, tenantId: account.tenantId, credentialKind: account.credentialKind },
+        {
+          accountId,
+          providerId: account.providerId,
+          tenantId: account.tenantId,
+          credentialKind: account.credentialKind,
+          authState: account.authState,
+        },
         signalFetch(timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS)),
       );
       const fresh = await getCachedQuotaEntry(access.tenantId, accountId, redis);
@@ -571,7 +577,16 @@ export function registerAccountQuotaTenantRoutes(
       try {
         outcome = await refreshAccountQuota(
           refreshDeps,
-          { accountId, providerId: account.providerId, tenantId: account.tenantId, credentialKind: account.credentialKind },
+          {
+            accountId,
+            providerId: account.providerId,
+            tenantId: account.tenantId,
+            credentialKind: account.credentialKind,
+            // Kiro's usage surface is profile-scoped: without the account's auth
+            // state the collector cannot resolve a `profileArn`, and the GET is
+            // refused with `400 Invalid profileArn.`.
+            authState: account.authState,
+          },
           egress.fetch,
         );
       } finally {
@@ -616,6 +631,7 @@ export function registerAccountQuotaTenantRoutes(
             providerId: providerAccounts.providerId,
             tenantId: providerAccounts.tenantId,
             credentialKind: providerAccounts.credentialKind,
+            authState: providerAccounts.authState,
           })
           .from(providerAccounts)
           .where(

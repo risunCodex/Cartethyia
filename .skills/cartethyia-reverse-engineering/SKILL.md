@@ -139,6 +139,52 @@ installed app has already discarded.
 The same discipline as above applies: pin the exact version you extracted, and
 turn only the verified rows into a change.
 
+## Unpacking an installer (MSI/EXE) statically
+
+When the shipped client is an installer and the goal is the real wire behavior,
+unpack it — never launch it. The installed program is the authority; docs and
+source are hypotheses. This is the working recipe for Windows installers.
+
+1. **Identify the container first.**
+   - MSI = OLE compound document (magic `D0 CF 11 E0`). Extract with `7z x`
+     (or `msiexec /a` for an administrative install). The payload is often a
+     single large `*.exe` or `cab1.cab`.
+   - EXE = MZ PE. `7z x` lists PE sections; the real payload is usually a
+     bundled installer framework. Check the PE manifest resource
+     (`.rsrc\1033\MANIFEST\1`) to identify the framework: Inno Setup reports
+     `JR.Inno.Setup`, NSIS reports `Nullsoft Install System`, etc.
+2. **Inno Setup payloads: use `innoextract`, not 7z.** The `[0]` file 7z
+   emits is the Inno *container*, not a standalone LZMA/LZMA2 archive — probing
+   LZMA offsets into it is wasted time. Use `innoextract` on the original EXE:
+   - Official `innoextract` 1.9 (2020, portable zip from constexpr.org)
+     supports Inno Setup through **6.2.2** only.
+   - For Inno Setup 6.4+ (e.g. a 2026 IDE), use the maintained fork release
+     `crazy-max/innoextract` v1.13.0+ (supports through 7.1.0). Verify the
+     downloaded binary against the SHA256 digest in the GitHub release API
+     (`api.github.com/repos/crazy-max/innoextract/releases`) before running it.
+   - A `Unexpected setup data version: x.y.z` from the old tool does not mean
+     the file is corrupt — it means the framework version is newer than the
+     extractor. Record the version and get a newer extractor.
+3. **The app inside is usually Electron/VS Code.** After a successful Inno
+   extraction, look for `resources/app/package.json` (product metadata,
+   `version`, `distro`, license like `AWS-IPL`) and `node_modules.asar`.
+   - `7z` cannot open `.asar`. Write a tiny ASAR reader (16-byte pickle header →
+     4-byte size at offset 8 → JSON header at offset 16 → walk `files` tree
+     with `{offset, size}`) to extract targeted modules. We keep one at
+     `D:\tmp\scripts\asar-unpack.mjs`.
+   - The client's *own* version is in `package.json`/`product.json` — read it
+     from there, not from the installer filename.
+4. **Scan large single-file binaries (Bun/Rust) with a streamed string
+   extractor.** A 466 MB Bun executable is not a bundle to open in an editor;
+   write a chunked scanner (32 MiB reads with overlap, printable-ASCII
+   `{6,}` regex) and grep the output for URLs, salts, User-Agent fragments,
+   and header names. This is how the Kiro CLI machine-id salts, `Kiro-CLI`
+   UA, and KAS/ACP endpoints were recovered.
+5. **Keep the evidence ledger.** Record build pinned, tool + hash used, files
+   inspected, and each proven row. Save it beside the other dated ledgers
+   (e.g. `references/` in this skill, or `documentation/archive/research/`).
+   Example: `references/kiro-ide-cli-protocol.md`.
+
 ## Safety and scope
 
 - Inspect only code, tests, fixtures, logs, and local runtime behavior that the

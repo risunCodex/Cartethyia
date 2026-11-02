@@ -384,8 +384,8 @@ export function registerConsoleDomains(
   // it is released when the last of those flows settles.
   const oauthCallbackListener = new OAuthCallbackListener({
     completer: {
-      complete: (providerId, code, state) =>
-        completeLogin(oauthConfig, providerId, code, state),
+      complete: (providerId, code, state, callbackParams) =>
+        completeLogin(oauthConfig, providerId, code, state, callbackParams),
     },
   });
   const oauthConfig: OAuthLoginConfig = {

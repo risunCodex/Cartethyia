@@ -38,6 +38,18 @@ Options (per probe, see the script header):
 | `--ide-only` | skip the plugin surface, only the IDE `/model/v1` path |
 | `--label <name>` / `--index <n>` | select a specific account |
 
+Kiro-specific flags (`probe-kiro.ts` / `probe-kiro-oauth.ts`):
+
+| Flag | Meaning |
+| --- | --- |
+| `--model <id>` | model to probe on the runtime surface (default `auto`) |
+| `--all` | probe every model in the roster |
+| `--models` | list models from the live management surface (`List-Available-Models`) |
+| `--out <path>` | write the model list JSON to a file |
+| `--method <authMethod>` | OAuth: `builder-id` (default), `idc`, `google`, `github` |
+| `--region <region>` | AWS region for the IdC/Builder-ID flow (default `us-east-1`) |
+| `--start-url <url>` | organization start URL for the IdC flow (default `https://view.awsapps.com/start`) |
+
 ## Layout
 
 ```
@@ -48,6 +60,9 @@ provider-probing/
   qoder/
     cosy-signer.ts     # COSY Bearer signer (plugin surface)
     probe-qoder.ts     # plugin COSY vs IDE /model/v1 probe
+  kiro/
+    probe-kiro.ts      # management (models) + runtime (generation) probe
+    probe-kiro-oauth.ts # IdC/Builder-ID browser PKCE + social OAuth probe
 ```
 
 The Qoder probe covers two surfaces:
@@ -99,3 +114,38 @@ OpenAI body or a plugin-only model id like `qwen3.8-max` fails there.
 
 See `documentation/archive/research/qoder/2026-11-01-qoder-chat-wire-verification.md`
 for the full wiring audit.
+
+## Kiro
+
+Kiro's 1.4.62 client talks to two services, both under
+`https://{service}.{region}.kiro.dev`:
+
+- **management** — model catalog (`GET /List-Available-Models`) and usage
+  (`GET /Get-Usage-Limits`), Smithy `awsJson1_0` with
+  `x-amz-target: KiroControlPlaneBearerService.*`.
+- **runtime** — generation (`POST /generateAssistantResponse`), Smithy
+  `awsJson1_0` with `x-amz-target: KiroRuntimeService.GenerateAssistantResponse`,
+  answered as an AWS EventStream frame sequence.
+
+```sh
+bun run probe:kiro --creds "C:\path\to\kiro-accounts-<ts>.json" --models
+bun run probe:kiro --creds "C:\path\to\kiro-accounts-<ts>.json" --model auto
+bun run probe:kiro --creds <file> --models --out models.json
+bun run probe:kiro-oauth --creds <file> --method builder-id
+bun run probe:kiro-oauth --creds <file> --method idc --region eu-central-1
+bun run probe:kiro-oauth --creds <file> --method google
+```
+
+The Kiro probe covers two surfaces:
+
+- **management** (`probe-kiro.ts --models`): model list from the control plane,
+  scoped by the account's region/profile. Headers mirror the adapter
+  (`TokenType` from auth method, `x-kiro-machineid`, `KiroIDE-…` UA).
+- **runtime** (`probe-kiro.ts --model <id>`): one generation request decoded
+  through the adapter's own EventStream decoder, so the event types and token
+  accounting shown are exactly what the gateway will see.
+
+The OAuth probe (`probe-kiro-oauth.ts`) walks the browser PKCE flow live:
+register client, print authorize URL, wait for the pasted callback, exchange via
+`CreateToken`, and refresh via `CreateToken`. Social (Google/GitHub) uses the
+vendor's sign-in service. Nothing is printed except masked token prefixes.

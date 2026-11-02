@@ -1,6 +1,6 @@
 # Proposal — Inject System Prompt: presets, per-combo/alias, clear button
 
-**Status:** draft untuk dibaca, belum diimplementasikan.
+**Status:** ✅ diimplementasikan (`c4e1ef9e` … `53e62251`).
 **Tanggal:** 2026-11-01
 **Scope:** dashboard (InjectSystemPromptPanel) + console API + dispatch injection (system-prompt-injection.ts) + schema/persistensi.
 

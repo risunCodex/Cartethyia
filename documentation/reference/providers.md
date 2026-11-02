@@ -84,8 +84,8 @@ Three auth client shapes:
 
 | Shape | Base class | Family examples |
 | --- | --- | --- |
-| Browser PKCE | `OAuthClient.buildAuthorizeUrl`/`exchangeCode` (`authentication/oauth-client.ts`) | claude, antigravity, openrouter, zcode; kiro overrides it in addition to the device flow for its browser login |
-| Device code (RFC 8628) | `OAuthDeviceFlow` (`authentication/oauth-device-flow.ts`) | codex, github, grok, xai, kimi, cline, kiro, kilo, muse, qoder, factory, cb/cbcn/workbuddy/workbuddycn |
+| Browser PKCE | `OAuthClient.buildAuthorizeUrl`/`exchangeCode` (`authentication/oauth-client.ts`) | claude, antigravity, openrouter, zcode, kiro |
+| Device code (RFC 8628) | `OAuthDeviceFlow` (`authentication/oauth-device-flow.ts`) | codex, github, grok, xai, kimi, cline, kilo, muse, qoder, factory, kiro, cb/cbcn/workbuddy/workbuddycn |
 | No OAuth | plain key path; `probeApiKeyConnectivity` is the account test (`quota/quota-support.ts`) | openai, anthropic, mistral, meta, most compatible API-key providers |
 
 Whether a refresher is registered is per-family and deliberate: a grant that is
@@ -161,7 +161,7 @@ Verified in code only. `bespokeWire` = the adapter frames its own protocol, not 
 
 | Family | What is non-standard |
 | --- | --- |
-| kiro | Bespoke (`provider-metadata.ts`). AWS EventStream wire over `q.us-east-1.amazonaws.com`, no chat-shaped endpoint; reasoning arrives as its own event or `<thinking>` markers in text. Device + PKCE. |
+| kiro | Bespoke (`provider-metadata.ts`). AWS EventStream wire over the Kiro runtime service (`https://runtime.{region}.kiro.dev/generateAssistantResponse`), no chat-shaped endpoint; reasoning arrives as its own event or `<thinking>` markers in text. Browser PKCE only (IdC/Builder-ID via AWS SSO OIDC `authorization_code` + loopback; social via the vendor's sign-in service). |
 | github | Base URL is only a fallback: the real host comes from the Copilot token's `proxy-ep` claim per dispatch. Short-lived token, real refresher. The account label is the GitHub login, read from `api.github.com/user` with a plain user agent — the Copilot client headers draw a 400 there, and a missing login makes every account share one label so the next login replaces the row. The device dialog polls on one timer and waits out `slow_down`; a second poll inside GitHub's interval burns the device code. |
 | antigravity | Google OAuth, but the wire is a Gemini payload wrapped in an agent envelope POSTed to `v1internal:{generate,stream}GenerateContent` — no per-model path. Image generation uses the same envelope with `responseModalities: ["IMAGE"]`; `/v1/search` adds Google Search grounding. |
 | muse | Device-code login yields an OAuth token, exchanged by `POST /muse-code/key` for the `api_key` the backend accepts; the stored `oauth` secret is a `{oauthAccessToken, apiKey}` JSON blob. |

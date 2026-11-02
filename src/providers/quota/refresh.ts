@@ -17,6 +17,18 @@ import type { ProviderId } from "../provider-contracts";
 import type { ProviderRegistry } from "../provider-registry";
 import { GLOBAL_QUOTA_LENS, setCachedQuota } from "./cache";
 import { asJsonbRecord } from "../../shared/coerce";
+import { KIRO_DEFAULT_LABELS } from "../integrations/kiro/kiro-oauth";
+
+/**
+ * The stock Kiro fallback labels as a SQL literal list. Built once from the
+ * canonical set (`KIRO_DEFAULT_LABELS`) and escaped for the single-quote SQL
+ * literal; the values are compile-time constants, so this fragment is static.
+ */
+const KIRO_DEFAULT_LABEL_IN = sql.raw(
+  [...KIRO_DEFAULT_LABELS]
+    .map((label) => `'${label.replace(/'/g, "''")}'`)
+    .join(", "),
+);
 
 /** Why an account quota refresh failed; `null` means the fetch succeeded. */
 export type QuotaRefreshFailureCode = "missing_credential" | "quota_fetch_failed";
@@ -416,6 +428,7 @@ async function runQuotaRefresh(
           label: sql`CASE
             WHEN lower(trim(${providerAccounts.label})) = lower(trim(${providerAccounts.providerId})) THEN ${quota.accountLabel}
             WHEN ${providerAccounts.label} LIKE '%|%' THEN ${quota.accountLabel}
+            WHEN ${providerAccounts.label} IN (${KIRO_DEFAULT_LABEL_IN}) THEN ${quota.accountLabel}
             ELSE ${providerAccounts.label}
           END`,
         })

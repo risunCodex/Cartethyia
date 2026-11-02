@@ -35,8 +35,14 @@ export function readAccountsFile(path: string): readonly ExportedAccount[] {
   const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
   if (Array.isArray(parsed)) return parsed as readonly ExportedAccount[];
   if (typeof parsed === "object" && parsed !== null) {
-    const accounts = (parsed as AccountsExport).accounts;
+    const record = parsed as Record<string, unknown>;
+    const accounts = (record as AccountsExport).accounts;
     if (Array.isArray(accounts)) return accounts as readonly ExportedAccount[];
+    // A single-account object (e.g. an OAuth probe's `--out` file) is accepted
+    // as a one-element list so consumers can reuse the same read helper.
+    if (typeof record.providerId === "string" || typeof record.accessToken === "string") {
+      return [record as unknown as ExportedAccount];
+    }
   }
   throw new Error(`No account list found in ${path}`);
 }

@@ -191,9 +191,9 @@ describe("client version monitor snapshot", () => {
 
   test("matches Claude and Kiro SDK fingerprints embedded in their current clients", () => {
     expect(VERSION_SOURCES.claudeSdk.fallback).toBe("0.128.0");
-    expect(buildKiroUserAgent("1.2.56", "device")).toContain("aws-sdk-js/1.0.39");
+    expect(buildKiroUserAgent("1.2.56", "device")).toContain("aws-sdk-js/1.0.44");
     expect(buildKiroAmzUserAgent("1.2.56", "device")).toBe(
-      "aws-sdk-js/1.0.39 KiroIDE-1.2.56-device",
+      "aws-sdk-js/1.0.44 KiroIDE-1.2.56-device",
     );
     expect(buildKiroSsoUserAgent()).toContain("aws-sdk-js/3.980.0");
     expect(buildKiroSsoAmzUserAgent()).toBe("aws-sdk-js/3.980.0 KiroIDE");
