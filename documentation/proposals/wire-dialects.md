@@ -71,10 +71,10 @@ Artinya: injeksi policy dialect cukup di satu tempat (`OpenAICompatibleAdapter`)
 ```ts
 // src/protocol/translation/dialect/types.ts (baru)
 export type DialectId =
-  | "chat-default"   // OpenAI-compatible generik (default wire chat)
+  | "openai"   // OpenAI-compatible generik (default wire chat)
+  | "anthropic" // Anthropic compatible/ Claude-native dialect: signature thinking, cache-control
   | "deepseek"       // DSML + reasoning_content + max_tokens + strip tokens
   | "qwen"           // enable_thinking + <tool_call> + strict chat template
-  | "claude"         // Anthropic messages (default wire messages)
   | "kimi" | "glm" | "minimax" | "gemini"; // extensibel
 
 export interface DialectPolicy {
@@ -102,7 +102,7 @@ export function resolveDialect(
 ): DialectPolicy
 ```
 
-- Precedence: **override DB** → **eksplisit `ModelDefinition.dialect`** → **heuristic** (table statis mirip `quirks.ts`) → **default family** (`claude` utk messages, `chat-default` utk chat/responses).
+- Precedence: **override DB** → **eksplisit `ModelDefinition.dialect`** → **heuristic** (table statis mirip `quirks.ts`) → **default family** (`anthropic` utk messages, `openai` utk chat/responses).
 - Table statis `DIALECT_RULES` (bukan KDL — repo tidak punya build-step; `quirks.ts` adalah precedent). Contoh baris:
 
 ```ts
