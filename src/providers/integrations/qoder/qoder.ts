@@ -183,6 +183,13 @@ interface QoderModelConfig {
   max_output_tokens?: number;
   is_vl: boolean;
   is_reasoning: boolean;
+  /**
+   * Whether upstream publishes this row as free. Only an explicit `true`
+   * marks the model as free-tier; absent or `false` means billed/unknown, so
+   * a 402/116 there is genuine quota exhaustion, not a free-tier entitlement
+   * refusal, and must not trigger a legacy-surface fallback.
+   */
+  is_free?: boolean;
   source?: string;
 }
 
@@ -1145,18 +1152,21 @@ async function callQoderIde(
 
 /**
  * True when the modern model-server surface refused the request on entitlement
- * grounds, meaning a legacy-surface fallback is worth trying.
+ * grounds. This only detects the refusal — whether a legacy fallback is worth
+ * trying is the caller's decision, and it is gated on the model being free-tier
+ * (see `dispatch`).
  *
  * The upstream's refusal envelope is `{"code":116,"error":"quota exceeded"}`
  * on HTTP 402. The IDE's own error set classifies 116 as a quota/entitlement
  * failure (not an auth error), and the gRPC surface reports the same code as
- * status 13. Only these are fallback-class; a 401/403 or a model-level error
- * means the same refusal would happen on the legacy surface, so the dispatch
- * should surface the modern error rather than wrap it in a fallback.
+ * status 13. For a free-tier model this is an entitlement refusal the legacy
+ * COSY surface will serve with the same credential; for a billed model the
+ * same code is genuine quota exhaustion (Qoder's daily exhaustion and cooldown
+ * run on a 1-day cycle) and must surface as-is so the quota/cooldown path can
+ * see it. A 401/403 or a model-level error is never fallback-class either way.
  */
 function qoderIdeEntitlementRefused(response: Response): boolean {
-  // The upstream answers the modern surface with HTTP 402 + `{"code":116}` for
-  // free-tier accounts. Status alone is the signal; the body is left intact for
+  // Status alone is the signal; the body is left intact for
   // `mapUpstreamHttpError` to surface if the fallback also fails.
   return response.status === 402;
 }
@@ -1465,10 +1475,13 @@ interface QoderAdapterOptions {
    * reasoning. When that surface answers an entitlement refusal (HTTP 402 /
    * `{"code":116,"error":"quota exceeded"}`, seen on free-tier accounts),
    * dispatch falls back to the legacy COSY surface
-   * (`/algo/.../agent_chat_generation`), which streams with the same
-   * credential. Live verification (2026-11-02): the modern surface answers
-   * 116 for free-tier accounts that stream fine over COSY, while serial
-   * accounts stream on the modern surface with the real model echoed.
+   * (`/algo/.../agent_chat_generation`) — but only for a free-tier model
+   * row (`is_free: true`). A billed model answering 402/116 is genuine quota
+   * exhaustion (Qoder's daily exhaustion / cooldown run on a 1-day cycle) and
+   * surfaces as-is, so the exhausted state is never masked by a fallback.
+   * Live verification (2026-11-02): the modern surface answers 116 for
+   * free-tier accounts that stream fine over COSY, while entitled accounts
+   * stream on the modern surface with the real model echoed.
    *
    * `cosy` forces only the legacy surface (the pre-fallback behavior).
    */
@@ -1561,11 +1574,15 @@ class QoderAdapter implements ProviderAdapter {
       // is the only intl host that serves them (`api3` answers "Login expired").
 
       // The modern `ide` surface streams immediately, needs no COSY signing,
-      // and echoes the real model key — it is the default. When it refuses the
-      // account on entitlement grounds (HTTP 402 / code 116, seen on free-tier
-      // accounts), fall back to the legacy COSY surface, which streams with the
-      // same credential. A non-entitlement failure (401/403/model error) is
-      // surfaced as-is: it would fail the same way on the legacy surface.
+      // and echoes the real model key — it is the default. Fall back to the
+      // legacy COSY surface only when BOTH hold: the modern surface refused on
+      // entitlement grounds (HTTP 402 / code 116) AND the dispatched model is a
+      // free-tier row (`is_free: true`). For a free-tier model this is the
+      // entitlement refusal the legacy surface serves with the same credential;
+      // for a billed model the same code is genuine quota exhaustion (Qoder's
+      // daily exhaustion / cooldown run on a 1-day cycle), so it must surface
+      // as-is — falling back would hide the exhausted state and starve the
+      // quota/cooldown signal. A 401/403/model error never triggers fallback.
       const ideUrl = candidate.endpoint_path?.startsWith("http") ? candidate.endpoint_path : qoderIdeChatUrl(this.realm);
       const cosyUrl = candidate.endpoint_path?.startsWith("http")
         ? candidate.endpoint_path
@@ -1576,7 +1593,12 @@ class QoderAdapter implements ProviderAdapter {
         callQoder(cosyUrl, buildQoderRequest(modelId, request, modelConfig, auth, this.realm), modelId, auth, lifecycle.signal, fetcher, version);
       let response =
         this.surface === "ide" ? await ideRequest() : await cosyRequest();
-      if (!response.ok && this.surface === "ide" && qoderIdeEntitlementRefused(response)) {
+      if (
+        !response.ok &&
+        this.surface === "ide" &&
+        qoderIdeEntitlementRefused(response) &&
+        modelConfig.is_free === true
+      ) {
         response = await cosyRequest();
       }
       if (!response.ok) throw await mapUpstreamHttpError(response, "qoder");

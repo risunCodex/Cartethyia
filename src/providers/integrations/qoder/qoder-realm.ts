@@ -46,7 +46,8 @@ export const QODER_MODELS_PATH = "/algo/api/v2/model/list?Encode=1";
  * `10605 isQueued` (parking requests in a server-side queue) and echoes a
  * fixed `"auto"` model. Dispatch tries this surface first, and falls back to
  * legacy COSY only when it refuses the account on entitlement grounds (HTTP
- * 402 / `{"code":116}`).
+ * 402 / `{"code":116}`) AND the dispatched model is a free-tier row — for a
+ * billed model the same code is genuine quota exhaustion and must surface.
  */
 export const QODER_IDE_CHAT_PATH = "/model/v1/chat/completions";
 

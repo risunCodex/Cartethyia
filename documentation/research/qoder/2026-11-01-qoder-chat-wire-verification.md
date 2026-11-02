@@ -194,9 +194,12 @@ The adapter (`src/providers/integrations/qoder/qoder.ts`) now defaults chat
 dispatch to the IDE surface (`/model/v1/chat/completions`). When that surface
 answers an entitlement refusal (HTTP 402 / `{"code":116}`, seen on free-tier
 accounts), dispatch falls back automatically to the legacy COSY surface
-(`/algo/.../agent_chat_generation`), which streams with the same credential; a
-401/403/model error is surfaced as-is, not masked by a fallback. `surface:
-"cosy"` remains as an explicit force-legacy option. Live end-to-end
+(`/algo/.../agent_chat_generation`), which streams with the same credential —
+but only for a free-tier model row (`is_free: true`). For a billed model the
+same 402/116 is genuine quota exhaustion (Qoder's daily exhaustion / cooldown
+run on a 1-day cycle) and surfaces as-is, so the exhausted state is never
+masked by a fallback. A 401/403/model error is surfaced as-is either way.
+`surface: "cosy"` remains as an explicit force-legacy option. Live end-to-end
 verification against a real `dt-` OAuth account:
 
 - Streaming response completes: `Pong! 🏓` text + reasoning trace.

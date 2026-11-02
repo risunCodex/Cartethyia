@@ -1,14 +1,18 @@
 /**
  * Qoder dispatch surface: modern `/model/v1` by default, legacy COSY fallback
- * when the modern surface refuses the account on entitlement grounds.
+ * only when the modern surface refuses the account on entitlement grounds AND
+ * the dispatched model is a free-tier row.
  *
  * Live verification (2026-11-02): the modern surface answers HTTP 402 +
  * `{"code":116,"error":"quota exceeded"}` for free-tier accounts that stream
  * fine over the legacy COSY surface, while entitled accounts stream on the
  * modern surface with the real model echoed. Dispatch therefore tries `ide`
- * first (default) and only falls back to `cosy` on that entitlement refusal —
- * a 401/403/model error is surfaced as-is so a real auth failure is not
- * masked by a legacy retry.
+ * first (default) and falls back to `cosy` on that entitlement refusal — but
+ * only for a free-tier model (`is_free: true`). For a billed model the same
+ * 402/116 is genuine quota exhaustion (Qoder's daily exhaustion / cooldown
+ * run on a 1-day cycle) and must surface as-is, so the exhausted state is
+ * never masked by a legacy retry. A 401/403/model error is surfaced as-is so
+ * a real auth failure is not masked either.
  */
 import { describe, expect, test } from "bun:test";
 import { createQoderAdapter } from "../../../src/providers/integrations/qoder/qoder";
@@ -63,8 +67,13 @@ function context(fetcher: typeof fetch): ProviderDispatchContext {
   } as unknown as ProviderDispatchContext;
 }
 
-async function collect(adapter: ReturnType<typeof createQoderAdapter>, fetcher: typeof fetch): Promise<void> {
-  for await (const _event of adapter.dispatch(request(), TARGET, context(fetcher))) {
+async function collect(
+  adapter: ReturnType<typeof createQoderAdapter>,
+  fetcher: typeof fetch,
+  modelId = "qfmodel",
+): Promise<void> {
+  const target: ProviderDispatchTarget = { ...TARGET, model_id: modelId };
+  for await (const _event of adapter.dispatch(request(), target, context(fetcher))) {
     void _event;
   }
 }
@@ -84,7 +93,7 @@ describe("Qoder dispatch surface", () => {
     expect(urls[0]).toContain("/model/v1/chat/completions");
   });
 
-  test("falls back to legacy COSY when the modern surface answers 402/116", async () => {
+  test("falls back to legacy COSY for a free-tier model when modern answers 402/116", async () => {
     const urls: string[] = [];
     let calls = 0;
     const fetcher = (async (input: unknown, _init?: RequestInit): Promise<Response> => {
@@ -103,6 +112,25 @@ describe("Qoder dispatch surface", () => {
     expect(calls).toBe(2);
     expect(urls[0]).toContain("/model/v1/chat/completions");
     expect(urls[1]).toContain("/algo/api/v2/service/pro/sse/agent_chat_generation");
+  });
+
+  test("does not fall back on a 402/116 for a billed model (quota exhaustion surfaces as-is)", async () => {
+    const urls: string[] = [];
+    let calls = 0;
+    const fetcher = (async (input: unknown, _init?: RequestInit): Promise<Response> => {
+      calls++;
+      urls.push(String(input));
+      return new Response(JSON.stringify({ code: 116, error: "quota exceeded" }), {
+        status: 402,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    const adapter = createQoderAdapter();
+    // `smodel` is a billed row (`is_free: false`): 116 is real quota
+    // exhaustion, so no legacy fallback — the modern error surfaces.
+    await expect(collect(adapter, fetcher, "smodel")).rejects.toThrow();
+    expect(calls).toBe(1);
+    expect(urls[0]).toContain("/model/v1/chat/completions");
   });
 
   test("does not fall back on a 401 (auth failure surfaces as-is)", async () => {

@@ -60,12 +60,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   first — it echoes the real model key and carries 1M context + `xhigh`
   reasoning — and automatically falls back to the legacy COSY surface only when
   the modern surface answers an entitlement refusal (HTTP 402 / `{"code":116}`,
-  seen on free-tier accounts). A 401/403/model error is surfaced as-is and is
-  not masked by a legacy retry. `surface: "cosy"` remains as an explicit
-  force-legacy option. The legacy body is now 1:1 with the IDE worker: top-level
-  `model` (roster key) and `reasoningEffort` (camelCase, mapped from canonical
-  intent) are sent alongside `model_config.max_input_tokens` for the widest
-  discovered window.
+  seen on free-tier accounts) **and** the dispatched model is a free-tier row
+  (`is_free: true`). For a billed model the same 402/116 is genuine quota
+  exhaustion (Qoder's daily exhaustion / cooldown run on a 1-day cycle) and
+  surfaces as-is, so the exhausted state is never masked by a fallback. A
+  401/403/model error is surfaced as-is and is not masked by a legacy retry.
+  `surface: "cosy"` remains as an explicit force-legacy option. The legacy body
+  is now 1:1 with the IDE worker: top-level `model` (roster key) and
+  `reasoningEffort` (camelCase, mapped from canonical intent) are sent alongside
+  `model_config.max_input_tokens` for the widest discovered window.
 - **Qoder device login matches the desktop IDE byte-for-byte.** The PKCE
   verifier now uses the IDE's own alphabet (`A-Za-z0-9-._~`, 43–128 chars), the
   nonce is a full UUID, the client id is always sent (intl `e883ade2-…`, CN
