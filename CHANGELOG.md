@@ -12,6 +12,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Wire dialect layer for chat/messages codecs.** A dialect (DeepSeek,
+  Qwen, OpenAI/Anthropic defaults) now resolves per model below the wire
+  family, giving provider-specific quirks a home instead of scattered
+  `if (providerId === …)` branches: `reasoning_content` field naming,
+  `max_tokens` vs `max_completion_tokens`, `tool_choice` support, system
+  message cardinality, assistant-content-required tool-call turns, Qwen
+  `enable_thinking`, and in-band tool-call scanning (`<tool_call>` JSON for
+  Qwen, DSML for DeepSeek). The resolver (`resolveDialect`) is data-driven
+  with precedence DB override → `ModelDefinition.dialect` → heuristic → family
+  default, and defaults are frozen to today's behavior (byte-identical
+  payloads). Migration `0040` adds `models.dialect`. See
+  `documentation/features/09-wire-dialects.md`.
 - **Quota windows are filtered by the requested model family.** Providers that
   report separate quota per model family (Antigravity: Gemini vs Claude/GPT;
   Grok: per-product buckets) no longer block every model when one family is
