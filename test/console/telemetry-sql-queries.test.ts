@@ -391,4 +391,24 @@ describe("canonical SQL telemetry reader", () => {
       fx.cleanup();
     }
   });
+
+  test("a SQLite handle stays SQLite even when the process mode is full", async () => {
+    const previous = process.env.CARTETHYIA_DB_MODE;
+    process.env.CARTETHYIA_DB_MODE = "full";
+    const fx = await fixture();
+    try {
+      await insertEvent(fx, { inputTokens: 7 });
+      // The dial is the only authority: a handle built by `buildSqliteHandle`
+      // must never take the Postgres branch (percentile_cont / :: casts) just
+      // because the process env says `full` — that broke every chart/usage
+      // read on a migrated SQLite file under a full-mode process.
+      const summary = await summarizeTelemetry(fx.db, fx.tenantId, new Date(0));
+      expect(summary.requests).toBe(1);
+      expect(summary.inputTokens).toBe(7);
+    } finally {
+      fx.cleanup();
+      if (previous === undefined) delete process.env.CARTETHYIA_DB_MODE;
+      else process.env.CARTETHYIA_DB_MODE = previous;
+    }
+  });
 });
