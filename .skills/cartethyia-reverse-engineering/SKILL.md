@@ -114,6 +114,18 @@ shape no amount of guessing would have yielded (method and findings in
   app/AmazonQ-For-CLI`, `x-amzn-codewhisperer-optout: false`,
   `x-kiro-attempt`), and the camelCase `conversationState` body — facts the
   string scan had gotten wrong.
+- **Electron desktop bundles: pin the app, then separate the main bundle from
+  the CLI binary.** OpenCode desktop 2.2.5 (`ai.opencode.desktop`) ships a
+  `app.asar` (main/preload/renderer chunks, hashed names like `main-*.js`,
+  `HttpClient-*.js`, `Latch-*.js`, `Undici-*.js`) plus a separate
+  `opencode-cli` binary; the update endpoint is `https://opencode.ai/update/api/latest/desktop/opencode/`.
+  Evidence ledger: [`references/opencode-desktop-2.2.5.md`](references/opencode-desktop-2.2.5.md).
+- **A single-file CLI binary (Mach-O/ELF) responds to string scanning before
+  any wire probing.** Grok 1.0.70 (macOS aarch64, Mach-O magic `CF FA ED FE`)
+  revealed its auth/D2C surface from strings alone: `GROK_CHI_CHAT_PROXY_BASE_URL`,
+  OIDC loopback (`http://127.0.0.1/callback`), `/billing?format=credits`,
+  `grok.com?_s=usage`, `api.x.ai`/`console.x.ai`, and MCP transport hints — no
+  network calls needed to map the surface.
 
 Keep an evidence ledger: question, source and version, observed result, and
 what is still unknown. Turn only the verified rows into a Cartethyia change,
@@ -178,12 +190,21 @@ source are hypotheses. This is the working recipe for Windows installers.
 3. **The app inside is usually Electron/VS Code.** After a successful Inno
    extraction, look for `resources/app/package.json` (product metadata,
    `version`, `distro`, license like `AWS-IPL`) and `node_modules.asar`.
-   - `7z` cannot open `.asar`. Write a tiny ASAR reader (16-byte pickle header →
-     4-byte size at offset 8 → JSON header at offset 16 → walk `files` tree
-     with `{offset, size}`) to extract targeted modules. We keep one at
-     `D:\tmp\scripts\asar-unpack.mjs`.
+   - `7z` cannot open `.asar`. Use the repo's ASAR reader
+     (`scripts/tools/asar-unpack.mjs`, read-only, `bun scripts/tools/asar-unpack.mjs <a.asar> <outdir> [filter]`).
+     Observed nativev2 layout: 16-byte pickle header → `[u32 @12]` is the JSON
+     length → JSON starts at offset 16 → `header.files` is the root *container*,
+     so walk its children directly. **Offsets may be relative to the data
+     section start (16 + headerSize)** — the script auto-detects absolute vs
+     relative from the first leaf; reading a relative-offset asar as absolute
+     yields garbage bytes (OpenCode desktop 2.2.5 shipped one).
    - The client's *own* version is in `package.json`/`product.json` — read it
      from there, not from the installer filename.
+ 4. **Disk images (DMG) extract with 7-Zip on Windows.** A `.dmg` is a UDIF
+    container (zlib-compressed, magic `78 01 …`) and 7-Zip opens it directly:
+    `7z x app.dmg -o<dir>` yields a `*.hfs` partition, and a second
+    `7z x 4.hfs -o<dir>` extracts the volume (an `OpenCode.app` style bundle).
+    No `hdiutil`/`dmg2img` needed on Windows.
 4. **Scan large single-file binaries (Bun/Rust) with a streamed string
    extractor.** A 466 MB Bun executable is not a bundle to open in an editor;
    write a chunked scanner (32 MiB reads with overlap, printable-ASCII

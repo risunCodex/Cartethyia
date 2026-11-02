@@ -212,7 +212,8 @@ describe("OpenCode donor parity", () => {
   });
 
   test("the client version falls back to the reference identity until discovery", () => {
-    // The live feed wins once resolved; the fallback is the known-good 2.1.1.
-    expect(OPENCODE_CLIENT_VERSION).toBe("2.1.1");
+    // The live feed wins once resolved; the fallback is the current latest
+    // release (2.2.5). Bump alongside `VERSION_SOURCES.opencode.fallback`.
+    expect(OPENCODE_CLIENT_VERSION).toBe("2.2.5");
   });
 });

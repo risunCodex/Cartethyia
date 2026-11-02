@@ -23,6 +23,7 @@ or foundational notes stay at this root.
 | `qoder/` | Qoder wire, identity, credits, IDE surface, plugin endpoint map | 3 findings |
 | `copilot/` | Copilot capability/context/auto routing | 3 findings |
 | `kiro/` | Kiro 1.4.62 wire protocol + live verification | 2 findings |
+| `opencode/` | OpenCode free-tier wire/gate/sentinel + egress/TLS measurements (merged), desktop 2.2.5 binary evidence | 2 files |
 
 ## Root notes
 
@@ -31,7 +32,6 @@ or foundational notes stay at this root.
 | 2026-10-23 | Routing | [Request-path census](2026-10-23-routing-request-path-census.md) |
 | 2026-10-23 | Routing | [Layered caching proposal](2026-10-23-routing-layered-caching-proposal.md) |
 | 2026-10-23 | Trae | [Agent vs. chat surface](2026-10-23-trae-agent-vs-chat-surface.md) |
-| 2026-10-28 | OpenCode | [Free-tier wire behavior](2026-10-28-opencode-free-tier.md) |
 | 2026-10-28 | Turing | [x-device-token reverse notes](2026-10-28-turing-x-device-token-reverse.md) |
 | 2026-10-30 | Buddy | [Device binding implementation](2026-10-30-buddy-device-binding.md) |
 | 2026-10-30 | Security | [Share-link minting abuse incident](2026-10-30-security-share-link-minting-abuse.md) |
@@ -59,3 +59,10 @@ or foundational notes stay at this root.
 |---|---|
 | 2026-11-01 | [Wire protocol reconstruction (bundle)](kiro/kiro-wire-protocol.md) |
 | 2026-11-02 | [Live wire verification (probes)](kiro/2026-11-02-kiro-wire-verification.md) |
+
+## OpenCode findings (`opencode/`)
+
+| Date | Note |
+|---|---|
+| 2026-11-02 | [Free-tier wire, gate & sentinel (merged reference)](opencode/2026-11-02-opencode-free-tier.md) |
+| 2026-11-02 | [Desktop 2.2.5 binary evidence + replay](opencode/2026-11-02-desktop-2.2.5-binary-evidence.md) |

@@ -75,7 +75,10 @@ with an AWS EventStream (`application/vnd.amazon.eventstream`).
   adapter's own decoder.
 - `scripts/provider-probing/kiro/probe-kiro-oauth.ts` — browser PKCE login
   probe for IdC/Builder-ID and social.
-- npm scripts: `probe:kiro`, `probe:kiro-oauth`.
+- probe scripts: `scripts/provider-probing/kiro/probe-kiro.ts`,
+  `scripts/provider-probing/kiro/probe-kiro-oauth.ts`,
+  `scripts/provider-probing/kiro/probe-kiro-chat.ts` (run directly with
+  `bun run scripts/...`; there are no `probe:*` npm scripts).
 
 ## Runtime streaming (verified live 2026-11-02, real Builder-ID account)
 

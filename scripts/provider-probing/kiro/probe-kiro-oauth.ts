@@ -143,7 +143,7 @@ async function registerAndPrintUrl(
   console.log(authorizeUrl);
   console.log(`\nstate=${state}`);
   console.log(`session tersimpan: ${sessionPath}`);
-  console.log(`Setelah approve, jalankan:\n  bun run probe:kiro-oauth --exchange "${sessionPath}" "<callback-or-code>"`);
+  console.log(`Setelah approve, jalankan:\n  bun run scripts/provider-probing/kiro/probe-kiro-oauth.ts --exchange "${sessionPath}" "<callback-or-code>"`);
 }
 
 async function exchangeSession(

@@ -254,7 +254,9 @@ export const VERSION_SOURCES = {
     key: "opencode",
     // The v1 package (`opencode-ai`) stopped at 1.18. The v2 line publishes
     // under `@opencode/cli`, and this feed is what its own installer reads.
-    fallback: "2.2.2",
+    // Fallback = the current latest release; raise it whenever the package
+    // moves so a cold process does not present a stale client build.
+    fallback: "2.2.5",
     minVersion: "2.0.0",
     sources: [{ url: "https://opencode.ai/update/api/latest/cli/npm" }],
   },

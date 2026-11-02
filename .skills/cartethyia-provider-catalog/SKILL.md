@@ -231,10 +231,11 @@ an operator who turned proxying back on keeps it on.
   The names, the trap, and the replay evidence are in
   [`cartethyia-trace-replay`](../cartethyia-trace-replay/references/opencode-free-tier.md).
   Free ids are chat-only (`responses` → 400 `ModelProtocolUnsupported`), and
-  a free dispatch sends `Authorization: Bearer public` as an anonymous sentinel.
-  The header is not what authorizes the call — an absent one answers 200 and a
-  wrong one answers 401 — but omit it and you have changed the wire the client
-  actually produces, which is the only reason it is sent at all.
+  a free dispatch sends **no `Authorization` header** — the anonymous
+  `Bearer public` sentinel is no longer sent (verified live 2026-11-02: the
+  same captured flow answers 200 with or without it). The header is not what
+  authorizes the call; an absent one answers 200. What the gate reads is the
+  session/project fingerprint and the agent-tool set.
 - The offline catalog is a packed, brotli-compressed binary blob:
   `src/providers/discovery/catalog/catalog-blob.ts` (generated) +
   `catalog-format.ts` (the `PackedCatalog` reader) +

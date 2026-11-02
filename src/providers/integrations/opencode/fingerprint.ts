@@ -2,12 +2,14 @@ import { getOpenCodeVersion } from "../../operations/client-versions";
 import { createHash, randomBytes } from "node:crypto";
 
 /**
- * The OpenCode fallback client identity, used only while version discovery has
- * not resolved yet. The live feed (`opencode/latest/<version>/cli`) wins once
- * it is available; upstream accepts a range of releases, so the fallback does
- * not need chasing.
+ * The pinned reference client identity the parity suite asserts on.
+ *
+ * The runtime fallback lives in `VERSION_SOURCES.opencode.fallback`
+ * (`operations/client-versions.ts`); this mirror exists so the parity suite
+ * can pin the exact identity sent before discovery resolves. Keep both in
+ * lockstep when the CLI releases.
  */
-export const OPENCODE_CLIENT_VERSION = "2.1.1";
+export const OPENCODE_CLIENT_VERSION = "2.2.5";
 
 let lastTimestamp = 0;
 let sequenceCounter = 0;
