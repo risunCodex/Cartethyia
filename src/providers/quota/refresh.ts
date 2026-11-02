@@ -16,6 +16,7 @@ import { type FetchLike, type ProviderQuotaResult } from "./quota-contracts";
 import type { ProviderId } from "../provider-contracts";
 import type { ProviderRegistry } from "../provider-registry";
 import { GLOBAL_QUOTA_LENS, setCachedQuota } from "./cache";
+import { persistQuotaSnapshot } from "./snapshot";
 import { asJsonbRecord } from "../../shared/coerce";
 import { KIRO_DEFAULT_LABELS } from "../integrations/kiro/kiro-oauth";
 
@@ -410,6 +411,15 @@ async function runQuotaRefresh(
     } catch (error) {
       log.warn(`[quota] failed to record plan for account=${target.accountId}`, error as Error);
     }
+  }
+  // Persist the whole successful read, not just the plan. The row survives a
+  // restart that empties the in-process cache, so a cold console open renders
+  // the last known balance instead of nothing (and the sweep refreshes it). A
+  // failed fetch leaves the previous snapshot in place — same reasoning as the
+  // plan column: failure is evidence about the network/credential, not that
+  // the account's balance changed.
+  if (quota.error === null) {
+    await persistQuotaSnapshot(deps.db, target.accountId, quota);
   }
   // A quota surface that names the account adopts the identity — but only over
   // a default label. An operator's custom rename is never overwritten, and the

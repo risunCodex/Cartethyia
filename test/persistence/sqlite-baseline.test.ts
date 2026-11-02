@@ -83,6 +83,7 @@ test("each backend has matching baseline and incremental migrations", () => {
     "0035_align_pool_account_status_enum.sql",
     "0036_system_prompt_presets_refs.sql",
     "0037_share_concurrency_scope.sql",
+    "0038_add_accounts_quota_snapshot.sql",
   ];
   expect(postgres).toEqual(expected);
   expect(sqlite).toEqual(expected);

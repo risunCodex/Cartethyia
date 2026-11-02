@@ -4,6 +4,20 @@ import {
   bigint, boolean, check, customType, index, integer, jsonb, numeric, pgEnum, pgTable,
   primaryKey, text, timestamp, unique, uniqueIndex, uuid, type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import type { ProviderQuotaResult } from "../providers/quota/quota-contracts";
+
+/**
+ * The persisted copy of one account's last successful quota read.
+ *
+ * Survives process restarts, which the in-process quota cache does not — so a
+ * cold page open can render the last known balance immediately while the sweep
+ * refreshes it. Stored only on success; a failed fetch leaves the previous
+ * snapshot in place.
+ */
+export interface ProviderQuotaResultSnapshot {
+  readonly quota: ProviderQuotaResult;
+  readonly fetchedAt: string;
+}
 
 export const TENANT_STATUSES = ["active", "suspended", "deleted"] as const;
 export type TenantStatus = (typeof TENANT_STATUSES)[number];
@@ -295,6 +309,18 @@ export const providerAccounts = pgTable("provider_accounts", {
    * to an account that may well be refused.
    */
   quotaPlan: text("quota_plan"),
+  /**
+   * The last successful quota read for this account, as a JSON snapshot.
+   *
+   * Persisted rather than left only in the quota cache: that cache is a short
+   * in-process TTL and empty on a cold start, so right after a restart the
+   * console would show no balance for every account until the sweep re-read
+   * them. The row survives the restart, so a cold page open renders the last
+   * known numbers immediately (and the sweep refreshes them). Only a
+   * *successful* read is stored — a failed fetch leaves the previous snapshot
+   * in place, mirroring the plan column's behaviour.
+   */
+  quotaSnapshot: jsonb("quota_snapshot").$type<ProviderQuotaResultSnapshot | null>(),
 
   /**
    * Qoder native machine identity bound to this account, as one JSON object

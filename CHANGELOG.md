@@ -134,6 +134,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   are used directly), mirroring dispatch. Verified live 2026-11-02: the
   `that sepa` account now reads its `addOnQuota` (100 granted credits) instead
   of an unreadable body.
+- **Persisted quota snapshots keep balances across restarts.** Quota reads
+  were cached in an in-process TTL only, so after a restart the console showed
+  no balance for every account until the sweep re-read them (Buddy kept its
+  numbers via its usage-snapshot table; everyone else lost them). The account
+  row now stores the last successful quota read as `quota_snapshot` (jsonb),
+  written by the same refresh path that persists the plan, and the console
+  falls back to it when the cache is cold — a page open right after a restart
+  renders the last known balance instead of nothing, and the sweep refreshes
+  it. A failed fetch leaves the previous snapshot in place, like the plan
+  column. Applies to every provider, not just Qoder.
 - **Qoder umid bridge binaries are made executable before running.** The
   `umidpack` runtime-info files ship without the exec bit (git mode 100644)
   and nothing else in the delivery path set it, so fresh Linux/macOS installs —
