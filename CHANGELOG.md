@@ -112,6 +112,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Cursor continuation rebases when the pinned account becomes unroutable.**
+  A tool result pinned to a Cursor account that had since cooled (quota
+  exhausted) refused with a hard 400 "no longer routable", so a complete
+  conversation replay could not switch to another provider/model. The router
+  now treats a rebaseable continuation as a fallthrough: when the pinned
+  account is blocked but the request replays the whole conversation, the plan
+  falls back to normal routing and the adapter starts a fresh Run on an
+  eligible account with the recorded history.
+- **Chat reasoning deltas under `reasoning_summary`/`reasoning_text` (and
+  object shapes) are surfaced.** The chat SSE decoder only read plain-string
+  `reasoning_content`/`reasoning`, so upstreams like GitHub Copilot's
+  GPT-6-Luna, which emit reasoning under other keys (sometimes as
+  `{summary}`/`{text}` objects), silently dropped it. `readReasoningText`
+  now accepts `reasoning_summary`, `reasoning_summary_text`,
+  `reasoning_text`, and object/array shapes, so reasoning reaches the client.
 - **Dashboard: device-code login button renamed "Device OIDC" → "Device
   Code".** The provider-detail account action now labels the RFC 8628
   device flow correctly; the social pill (Google/GitHub) again renders in

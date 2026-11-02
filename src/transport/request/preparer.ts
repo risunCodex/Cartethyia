@@ -157,6 +157,46 @@ export function resolveContinuationAffinity(
   return undefined;
 }
 
+/**
+ * True when every continuation call id this request carries is answered by a
+ * matching `toolCall` block in the same conversation — i.e. the request is a
+ * complete replay, not a tail continuation still owed to a live Run.
+ */
+function isCompleteContinuationReplay(request: CanonicalRequest, ids: readonly string[]): boolean {
+  const calledIds = new Set<string>();
+  for (const message of request.messages) {
+    for (const part of message.content) {
+      if (part.kind === "toolCall") calledIds.add(part.call_id);
+    }
+  }
+  return ids.every((id) => calledIds.has(id));
+}
+
+/**
+ * Resolves a request's pending tool results to the one account that owns them,
+ * with rebaseability computed from the conversation shape.
+ *
+ * A hard pin is only safe when the request is still owed to a live Run. But an
+ * account that has since become unroutable (quota exhausted, cooling) must not
+ * turn a complete replay into a hard 400: the whole recorded conversation is
+ * present, so the router may fall through to normal routing and the Cursor
+ * adapter rebases it into a fresh Run on whichever account serves the model.
+ * That is what makes switching provider/model mid-conversation work.
+ */
+export function resolveContinuationAffinityWithRebase(
+  request: CanonicalRequest,
+  authorization: ResolvedApiKey,
+): RouteContinuationAffinity | undefined {
+  const affinity = resolveContinuationAffinity(request, authorization);
+  if (affinity === undefined) return undefined;
+  const ids = continuationCallIds(request);
+  if (affinity.rebaseable) return affinity;
+  return {
+    ...affinity,
+    rebaseable: isCompleteContinuationReplay(request, ids),
+  };
+}
+
 /** Looks up one pending call across every provider that records continuations. */
 function lookupPendingCall(
   callId: string,
@@ -317,7 +357,7 @@ export class ProxyRequestPreparer {
     // degradation could narrow the candidate set past it. This is also the
     // point where a mismatched or expired call id becomes a 400 the caller can
     // act on, instead of a dispatch that silently starts a new upstream turn.
-    const continuationAffinity = resolveContinuationAffinity(requestWithAttachments, authorization);
+    const continuationAffinity = resolveContinuationAffinityWithRebase(requestWithAttachments, authorization);
     // Capability-aware routing: derive requirements BEFORE planning so the
     // router filters candidates against snapshot profiles. When nothing
     // supports the full request, degrade (same greedy order) and re-plan

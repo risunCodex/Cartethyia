@@ -661,6 +661,11 @@ export class RoutingEngine {
     const pinnedDecisions = pinned.map((candidate) => this.eligibility.evaluate(candidate));
     const blocked = pinnedDecisions.find((decision) => !decision.eligible);
     if (blocked !== undefined) {
+      // A rebaseable continuation (complete conversation replay) is not owed
+      // to this account: the recorded exchange may travel as history to a
+      // fresh Run on an eligible account. Cooling/blocked pinned account must
+      // not turn that into a hard refusal — fall through to normal routing.
+      if (affinity.rebaseable) return null;
       const reason = blocked.reason;
       if (
         reason === "cooldown_hard" ||
