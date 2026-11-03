@@ -52,5 +52,7 @@ export const toast = {
     }),
   error: (title: string, description?: string | null) =>
     sonnerToast.error(title, withCopyAction(title, description)),
+  warning: (title: string, description?: string | null) =>
+    sonnerToast.warning(title, withCopyAction(title, description)),
   dismiss: (id?: string | number) => sonnerToast.dismiss(id),
 };

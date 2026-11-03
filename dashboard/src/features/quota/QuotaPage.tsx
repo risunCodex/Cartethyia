@@ -24,6 +24,7 @@ import { StatePanel, EmptyState, LoadingState, ErrorState } from "../../componen
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { HealthEventsModal } from "../../components/HealthEventsModal";
+import { ClaimGiftsButton } from "../../components/ClaimGiftsButton";
 import { Select } from "../../components/ui/select";
 
 import { Stack } from "../../components/ui/stack";
@@ -50,20 +51,14 @@ import {
   formatQuotaWindowLabel,
   formatResetDistance,
   quotaBarTone,
+  quotaWindowState,
+  quotaPillSummary,
   paginateQuotaWindows,
   accountIdentity,
 } from "../../lib/format/quota";
 import { getErrorMessage } from "../../data/api";
 
 
-function isEmpty(account: QuotaEntry): boolean {
-  return Boolean(
-    account.quota?.windows.length &&
-    account.quota.windows.every(
-      (window) => window.remainingPercent !== null && window.remainingPercent <= 0,
-    ),
-  );
-}
 
 function firstResetAt(account: QuotaEntry): number {
   const resetTimes =
@@ -360,6 +355,7 @@ function QuotaCard({
       : "Check-in due";
   const statusHint = `${checkinHint}${lastReported ? " · Reported today" : ""}`;
   const totalCredits = quotaWindows.reduce((total, window) => {
+    if (quotaWindowState(window) !== "current") return total;
     const limit = window.limit;
     if (typeof limit !== "number" || !Number.isFinite(limit)) return total;
     const remaining =
@@ -451,6 +447,9 @@ function QuotaCard({
           )}
         </div>
         <div className="flex items-center gap-1.75 gap-3 ml-auto">
+          {account.provider === "zcode-start" && (
+            <ClaimGiftsButton accountId={account.id} accountName={account.name} />
+          )}
           {canReset && (
             <Button
               variant="ghost"
@@ -578,9 +577,23 @@ function QuotaCard({
             QUOTA WINDOWS
           </div>
           {pagination.items.map((window, index) => {
+            const state = quotaWindowState(window);
+            if (state !== "current") {
+              return (
+                <div key={`${window.kind ?? window.label}:${window.startsAt}:${index}`} className="flex flex-col gap-2 text-badge">
+                  <span className="font-semibold text-text-primary">{formatQuotaWindowLabel(window.label)}</span>
+                  {window.modelIds?.length ? <span className="text-text-secondary">Models: {window.modelIds.join(", ")}</span> : null}
+                  <span className="text-text-tertiary">{state === "expired" ? "Expired" : `Not started yet · Starts ${new Date(window.startsAt!).toLocaleString()}`}</span>
+                </div>
+              );
+            }
             const remaining = window.remainingPercent ?? null;
             const limit =
               typeof window.limit === "number" && Number.isFinite(window.limit) ? window.limit : null;
+            const remainingCredits =
+              typeof window.remaining === "number" && Number.isFinite(window.remaining)
+                ? window.remaining
+                : null;
             const usedCredits =
               typeof window.used === "number" && Number.isFinite(window.used)
                 ? window.used
@@ -606,6 +619,9 @@ function QuotaCard({
                   <span className="text-badge font-semibold text-text-primary">
                     {label}
                   </span>
+                  {window.modelIds?.length ? (
+                    <div className="text-micro text-text-tertiary">Models: {window.modelIds.join(", ")}</div>
+                  ) : null}
                 </div>
                 <div
                   className="quota-bar-track quota-window-bar min-w-0 w-full h-5 rounded-tiny bg-inner-border overflow-hidden max-small:col-span-full max-small:row-start-2"
@@ -614,7 +630,7 @@ function QuotaCard({
                   aria-valuemin={0}
                   aria-valuemax={100}
                   aria-valuenow={remaining === null ? undefined : quotaFillPct}
-                  aria-valuetext={remaining === null ? "Quota only" : `${formatPercent(remaining)}% remaining`}
+                  aria-valuetext={remaining === null ? remainingCredits !== null ? `${formatAmount(remainingCredits)} credits remaining` : "Quota only" : `${formatPercent(remaining)}% remaining`}
                 >
                   <div
                     className="quota-bar-fill h-full rounded-tiny transition-[width] duration-(--dur-macro) ease-spring"
@@ -625,13 +641,13 @@ function QuotaCard({
                   className="quota-window-remaining whitespace-nowrap text-badge font-bold tabular-nums max-small:col-start-2 max-small:row-start-1"
                   style={{ color: colors.text }}
                 >
-                  {remaining === null ? "—" : `${formatPercent(remaining)}%`}
+                  {remaining === null ? remainingCredits !== null ? `${formatAmount(remainingCredits)} left` : "—" : `${formatPercent(remaining)}%`}
                 </span>
                 <div className="quota-window-details col-span-full flex min-w-0 items-center justify-end gap-6 text-micro text-text-tertiary max-small:row-start-3 max-small:flex-wrap max-small:justify-between max-small:gap-4">
                   <span className="quota-window-usage mr-auto tabular-nums max-small:min-w-0">
                     {usedCredits !== null && limit !== null
                       ? `${formatAmount(usedCredits)} / ${formatAmount(limit)} Credits`
-                      : "Quota only"}
+                      : remainingCredits !== null ? `${formatAmount(remainingCredits)} Credits remaining` : "Quota only"}
                   </span>
                   {window.resetsAt && (
                     <span className="quota-window-reset whitespace-nowrap tabular-nums text-right max-small:ml-auto">
@@ -767,7 +783,7 @@ export default function QuotaPage(): ReactNode {
   };
 
   const turnOffEmpty = async () => {
-    const targets = accounts.filter((account) => account.active && isEmpty(account));
+    const targets = accounts.filter((account) => account.active && quotaPillSummary(account.quota?.windows ?? []).empty);
     await setActiveBatch.mutateAsync({ ids: targets.map((target) => target.id), active: false });
     toast.success(`Disabled ${targets.length} empty accounts`);
   };
@@ -776,9 +792,7 @@ export default function QuotaPage(): ReactNode {
     const targets = accounts.filter(
       (account) =>
         !account.active &&
-        account.quota?.windows.some(
-          (window) => window.remainingPercent !== null && window.remainingPercent > 0,
-        ),
+        quotaPillSummary(account.quota?.windows ?? []).available,
     );
     await setActiveBatch.mutateAsync({ ids: targets.map((target) => target.id), active: true });
     toast.success(`Enabled ${targets.length} available accounts`);
@@ -796,7 +810,7 @@ export default function QuotaPage(): ReactNode {
           minute: "2-digit",
         })
       : "Not updated";
-  const emptyCount = accounts.filter(isEmpty).length;
+  const emptyCount = accounts.filter((account) => quotaPillSummary(account.quota?.windows ?? []).empty).length;
 
   return (
     <Stack gap="16px" className="dashboard-page min-h-0 flex-1">

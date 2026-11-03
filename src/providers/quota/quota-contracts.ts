@@ -18,6 +18,10 @@ export interface ProviderQuotaWindow {
   readonly remaining?: number | null;
   /** False means the timestamp is a hard expiry rather than a recurring reset. */
   readonly recurring?: boolean;
+  /** Exact routing model IDs this grant serves; absent means account-wide. */
+  readonly modelIds?: readonly string[];
+  /** Activation instant: future grants remain visible but cannot fund requests. */
+  readonly startsAt?: string | null;
 }
 
 export interface ProviderQuotaResult {

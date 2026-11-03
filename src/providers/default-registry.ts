@@ -617,6 +617,27 @@ export const PROVIDER_CAPABILITIES = {
     // and Z.AI publishes no refresh grant for it (`refresh "none"` upstream).
     loadAuthentication: oauthCapability(() => import("./integrations/zcode/oauth"), "zcodeOAuthClient"),
   },
+  "zcode-start": {
+    // Free plan surface: an Anthropic-Messages endpoint that only accepts the
+    // dressed ZCode client request (see the integration). The credential is a
+    // ZCode login JWT — pasted, or minted by the sign-in flow below.
+    loadAdapter: async () =>
+      createApiKeyAdapter(
+        (await import("./integrations/zcode-start-plan/provider")).ZCODE_START_PLAN_SPEC,
+      ),
+    loadModels: async () =>
+      (await import("./integrations/zcode-start-plan/provider")).ZCODE_START_PLAN_MODELS,
+    // The device flow stores the issued ZCode login JWT, not a Coding Plan key.
+    loadAuthentication: oauthCapability(
+      () => import("./integrations/zcode-start-plan/oauth"),
+      "zcodeStartPlanOAuthClient",
+    ),
+    // Keep each reported entitlement and activation/reset window separate.
+    loadQuotaCollector: quotaCapability(
+      () => import("./integrations/zcode-start-plan/quota"),
+      "fetchZcodeStartPlanQuota",
+    ),
+  },
   "factory": {
     loadAdapter: async () => (await import("./integrations/factory/factory")).factoryAdapter,
     // Factory publishes no model-listing endpoint — the roster is a client-side

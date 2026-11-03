@@ -679,6 +679,8 @@ const FREE_LIMITED_IDS = new Set([
   // rather than a daily allowance, but it belongs in the same section as the
   // other free-limited providers an operator reaches for first.
   "inception",
+  // ZCode Start exposes account-specific, time-limited GLM grants.
+  "zcode-start",
 ]);
 /**
  * The providers an operator reaches for first: household names with a

@@ -19,13 +19,23 @@
  * `x-project-slug` / `x-taste-learning` / `User-Agent` were missing entirely.
  */
 import { describe, expect, test } from "bun:test";
-import { buildRequest, geminiSafeSchema, headers } from "../../src/providers/integrations/commandcode/commandcode";
+import {
+  buildRequest,
+  COMMANDCODE_GENERATE_PATH,
+  COMMANDCODE_HOST,
+  createCommandCodeAdapter,
+  geminiSafeSchema,
+  headers,
+} from "../../src/providers/integrations/commandcode/commandcode";
 import type { CanonicalRequest } from "../../src/protocol/canonical-model";
+import type { ProviderDispatchContext, ProviderDispatchTarget } from "../../src/providers/provider-contracts";
 
 const REQUEST: CanonicalRequest = {
   model: "xiaomi/mimo-v2.6-flash",
+  system: [{ kind: "text", text: "system fixture" }],
+  instructions: [{ kind: "text", text: "instruction fixture" }],
   messages: [{ role: "user", content: [{ kind: "text", text: "hi" }] }],
-  generation_controls: {},
+  generation_controls: { max_output_tokens: 1024, temperature: 0.5, top_p: 0.9 },
   stream: false,
   source_surface: "chat",
 };
@@ -112,15 +122,68 @@ describe("commandcode identity headers", () => {
     expect(h["x-command-code-version"]).toBeTruthy();
   });
 
-  test("x-session-id is sent only when a session exists", async () => {
-    // The client omits it rather than inventing one; a value minted per request
-    // would attribute every call to a different session.
-    expect((await headers("s1", "tok"))["x-session-id"]).toBe("s1");
-    expect("x-session-id" in (await headers("", "tok"))).toBe(false);
-  });
-
   test("the credential is the bearer", async () => {
     expect((await headers("s1", "tok"))["authorization"]).toBe("Bearer tok");
+  });
+});
+
+describe("commandcode Go-plan dispatch", () => {
+  test("uses the CLI endpoint and a fresh session ID for every wire family", async () => {
+    const seen: Array<{ url: string; sessionId: string | null; body: Record<string, unknown> }> = [];
+    const adapter = createCommandCodeAdapter({
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        seen.push({
+          url: String(input),
+          sessionId: new Headers(init?.headers).get("x-session-id"),
+          body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        });
+        return new Response('{"type":"finish","finishReason":"stop"}\n', {
+          status: 200,
+          headers: { "content-type": "application/x-ndjson" },
+        });
+      }) as typeof fetch,
+    });
+    const context = {
+      credential: {
+        provider_id: "commandcode",
+        credential_kind: "api_key",
+        secret: new TextEncoder().encode("go-plan-token"),
+      },
+      deadline: Date.now() + 60_000,
+      abort_signal: new AbortController().signal,
+    } as ProviderDispatchContext;
+
+    for (const wire of ["chat", "responses", "messages"] as const) {
+      const target: ProviderDispatchTarget = {
+        provider_id: "commandcode",
+        model_id: "gpt-5.4-mini",
+        wire_family: wire,
+        endpoint_path: COMMANDCODE_GENERATE_PATH,
+        capabilities: {},
+      };
+      for await (const _event of adapter.dispatch({ ...REQUEST, model: "public-model-alias" }, target, context)) {
+        // Drain the stream so the outbound request completes.
+      }
+    }
+
+    expect(seen).toHaveLength(3);
+    for (const request of seen) {
+      expect(request.url).toBe(`${COMMANDCODE_HOST}${COMMANDCODE_GENERATE_PATH}`);
+      expect(request.sessionId).toBeTruthy();
+      expect(request.body["threadId"]).toBe(request.sessionId);
+      expect(request.body["memory"]).toBeNull();
+      expect(request.body["config"]).toBeTruthy();
+      expect(request.body["params"]).toMatchObject({
+        model: "gpt-5.4-mini",
+        system: "system fixture\ninstruction fixture",
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        stream: true,
+        max_tokens: 1024,
+        temperature: 0.5,
+        top_p: 0.9,
+      });
+    }
+    expect(new Set(seen.map((request) => request.sessionId)).size).toBe(3);
   });
 });
 

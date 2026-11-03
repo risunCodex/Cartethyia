@@ -51,6 +51,7 @@ import { NetworkPoolSelector } from "../network/pool/selector";
 import { restorePoolProbeVerdicts, restoreProviderCooldownMarkers } from "../network/pool-cooldown-store";
 import { ScheduledTaskRegistry } from "../workers/scheduler";
 import { quotaRefreshSweep } from "../workers/quota-refresh-sweep";
+import { registerZcodeGiftClaimTask } from "../workers/zcode-gift-claim";
 import { markProviderApiKeyCredential } from "../console/quota/account-quota-shared";
 import { dailyCheckinEgressForPass } from "../workers/daily-checkin";
 import {
@@ -608,6 +609,13 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
         // itself at `info` level, so they survive the production LOG_LEVEL.
         // `onTick` is left for tests.
       }),
+  });
+  registerZcodeGiftClaimTask(scheduledTasks, {
+    db,
+    redis,
+    resolveCredential: quotaResolveCredential,
+    snapshotInvalidator: snapshotService,
+    fetcherFor: dailyCheckinEgressForPass({ db, networkBindingFactory }),
   });
   // The buddy growth/credit tasks: one per upstream capability, each
   // independently switchable with `CARTETHYIA_DISABLED_TASKS`. Every one of

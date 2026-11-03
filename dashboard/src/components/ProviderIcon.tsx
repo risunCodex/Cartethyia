@@ -31,6 +31,7 @@ const iconAssets: Record<string, { file: string; ext: "svg" | "webp" }> = {
   aihubmix: { file: "aihubmix", ext: "svg" },
   // The Coding Plan is a Z.AI product, so it reuses the coding-plan mark.
   zcode: { file: "zai-coding-plan", ext: "svg" },
+  "zcode-start": { file: "zai-coding-plan", ext: "svg" },
   "kimi-code": { file: "kimi-code", ext: "webp" },
   kimi: { file: "kimi-code", ext: "webp" },
   github: { file: "github", ext: "webp" },
