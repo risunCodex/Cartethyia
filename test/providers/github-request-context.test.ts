@@ -30,7 +30,7 @@ interface CapturedRequest {
 async function capture(
   request: CanonicalRequest,
   credential = "account-a",
-  envelope?: { access?: string; apiHost?: string },
+  envelope?: { access?: string; apiHost?: string; github?: string },
 ): Promise<CapturedRequest> {
   let captured: CapturedRequest | undefined;
   const outboundFetch = (async (_url: string | URL | Request, init?: RequestInit) => {

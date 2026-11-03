@@ -172,6 +172,13 @@ describe("GitHub Copilot Auto routing", () => {
       tier: "efficiency",
     });
     expect(requests[0]?.headers.get("x-github-api-version")).toBe("2026-08-01");
+    // Default opencode-copilot mode: raw GitHub token + minimal headers.
+    expect(requests[0]?.headers.get("authorization")).toBe("Bearer account-auto");
+    expect(requests[0]?.headers.get("user-agent")).toBe("opencode/0.1.0");
+    expect(requests[0]?.headers.get("VScode-SessionId")).toBeNull();
+    expect(requests[0]?.headers.get("x-vscode-user-agent-library-version")).toBeNull();
+    expect(requests[1]?.headers.get("authorization")).toBe("Bearer account-auto");
+    expect(requests[1]?.headers.get("copilot-session-token")).toBe("auto-session-token");
     expect(requests[1]?.body.model).toBe("routed-model");
     expect(requests[1]?.body.temperature).toBeUndefined();
     expect(requests[1]?.body.reasoning).toBeUndefined();
