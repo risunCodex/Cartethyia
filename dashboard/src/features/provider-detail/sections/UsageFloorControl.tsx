@@ -1,5 +1,7 @@
 import { useMemo, useEffect, useRef, useState, type ReactNode } from "react";
-import { EyeOff, Gauge } from "lucide-react";
+import { EyeOff, Gauge, HelpCircle } from "lucide-react";
+import { Button } from "../../../components/ui/button";
+import { Dialog } from "../../../components/ui/dialog";
 import { Switch } from "../../../components/ui/switch";
 import { useRoutingStrategy } from "../../../hooks/routing-strategy";
 import { useQuotaOverview } from "../../../hooks/quota";
@@ -18,6 +20,7 @@ export function UsageFloorControl({ providerId }: { readonly providerId: string 
   const routing = useRoutingStrategy(providerId, false);
   const quota = useQuotaOverview();
   const inflight = useProviderAccountInflight(providerId);
+  const [helpOpen, setHelpOpen] = useState(false);
   const allowance = useMemo(() => combinedAllowance(quota.data?.accounts ?? [], providerId), [quota.data, providerId]);
   const seenInflight = useRef<number | null>(null);
   const inflightTotal = useMemo(
@@ -66,6 +69,15 @@ export function UsageFloorControl({ providerId }: { readonly providerId: string 
             <span className="badge border border-warning-line bg-surface-2 text-micro tracking-label text-status-warning">
               BETA
             </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<HelpCircle size={14} />}
+              aria-label="How the usage floor works"
+              onClick={() => setHelpOpen(true)}
+            >
+              How it works
+            </Button>
           </div>
           <p className="mt-0.5 text-badge leading-normal text-text-tertiary">
             Per account. Skip an account once its remaining allowance reaches this, and send the request to the next one.
@@ -168,6 +180,41 @@ export function UsageFloorControl({ providerId }: { readonly providerId: string 
         </div>
       </section>
       <PrivacyModeControl providerId={providerId} />
+
+      <Dialog
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        title="How the usage floor works"
+        size="md"
+      >
+        <div className="flex flex-col gap-4 text-badge leading-relaxed text-text-secondary">
+          <p>
+            The usage floor is a <strong>per-account</strong> guard: when an
+            account's remaining allowance drops to or below the threshold, that
+            account is skipped and the request fails over to the next one. It
+            prevents a spent account from being dialed and erroring upstream.
+          </p>
+          <p>
+            <strong>Credit mode</strong> sums absolute remaining credits across
+            pooled windows. <strong>Percent mode</strong> uses the aggregate
+            credit percentage and the lowest independent percentage window.
+            An account with <em>unknown</em> quota is never treated as below
+            the floor.
+          </p>
+          <p>
+            <strong>Free-tier models ignore the operator's floor threshold.</strong>{' '}
+            Their upstream service is not credit-funded, so the configurable
+            floor does not gate them — an account below the threshold can still
+            serve a free-tier model. Exhausted quota windows still exclude the
+            account: if the provider's own free limit is spent (
+            <code>0 left</code>), it is skipped for free-tier models too.
+          </p>
+          <p className="text-micro text-text-tertiary">
+            Turning the floor off disables the threshold for all models;
+            exhausted quota windows are still skipped.
+          </p>
+        </div>
+      </Dialog>
     </div>
   );
 }
