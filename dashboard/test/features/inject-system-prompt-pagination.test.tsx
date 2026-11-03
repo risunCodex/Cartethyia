@@ -115,6 +115,12 @@ async function clickNext(view: Mounted, testId: string): Promise<void> {
 test("combos & aliases area paginates and searches", async () => {
   const view = await mountDialog();
   try {
+    // The surfaced list is a responsive 2-column grid (1 column at narrow
+    // widths), matching the per-model and per-provider sections instead of a
+    // full-width vertical stack.
+    const grid = view.findAll('[data-testid="isp-named-grid"]')[0];
+    expect(grid?.className).toContain("grid-cols-2");
+    expect(grid?.className).toContain("max-small:grid-cols-1");
     // No search: the first page shows PAGE_SIZE rows (combos and aliases are
     // flattened, so 8 of the 24 total). Combos sort first, so page 1 is
     // combo-0 .. combo-7.

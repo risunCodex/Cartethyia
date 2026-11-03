@@ -41,7 +41,6 @@ import {
 } from "./contracts";
 import type { SharedKeyActivityDetail, SharedKeySummary } from "../share/share-usage";
 import { popupImageBytes } from "./share-popup-image";
-import { log } from "../../observability/logger";
 
 const SHARED_CHILD_SORT_COLUMNS = new Set<SharedChildSortColumn>([
   "createdAt",
@@ -87,30 +86,15 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
         const topLevel = records.filter(
           (record) => record.revokedAt === undefined && record.parentKeyId === undefined,
         );
-        // A share template's own counter never moves for child traffic, so
-        // reporting it raw would show a template as untouched while the gateway
-        // is refusing its recipients on the parent budget. Report the figure
-        // the gateway actually enforces: the template's counter plus every
-        // telemetry total the family ever recorded — revoked/deleted children
-        // included (their spend is already spent), so the number survives
-        // cleanup and matches the share page.
+        // A share template's own counter is the live family accumulator now:
+        // every recipient commit adds to it (see ApiKeyAdmissionService
+        // commitUsage), so reporting it raw gives the enforced family total.
+        // No telemetry add-on is needed, and adding it here would double-count.
         return Promise.all(
           topLevel.map(async (record) => {
             const response = sanitizeApiKeyResponse(record);
             if (record.keyMode !== "share") return response;
-            const family = await config.store
-              .sumFamilyTelemetryConsumed(authorized.tenantId, record.id)
-              .catch((error) => {
-                // A failed sum must not fail the whole list, but it must not
-                // be silent either: reporting the share template's spend as 0
-                // under-reports consumed tokens in the console list.
-                log.warn(
-                  `[api-keys] sumFamilyTelemetryConsumed failed for key ${record.id}; reporting 0`,
-                  error as Error,
-                );
-                return 0;
-              });
-            return { ...response, tokensConsumed: response.tokensConsumed + family };
+            return response;
           }),
         );
       },

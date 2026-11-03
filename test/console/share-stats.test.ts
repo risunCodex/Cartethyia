@@ -26,7 +26,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, test } from "bun:test";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { pgHandleFromPool } from "../../src/persistence/db-pg";
 import { apiKeys, telemetryEvents, telemetryUsageTotals } from "../../src/persistence/schema";
 import { aggregateUsage } from "../../src/persistence/stores/telemetry-store";
@@ -251,6 +251,20 @@ async function createFamily(tenantId: string, template: string, children: readon
   for (const child of children) await createKey(tenantId, child, { parentKeyId: template });
 }
 
+/**
+ * Sets the live lifetime accumulator on a template's `api_keys` row.
+ *
+ * `totalTokens` now reads the template's `lifetime_tokens_consumed` column
+ * (the live family accumulator updated by every recipient commit), not the
+ * telemetry rollup. Tests that assert a total must seed the column to match.
+ */
+async function setLifetime(tenantId: string, keyId: string, value: number): Promise<void> {
+  await shareDb
+    .update(apiKeys)
+    .set({ lifetimeTokensConsumed: value })
+    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.tenantId, tenantId)));
+}
+
 const EMPTY_RECIPIENTS = { total: 0, active: 0 } as const;
 
 describe("clientTypeFromUserAgent", () => {
@@ -369,6 +383,7 @@ dbDescribe("createShareStatsPort — family scoping", () => {
         row(scope.tenantId, siblingKey, { inputTokens: 9_000, outputTokens: 9_000 }),
         row(other.tenantId, foreignKey, { inputTokens: 9_000, outputTokens: 9_000 }),
       ]);
+      await setLifetime(scope.tenantId, mine, 150);
       const stats = await createShareStatsPort({ db: shareDb }).getFamilyStats(
         scope.tenantId,
         { templateKeyId: mine, memberCount: 1 },
@@ -420,6 +435,7 @@ dbDescribe("createShareStatsPort — family scoping", () => {
         row(scope.tenantId, key, { inputTokens: 400, outputTokens: 100 }),
         row(scope.tenantId, key, { inputTokens: null, outputTokens: null }),
       ]);
+      await setLifetime(scope.tenantId, key, 500);
       const stats = await createShareStatsPort({ db: shareDb }).getFamilyStats(
         scope.tenantId,
         { templateKeyId: key, memberCount: 1 },
@@ -527,6 +543,7 @@ dbDescribe("createShareStatsPort — time windows", () => {
           outputTokens: 0,
         }),
       ]);
+      await setLifetime(scope.tenantId, key, 7_000);
       const stats = await createShareStatsPort({ db: shareDb }).getFamilyStats(
         scope.tenantId,
         { templateKeyId: key, memberCount: 1 },
@@ -570,6 +587,7 @@ dbDescribe("createShareStatsPort — time windows", () => {
           outputTokens: 0,
         }),
       ]);
+      await setLifetime(scope.tenantId, key, 6_000);
       const stats = await createShareStatsPort({ db: shareDb }).getFamilyStats(
         scope.tenantId,
         { templateKeyId: key, memberCount: 1 },
@@ -1177,6 +1195,7 @@ dbDescribe("createShareStatsPort — a share whose keys were deleted", () => {
       await writeRows([
         row(scope.tenantId, child, { inputTokens: 9_000, outputTokens: 500 }),
       ]);
+      await setLifetime(scope.tenantId, template, 9_500);
       // Hard-delete the child key row: `api_keys` row goes away, telemetry row
       // stays. The family total must still see the child's spend.
       const pool = await getTestPool();
@@ -1231,6 +1250,7 @@ dbDescribe("createShareStatsPort — numeric coercion", () => {
         row(scope.tenantId, key, { inputTokens: 1_000_000_000, outputTokens: 500_000_000 }),
         row(scope.tenantId, key, { inputTokens: 1_000_000_000, outputTokens: 500_000_000 }),
       ]);
+      await setLifetime(scope.tenantId, key, 3_000_000_000);
       const stats = await createShareStatsPort({ db: shareDb }).getFamilyStats(
         scope.tenantId,
         { templateKeyId: key, memberCount: 1 },

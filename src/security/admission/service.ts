@@ -164,13 +164,20 @@ export class ApiKeyAdmissionService {
         const actual = usageTokens(usage);
         await this.store.reconcile(apiKeyId, estimatedTokens, actual, reservationId);
         finalized = true;
-        // Persist against the authenticating key (`snapshot.api_key_id`), not
-        // the admission identity. Share children share the parent's counter
-        // namespace for enforcement, but attribution must still land on the
-        // child row so recipient usage and sumChildrenConsumed stay correct.
+        // Persist the spend against BOTH the authenticating key and the family
+        // owner. The authenticating key (`snapshot.api_key_id`, the child for
+        // a share recipient) carries attribution so `sumChildrenConsumed` and
+        // recipient rows stay correct. The family owner (`admission_identity`,
+        // the template itself for a share child) is the live accumulator the
+        // console reads for total usage — without it the template column never
+        // moved and every figure depended on telemetry rows alone.
         if (this.persistLifetimeUsage) {
+          const ownerId = snapshot.admission_identity ?? snapshot.api_key_id;
           try {
             await this.persistLifetimeUsage({ apiKeyId: snapshot.api_key_id, delta: actual });
+            if (ownerId !== snapshot.api_key_id) {
+              await this.persistLifetimeUsage({ apiKeyId: ownerId, delta: actual });
+            }
           } catch {
             // Non-fatal: the transient counter already reflects reality; a
             // subsequent request will overwrite the row with the fresh count.

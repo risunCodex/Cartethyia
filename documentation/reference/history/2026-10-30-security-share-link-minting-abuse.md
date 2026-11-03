@@ -1,7 +1,18 @@
-# Share-link minting abuse — incident analysis &amp; prevention
+---
+title: Share-link minting abuse — incident analysis & prevention
+date: 2026-10-30
+tags: [incident, security, share-link, abuse, history]
+category: history
+severity: high
+status: mitigated
+---
+
+# Share-link minting abuse — incident analysis & prevention
 
 > Status: research/incident record (2026-10-30). Data diambil live dari
-> deployment dev sebelum &amp; sesudah pembersihan.
+> deployment dev sebelum & sesudah pembersihan. File ini adalah **catatan
+> sejarah** — disimpan di `reference/history/`, tidak ditautkan dari dokumen
+> referensi aktif.
 
 ## 1. Ringkasan insiden
 

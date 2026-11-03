@@ -28,6 +28,7 @@ import { DrizzleProviderCatalogStore } from "../console/providers/catalog/store"
 import { InMemoryRouteSnapshotService } from "../transport/routing/route-model";
 import { RoutingEngine } from "../transport/routing/router";
 import { RedisAdmissionController } from "../transport/routing/admission";
+import { admissionKey } from "../transport/routing/admission";
 import { ApiKeyAdmissionService } from "../security/admission/service";
 import { InMemoryAdmissionCounterStore } from "../security/admission/in-memory-store";
 import { RedisAdmissionCounterStore } from "../security/admission/redis-store";
@@ -479,10 +480,17 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
         owned.has(candidate.provider_account_id),
     );
     const snapshot = await routingEngine.accountInflightSnapshot(ownedCandidates);
+    // Map each bucket back to the account it belongs to using the same
+    // `admissionKey` format admission writes with — never string-slicing the
+    // bucket (the trailing segment is the owner tenant, not the account id).
+    const accountByBucket = new Map<string, string>();
+    for (const candidate of ownedCandidates) {
+      accountByBucket.set(admissionKey(candidate), candidate.provider_account_id!);
+    }
     const totals = new Map<string, number>();
     for (const [bucket, count] of snapshot) {
-      const accountId = bucket.slice(bucket.lastIndexOf(":") + 1);
-      if (!owned.has(accountId)) continue;
+      const accountId = accountByBucket.get(bucket);
+      if (accountId === undefined || !owned.has(accountId)) continue;
       totals.set(accountId, (totals.get(accountId) ?? 0) + count);
     }
     return [...totals].map(([accountId, inflight]) => ({ accountId, inflight }));

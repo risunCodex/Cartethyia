@@ -1139,7 +1139,10 @@ export function InjectSystemPromptDialog({
                   No combos or aliases match “{namedSearch.trim()}”.
                 </p>
               ) : (
-                <div className="mt-4 space-y-3">
+                <div
+                  data-testid="isp-named-grid"
+                  className="mt-4 grid grid-cols-2 gap-4 max-small:grid-cols-1"
+                >
                   {visibleNamed.map((entry) => (
                     <NamedScopeRow
                       key={`${entry.kind}:${entry.name}`}

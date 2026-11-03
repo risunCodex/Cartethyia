@@ -9,6 +9,7 @@
  */
 import type { SystemPromptPreset } from "../../../../src/console/system-prompt/contracts";
 import jinhsiAgentRaw from "./jinhsi-agent.txt?raw";
+import jinhsiJGeneralRaw from "./jinhsi-jgeneral.txt?raw";
 import generalJBreakRaw from "./general-jbreak.txt?raw";
 
 export const BUILTIN_PRESETS: readonly SystemPromptPreset[] = [
@@ -18,6 +19,13 @@ export const BUILTIN_PRESETS: readonly SystemPromptPreset[] = [
     enabled: true,
     mode: "append",
     text: jinhsiAgentRaw,
+  },
+  {
+    id: "builtin-jinhsi-jgeneral",
+    name: "Jinxi JGeneral",
+    enabled: true,
+    mode: "append",
+    text: jinhsiJGeneralRaw,
   },
   {
     id: "builtin-general-jbreak",

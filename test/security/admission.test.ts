@@ -781,8 +781,10 @@ describe("ApiKeyAdmissionService", () => {
   });
 
   test("commitUsage reconciles against the estimate and persists the delta", async () => {
-    // The persister is attributed to the authenticating key, not the admission
-    // identity, so a share child's usage lands on the child row.
+    // The persister writes to BOTH the authenticating key (child) and the
+    // admission identity (parent/family owner), so a share child's usage lands
+    // on the child row for attribution and on the parent for the live family
+    // accumulator the console reads.
     const store = new InMemoryAdmissionCounterStore();
     const persisted: { apiKeyId: string; delta: number }[] = [];
     const service = new ApiKeyAdmissionService(
@@ -804,8 +806,11 @@ describe("ApiKeyAdmissionService", () => {
     expect(await store.getDailyTokens("parent-key", NOW)).toBe(500);
     await lease.commitUsage(usage({ input: 300, output: 80 }));
     expect(await store.getDailyTokens("parent-key", NOW)).toBe(380);
-    // ...but persisted against the authenticating key.
-    expect(persisted).toEqual([{ apiKeyId: "child-key", delta: 380 }]);
+    // ...persisted against both the authenticating key and the family owner.
+    expect(persisted).toEqual([
+      { apiKeyId: "child-key", delta: 380 },
+      { apiKeyId: "parent-key", delta: 380 },
+    ]);
   });
 
   test("a second commit or release is inert", async () => {

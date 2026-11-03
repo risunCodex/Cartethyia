@@ -127,9 +127,7 @@ export function Select({
           cursor: disabled ? "not-allowed" : "pointer",
         }}
       >
-        <RadixSelect.Value placeholder={placeholder} asChild>
-          <span>{selectedLabel ?? placeholder}</span>
-        </RadixSelect.Value>
+        <RadixSelect.Value placeholder={placeholder}>{selectedLabel ?? placeholder}</RadixSelect.Value>
         <RadixSelect.Icon asChild>
           <ChevronDown size={14} />
         </RadixSelect.Icon>
