@@ -284,6 +284,7 @@ export function registerConsoleDomains(
     accessResolver: ctx.accessResolver,
     auditSink: ctx.auditRecorder,
     providerRegistry: ctx.providerRegistry,
+    redis: ctx.redis,
     snapshotInvalidator: ctx.routeSnapshotService,
     resolveExportCredentials,
     // Without this, a custom provider only becomes dispatchable after a

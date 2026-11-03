@@ -36,6 +36,7 @@ import type { BundledProviderCatalog } from "../providers/operations/provider-ca
 import type { ValidatedNetworkBindingFactory } from "../network/pool/resolver";
 import type { TrustedProxyBoundary } from "../config/network";
 import { gzipResponse } from "./response-compression";
+import { beginConsoleActivity } from "../shared/invoke-guard";
 
 export interface ConsoleApiCompositionDeps {
   readonly db: CartethyiaDatabase;
@@ -118,6 +119,12 @@ export function createConsoleRouter(deps: ConsoleApiCompositionDeps): AnyElysia 
    * process (tests, or a second app instance) never share decisions.
    */
   const sessionAccessCache = new WeakMap<Request, AccessDecision | null>();
+  /**
+   * G-03 InvokeGuard: the console control plane's foreground-activity count.
+   * `beforeHandle` bumps it for the request; `afterResponse` releases it. The
+   * end callback is keyed by request so parallel requests pair correctly.
+   */
+  const consoleActivityEnds = new WeakMap<Request, () => void>();
   const cookiePolicy = defaultSessionCookiePolicy;
   const credentialService = new ConsoleCredentialService();
   const sessionService = new ConsoleSessionService(db, cookiePolicy);
@@ -146,6 +153,12 @@ export function createConsoleRouter(deps: ConsoleApiCompositionDeps): AnyElysia 
     .use(createConsoleCsrfMiddleware())
     .use(createConsoleMutationLimiterMiddleware())
     .beforeHandle(async ({ request }: { request: Request }) => {
+      // G-03: count this console request as foreground activity for the
+      // duration of its handling. Released in `afterResponse` below (or by
+      // the catch-all in the error path, which also runs before the response
+      // leaves). The scheduled worker registry uses this to defer sweeps
+      // while the operator is actively using the console.
+      consoleActivityEnds.set(request, beginConsoleActivity());
       // The auth routes (`/console/api/auth/*`) resolve the session themselves
       // and never read `accessResolver`, so resolving here too would repeat the
       // session lookup plus its user query on every login/session/logout call
@@ -175,6 +188,15 @@ export function createConsoleRouter(deps: ConsoleApiCompositionDeps): AnyElysia 
           admissionIdentity: resolved.id,
         }),
       );
+    })
+    .afterResponse(({ request }: { request: Request }) => {
+      // G-03: release the foreground-activity count for this request.
+      // Elysia runs `afterResponse` for every completed request, errored ones
+      // included (the error is converted to a response first), so this is the
+      // single reliable release point — a failing route can never leak an
+      // elevated foreground count (which would defer sweeps forever).
+      consoleActivityEnds.get(request)?.();
+      consoleActivityEnds.delete(request);
     })
     .use(
       createConsoleAuthRoutes(

@@ -27,6 +27,7 @@ import { CLAUDE_CODE_USER_AGENT } from "../integrations/claude/claude-fingerprin
 import { authCredential, codexJwtAccountId, text } from "../quota/quota-contracts";
 import { getCodexVersion } from "./client-versions";
 import { buildCodexUserAgent } from "./cli-platform";
+import { TtlCache } from "../../persistence/ttl-cache";
 
 /** One redeemable (or already-spent) saved reset. */
 export interface ResetCredit {
@@ -62,6 +63,51 @@ const JUNIPER_PROGRAM = "juniper_tide";
 const ORG_ID = /^[A-Za-z0-9_-]{1,128}$/;
 /** Cedar grant ids are short slugs; anything else never reaches the provider. */
 const CEDAR_GRANT_ID = /^[a-z0-9_-]{1,40}$/;
+/** Abort budget for one upstream reset-path request, mirroring quota refresh. */
+const RESET_FETCH_TIMEOUT_MS = 15_000;
+
+/**
+ * Short per-account cache for {@link listAccountResetCredits}.
+ *
+ * The console reads the reset list each time a dialog opens; without a cache
+ * every open hits the upstream live. The TTL is short — the list changes when
+ * a credit is consumed, and `invalidateResetCreditsCache` clears the entry on
+ * a successful redemption — so staleness is bounded to a dialog-refresh
+ * window. Failures (`null`) are deliberately not cached: a discovery error
+ * stays retryable on the next open.
+ */
+const RESET_CREDITS_TTL_MS = 30_000;
+const resetCreditsCache = new TtlCache<ResetCreditList | null>({
+  ttlMs: RESET_CREDITS_TTL_MS,
+  maxEntries: 512,
+});
+
+/**
+ * Reads one account's saved reset credits through the short TTL cache.
+ * Concurrent misses share one upstream discovery via the cache's load-through
+ * deduplication.
+ */
+export async function getCachedResetCredits(
+  providerId: string,
+  accountId: string,
+  load: () => Promise<ResetCreditList | null>,
+): Promise<ResetCreditList | null> {
+  return resetCreditsCache.load(`${providerId}:${accountId}`, load, {
+    namespace: "reset-credits",
+  });
+}
+
+/**
+ * Drops every cached reset-credit entry for one account. Called after a
+ * successful redemption so the dialog does not keep showing a spent credit for
+ * the rest of the TTL.
+ */
+export function invalidateResetCreditsCache(accountId: string): void {
+  const suffix = `:${accountId}`;
+  for (const key of resetCreditsCache.keys()) {
+    if (key.endsWith(suffix)) resetCreditsCache.delete(key);
+  }
+}
 
 export function supportsAccountReset(providerId: string): boolean {
   const norm = providerId.trim().toLowerCase();
@@ -172,7 +218,10 @@ export async function listAccountResetCredits(
     try {
       const res = await fetcher(
         "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
-        { headers: codexHeaders(access, accountId, version, false) },
+        {
+          headers: codexHeaders(access, accountId, version, false),
+          signal: AbortSignal.timeout(RESET_FETCH_TIMEOUT_MS),
+        },
       );
       if (!res.ok) return null;
       const payload = (await res.json()) as unknown;
@@ -237,6 +286,7 @@ async function discoverCedar(
   try {
     res = await fetcher("https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1", {
       headers: claudeHeaders(access, false),
+      signal: AbortSignal.timeout(RESET_FETCH_TIMEOUT_MS),
     });
   } catch {
     return "failed";
@@ -343,6 +393,7 @@ async function discoverJuniper(
   try {
     res = await fetcher("https://api.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1", {
       headers: claudeHeaders(access, false),
+      signal: AbortSignal.timeout(RESET_FETCH_TIMEOUT_MS),
     });
   } catch {
     return null;
@@ -385,6 +436,7 @@ async function resolveClaudeOrg(access: string, fetcher: typeof fetch): Promise<
   try {
     const res = await fetcher("https://api.anthropic.com/api/oauth/profile", {
       headers: claudeHeaders(access, false),
+      signal: AbortSignal.timeout(RESET_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const payload = (await res.json()) as unknown;
@@ -449,6 +501,7 @@ export async function consumeAccountResetCredit(args: {
               redeem_request_id: randomUUID(),
               ...(codexAccountId ? { account_id: codexAccountId } : {}),
             }),
+            signal: AbortSignal.timeout(RESET_FETCH_TIMEOUT_MS),
           },
         );
         const body = (await res.json().catch(() => undefined)) as Record<string, unknown> | undefined;
@@ -528,6 +581,7 @@ export async function consumeAccountResetCredit(args: {
               method: "POST",
               headers: claudeHeaders(access, true),
               body: JSON.stringify(body),
+              signal: AbortSignal.timeout(RESET_FETCH_TIMEOUT_MS),
             },
           );
           const payload = (await res.json().catch(() => undefined)) as
@@ -651,6 +705,9 @@ async function recordResetActivity(
       errorCategory: null,
       createdAt: now,
     });
+    // The redeemed credit is gone; the next dialog open must not serve the
+    // pre-redeem list for the rest of the TTL.
+    invalidateResetCreditsCache(accountId);
     await snapshotInvalidator?.invalidate();
     return;
   }

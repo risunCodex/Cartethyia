@@ -56,7 +56,7 @@ dbDescribe("vision handoff regression", () => {
       modelId: "gemini-3-flash-solo",
       modelOptions: { wireFamily: "chat", endpointPath: "/v1/chat/completions" },
     });
-    gateway.setRoutes([
+    await gateway.setRoutes([
       // The selected model is text-only: no image capability.
       {
         providerId: world.providerId,

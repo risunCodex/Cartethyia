@@ -7,7 +7,6 @@ import type { OAuthDevicePollResponse } from "../catalog/contracts";
 import { providerJwtVerification } from "../../../providers/provider-metadata";
 import type { ProviderRegistry } from "../../../providers/provider-registry";
 import { browserAuthorizeRedirectUri } from "../../../config/providers";
-import { KiroOidcPendingError } from "../../../providers/integrations/kiro/kiro-oauth";
 import { log } from "../../../observability/logger";
 import { GatewayError } from "../../../protocol/gateway-error";
 import { Elysia, t, type AnyElysia } from "elysia";
@@ -308,6 +307,13 @@ export async function completeLogin(
     // authorize URL plus a fresh PKCE verifier and the OIDC registration.
     // Rewrite the pending flow so phase 2 exchanges against that verifier, keep
     // the listener alive, and tell the caller to redirect the browser there.
+    // dynamic-import: B-02 lazy graph — 58KB kiro OIDC path, only for Kiro flows.
+    // The kiro-oauth graph is 58KB, so it is imported lazily here — only the
+    // Kiro OIDC path needs the error class — instead of on the console boot
+    // graph (B-02).
+    const { KiroOidcPendingError } = await import(
+      "../../../providers/integrations/kiro/kiro-oauth"
+    );
     if (error instanceof KiroOidcPendingError) {
       // Phase 1 of Kiro's OIDC portal login: the portal callback carried no
       // code — only `login_option` + issuer/region. The client answered with the

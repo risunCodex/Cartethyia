@@ -9,7 +9,6 @@ import {
 } from "../../components/HeaderPairsEditor";
 import { ProviderCardGrid } from "../../components/ProviderCardGrid";
 import { ProviderIcon } from "../../components/ProviderIcon";
-import { activeModelCooldowns } from "../../components/AccountCooldown";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardBody, CardHeader } from "../../components/ui/card";
@@ -34,15 +33,12 @@ const CARD_NAME = cn("text-body font-semibold overflow-hidden text-ellipsis whit
 
 import type {
   CreateProviderRequest,
-  ProviderAccountResponse,
   ProviderResponse,
 } from "../../data/contracts";
 import {
   useCreateProvider,
   useCreateProviderAccount,
   useDeleteProvider,
-  useProviderAccounts,
-  useProviderModels,
   useProviders,
   useSyncProviderModels,
   useTestByokConnection,
@@ -400,17 +396,12 @@ function AddCompatibleModal({
 function CustomProviderCard({ customProvider }: { customProvider: ProviderResponse }): ReactNode {
   const deleteMutation = useDeleteProvider();
   const [deleteOpen, setDeleteOpen] = useState(false);
-  // Same data the builtin card reads: connection badges and model counts
-  // come from the same hooks. Collectorless custom endpoints never refresh
-  // quota, so a stale manufactured error is not rendered: the row shows
-  // "No quota data" on its detail page instead of a red herring here.
-  const modelsQuery = useProviderModels(customProvider.providerId);
-  const modelCount = modelsQuery.data?.length;
-  const accountsQuery = useProviderAccounts(customProvider.providerId);
-  const accounts = accountsQuery.data;
-  const counts = summarizeAccounts(accounts ?? []);
-  // Any non-active account is a connection of some state: the neutral badge
-  // only shows when every account is active and healthy.
+  // Connection and model badges come straight from the provider-list overview
+  // fields (`accountCount` / `activeAccountCount` / `modelCount`), so a card
+  // issues no per-provider accounts/models request. Collectorless custom
+  // endpoints never refresh quota, so a stale manufactured error is not
+  // rendered: the row shows "No quota data" on its detail page instead of a
+  // red herring here.
   return (
     <Card
       className={CARD_SHELL}
@@ -445,26 +436,22 @@ function CustomProviderCard({ customProvider }: { customProvider: ProviderRespon
               </div>
             ) : null}
             <div className="mt-1.5 flex flex-wrap gap-2">
-              {accounts === undefined ? (
+              {customProvider.accountCount === undefined ? (
                 <SecondaryQueryBadge
                   kind="accounts"
-                  isPending={accountsQuery.isPending}
-                  isError={accountsQuery.isError}
+                  isPending={false}
+                  isError={false}
                   hasData={false}
                 />
-              ) : accounts.length === 0 ? (
+              ) : customProvider.accountCount === 0 ? (
                 customProvider.requiresAccount === false ? (
                   <Badge tone="ok">Free Endpoint</Badge>
                 ) : (
                   <Badge>No connections</Badge>
                 )
               ) : (
-                <AccountStatusBadges counts={counts} total={accounts.length} />
+                <AccountStatusBadges activeCount={customProvider.activeAccountCount} total={customProvider.accountCount} />
               )}
-              {accountsQuery.isError && accounts !== undefined ? (
-                <Badge tone="warn">Connections unavailable</Badge>
-              ) : null}
-
             </div>
           </div>
 
@@ -476,19 +463,17 @@ function CustomProviderCard({ customProvider }: { customProvider: ProviderRespon
             >
               {customProvider.providerId}/
             </span>
-            {modelCount !== undefined && modelCount > 0 ? (
-              <Badge tone="info">{modelCount} models</Badge>
+            {customProvider.modelCount !== undefined && customProvider.modelCount > 0 ? (
+              <Badge tone="info">{customProvider.modelCount} models</Badge>
             ) : null}
-            {modelsQuery.isError ? (
-              <Badge tone="warn">Models unavailable</Badge>
-            ) : modelCount === undefined ? (
+            {customProvider.modelCount === undefined ? (
               <SecondaryQueryBadge
                 kind="models"
-                isPending={modelsQuery.isPending}
+                isPending={false}
                 isError={false}
                 hasData={false}
               />
-            ) : modelCount === 0 ? (
+            ) : customProvider.modelCount === 0 ? (
               <SecondaryQueryBadge
                 kind="models"
                 isPending={false}
@@ -551,8 +536,9 @@ function CustomProvidersSection({
 }): ReactNode {
   const [showAnthropic, setShowAnthropic] = useState(false);
   const [showOpenAI, setShowOpenAI] = useState(false);
-  // Collapsed by operator choice, persisted per browser. Hidden providers
-  // stay mounted (badges stay fresh) — only the grid is concealed.
+  // Collapsed by operator choice, persisted per browser. Hidden providers are
+  // unmounted (a cheap placeholder) — badges come from the provider-list
+  // overview, so there are no per-card requests to keep warm while hidden.
   const [hidden, setHidden] = useState(() => {
     try {
       return window.localStorage.getItem("cartethyia.customProvidersHidden") === "1";
@@ -720,76 +706,36 @@ function hasRefreshableCredential(provider: ProviderResponse): boolean {
 }
 
 /**
- * Connection counts for one provider's card.
+ * Connection badges for one provider's card.
  *
- * Computed once here because both card variants render the same badges from the
- * same accounts. The counts are mutually exclusive and add up to the account
- * total, so a card never reports two problems for one connection.
+ * Rendered straight from the provider-list overview fields so a card issues
+ * no per-provider accounts request. `activeAccountCount` is the count of
+ * accounts whose status is not disabled/revoked (a `cooldown` account still
+ * counts as connected), which is the fact the old per-card fetch could only
+ * learn by loading every account and reducing them.
  *
- * `healthy` means fully routable: not in an account-wide cooldown and not
- * carrying a live per-model backoff. A throttled account is *connected* but it
- * is not healthy, and counting it as healthy is what made the card read "2
- * Healthy · 1 Cooling" for two accounts — one of which could not serve.
- *
- * The two throttle kinds are merged into one badge because they are the same
- * fact at the card's level: this connection is being held back. Which kind, and
- * which models, belongs on the detail page where there is room to say.
+ * The neutral badge only shows when every account is active.
  */
-interface AccountStatusCounts {
-  readonly healthy: number;
-  /** Account-wide cooldown or a live per-model backoff; never both. */
-  readonly throttled: number;
-  readonly disabled: number;
-  readonly cooling: number;
-}
-
-export function summarizeAccounts(
-  accounts: readonly ProviderAccountResponse[],
-): AccountStatusCounts {
-  // A live per-model backoff is checked before status, so an account cooling
-  // some models is never also counted as healthy for them.
-  const isThrottled = (account: ProviderAccountResponse): boolean =>
-    account.status === "cooldown" || activeModelCooldowns(account) !== undefined;
-  return {
-    healthy: accounts.filter(
-      (account) => account.status === "active" && !isThrottled(account),
-    ).length,
-    throttled: accounts.filter(isThrottled).length,
-    disabled: accounts.filter((account) => account.status === "disabled").length,
-    // Kept only so the caller can describe the kind when every throttled
-    // account is the model-scoped one; it is not rendered as its own badge.
-    cooling: accounts.filter(
-      (account) => account.status !== "cooldown" && activeModelCooldowns(account) !== undefined,
-    ).length,
-  };
-}
-
 function AccountStatusBadges({
-  counts,
+  activeCount,
   total,
 }: {
-  readonly counts: AccountStatusCounts;
+  readonly activeCount: number | undefined;
   readonly total: number;
 }): ReactNode {
-  const hasBadge =
-    counts.healthy > 0 ||
-    counts.throttled > 0 ||
-    counts.disabled > 0;
-  if (!hasBadge) return <Badge tone="warn" dot>{total} Connected</Badge>;
-  // One badge for both throttle kinds. Naming the kind is still worth it:
-  // "Cooldown" means the whole account, "Cooling" means specific models, and an
-  // operator deciding whether to wait or to reroute needs to know which.
-  const throttleLabel =
-    counts.throttled === counts.cooling ? "Cooling" : "Cooldown";
+  if (activeCount === undefined) {
+    return <Badge tone="warn" dot>{total} Connected</Badge>;
+  }
+  if (activeCount === 0) {
+    return <Badge tone="warn" dot>{total} Unhealthy</Badge>;
+  }
+  if (activeCount === total) {
+    return <Badge tone="ok" dot>{total} Healthy</Badge>;
+  }
   return (
     <>
-      {counts.healthy > 0 ? <Badge tone="ok" dot>{counts.healthy} Healthy</Badge> : null}
-      {counts.throttled > 0 ? (
-        <Badge tone="warn" dot>
-          {counts.throttled} {throttleLabel}
-        </Badge>
-      ) : null}
-      {counts.disabled > 0 ? <Badge tone="warn" dot>{counts.disabled} Unhealthy</Badge> : null}
+      <Badge tone="ok" dot>{activeCount} Healthy</Badge>
+      <Badge tone="warn" dot>{total - activeCount} Unhealthy</Badge>
     </>
   );
 }
@@ -844,17 +790,8 @@ const ProviderCard = memo(function ProviderCard({
 }): ReactNode {
   const isFounding = FOUNDING_IDS.has(provider.providerId.toLowerCase());
   const displayName = provider.label || provider.displayName;
-  const modelsQuery = useProviderModels(provider.providerId);
-  const modelCount = modelsQuery.data?.filter(
-    (model) =>
-      serviceKind === undefined ||
-      model.serviceKind === serviceKind ||
-      (serviceKind === "llm" && model.serviceKind === undefined),
-  ).length;
-  const accountsQuery = useProviderAccounts(provider.providerId);
-  const accounts = accountsQuery.data;
-  const counts = summarizeAccounts(accounts ?? []);
-
+  // Connection counts and the model badge come from the provider-list overview
+  // fields, so this card issues no per-provider accounts/models request.
   return (
     <Card
       className={CARD_SHELL}
@@ -897,25 +834,22 @@ const ProviderCard = memo(function ProviderCard({
               {displayName}
             </div>
             <div className="mt-1.5 flex flex-wrap gap-2">
-              {accounts === undefined ? (
+              {provider.accountCount === undefined ? (
                 <SecondaryQueryBadge
                   kind="accounts"
-                  isPending={accountsQuery.isPending}
-                  isError={accountsQuery.isError}
+                  isPending={false}
+                  isError={false}
                   hasData={false}
                 />
-              ) : accounts.length === 0 ? (
+              ) : provider.accountCount === 0 ? (
                 provider.requiresAccount === false ? (
                   <Badge tone="ok">Free Endpoint</Badge>
                 ) : (
                   <Badge>No connections</Badge>
                 )
               ) : (
-                <AccountStatusBadges counts={counts} total={accounts.length} />
+                <AccountStatusBadges activeCount={provider.activeAccountCount} total={provider.accountCount} />
               )}
-              {accountsQuery.isError && accounts !== undefined ? (
-                <Badge tone="warn">Connections unavailable</Badge>
-              ) : null}
             </div>
           </div>
 
@@ -927,19 +861,17 @@ const ProviderCard = memo(function ProviderCard({
             >
               {provider.providerId}/
             </span>
-            {modelCount !== undefined && modelCount > 0 ? (
-              <Badge tone="info">{modelCount} models</Badge>
+            {provider.modelCount !== undefined && provider.modelCount > 0 ? (
+              <Badge tone="info">{provider.modelCount} models</Badge>
             ) : null}
-            {modelsQuery.isError ? (
-              <Badge tone="warn">Models unavailable</Badge>
-            ) : modelCount === undefined ? (
+            {provider.modelCount === undefined ? (
               <SecondaryQueryBadge
                 kind="models"
-                isPending={modelsQuery.isPending}
+                isPending={false}
                 isError={false}
                 hasData={false}
               />
-            ) : modelCount === 0 ? (
+            ) : provider.modelCount === 0 ? (
               <SecondaryQueryBadge
                 kind="models"
                 isPending={false}
@@ -962,13 +894,25 @@ function compareConfiguredProviders(a: ProviderResponse, b: ProviderResponse): n
 }
 const COLLAPSED_SECTIONS_KEY = "cartethyia.providerSectionsCollapsed";
 
+/**
+ * The section default-collapsed on first visit (G-05 d1). It is the largest
+ * one on a fresh installation, and its cards are pure markup — unmounting
+ * them keeps the initial page render cheap. The collapse is a *default* only:
+ * the moment the operator persists any choice, it is respected verbatim.
+ */
+const DEFAULT_COLLAPSED_SECTION = "Other API Key Providers";
+
 function readCollapsedSections(): ReadonlySet<string> {
   try {
     const raw = window.localStorage.getItem(COLLAPSED_SECTIONS_KEY);
+    if (raw === null) {
+      // First visit: nothing persisted yet, so apply the default gate.
+      return new Set([DEFAULT_COLLAPSED_SECTION]);
+    }
     const parsed: unknown = raw ? JSON.parse(raw) : [];
     return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
   } catch {
-    return new Set();
+    return new Set([DEFAULT_COLLAPSED_SECTION]);
   }
 }
 

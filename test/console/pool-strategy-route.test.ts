@@ -23,7 +23,7 @@ dbDescribe("pool routing strategy route", () => {
     const world = await createWorld({ apiKeyOptions: { scopes: ["dashboard:read"] } });
     const gateway = await createTestGateway();
     try {
-      gateway.serveWorld(world);
+      await gateway.serveWorld(world);
       const response = await gateway.request("/console/api/network/pools/strategy", {
         headers: { authorization: `Bearer ${world.token}` },
       });
@@ -41,7 +41,7 @@ dbDescribe("pool routing strategy route", () => {
     const world = await createWorld({ apiKeyOptions: { scopes: ["dashboard:read", "dashboard:write"] } });
     const gateway = await createTestGateway();
     try {
-      gateway.serveWorld(world);
+      await gateway.serveWorld(world);
       const patch = await gateway.json("/console/api/network/pools/strategy", {
         strategy: "round_robin",
         rotateCount: 3,
@@ -68,7 +68,7 @@ dbDescribe("pool routing strategy route", () => {
     const world = await createWorld({ apiKeyOptions: { scopes: ["dashboard:read", "dashboard:write"] } });
     const gateway = await createTestGateway();
     try {
-      gateway.serveWorld(world);
+      await gateway.serveWorld(world);
       const patch = await gateway.json("/console/api/network/pools/strategy", {
         strategy: "banana",
       }, { token: world.token, method: "PATCH" });
@@ -85,7 +85,7 @@ dbDescribe("pool routing strategy route", () => {
     const world = await createWorld({ apiKeyOptions: { scopes: ["dashboard:read"] } });
     const gateway = await createTestGateway();
     try {
-      gateway.serveWorld(world);
+      await gateway.serveWorld(world);
       const patch = await gateway.json("/console/api/network/pools/strategy", {
         strategy: "random",
       }, { token: world.token, method: "PATCH" });

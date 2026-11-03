@@ -1,10 +1,17 @@
 import { t } from "elysia";
 import type { Elysia } from "elysia";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { adminAuditLog, providerAccounts } from "../../persistence/schema";
 import { requireGlobalAdmin } from "../shared/errors";
-import { GLOBAL_QUOTA_LENS, invalidateQuotaCache } from "../../providers/quota/cache";
-import { invalidateCredentialCache } from "../../providers/operations/provider-credential-service";
+import {
+  GLOBAL_QUOTA_LENS,
+  invalidateQuotaCache,
+  invalidateQuotaCaches,
+} from "../../providers/quota/cache";
+import {
+  invalidateCredentialCache,
+  invalidateCredentialCaches,
+} from "../../providers/operations/provider-credential-service";
 import {
   QUOTA_REFRESH_TIMEOUT_MS,
   loadQuotaTarget,
@@ -118,6 +125,37 @@ export function registerAccountQuotaGlobalRoutes(
         target: accountId,
       });
       return { success: true };
+    })
+    .post("/global/accounts/batch-delete", {
+      body: t.Object({
+        accountIds: t.Array(t.String()),
+      }),
+    }, async ({ request, body }) => {
+      const access = requireGlobalAdmin(accessResolver(request));
+      const accountIds = [...new Set(body.accountIds)];
+      if (accountIds.length === 0) {
+        return { ok: true, deleted: [], missing: [] };
+      }
+      // One DELETE statement scoped to shared accounts only: a tenant-owned row
+      // (`tenant_id IS NOT NULL`) is never matchable by a global admin, so it
+      // lands in `missing`.
+      const deleted = await db
+        .delete(providerAccounts)
+        .where(and(inArray(providerAccounts.id, accountIds), isNull(providerAccounts.tenantId)))
+        .returning({ id: providerAccounts.id });
+      const deletedIds = deleted.map((row) => row.id);
+      const deletedSet = new Set(deletedIds);
+      const missing = accountIds.filter((id) => !deletedSet.has(id));
+      invalidateCredentialCaches(deletedIds);
+      await invalidateQuotaCaches(GLOBAL_QUOTA_LENS, deletedIds, redis);
+      await snapshotInvalidator?.invalidate();
+      await db.insert(adminAuditLog).values({
+        actor: access.admissionIdentity,
+        action: "provider_account.global.batch_deleted",
+        target: "global",
+        detail: { deleted: deletedIds, missing },
+      });
+      return { ok: true, deleted: deletedIds, missing };
     })
     .post("/global/accounts/:id/quota/refresh", async ({ request, params, set }) => {
       const access = requireGlobalAdmin(accessResolver(request));

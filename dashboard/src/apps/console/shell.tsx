@@ -38,7 +38,7 @@ import { UpdateDialog, readDismissedUpdate, dismissUpdate } from "../../componen
 import { clearPersistedCache, queryClient } from "../../data/query-client";
 import { prefetchRouteIntent } from "../../data/route-prefetch";
 import { POLL } from "../../data/query-policy";
-import { useSystemHealth, useLatestRelease, useNotifications } from "../../hooks/system";
+import { useSystemHealth, useLatestRelease, useNotifications, type NotificationItem } from "../../hooks/system";
 import { useProviders } from "../../hooks/providers";
 import { DASHBOARD_RELEASE_LABEL, DASHBOARD_VERSION } from "../../lib/version";
 import { formatUptime } from "../../lib/format/numbers";
@@ -256,8 +256,11 @@ function MetricTile({
 }
 
 function NotificationsPopover({
+  notifications,
   onOpenUpdate,
 }: {
+  /** Live server-generated alerts; owned by the shell so it can key the badge. */
+  readonly notifications: readonly NotificationItem[];
   /** Opens the update dialog. A release alert is answered there, not on GitHub. */
   onOpenUpdate: () => void;
 }) {
@@ -265,7 +268,6 @@ function NotificationsPopover({
   const [now, setNow] = useState(() => new Date());
   const triggerRef = useRef<HTMLButtonElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const notifications = useNotifications();
   // Health is loaded lazily, keyed to the popover: the first open fetches it
   // (the shell's version read usually already warmed the cache), every open
   // reuses that cached payload, and the refresh timer runs only while the
@@ -768,13 +770,22 @@ export function DashboardShell({
     }, 3000);
   };
   const healthQuery = useSafeSystemHealth();
+  // The release query is the cold-start fallback only: the notifications
+  // stream is the primary `update-available` badge/dialog source (S-04). The
+  // fetch runs once on mount and is never polled; the live stream announces a
+  // release when it appears. A stale badge on a fresh browser is still covered
+  // by the fallback.
   const releaseQuery = useLatestRelease();
+  const notifications = useNotifications();
   // The running version is the gateway's, not the bundled dashboard's: the
   // badge answers "is the install behind", and the install is what an operator
   // upgrades. Falls back to the dashboard label so the badge still reads.
   const localVersion = healthQuery.data?.version ?? DASHBOARD_VERSION;
-  const latestTag = releaseQuery.data?.tag_name?.replace(/^v/, "");
-  const updateAvailable = isNewerRelease(localVersion, latestTag);
+  const streamUpdate = notifications.find((item) => item.kind === "update-available");
+  const latestTag =
+    streamUpdate?.version ?? releaseQuery.data?.tag_name?.replace(/^v/, "");
+  const updateAvailable =
+    streamUpdate !== undefined || isNewerRelease(localVersion, latestTag);
   const providersQuery = useProviders();
   // Prompts once per release, not once per load: the point of showing it at all
   // is that an operator running an old version may never think to look. But a
@@ -956,6 +967,7 @@ export function DashboardShell({
               <HeaderExtras />
               <ThemeToggle />
               <NotificationsPopover
+                notifications={notifications}
                 onOpenUpdate={() => setUpdateOpen(true)}
               />
             </div>
@@ -983,9 +995,9 @@ export function DashboardShell({
         onClose={() => setUpdateOpen(false)}
         currentVersion={localVersion}
         {...(latestTag === undefined ? {} : { latestVersion: latestTag })}
-        {...(releaseQuery.data?.html_url === undefined
+        {...(streamUpdate?.href ?? releaseQuery.data?.html_url) === undefined
           ? {}
-          : { releaseUrl: releaseQuery.data.html_url })}
+          : { releaseUrl: streamUpdate?.href ?? releaseQuery.data?.html_url }}
         {...(latestTag === undefined
           ? {}
           : { onDismissVersion: () => dismissUpdate(latestTag) })}

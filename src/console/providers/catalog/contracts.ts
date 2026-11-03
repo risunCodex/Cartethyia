@@ -660,6 +660,18 @@ export interface ProviderResponse {
   isBuiltIn: boolean;
   /** True when this tenant has any persisted account for the provider. */
   configured?: boolean;
+  /**
+   * Number of provider accounts this tenant has for the provider. Present on
+   * list items (the Providers page overview); absent elsewhere.
+   */
+  accountCount?: number;
+  /**
+   * Accounts whose status is not disabled/revoked — an account parked by the
+   * health machine (`cooldown`) still counts. Present on list items.
+   */
+  activeAccountCount?: number;
+  /** Enabled model rows the tenant can see for the provider. Present on list items. */
+  modelCount?: number;
   /** `false` only for a genuinely credential-less provider (OpenCode Free) —
    * the dashboard hides account creation for it since none is usable. */
   requiresAccount: boolean;
@@ -815,6 +827,18 @@ export interface ProviderCatalogStore {
    * usage.
    */
   listAllAccountSummaries(tenantId: string): Promise<readonly { providerId: string; status: string }[]>;
+  /**
+   * Per-provider account totals for the tenant, from one grouped read. Used by
+   * the provider list overview (`accountCount` / `activeAccountCount`).
+   */
+  providerAccountCounts(
+    tenantId: string,
+  ): Promise<readonly { providerId: string; total: number; active: number }[]>;
+  /**
+   * Per-provider enabled model-row counts for the tenant, from one grouped read.
+   * Used by the provider list overview (`modelCount`).
+   */
+  providerModelCounts(tenantId: string): Promise<readonly { providerId: string; count: number }[]>;
   /**
    * Non-secret upstream auth configuration for the given owned accounts,
    * keyed by account id. Used by the account-export route so a re-import can

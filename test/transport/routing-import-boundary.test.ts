@@ -11,6 +11,11 @@
  * `oauthCapability(() => import(...))`, so removing the imports changes
  * nothing except the boot cost.
  *
+ * The same rule now covers the console and worker layers (B-02): console
+ * routes and scheduled workers must not statically pull integration/OAuth
+ * graphs into the boot graph. Their heavy integration modules are loaded with
+ * dynamic `import()` inside the function that uses them.
+ *
  * This is a grep-shaped guard, mirroring
  * `test/providers/generic-provider-completeness.test.ts`: it pins the layering
  * rule so a future "it works if I import it here" fix cannot quietly
@@ -21,15 +26,21 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 const PROJECT_ROOT = resolve(import.meta.dir, "..", "..");
-const ROUTING_DIR = join(PROJECT_ROOT, "src", "transport", "routing");
 
-/** Every `.ts` file under `src/transport/routing`, recursively. */
-function routingFiles(dir: string = ROUTING_DIR): string[] {
+/** Roots whose `.ts` files must not statically import provider integrations. */
+const BOUNDARY_ROOTS = [
+  join(PROJECT_ROOT, "src", "transport", "routing"),
+  join(PROJECT_ROOT, "src", "console"),
+  join(PROJECT_ROOT, "src", "workers"),
+];
+
+/** Every `.ts` file under a root, recursively. */
+function tsFiles(dir: string): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
-      found.push(...routingFiles(full));
+      found.push(...tsFiles(full));
       continue;
     }
     if (entry.endsWith(".ts")) found.push(full);
@@ -53,12 +64,14 @@ function importsIntegrations(source: string): boolean {
   return patterns.some((pattern) => pattern.test(source));
 }
 
-describe("routing layer import boundaries", () => {
-  test("no routing module statically imports a provider integration", () => {
+describe("integration import boundaries", () => {
+  test("no routing/console/worker module statically imports a provider integration", () => {
     const offenders: string[] = [];
-    for (const file of routingFiles()) {
-      const source = readFileSync(file, "utf8");
-      if (importsIntegrations(source)) offenders.push(relative(PROJECT_ROOT, file));
+    for (const root of BOUNDARY_ROOTS) {
+      for (const file of tsFiles(root)) {
+        const source = readFileSync(file, "utf8");
+        if (importsIntegrations(source)) offenders.push(relative(PROJECT_ROOT, file));
+      }
     }
     // The message names the file so the failure is actionable rather than a
     // bare "expected [] to equal [...]".
@@ -85,5 +98,10 @@ describe("routing layer import boundaries", () => {
       false,
     );
     expect(importsIntegrations(`import { eq } from "drizzle-orm";`)).toBe(false);
+    // `import type` of a non-OAuth integration is erased at compile time and
+    // pulls nothing into the runtime graph.
+    expect(
+      importsIntegrations(`import type { DailyCheckinResult } from "../../providers/integrations/buddy/buddy-checkin";`),
+    ).toBe(false);
   });
 });

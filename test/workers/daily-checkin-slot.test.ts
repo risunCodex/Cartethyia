@@ -15,6 +15,7 @@ import {
   buildSqliteHandle,
   createSqliteDatabase,
 } from "../../src/persistence/db-sqlite";
+import { providerAccounts, providers } from "../../src/persistence/schema";
 
 /**
  * The two reasons a buddy account's daily attendance only landed when an
@@ -288,6 +289,17 @@ describe("attemptDailyGrowthPass — the report leg and the day slot", () => {
     await applySqliteMigrations(sqlite);
     const { db, close } = buildSqliteHandle(sqlite);
     try {
+      // `daily_checkin_ledger.account_id` now references `provider_accounts.id`
+      // (the orphan-prevention FK), so the ledger needs a real account row.
+      await db.insert(providers).values({ id: "cbcn" });
+      await db.insert(providerAccounts).values({
+        id: "sqlite-ledger-account",
+        providerId: "cbcn",
+        tenantId: null,
+        label: "ledger",
+        credentialKind: "oauth",
+        credentialFingerprint: "fp-ledger",
+      });
       const args = {
         db,
         redis: undefined,

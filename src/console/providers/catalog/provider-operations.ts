@@ -16,6 +16,8 @@ import {
   requireGlobalAdmin,
   requireTenantAnyScope,
 } from "../../shared/errors";
+import { cachedReadWithEtag, conditionalResponse } from "../../shared/read-through-cache";
+import type { RedisClient } from "../../../persistence/redis";
 import type { AccessDecision } from "../../../security/access-control";
 import type { ProviderUsageDayRow } from "../../../observability/event-query";
 import { isBundledProviderId } from "../../../providers/provider-contracts";
@@ -25,7 +27,6 @@ import type { OAuthLoginField } from "../../../providers/authentication/oauth-fl
 import { providerCredentialHint, providerCredentialUrl, providerDisplayName, providerHasAdapterUserAgent, providerOperatorNotice, providerServiceKinds, type CompatibilityProfile } from "../../../providers/provider-metadata";
 import type { AccountHealthEventRecord } from "../../../providers/operations/account-health-service";
 import { healthEventBuffer } from "../../../persistence/health-event-flush";
-import { materializeBuddyDeviceBinding } from "../../../providers/integrations/buddy/buddy-identity";
 import { CREDENTIAL_MODES, PROVIDER_READ_SCOPES, PROVIDER_WRITE_SCOPES, type BuddyGrowthTaskLedgerEntry } from "./contracts";
 import { enqueueCheckin } from "../../../workers/daily-checkin";
 import {
@@ -129,7 +130,22 @@ export interface ProviderCatalogConfig {
   readonly auditSink?: AuditSink;
   /** Registry-backed OAuth login clients; used to compute `oauthFlows` on responses. */
   readonly providerRegistry: ProviderRegistry;
-  readonly snapshotInvalidator?: { invalidate(): Promise<number> };
+  /**
+   * Shared Redis client for the provider-list read-through cache. Omitted in
+   * lite mode / tests, where `cachedReadWithEtag` falls back to its bounded
+   * in-process TTL store; the ETag/304 semantics are identical either way.
+   */
+  readonly redis?: RedisClient | undefined;
+  /**
+   * Drops the cached route snapshot after a catalog write. `currentRevision`
+   * (when the host exposes it) is folded into the provider-list cache key, so
+   * every mutation that already bumps the snapshot — provider, account, and
+   * model writes — rotates the cached overview without a per-path delete.
+   */
+  readonly snapshotInvalidator?: {
+    invalidate(): Promise<number>;
+    currentRevision?(): number;
+  };
   /**
    * Re-applies one provider's BYOK adapter registration after a create/update
    * so a custom provider is dispatchable without a restart. Optional: tests
@@ -233,23 +249,81 @@ function toProviderLoginField(field: OAuthLoginField): ProviderLoginField {
       : { options: field.options.map((option) => ({ value: option.value, label: option.label })) }),
   };
 }
+/** Provider-list cache TTL: short enough that a 60s poll re-checks the DB
+ * occasionally, long enough that a warm page does zero per-card work. */
+const PROVIDER_LIST_CACHE_TTL_SECONDS = 20;
+
+/** Cache key namespace + shape version for the provider-list overview. */
+const PROVIDER_LIST_CACHE_SHAPE = "providers:v1:list";
+
+/** Version of the read-through cache backend, so a bump is a key rotation. */
+const PROVIDER_LIST_CACHE_REVISION = 1;
+
+/** The list projection shared by `listProviders` and its cached wrapper. */
+async function computeProviderList(
+  config: ProviderCatalogConfig,
+  tenantId: string,
+): Promise<ProviderResponse[]> {
+  const [records, accountCounts, modelCounts] = await Promise.all([
+    config.store.list(tenantId),
+    config.store.providerAccountCounts(tenantId),
+    config.store.providerModelCounts(tenantId),
+  ]);
+  const accountsByProvider = new Map(accountCounts.map((row) => [row.providerId, row]));
+  const modelsByProvider = new Map(modelCounts.map((row) => [row.providerId, row.count]));
+  return Promise.all(
+    records.map((r) => {
+      const counts = accountsByProvider.get(r.providerId);
+      return attachProviderCapabilities(
+        {
+          ...sanitizeProviderResponse(r),
+          // A provider with no persisted accounts is not "configured"; the
+          // count fields are still present (zero) so the card renders the
+          // empty state instead of a loading placeholder.
+          configured: counts !== undefined,
+          accountCount: counts?.total ?? 0,
+          activeAccountCount: counts?.active ?? 0,
+          modelCount: modelsByProvider.get(r.providerId) ?? 0,
+        },
+        config.providerRegistry,
+      );
+    }),
+  );
+}
+
 export function createProviderCatalogOperations(config: ProviderCatalogConfig) {
   const operations = {
     async listProviders(access: AccessDecision | undefined): Promise<ProviderResponse[]> {
       const a = requireTenantAnyScope(access, PROVIDER_READ_SCOPES);
-      const [records, accounts] = await Promise.all([
-        config.store.list(a.tenantId),
-        config.store.listAllAccountSummaries(a.tenantId),
-      ]);
-      const configured = new Set(accounts.map((account) => account.providerId));
-      return Promise.all(
-        records.map((r) =>
-          attachProviderCapabilities(
-            { ...sanitizeProviderResponse(r), configured: configured.has(r.providerId) },
-            config.providerRegistry,
-          ),
-        ),
+      return computeProviderList(config, a.tenantId);
+    },
+    /**
+     * The full provider list with overview counts, served through the
+     * read-through cache (P-04). A repeated poll answers `304` with the ETag
+     * instead of recomputing the two grouped count queries.
+     *
+     * Returning a `Response` rather than a plain array is what makes the ETag
+     * conditional branch possible: a `304` has no body to serialize. The cache
+     * key is tenant-scoped and carries the routing revision, so a provider /
+     * account / model mutation that bumps the snapshot rotates the key and the
+     * next read recomputes fresh counts.
+     */
+    async listProvidersCached(
+      access: AccessDecision | undefined,
+      ifNoneMatch: string | null,
+    ): Promise<Response> {
+      const a = requireTenantAnyScope(access, PROVIDER_READ_SCOPES);
+      const revision = config.snapshotInvalidator?.currentRevision?.() ?? 0;
+      const key =
+        `cartethyia:${PROVIDER_LIST_CACHE_SHAPE}:v${PROVIDER_LIST_CACHE_REVISION}:` +
+        `${a.tenantId}:${revision}`;
+      const result = await cachedReadWithEtag(
+        config.redis,
+        key,
+        () => computeProviderList(config, a.tenantId),
+        PROVIDER_LIST_CACHE_TTL_SECONDS,
       );
+      return conditionalResponse(ifNoneMatch, result, result.value);
     },
     async getProviderDetail(
         access: AccessDecision | undefined,
@@ -694,7 +768,7 @@ export function createProviderCatalogOperations(config: ProviderCatalogConfig) {
               // Non-secret auth state is part of the credential export: without
               // it a re-import loses the upstream user id and region that Trae
               // refresh and dispatch are addressed by.
-              ...(() => {
+              ...(await (async () => {
                 const authState = authStates[account.id];
                 // Buddy providers bind a per-account device identity
                 // (qimei36) that is normally derived from the INTERNAL account
@@ -707,13 +781,17 @@ export function createProviderCatalogOperations(config: ProviderCatalogConfig) {
                   account.providerId === "cbcn" ||
                   account.providerId === "workbuddy" ||
                   account.providerId === "workbuddycn"
-                    ? materializeBuddyDeviceBinding(account.id, authState)
+                    // dynamic-import: B-02 lazy graph — buddy device-binding materializer, buddy-family only.
+                    // The buddy-identity graph is lazy-loaded: the device-binding
+                    // materializer only runs for buddy-family accounts (B-02).
+                    ? (await import("../../../providers/integrations/buddy/buddy-identity"))
+                        .materializeBuddyDeviceBinding(account.id, authState)
                     : undefined;
                 const effectiveAuthState = materialized ?? authState;
                 return effectiveAuthState !== undefined && Object.keys(effectiveAuthState).length > 0
                   ? { authState: effectiveAuthState }
                   : {};
-              })(),
+              })()),
               ...(account.inflight === undefined ? {} : { inflight: account.inflight }),
               createdAt: account.createdAt,
               ...(account.cooldownUntil ? { cooldownUntil: account.cooldownUntil } : {}),

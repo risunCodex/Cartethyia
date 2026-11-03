@@ -1,7 +1,6 @@
 import { shareCodeMessage } from "../apps/share/share-code";
-import { STREAM_RETRY_MS } from "../lib/stream-retry";
-import { useEffect, useState } from "react";
-import { useSseWhenVisible } from "./sse-visibility";
+import { useEffect, useRef, useState } from "react";
+import { useConsoleEventSource } from "./use-console-event-source";
 
 /** Context and capabilities for one allowed model, from the model catalog. */
 export interface ShareModelInfoData {
@@ -124,8 +123,9 @@ function errorCode(payload: ShareErrorResponse): string | null {
  * With `streamEvent`, the path is read as a server-sent event stream instead:
  * the first matching event replaces the initial fetch and every later one
  * updates `data` in place. Stream failures fall back to re-opening the stream
- * after a short delay, and only the very first load reports `loading` — a
- * dropped stream keeps the last good reading on screen rather than blanking it.
+ * (with exponential backoff via the shared SSE hook), and only the very first
+ * load reports `loading` — a dropped stream keeps the last good reading on
+ * screen rather than blanking it.
  */
 export function useShareData<TData>(
   path: string,
@@ -133,12 +133,13 @@ export function useShareData<TData>(
 ): ShareDataState<TData> {
   const streamEvent = options?.streamEvent;
   const [state, setState] = useState<ShareDataState<TData>>({ data: null, error: null, code: null, loading: true });
-  const visible = useSseWhenVisible();
+  // `failedOnce` lives through reconnects so only the very first failure clears
+  // `loading`; later drops keep the last good reading visible.
+  const failedOnceRef = useRef(false);
+
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
-    let source: EventSource | undefined;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     const apply = (payload: TData) => {
       setState({ data: payload, error: null, code: null, loading: false });
@@ -159,46 +160,29 @@ export function useShareData<TData>(
           if (error instanceof DOMException && error.name === "AbortError") return;
           if (active) setState({ data: null, error: "Unable to reach the Cartethyia gateway.", code: null, loading: false });
         });
-      return () => { active = false; controller.abort(); };
     }
+    return () => { active = false; controller.abort(); };
+  }, [path, streamEvent]);
 
-    if (!visible) return;
+  useConsoleEventSource({
+    url: path,
+    enabled: streamEvent !== undefined,
+    events: streamEvent === undefined ? [] : [streamEvent],
+    onEvent: (event, data) => {
+      if (event !== streamEvent) return;
+      try {
+        setState({ data: JSON.parse(data) as TData, error: null, code: null, loading: false });
+      } catch {
+        // A malformed frame is dropped; the next snapshot supersedes it.
+      }
+    },
+    onClose: () => {
+      if (!failedOnceRef.current) {
+        failedOnceRef.current = true;
+        setState((current) => (current.data === null ? { ...current, loading: false } : current));
+      }
+    },
+  });
 
-    // SSE mode. EventSource reconnects on its own for transient drops; this
-    // loop owns the "stream ended / never opened" case so the section keeps
-    // updating instead of freezing on its last frame. The first failure clears
-    // `loading` so the section can say the activity is unavailable instead of
-    // spinning forever; retries continue and a later snapshot still applies.
-    let failedOnce = false;
-    const connect = () => {
-      if (!active) return;
-      const next = new EventSource(path);
-      source = next;
-      next.addEventListener(streamEvent, (event) => {
-        if (!active) return;
-        try {
-          apply(JSON.parse((event as MessageEvent).data) as TData);
-        } catch {
-          // A malformed frame is dropped; the next snapshot supersedes it.
-        }
-      });
-      next.addEventListener("error", () => {
-        next.close();
-        if (!active) return;
-        if (!failedOnce) {
-          failedOnce = true;
-          setState((current) => (current.data === null ? { ...current, loading: false } : current));
-        }
-        retryTimer = setTimeout(connect, STREAM_RETRY_MS);
-      });
-    };
-    connect();
-
-    return () => {
-      active = false;
-      source?.close();
-      clearTimeout(retryTimer);
-    };
-  }, [path, streamEvent, visible]);
   return state;
 }

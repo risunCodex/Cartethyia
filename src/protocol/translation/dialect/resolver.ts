@@ -13,6 +13,7 @@
 import type { WireFamily } from "../../canonical-model";
 import { DEFAULT_DIALECT_POLICIES, DIALECT_RULES } from "./rules";
 import type { DialectId, DialectPolicy } from "./types";
+import { BoundedLruMap } from "../../../transport/routing/bounded-lru";
 
 /** Known dialect ids, for validating loose DB/string overrides. */
 const KNOWN_DIALECT_IDS = new Set<string>(Object.keys(DEFAULT_DIALECT_POLICIES));
@@ -20,10 +21,14 @@ const KNOWN_DIALECT_IDS = new Set<string>(Object.keys(DEFAULT_DIALECT_POLICIES))
 /**
  * Memoization for `resolveDialect` (mirrors THINKING_RESOLVE_CACHE). The key
  * concatenates every argument, all of which are value types, so it is
- * collision-safe; the cache is unbounded because the key space is bounded by
- * the model catalog, not by request volume.
+ * collision-safe. The cache is a {@link BoundedLruMap}: the key space is
+ * bounded by the model catalog, but a request can name an arbitrary model
+ * string, so an unbounded map would pin an entry for every miss forever.
  */
-const DIALECT_RESOLVE_CACHE = new Map<string, DialectPolicy>();
+const DIALECT_RESOLVE_CACHE_MAX_ENTRIES = 1024;
+const DIALECT_RESOLVE_CACHE = new BoundedLruMap<string, DialectPolicy>(
+  DIALECT_RESOLVE_CACHE_MAX_ENTRIES,
+);
 
 export function resolveDialect(
   modelId: string,

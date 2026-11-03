@@ -307,7 +307,10 @@ export interface TestGateway {
     init?: RequestInit & { clientIp?: string; token?: string },
   ): Promise<Response>;
   /** Replaces the routing snapshot; call after changing fixture rows. */
-  setRoutes(routes: readonly TestRoute[], options?: TestRouteSnapshotOptions): void;
+  setRoutes(
+    routes: readonly TestRoute[],
+    options?: TestRouteSnapshotOptions,
+  ): Promise<void>;
   /**
    * Serves every model a world created, on that world's provider and account.
    *
@@ -321,7 +324,7 @@ export interface TestGateway {
     readonly providerId: string;
     readonly accountId: string;
     readonly modelIds: readonly string[];
-  }): void;
+  }): Promise<void>;
   /** Registers an adapter for a provider the suite is about to route to. */
   adapter(providerId: string, options?: StubAdapterOptions): ReturnType<typeof createStubAdapter>;
   close(): Promise<void>;
@@ -483,13 +486,29 @@ export async function createTestGateway(
         }),
       );
     },
-    setRoutes(routes, options = {}) {
+    async setRoutes(routes, options = {}) {
       routeSnapshot.current = buildSnapshot(routes, options);
-      // Drop the cached snapshot so the next request observes the new routes.
-      void snapshotService.invalidate();
+      // G-02: `invalidate()` now triggers a DEBOUNCED background rebuild (it no
+      // longer drops the snapshot for the next request to rebuild lazily), so
+      // the served snapshot can be one revision stale for up to the debounce
+      // window. Wait until the rebuilt snapshot reflects this revision — the
+      // helper's documented contract is "the next request observes the new
+      // routes", and a request that races the debounce would see the previous
+      // route set. The rebuild is in-memory over `routeSnapshot.current`, so
+      // this settles well inside the guard.
+      const revision = await snapshotService.invalidate();
+      const deadline = Date.now() + 5_000;
+      for (;;) {
+        const served = await snapshotService.getSnapshot();
+        if (served.revision >= revision) break;
+        if (Date.now() > deadline) {
+          throw new Error("test gateway: route snapshot rebuild did not settle within 5s");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
     },
-    serveWorld(world) {
-      gateway.setRoutes(
+    async serveWorld(world) {
+      await gateway.setRoutes(
         world.modelIds.map((modelId) => ({
           providerId: world.providerId,
           modelId,

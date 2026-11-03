@@ -4,16 +4,19 @@ import type { Elysia } from "elysia";
 import { and, eq, inArray } from "drizzle-orm";
 import { providerAccounts, providers } from "../../persistence/schema";
 import { providerDisplayName } from "../../providers/provider-metadata";
-import { invalidateCredentialCache } from "../../providers/operations/provider-credential-service";
+import {
+  invalidateCredentialCache,
+  invalidateCredentialCaches,
+} from "../../providers/operations/provider-credential-service";
 import { requireTenantScope } from "../shared/errors";
 import { BUDDY_PROVIDER_IDS } from "../../providers/provider-metadata";
-import { readBuddyUsageSnapshots } from "../../providers/integrations/buddy/buddy-usage-store";
 import { GatewayError } from "../../protocol/gateway-error";
 import {
   GLOBAL_QUOTA_LENS,
   getCachedQuotaEntries,
   getCachedQuotaEntry,
   invalidateQuotaCache,
+  invalidateQuotaCaches,
 } from "../../providers/quota/cache";
 import { readQuotaSnapshot, readQuotaSnapshots } from "../../providers/quota/snapshot";
 import {
@@ -48,10 +51,10 @@ import {
   DrizzleQoderNativeIdentityStore,
   type QoderNativeIdentityStore,
 } from "../../providers/integrations/qoder/qoder-native-identity-store";
-import { buddyAccountUid } from "../../providers/integrations/buddy/buddy-oauth-shared";
 import {
   supportsAccountReset,
   consumeAccountResetCredit,
+  getCachedResetCredits,
   listAccountResetCredits,
 } from "../../providers/operations/account-reset-service";
 import {
@@ -65,6 +68,14 @@ import {
   type AccountQuotaRoutesDeps,
   type AccountStatus,
 } from "./account-quota-shared";
+import {
+  DAILY_GROWTH_LEG_TIMEOUT_MS,
+  enqueueDailyGrowthJob,
+  getDailyGrowthJob,
+  withLegBudget,
+  type DailyGrowthJobAccount,
+  type DailyGrowthJobDeps,
+} from "./daily-growth-job";
 
 /** Daily check-in only exists on the buddy billing facade; everything else 400s with intent. */
 function supportsAccountCheckin(providerId: string): boolean {
@@ -134,10 +145,6 @@ async function runAccountCheckin(
   });
 }
 
-/** Bound on accounts one manual daily-growth batch may cover. */
-/** Concurrent accounts inside one manual daily-growth batch. */
-const DAILY_GROWTH_CONCURRENCY = 3;
-
 /**
  * One account's daily growth pass, report first then claim.
  *
@@ -176,6 +183,12 @@ async function runDailyGrowthForAccount(
   // fails closed instead of reporting under another account's identity. Qoder
   // has no activity-report leg — its daily grant is purely the check-in.
   const qoderAccount = isQoderCheckinProvider(String(providerId));
+  // dynamic-import: B-02 lazy graph — buddy uid decoder, only for buddy report legs.
+  // The buddy-oauth-shared graph is lazy-loaded: the uid decoder is only
+  // needed for buddy accounts' report leg (B-02).
+  const { buddyAccountUid } = await import(
+    "../../providers/integrations/buddy/buddy-oauth-shared"
+  );
   const userId = buddyAccountUid(credential);
   let report: { ok: boolean; message: string };
   if (qoderAccount) {
@@ -403,6 +416,12 @@ export function registerAccountQuotaTenantRoutes(
       // the upstream: the page renders every account at once, and re-hitting the
       // billing endpoint per account would make opening it scale with the
       // account count. One batch read for every buddy row.
+      // dynamic-import: B-02 lazy graph — buddy usage snapshots, only when the page renders buddy accounts.
+      // The buddy-usage-store graph is lazy-loaded: it is only needed when the
+      // page actually renders buddy accounts (B-02).
+      const { readBuddyUsageSnapshots } = await import(
+        "../../providers/integrations/buddy/buddy-usage-store"
+      );
       const usageByAccount = await readBuddyUsageSnapshots(
         db,
         rows.filter((row) => isBuddyProvider(row.providerId)).map((row) => row.id),
@@ -817,17 +836,60 @@ export function registerAccountQuotaTenantRoutes(
       });
       return { success: true };
     })
+    .post(
+      "/accounts/batch-delete",
+      {
+        body: t.Object({
+          accountIds: t.Array(t.String()),
+        }),
+      },
+      async ({ request, body }) => {
+        const access = requireTenantScope(accessResolver(request), "dashboard:write");
+        const accountIds = [...new Set(body.accountIds)];
+        if (accountIds.length === 0) {
+          return { ok: true, deleted: [], missing: [] };
+        }
+        // One DELETE statement for the whole batch, scoped to the tenant: a
+        // global/shared account (`tenant_id IS NULL`) is never matchable, so
+        // it lands in `missing` rather than being deleted by a tenant.
+        const deleted = await db
+          .delete(providerAccounts)
+          .where(
+            and(
+              inArray(providerAccounts.id, accountIds),
+              eq(providerAccounts.tenantId, access.tenantId),
+            ),
+          )
+          .returning({ id: providerAccounts.id });
+        const deletedIds = deleted.map((row) => row.id);
+        const deletedSet = new Set(deletedIds);
+        const missing = accountIds.filter((id) => !deletedSet.has(id));
+        // One credential-cache pass, one quota-cache pass, one snapshot
+        // invalidation, one audit row — never one per deleted account.
+        invalidateCredentialCaches(deletedIds);
+        await invalidateQuotaCaches(access.tenantId, deletedIds, redis);
+        await snapshotInvalidator?.invalidate();
+        await auditRecorder?.record({
+          access,
+          action: "provider_account.batch_deleted",
+          target: access.tenantId,
+          detail: { deleted: deletedIds, missing },
+        });
+        return { ok: true, deleted: deletedIds, missing };
+      },
+    )
     /**
-     * Runs the daily growth pass over a provider's accounts in one request:
-     * the growth-activity report first, then the check-in claim — the order the
+     * Enqueues a background daily-growth job over a provider's accounts: the
+     * growth-activity report first, then the check-in claim — the order the
      * sweep uses — with egress rotated per account the same way the worker
      * does, so a batch leaves from more than one address.
      *
-     * A manual trigger is the operator asserting "try now", so it bypasses the
-     * sweep's once-per-day ledger; the upstream stays idempotent either way.
-     * Per-account outcomes are reported individually: a batch is not
-     * all-or-nothing, and one account's closed check-in must not hide the
-     * others' streaks.
+     * Running the whole batch in the request held it open for every account's
+     * upstream calls; the route now returns `{ jobId }` immediately and the
+     * work drains through a bounded background worker (see the job status
+     * route below). A manual trigger is the operator asserting "try now", so
+     * it bypasses the sweep's once-per-day ledger; the upstream stays
+     * idempotent either way.
      */
     .post(
       "/quota/daily-growth",
@@ -873,59 +935,66 @@ export function registerAccountQuotaTenantRoutes(
           };
         }
         // No size cap, for the same reason as the quota refresh: the work is
-        // already drained through a bounded worker pool, so refusing the request
-        // protected nothing and just forced the operator to batch by hand.
-        // One egress rotator for the whole request, exactly as the sweep builds
-        // it, so consecutive accounts leave from consecutive pools.
+        // already drained through a bounded worker pool behind the job, so
+        // refusing the request protected nothing and just forced the operator
+        // to batch by hand.
+        //
+        // One egress rotator for the whole job, exactly as the sweep builds it,
+        // so consecutive accounts leave from consecutive pools. The job carries
+        // the per-account run (report then claim) through the injected runner.
         const rotator =
           networkBindingFactory !== undefined
             ? dailyCheckinEgressForPass({ db, networkBindingFactory })
             : undefined;
+        // One leg budget for the whole job: every upstream fetch the per-account
+        // run issues carries it on top of the helpers' own per-request timeouts.
+        const legSignal = AbortSignal.timeout(DAILY_GROWTH_LEG_TIMEOUT_MS);
+        const rotatorWithBudget =
+          rotator === undefined
+            ? undefined
+            : async (accountId: string, tenantId?: string | null) => {
+                const base = await rotator(accountId, tenantId);
+                return withLegBudget(base, legSignal) as unknown as ValidatedFetch;
+              };
 
-        const results: {
-          readonly accountId: string;
-          readonly label: string;
-          readonly report: { readonly ok: boolean; readonly message: string };
-          readonly checkin: { readonly ok: boolean; readonly message: string };
-        }[] = [];
-
-        for (let offset = 0; offset < accounts.length; offset += DAILY_GROWTH_CONCURRENCY) {
-          const batch = accounts.slice(offset, offset + DAILY_GROWTH_CONCURRENCY);
-          const settled = await Promise.all(
-            batch.map(async (account) => {
-              const outcome = await runDailyGrowthForAccount(
-                providerId as ProviderId,
-                account,
-                refreshDeps,
-                rotator,
-              );
-              return { account, outcome };
-            }),
+        const runAccount = async (account: DailyGrowthJobAccount) => {
+          const outcome = await runDailyGrowthForAccount(
+            providerId as ProviderId,
+            account,
+            refreshDeps,
+            rotatorWithBudget,
           );
-          for (const { account, outcome } of settled) {
-            results.push({
-              accountId: account.id,
-              label: account.label || account.id,
-              report: outcome.report,
-              checkin: outcome.checkin,
-            });
+          if (!outcome.checkin.ok) {
+            return { ok: false, error: outcome.checkin.message };
           }
-        }
-
-        // The ledger is shared with the sweep, so invalidate once at the end
-        // rather than per account — the page re-reads "attempted today" from it.
-        await snapshotInvalidator?.invalidate();
-        const reportsOk = results.filter((entry) => entry.report.ok).length;
-        const claimed = results.filter((entry) => entry.checkin.ok).length;
-        return {
-          ok: true,
-          status: 200,
-          providerId,
-          data: results,
-          message: `${results.length} account${results.length === 1 ? "" : "s"} · report ${reportsOk}/${results.length} · check-in ${claimed}/${results.length}`,
+          return { ok: true };
         };
+
+        const jobDeps: DailyGrowthJobDeps = {
+          db,
+          redis,
+          runAccount,
+          ...(snapshotInvalidator ? { snapshotInvalidator } : {}),
+        };
+        const jobId = enqueueDailyGrowthJob({
+          deps: jobDeps,
+          tenantId: access.tenantId,
+          providerId,
+          accounts,
+        });
+        set.status = 202;
+        return { jobId, status: 202 };
       },
     )
+    .get("/quota/daily-growth/status/:jobId", async ({ request, params, set }) => {
+      const access = requireTenantScope(accessResolver(request), "dashboard:read");
+      const job = getDailyGrowthJob(params.jobId, access.tenantId);
+      if (job === null) {
+        set.status = 404;
+        return { error: `Job ${params.jobId} not found`, code: "not_found" };
+      }
+      return job;
+    })
     .post("/accounts/:id/checkin", async ({ request, params, set }) => {
       const access = requireTenantScope(accessResolver(request), "dashboard:write");
       const rows = await db
@@ -1043,6 +1112,12 @@ export function registerAccountQuotaTenantRoutes(
         // The growth event scores by uid, and only a JWT carries one. An
         // opaque API key must fail closed here — reporting it under another
         // account's uid would poison someone else's streak.
+        // dynamic-import: B-02 lazy graph — buddy uid decoder on this buddy-only surface.
+        // The buddy-oauth-shared graph is lazy-loaded: the uid decoder is only
+        // needed on this buddy-only surface (B-02).
+        const { buddyAccountUid } = await import(
+          "../../providers/integrations/buddy/buddy-oauth-shared"
+        );
         const userId = buddyAccountUid(credential);
         if (!userId) {
           set.status = 400;
@@ -1109,7 +1184,12 @@ export function registerAccountQuotaTenantRoutes(
           account.providerId as ProviderId,
           account.id,
         );
-        const list = await listAccountResetCredits(account.providerId, credential);
+        // Cached per account for a short TTL: every dialog open was hitting the
+        // upstream live. The cache is cleared on a successful redemption, so a
+        // consumed credit is not shown again for the rest of the TTL.
+        const list = await getCachedResetCredits(account.providerId, account.id, () =>
+          listAccountResetCredits(account.providerId, credential),
+        );
         return list ?? { availableCount: 0, credits: [] };
       } catch (err) {
         return { availableCount: 0, credits: [] };

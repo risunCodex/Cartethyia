@@ -167,22 +167,24 @@ describe("adaptiveFlushIntervalMs", () => {
   test("a filling queue drains faster, down to the floor", () => {
     // Batching must never become a latency source: as the queue approaches
     // `maxBatch` the interval collapses from the base cadence to the floor.
-    // MEASURED: the curve is `max(50, round(base * (1 - fill)))`, so at a
-    // 500 base the interval reaches the 50ms floor at a fill of 0.9 — a queue
-    // of 450 events drains every 50ms, not every 250ms.
+    // MEASURED: the curve is `max(200, round(base * (1 - fill)))`, so at a
+    // 500 base the interval reaches the 200ms floor at a fill of 0.6 — a queue
+    // of 450 events drains every 200ms, not every 250ms. The floor was raised
+    // from 50ms so a drain does not collide with the console's own telemetry
+    // reads under load.
     expect(adaptiveFlushIntervalMs(500, 125, 500)).toBe(375);
     expect(adaptiveFlushIntervalMs(500, 250, 500)).toBe(250);
-    expect(adaptiveFlushIntervalMs(500, 450, 500)).toBe(50);
+    expect(adaptiveFlushIntervalMs(500, 450, 500)).toBe(200);
     // Past `maxBatch` the fill ratio is clamped, so the interval stops falling.
-    expect(adaptiveFlushIntervalMs(500, 500, 500)).toBe(50);
-    expect(adaptiveFlushIntervalMs(500, 10_000, 500)).toBe(50);
+    expect(adaptiveFlushIntervalMs(500, 500, 500)).toBe(200);
+    expect(adaptiveFlushIntervalMs(500, 10_000, 500)).toBe(200);
   });
 
   test("always returns an integer at or above the floor", () => {
     for (const length of [0, 1, 7, 123, 499, 500, 10_000]) {
       const value = adaptiveFlushIntervalMs(500, length, 500);
       expect(Number.isInteger(value)).toBe(true);
-      expect(value).toBeGreaterThanOrEqual(50);
+      expect(value).toBeGreaterThanOrEqual(200);
     }
   });
 
@@ -192,7 +194,7 @@ describe("adaptiveFlushIntervalMs", () => {
     // immediately — a hot loop against the database.
     const value = adaptiveFlushIntervalMs(500, 1, 0);
     expect(Number.isNaN(value)).toBe(false);
-    expect(value).toBeGreaterThanOrEqual(50);
+    expect(value).toBeGreaterThanOrEqual(200);
   });
 });
 

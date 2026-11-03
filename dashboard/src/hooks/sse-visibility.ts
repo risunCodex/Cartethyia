@@ -14,8 +14,9 @@ import { useEffect, useRef, useState } from "react";
  * hidden so the caller can skip connected work (e.g. the preflight GET) and
  * just await the next visibility flip.
  *
- * The caller must still own the full stream lifecycle (auth preflight, reconnect
- * on error). This only adds the hidden/visible gate on top.
+ * Feature hooks use this through the shared `useConsoleEventSource` hook, which
+ * owns the full stream lifecycle (auth preflight, reconnect, cleanup) on top
+ * of this gate.
  */
 export function useSseWhenVisible(): boolean {
   const [visible, setVisible] = useState(true);

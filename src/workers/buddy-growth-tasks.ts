@@ -1,6 +1,10 @@
 /**
  * The buddy growth/credit tasks: one scheduled task per upstream capability.
  *
+ * // dynamic-import-ok: all integration imports are lazy-loaded inside the
+ * task bodies (B-02) so the boot graph never pulls the buddy/qoder
+ * integration modules — these tasks run once a day, not at startup.
+ *
  * Six tasks, each independently switchable through `CARTETHYIA_DISABLED_TASKS`,
  * because each is a write to an account's growth state and an operator may want
  * some of them and not others. Registration lives in `src/boot/dependencies.ts`;
@@ -22,19 +26,10 @@ import type { CartethyiaDatabase } from "../persistence/db-handle";
 import { buddyTaskLedger, providerAccounts } from "../persistence/schema";
 import { log } from "../observability/logger";
 import { sleep } from "../shared/sleep";
-import { buddyAccountUid } from "../providers/integrations/buddy/buddy-oauth-shared";
-import {
-  adoptFirstBuddy,
-  agreeBuddyAgreement,
-  readBuddyFirstTask,
-  readBuddyInfo,
-  useBuddyMakeupCard,
-  type BuddyGrowthCall,
-  type BuddyGrowthResult,
+import type {
+  BuddyGrowthCall,
+  BuddyGrowthResult,
 } from "../providers/integrations/buddy/buddy-growth-shared";
-import { fetchBuddyRequestUsage } from "../providers/integrations/buddy/buddy-usage-shared";
-import { saveBuddyUsageSnapshots } from "../providers/integrations/buddy/buddy-usage-store";
-import { fetchBuddyActivityReport } from "../providers/integrations/buddy/buddy-checkin";
 import { withDirectFallback } from "./daily-checkin";
 import { providerBaseUrl, BUDDY_PROVIDER_IDS } from "../providers/provider-metadata";
 import type { FetchLike } from "../providers/quota/quota-contracts";
@@ -65,6 +60,14 @@ export interface BuddyTaskDeps {
   readonly now?: () => Date;
   /** Pause between accounts, so a pass does not look like a burst. */
   readonly interAccountDelayMs?: number;
+  /**
+   * Wall-clock cap for the whole pass; the walk stops at the next account
+   * boundary past it (G-04). These tasks run on their own cadence (daily /
+   * six-hourly), so the budget is sized generously — it bounds a runaway scan
+   * without truncating a legitimate fleet mid-pass; an account the budget
+   * leaves unvisited is picked up on the next pass by its ledger.
+   */
+  readonly budgetMs?: number;
 }
 
 /** Providers whose growth facade is worth calling. */
@@ -146,13 +149,16 @@ async function defaultAccounts(db: CartethyiaDatabase): Promise<readonly BuddyTa
  * cheap, but the same credential can appear in several tasks in one pass, so
  * the decode is cached per pass instead of per call.
  */
+type UidDecoder = (credential: string) => string | undefined;
+
 function resolveUid(
   credential: string,
   cache: Map<string, string | undefined>,
+  decode: UidDecoder,
 ): string | undefined {
   const cached = cache.get(credential);
   if (cached !== undefined) return cached;
-  const uid = buddyAccountUid(credential);
+  const uid = decode(credential);
   cache.set(credential, uid);
   return uid;
 }
@@ -176,6 +182,11 @@ async function forAccount(
     return null;
   }
   if (credential.length === 0) return null;
+  // The buddy-oauth-shared graph is lazy-loaded: the uid decoder runs once per
+  // pass, and only for accounts whose credential carries a JWT (B-02).
+  const { buddyAccountUid } = await import(
+    "../providers/integrations/buddy/buddy-oauth-shared"
+  );
   const call: BuddyGrowthCall = {
     baseUrl: providerBaseUrl(account.providerId) ?? "",
     headers: { "X-Product": "SaaS", "Content-Type": "application/json", Accept: "application/json" },
@@ -183,9 +194,9 @@ async function forAccount(
     providerId: account.providerId,
     credential,
     fetcher: withDirectFallback(deps.fetcher) as FetchLike,
-    ...(resolveUid(credential, uidCache) === undefined
+    ...(resolveUid(credential, uidCache, buddyAccountUid) === undefined
       ? {}
-      : { uid: resolveUid(credential, uidCache) }),
+      : { uid: resolveUid(credential, uidCache, buddyAccountUid) }),
   };
   if (call.baseUrl.length === 0) return null;
   return run(call);
@@ -203,7 +214,15 @@ async function runTask(
   let attempted = 0;
   let claimed = 0;
   const delay = deps.interAccountDelayMs ?? 0;
+  const startedAt = Date.now();
+  const budgetMs = deps.budgetMs;
   for (const [index, account] of accounts.entries()) {
+    if (budgetMs !== undefined && Date.now() - startedAt >= budgetMs) {
+      log.info(
+        `[${task}] pass budget reached: stopped after ${attempted} attempted / ${index} accounts walked`,
+      );
+      break;
+    }
     if (index > 0 && delay > 0) await sleep(delay);
     if (await claimedToday(deps.db, dayKey, account.id, task)) continue;
     attempted += 1;
@@ -241,7 +260,12 @@ async function runTask(
  * Everything other than an actual spend is `skipped`, so an account with no
  * miss, no card, or no heatmap produces no log noise beyond one info line.
  */
-export function buddyStreakTask(deps: BuddyTaskDeps) {
+export async function buddyStreakTask(deps: BuddyTaskDeps) {
+  // The buddy-growth-shared graph is lazy-loaded: this task only runs once a
+  // day, and must not pull the integration into the boot graph (B-02).
+  const { useBuddyMakeupCard } = await import(
+    "../providers/integrations/buddy/buddy-growth-shared"
+  );
   return runTask(deps, "buddy-streak", (call) => useBuddyMakeupCard(call));
 }
 
@@ -251,7 +275,15 @@ export function buddyStreakTask(deps: BuddyTaskDeps) {
  * Gated on the task actually being offered and unlocked — adopting blind writes
  * to an account's growth state on the strength of an endpoint existing.
  */
-export function buddyAdoptTask(deps: BuddyTaskDeps) {
+export async function buddyAdoptTask(deps: BuddyTaskDeps) {
+  // The buddy-growth-shared graph is lazy-loaded: this task only runs once a
+  // day, and must not pull the integration into the boot graph (B-02).
+  const {
+    adoptFirstBuddy,
+    agreeBuddyAgreement,
+    readBuddyFirstTask,
+    readBuddyInfo,
+  } = await import("../providers/integrations/buddy/buddy-growth-shared");
   return runTask(deps, "buddy-adopt", async (call) => {
     const info = await readBuddyInfo(call);
     if (info === null || info.hasBuddy) return null;
@@ -276,7 +308,12 @@ export function buddyAdoptTask(deps: BuddyTaskDeps) {
  * The report is not a credit claim, so its failure never marks an account
  * unhealthy — the result is logged and the ledger is stamped either way.
  */
-export function buddyActivityReportTask(deps: BuddyTaskDeps) {
+export async function buddyActivityReportTask(deps: BuddyTaskDeps) {
+  // The buddy-checkin graph is lazy-loaded: this task only runs once a day,
+  // and must not pull the integration into the boot graph (B-02).
+  const { fetchBuddyActivityReport } = await import(
+    "../providers/integrations/buddy/buddy-checkin"
+  );
   return runTask(deps, "buddy-activity-report", async (call) => {
     if (call.uid === undefined) {
       return { state: "skipped", error: "No uid in this credential.", credit: null };
@@ -311,7 +348,22 @@ const USAGE_DAYS = 30;
 export async function syncBuddyUsage(deps: BuddyTaskDeps): Promise<number> {
   const accounts = await (deps.listAccounts?.() ?? defaultAccounts(deps.db));
   let stored = 0;
+  // The buddy usage graphs are lazy-loaded: this task runs only on its own
+  // six-hourly cadence, and must not pull the integrations into the boot
+  // graph (B-02).
+  const { fetchBuddyRequestUsage } = await import(
+    "../providers/integrations/buddy/buddy-usage-shared"
+  );
+  const { saveBuddyUsageSnapshots } = await import(
+    "../providers/integrations/buddy/buddy-usage-store"
+  );
+  const { buddyAccountUid } = await import(
+    "../providers/integrations/buddy/buddy-oauth-shared"
+  );
+  const startedAt = Date.now();
+  const budgetMs = deps.budgetMs;
   for (const account of accounts) {
+    if (budgetMs !== undefined && Date.now() - startedAt >= budgetMs) break;
     let credential: string;
     try {
       credential = await deps.resolveCredential(account.providerId, account.id);

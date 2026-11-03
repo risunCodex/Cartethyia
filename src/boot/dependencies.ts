@@ -11,7 +11,6 @@ import type { RedisClient } from "../persistence/redis";
 import {
   bundledModelCatalog,
   liveProviderUpstreamHosts,
-  markCatalogSeeded,
   refreshActiveProviderCatalogs,
   registerByokProviders,
   retireUnbundledProviders,
@@ -24,7 +23,6 @@ import type { OAuthTokenRefresher } from "../providers/authentication/oauth-refr
 import { oauthRefreshSweep } from "../workers/oauth-refresh-sweep";
 import { accountIdentitySweep } from "../workers/account-identity-sweep";
 import { pushStructuredConsoleLog } from "../observability/log-ring";
-import { seedBundledModels } from "../providers/operations/provider-catalog-seeder";
 import { createDatabaseSnapshotBuilder } from "../transport/routing/route-catalog";
 import { DrizzleProviderCatalogStore } from "../console/providers/catalog/store";
 import { InMemoryRouteSnapshotService } from "../transport/routing/route-model";
@@ -84,6 +82,7 @@ import type { ByokUpstreamHost } from "../providers/operations/provider-catalog-
 import type { ReadinessCheckResult } from "../persistence/readiness";
 import { log } from "../observability/logger";
 import { refreshProviderClientVersions } from "../providers/operations/client-versions";
+import type { ModelDefinition } from "../providers/provider-model-definition";
 
 
 export interface ProductionDeps {
@@ -133,7 +132,9 @@ const OAUTH_REFRESH_INTER_ITEM_DELAY_MS = 1_500;
 // Matched to the resolver's own 30 min cache TTL: a shorter interval makes
 // every second pass a pure cache read that cannot discover anything new.
 const CLIENT_VERSION_MONITOR_INTERVAL_MS = 30 * 60_000;
-const CLIENT_VERSION_INITIAL_DELAY_MS = 10_000;
+// B-05: first external fetch is pushed out to 90 s so the listener, the route
+// snapshot warm, and the first-minute sweeps all settle first.
+const CLIENT_VERSION_INITIAL_DELAY_MS = 90_000;
 
 /** Bound on the boot-time Redis probe: a start must fail, not hang. */
 const REDIS_PROBE_TIMEOUT_MS = 2_000;
@@ -232,17 +233,34 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
   await measureStartupPhase("byok-registration", () =>
     registerByokProviders(registry, db, ssrfPolicy),
   );
-  const bundledCatalog = await measureStartupPhase("bundled-model-catalog", () =>
-    bundledModelCatalog(registry),
-  );
-  await measureStartupPhase("bundled-model-seed", () =>
-    seedBundledModels(db, bundledCatalog.modelsByProvider),
-  );
-  // The boot seed above is unconditional, so record it: the snapshot builder's
-  // first rebuild would otherwise re-seed an identical catalog.
-  markCatalogSeeded();
+  // B-01: the bundled model catalog (73 providers' integration modules, ~the
+  // largest pre-listen cost) is DEFERRED to the first snapshot build, which
+  // runs right after listen (`main.ts` warms the snapshot). Every consumer
+  // holds a reference to `bundledCatalogModels`, a shared map that starts
+  // empty and is populated by the first resolution — the console store and
+  // the inflight reader capture the map reference at construction, so once
+  // the build fills it, all of them see the data. The snapshot builder's
+  // refresh step seeds the DB from the same map (markCatalogSeeded semantics:
+  // lastSeededCatalogRevision is -1 until the first build, so the first build
+  // seeds exactly once and later rebuilds see an unchanged revision and skip).
+  const bundledCatalogModels = new Map<string, readonly ModelDefinition[]>();
+  let bundledCatalogResolved = false;
+  const resolveBundledCatalog = async (): Promise<BundledProviderCatalog> => {
+    if (bundledCatalogResolved) return { modelsByProvider: bundledCatalogModels };
+    const catalog = await bundledModelCatalog(registry);
+    for (const [providerId, models] of catalog.modelsByProvider) {
+      bundledCatalogModels.set(providerId, models);
+    }
+    bundledCatalogResolved = true;
+    return { modelsByProvider: bundledCatalogModels };
+  };
   const snapshotService = new InMemoryRouteSnapshotService(
-    createDatabaseSnapshotBuilder(db, () => refreshActiveProviderCatalogs(db, registry)),
+    createDatabaseSnapshotBuilder(db, async () => {
+      // Compute the lazy catalog first so the refresh shares it and the DB
+      // seed uses the same map the console reads (no second full walk).
+      const catalog = await resolveBundledCatalog();
+      await refreshActiveProviderCatalogs(db, registry, catalog);
+    }),
   );
   const routingEngine = new RoutingEngine(
     redis ? new RedisAdmissionController(redis) : undefined,
@@ -334,11 +352,16 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
   }
   scheduledTasks.register({
     name: "account-health-sweep",
-    intervalMs: 30_000,
-    // Offsets the pass from lease-sweep and runtime-metrics, which share the
-    // same cadence: under the registry's single-flight gate, aligned ticks
-    // make the 30s tasks skip each other when one runs long.
+    // G-04: 30 s → 60 s — this is the most frequent snapshot invalidator, and
+    // halving its cadence halves the rebuild/cooldown-recovery churn.
+    intervalMs: 60_000,
+    // Offsets the pass from lease-sweep and runtime-metrics, which share a
+    // cadence: under the registry's single-flight gate, aligned ticks make the
+    // tasks skip each other when one runs long.
     initialDelayMs: 5_000,
+    // G-03: this sweep can invalidate the shared snapshot, so defer it while
+    // foreground is busy (bounded) rather than racing a page open.
+    deferWhenBusy: true,
     // Recovers cooldowns deployment-wide and invalidates the shared snapshot.
     shared: true,
     run: async () => {
@@ -421,9 +444,13 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
     if (providerId === "" || tenantId === null) return [];
     let inflightStore = inflightStores.get(tenantId);
     if (inflightStore === undefined) {
+      // B-01: resolve the deferred bundled catalog first so the store's model
+      // map is populated (the snapshot warm normally did this already; this
+      // is the cold-race fallback).
+      await resolveBundledCatalog();
       inflightStore = new DrizzleProviderCatalogStore(db, {
         telemetryBuffer,
-        bundledModelCatalog: bundledCatalog,
+        bundledModelCatalog: { modelsByProvider: bundledCatalogModels },
         providerRegistry: registry,
         outboundFetchFor: async () => ({ fetch: networkBindingFactory.fetch(undefined, tenantId) }),
         snapshotInvalidator: snapshotService,
@@ -434,8 +461,11 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
         if (oldest !== undefined) inflightStores.delete(oldest);
       }
     }
-    const accounts = await inflightStore.listAccounts(tenantId, providerId);
-    const owned = new Set(accounts.map((account) => account.id));
+    // P-02: only the account-id set is needed, so select just `id` — the old
+    // `listAccounts` recomputed today/lifetime usage aggregates for every
+    // account on every console poll.
+    const accountIds = await inflightStore.listAccountIds(tenantId, providerId);
+    const owned = new Set(accountIds);
     // Scoped read: only the provider's own candidates for this tenant are
     // queried, so the console read costs one exact MGET over the accounts it
     // is about to report on — not a fleet-wide `KEYS` scan whose cost is the
@@ -517,6 +547,10 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
   scheduledTasks.register({
     name: "oauth-refresh-sweep",
     intervalMs: 60_000,
+    // G-04: defer when foreground is busy (InvokeGuard), and cap the pass with
+    // a budget mirroring quota refresh's 45 s so an OAuth pass cannot run away
+    // into a heavy foreground minute.
+    deferWhenBusy: true,
     run: () =>
       oauthRefreshSweep({
         loadDueAccounts: () => loadDueOAuthAccounts(db),
@@ -528,6 +562,7 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
         // pushed to the Console Log ring by `OAuthRefreshService`; this only
         // covers an error that escaped before reaching it.
         interItemDelayMs: OAUTH_REFRESH_INTER_ITEM_DELAY_MS,
+        budgetMs: 45_000,
         onAccountError: (accountId, providerId, error) => {
           log.error(
             `[oauth-refresh] account=${accountId} provider=${providerId} failed:`,
@@ -579,6 +614,8 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
     // Staggered off the oauth/lease/health ticks so the three sweeps that
     // strike providerAccounts do not land together every minute.
     initialDelayMs: 20_000,
+    // G-03: defer while foreground is busy (bounded).
+    deferWhenBusy: true,
     run: () =>
       quotaRefreshSweep({
         db,
@@ -626,17 +663,24 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
     // Spread across accounts so a pass does not look like a burst to the
     // upstream's risk gate.
     interAccountDelayMs: 800,
+    // G-04: bound each pass. These are daily/six-hourly tasks, so the budget
+    // is deliberately larger than the minute-cadence sweeps' 45 s — it caps a
+    // runaway scan without truncating a legitimate fleet mid-pass.
+    budgetMs: 5 * 60_000,
   };
   scheduledTasks.register({
     name: "buddy-streak",
     intervalMs: 24 * 60 * 60_000,
     initialDelayMs: 5 * 60_000,
+    // G-03: defer while foreground is busy (bounded).
+    deferWhenBusy: true,
     run: () => buddyStreakTask(buddyTaskDeps),
   });
   scheduledTasks.register({
     name: "buddy-adopt",
     intervalMs: 24 * 60 * 60_000,
     initialDelayMs: 17 * 60_000,
+    deferWhenBusy: true,
     run: () => buddyAdoptTask(buddyTaskDeps),
   });
   // Growth-activity report: the `/v2/report` batch that lights the login streak
@@ -647,6 +691,7 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
     name: "buddy-activity-report",
     intervalMs: 24 * 60 * 60_000,
     initialDelayMs: 15 * 60 * 60_000,
+    deferWhenBusy: true,
     run: () => buddyActivityReportTask(buddyTaskDeps),
   });
   // Real credit deductions, stored so the console renders a figure the upstream
@@ -656,6 +701,7 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
     name: "buddy-usage-sync",
     intervalMs: 6 * 60 * 60_000,
     initialDelayMs: 23 * 60_000,
+    deferWhenBusy: true,
     run: () => syncBuddyUsage(buddyTaskDeps),
   });
   // The scheduled tasks are registered here but started by the caller once the
@@ -668,7 +714,7 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
     snapshotService,
     readRoutingAccountInflight,
     resolveProviderAdapter: (providerId) => registry.resolve(providerId),
-    bundledModelCatalog: bundledCatalog,
+    bundledModelCatalog: { modelsByProvider: bundledCatalogModels },
     byokUpstreamHosts,
     proxyPreparer: new ProxyRequestPreparer({
       snapshotService,

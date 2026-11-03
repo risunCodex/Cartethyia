@@ -62,6 +62,7 @@ import type { ValidatedNetworkBindingFactory } from "../network/pool/resolver";
 import { metrics } from "../observability/metrics";
 import type { RuntimeMetricsSampler } from "../observability/runtime-metrics";
 import { API_CONTENT_SECURITY_POLICY, X_FRAME_OPTIONS } from "../security/outbound-headers";
+import { setProxyBusySource } from "../shared/invoke-guard";
 
 
 import type { TelemetryBatchBuffer } from "../observability/telemetry-buffer";
@@ -260,6 +261,12 @@ export function createGatewayApp(deps: GatewayAppDeps) {
     deps.mode === "production" ? deps.shutdownCoordinator : undefined,
   );
   deps.runtimeMetricsSampler?.bindInFlight(() => requestStateStore.inFlightCount());
+  // G-03 InvokeGuard: expose the proxy plane's live in-flight count as the
+  // "foreground busy" source the scheduled worker registry consults before a
+  // tick. Bound once here, where the request store exists; a proxy invoke in
+  // progress (or a page-open console poll) keeps background sweeps from
+  // contending for the single event loop.
+  setProxyBusySource(() => requestStateStore.inFlightCount() > 0);
   // Vision handoff runs as an internal sub-dispatch when the tenant configured
   // an ordered list of vision models. Wire the preparer's runner here, where
   // the request state store and the full dispatch dependency surface exist.

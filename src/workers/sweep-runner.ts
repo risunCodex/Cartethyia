@@ -17,9 +17,27 @@
  * wrapper; this module owns only the domain lifecycle above.
  */
 import { log } from "../observability/logger";
+import { foregroundBusy } from "../shared/invoke-guard";
 import { runGrowingWaves } from "./scheduler";
 
 const DEFAULT_SWEEP_CONCURRENCY = 5;
+
+/**
+ * How long a wave boundary waits for foreground activity to clear before
+ * starting the next wave (G-03). A bounded courtesy pause — never a skip: if
+ * the foreground stays busy past this window the sweep proceeds, because a
+ * sweep starved forever is worse than one sharing a tick with the page.
+ */
+const FOREGROUND_DEFER_WAVE_MAX_MS = 1_000;
+
+/** Pause between waves while foreground activity is busy, bounded. */
+async function deferWaveForForeground(now: () => number): Promise<void> {
+  if (!foregroundBusy()) return;
+  const until = now() + FOREGROUND_DEFER_WAVE_MAX_MS;
+  while (foregroundBusy() && now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
 
 /** Outcome counts for one sweep pass. */
 interface SweepResult {
@@ -173,6 +191,7 @@ export async function runSweep<T>(plan: SweepPlan<T>): Promise<SweepResult> {
     await runGrowingWaves(batch, {
       maxConcurrency: Math.max(1, plan.maxConcurrency ?? DEFAULT_SWEEP_CONCURRENCY),
       ...(deadline === null ? {} : { shouldStop: () => now() >= (deadline as number) }),
+      beforeWave: () => deferWaveForForeground(now),
       onItem: runOne,
     });
   }

@@ -151,12 +151,36 @@ const usageMatrixQuery = t.Object({
   days: t.Optional(t.Integer({ minimum: 1, maximum: 366 })),
 });
 export function createProviderCatalogRoutes(config: ProviderCatalogConfig): AnyElysia {
-  const factory = createProviderCatalogOperations(config);
-  const modelFactory = createModelCatalogOperations(config);
+  // One provider-list cache revision shared by both operation factories. Every
+  // provider/account/model mutation already funnels through the snapshot
+  // invalidator; wrapping it here means any of those writes bumps the revision
+  // folded into the provider-list cache key, so the cached overview (P-04)
+  // recomputes on the next read without a per-path cache delete. The revision
+  // stays per route-group, so a mutation handled by a peer process still
+  // converges when its own entry's TTL lapses.
+  const underlyingInvalidator = config.snapshotInvalidator;
+  let providerListCacheRevision = 0;
+  const catalogSnapshotInvalidator = underlyingInvalidator
+    ? {
+        invalidate: async () => {
+          providerListCacheRevision += 1;
+          return underlyingInvalidator.invalidate();
+        },
+        currentRevision: () => providerListCacheRevision,
+      }
+    : undefined;
+  const effectiveConfig = catalogSnapshotInvalidator
+    ? { ...config, snapshotInvalidator: catalogSnapshotInvalidator }
+    : config;
+  const factory = createProviderCatalogOperations(effectiveConfig);
+  const modelFactory = createModelCatalogOperations(effectiveConfig);
   return new Elysia({ prefix: "/providers" })
     .error(consoleErrorHandler("Provider catalog operation failed"))
     .get("/", async ({ request }) => {
-      return await factory.listProviders(config.accessResolver(request));
+      return await factory.listProvidersCached(
+        config.accessResolver(request),
+        request.headers.get("if-none-match"),
+      );
 })
     .patch(
       "/platform/global/:providerId",

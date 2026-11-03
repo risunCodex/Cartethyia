@@ -8,7 +8,6 @@ import { EmptyState, ErrorState, LoadingState } from "../../components/ui/state"
 import { Inline } from "../../components/ui/inline";
 import { Stack } from "../../components/ui/stack";
 import { useMaskIp } from "../../lib/privacy-mode";
-import { useRequestsStream } from "../../hooks/live";
 import { useProviders } from "../../hooks/providers";
 import { useUsageRequests, useUsageSummary } from "../../hooks/system";
 import {
@@ -121,7 +120,6 @@ export default function Usage(): ReactNode {
   const [requestLimit, setRequestLimit] = useState(50);
   const [requestStatusFilter, setRequestStatusFilter] = useState<number | null>(null);
   const requestsQuery = useUsageRequests(period, requestLimit, requestStatusFilter);
-  useRequestsStream();
   /** Scroll offset of the Requests table, restored after each live refresh. */
   const requestsScrollTopRef = useRef(0);
   const [requestSortKey, setRequestSortKey] = useState<"startedAt" | "model" | "status" | "tokens" | "tps" | "ttft" | "duration">("startedAt");

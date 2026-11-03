@@ -1682,7 +1682,9 @@ export const dailyCheckinLedger = pgTable(
   "daily_checkin_ledger",
   {
     dayKey: text("day_key").notNull(),
-    accountId: uuid("account_id").notNull(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => providerAccounts.id, { onDelete: "cascade" }),
     claimedAt: timestamp("claimed_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

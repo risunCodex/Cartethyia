@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { consoleRequest, isRecord } from "../data/api";
 import { queryKeys } from "../data/query-keys";
-import { STREAM_RETRY_MS } from "../lib/stream-retry";
-import { useSseWhenVisible } from "./sse-visibility";
+import { useConsoleEventSource } from "./use-console-event-source";
 
 export interface InFlightState {
   /** Latest live count, or null before the first snapshot arrives. */
@@ -34,74 +33,54 @@ function readSnapshot(payload: unknown): { count: number; uniqueIps: number } | 
  * the shell's normal 401 handling instead of spinning a retry loop — then
  * keeps the stream open; on transport failure it re-snapshots and re-opens
  * after a short delay.
+ *
+ * The stream also delivers `request_completed` events (the same fan-out as
+ * `GET /live/requests/stream`), so this single connection both drives the
+ * in-flight pill and invalidates the usage requests queries — the Usage page
+ * gets one stream and one preflight instead of two.
  */
 export function useInFlight(): InFlightState {
+  const queryClient = useQueryClient();
   const [count, setCount] = useState<number | null>(null);
   const [uniqueIps, setUniqueIps] = useState<number | null>(null);
   const [live, setLive] = useState(false);
-  const visible = useSseWhenVisible();
 
-  useEffect(() => {
-    if (!visible) return;
-    let stopped = false;
-    let source: EventSource | undefined;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let generation = 0;
-
-    const connect = async () => {
-      const currentGeneration = ++generation;
-      try {
-        const snapshot = await consoleRequest<unknown>("/live/in-flight");
-        if (stopped || currentGeneration !== generation) return;
-        const next = readSnapshot(snapshot);
-        if (next !== null) {
-          setCount(next.count);
-          setUniqueIps(next.uniqueIps);
-        }
-
-        const nextSource = new EventSource("/console/api/live/in-flight/stream");
-        source = nextSource;
-        nextSource.addEventListener("count", (event) => {
-          if (stopped || currentGeneration !== generation) return;
-          try {
-            const seen = readSnapshot(JSON.parse((event as MessageEvent).data as string));
-            if (seen !== null) {
-              setCount(seen.count);
-              setUniqueIps(seen.uniqueIps);
-              setLive(true);
-            }
-          } catch {
-            // Malformed frame: keep the last good value.
-          }
-        });
-        nextSource.onerror = () => {
-          if (stopped || currentGeneration !== generation) return;
-          nextSource.close();
-          if (source === nextSource) source = undefined;
-          setLive(false);
-          retryTimer = setTimeout(() => {
-            if (!stopped) void connect();
-          }, STREAM_RETRY_MS);
-        };
-      } catch {
-        // Unauthenticated (shell handles the transition) or offline: retry after a delay.
-        if (!stopped && currentGeneration === generation) {
-          setLive(false);
-          retryTimer = setTimeout(() => {
-            if (!stopped) void connect();
-          }, STREAM_RETRY_MS);
-        }
+  useConsoleEventSource({
+    url: "/console/api/live/in-flight/stream",
+    preflight: async () => {
+      const snapshot = await consoleRequest<unknown>("/live/in-flight");
+      const next = readSnapshot(snapshot);
+      if (next !== null) {
+        setCount(next.count);
+        setUniqueIps(next.uniqueIps);
       }
-    };
-
-    void connect();
-    return () => {
-      stopped = true;
-      generation += 1;
-      if (retryTimer !== undefined) clearTimeout(retryTimer);
-      source?.close();
-    };
-  }, [visible]);
+    },
+    events: ["count", "request_completed"],
+    onEvent: (event, data) => {
+      if (event === "request_completed") {
+        // Invalidate all request list queries so the table refreshes
+        // immediately. The query key prefix covers every period/limit combo.
+        void queryClient.invalidateQueries({
+          queryKey: ["console", "usage", "requests"],
+          exact: false,
+        });
+        return;
+      }
+      if (event !== "count") return;
+      try {
+        const seen = readSnapshot(JSON.parse(data));
+        if (seen !== null) {
+          setCount(seen.count);
+          setUniqueIps(seen.uniqueIps);
+          setLive(true);
+        }
+      } catch {
+        // Malformed frame: keep the last good value.
+      }
+    },
+    onOpen: () => setLive(true),
+    onClose: () => setLive(false),
+  });
 
   return { count, uniqueIps, live };
 }
@@ -197,6 +176,9 @@ export function mergePools(
   return next;
 }
 
+/** Debounce window for the pools-query invalidation triggered by SSE health events. */
+const POOLS_HEALTH_INVALIDATE_DEBOUNCE_MS = 2_000;
+
 /**
  * Live per-pool proxy usage over the console SSE stream
  * (`GET /live/pools/stream`, `pools` events). Same open pattern as
@@ -204,140 +186,62 @@ export function mergePools(
  * re-snapshot + re-open on transport failure. Rows cover only pools with an
  * active slot — an idle pool reads as absent (zero), keyed by pool id so the
  * Proxy page can join against its pool list.
+ *
+ * A `health` event invalidates the pools list query, debounced so a burst of
+ * health transitions (a sweep recovering many pools) coalesces into one
+ * refetch instead of N.
  */
 export function usePoolUsage(): PoolUsageState {
   const queryClient = useQueryClient();
   const [pools, setPools] = useState<readonly PoolUsageRow[] | null>(null);
   const [live, setLive] = useState(false);
   const maxBytesByPool = useState(() => new Map<string, PoolUsageRow>())[0];
-  const visible = useSseWhenVisible();
+  const healthInvalidateTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
-    if (!visible) return;
-    let stopped = false;
-    let source: EventSource | undefined;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-
-    const openStream = () => {
-      source = new EventSource("/console/api/live/pools/stream");
-      source.addEventListener("pools", (event) => {
-        if (stopped) return;
-        try {
-          const parsed = readPools(JSON.parse((event as MessageEvent).data as string));
-          if (parsed !== null) {
-            // Keep the highest bytesSent/received seen per pool so a reconnect
-            // that temporarily yields an empty snapshot does not snap the bar to 0B.
-            setPools(mergePools(maxBytesByPool, parsed));
-            setLive(true);
-          }
-        } catch {
-          // Malformed frame: keep the last good value.
-        }
-      });
-      source.addEventListener("health", () => {
-        if (!stopped) void queryClient.invalidateQueries({ queryKey: queryKeys.network.pools });
-      });
-      source.onerror = () => {
-        source?.close();
-        if (stopped) return;
-        setLive(false);
-        retryTimer = setTimeout(() => {
-          if (!stopped) void snapshotThenStream();
-        }, STREAM_RETRY_MS);
-      };
-    };
-
-    const snapshotThenStream = async () => {
-      try {
-        const snapshot = await consoleRequest<unknown>("/live/pools");
-        if (stopped) return;
-        const parsed2 = readPools(snapshot);
-        if (parsed2 !== null) {
-          setPools(mergePools(maxBytesByPool, parsed2));
-        }
-        openStream();
-      } catch {
-        // Unauthenticated (shell handles the transition) or offline: stay stale.
-      }
-    };
-
-    void snapshotThenStream();
+    const timer = healthInvalidateTimer;
     return () => {
-      stopped = true;
-      if (retryTimer !== undefined) clearTimeout(retryTimer);
-      source?.close();
+      if (timer.current !== undefined) clearTimeout(timer.current);
     };
-  }, [queryClient, visible]);
+  }, []);
+
+  useConsoleEventSource({
+    url: "/console/api/live/pools/stream",
+    preflight: async () => {
+      const snapshot = await consoleRequest<unknown>("/live/pools");
+      const parsed = readPools(snapshot);
+      if (parsed !== null) {
+        // Keep the highest bytesSent/received seen per pool so a reconnect
+        // that temporarily yields an empty snapshot does not snap the bar to 0B.
+        setPools(mergePools(maxBytesByPool, parsed));
+      }
+    },
+    events: ["pools", "health"],
+    onEvent: (event, data) => {
+      if (event === "health") {
+        if (healthInvalidateTimer.current !== undefined) {
+          clearTimeout(healthInvalidateTimer.current);
+        }
+        healthInvalidateTimer.current = setTimeout(() => {
+          healthInvalidateTimer.current = undefined;
+          void queryClient.invalidateQueries({ queryKey: queryKeys.network.pools });
+        }, POOLS_HEALTH_INVALIDATE_DEBOUNCE_MS);
+        return;
+      }
+      if (event !== "pools") return;
+      try {
+        const parsed = readPools(JSON.parse(data));
+        if (parsed !== null) {
+          setPools(mergePools(maxBytesByPool, parsed));
+          setLive(true);
+        }
+      } catch {
+        // Malformed frame: keep the last good value.
+      }
+    },
+    onOpen: () => setLive(true),
+    onClose: () => setLive(false),
+  });
 
   return { pools, live };
-}
-
-/**
- * Subscribes to the `/live/requests/stream` SSE endpoint and invalidates the
- * usage requests query whenever a `request_completed` event arrives. This
- * makes the request list update in real time without polling — each completed
- * request appears immediately instead of waiting for the next 5-second tick.
- *
- * The hook does not hold any state; it is purely a side-effect subscriber.
- * Call it once near the top of the Usage page.
- */
-export function useRequestsStream(): void {
-  const queryClient = useQueryClient();
-  const visible = useSseWhenVisible();
-
-  useEffect(() => {
-    if (!visible) return;
-    let stopped = false;
-    let source: EventSource | undefined;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let generation = 0;
-
-    const connect = async () => {
-      const currentGeneration = ++generation;
-      try {
-        // Auth-gate: a preflight GET confirms the session is valid so a dead
-        // session bounces through the normal 401 → login flow instead of
-        // opening an SSE stream that immediately closes and retries forever.
-        await consoleRequest<unknown>("/live/in-flight");
-        if (stopped || currentGeneration !== generation) return;
-
-        const nextSource = new EventSource("/console/api/live/requests/stream");
-        source = nextSource;
-
-        nextSource.addEventListener("request_completed", () => {
-          if (stopped || currentGeneration !== generation) return;
-          // Invalidate all request list queries so the table refreshes
-          // immediately. The query key prefix covers every period/limit combo.
-          void queryClient.invalidateQueries({
-            queryKey: ["console", "usage", "requests"],
-            exact: false,
-          });
-        });
-
-        nextSource.onerror = () => {
-          if (stopped || currentGeneration !== generation) return;
-          nextSource.close();
-          if (source === nextSource) source = undefined;
-          retryTimer = setTimeout(() => {
-            if (!stopped) void connect();
-          }, STREAM_RETRY_MS);
-        };
-      } catch {
-        // Offline or unauthenticated — retry after a delay; the shell
-        // handles the 401 → login transition through its own mechanism.
-        if (!stopped) {
-          retryTimer = setTimeout(() => {
-            if (!stopped) void connect();
-          }, STREAM_RETRY_MS);
-        }
-      }
-    };
-
-    void connect();
-    return () => {
-      stopped = true;
-      if (retryTimer !== undefined) clearTimeout(retryTimer);
-      source?.close();
-    };
-  }, [queryClient, visible]);
 }

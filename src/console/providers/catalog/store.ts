@@ -917,6 +917,27 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
     return [...accounts, ...poolAccounts];
   }
 
+  /**
+   * One cheap id-only read of an account set, for callers that need the set
+   * (e.g. the routing-inflight reader) without the usage aggregates
+   * `listAccounts` computes (P-02). No ORDER BY: the set is order-insensitive.
+   */
+  async listAccountIds(
+    tenantId: string,
+    providerId: string,
+  ): Promise<readonly string[]> {
+    const rows = await this.db
+      .select({ id: providerAccounts.id })
+      .from(providerAccounts)
+      .where(
+        and(
+          eq(providerAccounts.providerId, providerId),
+          globalOrOwnedBy(providerAccounts.tenantId, tenantId),
+        ),
+      );
+    return rows.map((row) => row.id);
+  }
+
   async listAllAccounts(tenantId: string): Promise<readonly ProviderAccountResponse[]> {
     const rows = await this.db
       .select()
@@ -937,6 +958,67 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
       .from(providerAccounts)
       .where(globalOrOwnedBy(providerAccounts.tenantId, tenantId));
     return rows.map((row) => ({ providerId: row.providerId, status: row.status }));
+  }
+
+  /**
+   * Per-provider account totals for one tenant, from a single grouped read (one
+   * statement, served by the `(provider_id, tenant_id)` index). `active` counts
+   * every status except `disabled` — an account parked by the health machine
+   * (`cooldown`) is still a connection, matching how the account-overview badge
+   * reads status. Used by the provider list overview (`accountCount` /
+   * `activeAccountCount`); totals are never counted in a per-provider loop.
+   */
+  async providerAccountCounts(
+    tenantId: string,
+  ): Promise<readonly { providerId: string; total: number; active: number }[]> {
+    const rows = await this.db
+      .select({
+        providerId: providerAccounts.providerId,
+        total: sql<number>`count(*)`,
+        active: sql<number>`sum(case when ${providerAccounts.status} <> 'disabled' then 1 else 0 end)`,
+      })
+      .from(providerAccounts)
+      .where(globalOrOwnedBy(providerAccounts.tenantId, tenantId))
+      .groupBy(providerAccounts.providerId);
+    return rows.map((row) => ({
+      providerId: row.providerId,
+      total: Number(row.total),
+      active: Number(row.active),
+    }));
+  }
+
+  /**
+   * Per-provider enabled model-row counts for one tenant, from a single grouped
+   * read over `models ⋈ providers`. A model counts only when the row is enabled
+   * and the tenant has not suppressed it via `tenant_disabled_models` — the
+   * same visibility rule the per-provider model listing applies, so the
+   * overview badge never disagrees with what the detail page would list.
+   */
+  async providerModelCounts(
+    tenantId: string,
+  ): Promise<readonly { providerId: string; count: number }[]> {
+    const rows = await this.db
+      .select({ providerId: models.providerId, count: sql<number>`count(*)` })
+      .from(models)
+      .innerJoin(providers, eq(models.providerId, providers.id))
+      .leftJoin(
+        tenantDisabledModels,
+        and(
+          eq(tenantDisabledModels.tenantId, tenantId),
+          eq(tenantDisabledModels.providerId, models.providerId),
+          eq(tenantDisabledModels.modelId, models.modelId),
+          eq(tenantDisabledModels.endpointPath, models.endpointPath),
+        ),
+      )
+      .where(
+        and(
+          eq(models.enabled, true),
+          globalOrOwnedBy(providers.tenantId, tenantId),
+          isNull(tenantDisabledModels.id),
+        ),
+      )
+      .groupBy(models.providerId);
+    return rows.map((row) => ({ providerId: row.providerId, count: Number(row.count) }));
   }
 
   /**

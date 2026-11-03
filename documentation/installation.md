@@ -81,6 +81,13 @@ attached menu does not stop it; use the explicit stop command. The gateway uses
 the install's persistent drain token and PID/port ownership marker, never
 `pkill`, `nohup`, or a port-wide process kill.
 
+Heavy periodic sweeps can be switched off per task with
+`CARTETHYIA_DISABLED_TASKS` (a comma-separated list of task names, e.g.
+`oauth-refresh-sweep,buddy-adopt`). The full task list and the config
+reference live in `documentation/reference/configuration.md`; a disabled task
+is logged once at boot and never scheduled. Use this to cut background work on
+a small host — the quota/health sweeps are the ones to consider first.
+
 VPS uses `/etc/systemd/system/cartethyia.service` and the compiled
 `dist/cartethyia`. Regular VPS manages Caddy only when DNS resolves to the
 host. NAT leaves forwarding and TLS to the provider; readiness inside the VM

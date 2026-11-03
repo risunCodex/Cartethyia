@@ -72,7 +72,7 @@ dbDescribe("vision handoff", () => {
       modelId: "vision-model",
       modelOptions: { wireFamily: "chat", endpointPath: "/v1/chat/completions" },
     });
-    gateway.setRoutes([
+    await gateway.setRoutes([
       // The main model is text-only: no image capability.
       {
         providerId: textOnly.providerId,

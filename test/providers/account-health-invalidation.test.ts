@@ -119,7 +119,20 @@ describe("model cooldown route snapshot invalidation", () => {
       snapshotService: routeService,
     });
 
-    const after = await routeService.getSnapshot();
+    // G-02: `invalidate()` now triggers a DEBOUNCED background rebuild, so the
+    // immediately-served snapshot can be one revision stale until the rebuild
+    // completes. Wait for the revision to advance before asserting the new
+    // routing — the invalidation is async, not synchronous.
+    const minRevision = before.revision + 1;
+    const deadline = Date.now() + 5_000;
+    let after = await routeService.getSnapshot();
+    while (after.revision < minRevision) {
+      if (Date.now() > deadline) {
+        throw new Error("route snapshot rebuild did not settle within 5s");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      after = await routeService.getSnapshot();
+    }
     const cooled = after.candidates.find(
       (row) => row.provider_account_id === world.accountId && row.model_id === world.modelId,
     );

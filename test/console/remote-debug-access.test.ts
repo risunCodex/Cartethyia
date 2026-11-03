@@ -21,7 +21,7 @@ dbDescribe("remote request detail via API key", () => {
     const world = await createWorld({ apiKeyOptions: { scopes: ["dashboard:read"] } });
     const gateway = await createTestGateway();
     try {
-      gateway.serveWorld(world);
+      await gateway.serveWorld(world);
       const response = await gateway.request(
         "/console/api/system/usage/requests?limit=10",
         { headers: { authorization: `Bearer ${world.token}` } },
@@ -37,7 +37,7 @@ dbDescribe("remote request detail via API key", () => {
     const world = await createWorld({ apiKeyOptions: { scopes: ["routing:invoke"] } });
     const gateway = await createTestGateway();
     try {
-      gateway.serveWorld(world);
+      await gateway.serveWorld(world);
       const response = await gateway.request(
         "/console/api/system/usage/requests?limit=10",
         { headers: { authorization: `Bearer ${world.token}` } },
@@ -53,7 +53,7 @@ dbDescribe("remote request detail via API key", () => {
     const world = await createWorld({ apiKeyOptions: { scopes: ["dashboard:read"] } });
     const gateway = await createTestGateway();
     try {
-      gateway.serveWorld(world);
+      await gateway.serveWorld(world);
       const response = await gateway.request("/console/api/system/usage/requests?limit=10");
       expect(response.status).toBe(401);
     } finally {
@@ -66,7 +66,7 @@ dbDescribe("remote request detail via API key", () => {
     const world = await createWorld({ apiKeyOptions: { scopes: ["dashboard:read"] } });
     const gateway = await createTestGateway();
     try {
-      gateway.serveWorld(world);
+      await gateway.serveWorld(world);
       // The payload route is the point of remote debugging: an operator needs
       // the actual body, not just that the request happened.
       const response = await gateway.request("/console/api/telemetry/events?limit=10", {

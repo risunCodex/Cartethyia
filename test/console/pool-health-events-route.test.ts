@@ -17,7 +17,7 @@ dbDescribe("pool health-events route", () => {
     const world = await createWorld({ apiKeyOptions: { scopes: ["dashboard:read"] } });
     const gateway = await createTestGateway();
     try {
-      gateway.serveWorld(world);
+      await gateway.serveWorld(world);
 
       // A pool owned by the same tenant as the key.
       const poolId = randomUUID();

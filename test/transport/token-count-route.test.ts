@@ -52,7 +52,7 @@ dbDescribe("count_tokens on a route without a counter", () => {
   });
 
   test("a chat-only route answers an estimate instead of failing", async () => {
-    gateway.setRoutes([
+    await gateway.setRoutes([
       {
         providerId: chat.providerId,
         modelId: chat.modelId,
@@ -71,7 +71,7 @@ dbDescribe("count_tokens on a route without a counter", () => {
   });
 
   test("a Messages route still forwards, so the provider's own number wins", async () => {
-    gateway.setRoutes([
+    await gateway.setRoutes([
       {
         providerId: messages.providerId,
         modelId: messages.modelId,
@@ -94,7 +94,7 @@ dbDescribe("count_tokens on a route without a counter", () => {
   });
 
   test("a count still requires messages and a model", async () => {
-    gateway.setRoutes([
+    await gateway.setRoutes([
       {
         providerId: chat.providerId,
         modelId: chat.modelId,
@@ -110,7 +110,7 @@ dbDescribe("count_tokens on a route without a counter", () => {
   });
 
   test("an estimated count still writes exactly one telemetry row with observed latency", async () => {
-    gateway.setRoutes([
+    await gateway.setRoutes([
       {
         providerId: chat.providerId,
         modelId: chat.modelId,

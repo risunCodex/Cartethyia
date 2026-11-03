@@ -1,6 +1,5 @@
 import type { ConsoleAccessResolver } from "../auth/access";
 import type { AuditRecorder } from "../auth/audit-recorder";
-import { markClineApiKeyCredential } from "../../providers/integrations/cline/cline-quota";
 import { type QuotaRefreshDeps } from "../../providers/quota/refresh";
 import type { AccountTestEgressDeps } from "./account-test-egress";
 
@@ -31,8 +30,16 @@ export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
  * omitted it, so a working account was cooled with `quota_fetch_failed` every
  * minute while refreshing fine from the console.
  */
-export function markProviderApiKeyCredential(providerId: string, credential: string): string {
-  return providerId === "cline" ? markClineApiKeyCredential(credential) : credential;
+export async function markProviderApiKeyCredential(providerId: string, credential: string): Promise<string> {
+  if (providerId !== "cline") return credential;
+  // dynamic-import: B-02 lazy graph — cline-only marker, kept off the boot graph.
+  // The cline-quota graph is loaded lazily: only `cline` accounts ever need
+  // the marker, so a deployment without cline must not pull it into the boot
+  // graph (B-02).
+  const { markClineApiKeyCredential } = await import(
+    "../../providers/integrations/cline/cline-quota"
+  );
+  return markClineApiKeyCredential(credential);
 }
 
 /**

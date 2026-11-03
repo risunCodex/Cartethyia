@@ -3,6 +3,7 @@ import { GatewayError } from "../../protocol/gateway-error";
 import { type ServiceKind, type WireFamily } from "../../protocol/canonical-model";
 import type { CallerIdentity } from "../../security/access-control";
 import type { ProviderQuotaWindow } from "../../providers/quota/quota-contracts";
+import { log } from "../../observability/logger";
 
 export type { CallerIdentity };
 
@@ -576,42 +577,83 @@ export class InMemoryRouteSnapshotService implements RouteSnapshotService {
    * only populate the cache if no mutation happened while it ran.
    */
   private building: { revision: RoutingRevision; promise: Promise<RouteSnapshot> } | undefined;
+  /**
+   * Debounced background-rebuild timer (G-02). One invalidate schedules a
+   * rebuild; a burst of invalidates within `rebuildDebounceMs` coalesces into
+   * the single latest-revision rebuild. The timer is cleared on `stop()`.
+   */
+  private rebuildTimer: ReturnType<typeof setTimeout> | undefined;
+  private stopped = false;
 
-  constructor(private readonly builder: SnapshotBuilder) {
+  constructor(
+    private readonly builder: SnapshotBuilder,
+    options: { readonly rebuildDebounceMs?: number } = {},
+  ) {
+    this.rebuildDebounceMs = options.rebuildDebounceMs ?? 500;
     // Peers' mutations arrive once per process, not per instance: the handler
-    // drops this instance's copy, which is the only one there is.
+    // schedules a background rebuild, which is the only one there is.
     this.unsubscribe = subscribeRoutingInvalidation(() => {
       this.revision += 1;
-      this.snapshot = undefined;
+      this.scheduleRebuild();
     });
   }
 
-  /** Ends the peer-invalidation subscription. */
+  /** Ends the peer-invalidation subscription and clears the rebuild timer. */
   readonly unsubscribe: () => void;
 
-  async getSnapshot(): Promise<RouteSnapshot> {
-    if (this.snapshot) return this.snapshot;
-    if (this.building && this.building.revision === this.revision) return this.building.promise;
+  /** Wall-clock debounce for coalescing invalidate bursts. */
+  private readonly rebuildDebounceMs: number;
+
+  /**
+   * Schedules a background rebuild at the current revision. Debounced: while a
+   * timer is pending, further invalidates just bump the revision and the
+   * pending rebuild picks up the latest. Single-flight by construction — the
+   * rebuild itself reuses {@link building}, so concurrent callers share one
+   * promise for the same revision.
+   */
+  private scheduleRebuild(): void {
+    if (this.stopped || this.rebuildTimer !== undefined) return;
+    this.rebuildTimer = setTimeout(() => {
+      this.rebuildTimer = undefined;
+      void this.rebuildNow().catch((error: unknown) => {
+        // A background rebuild failure is a soft miss: requests served the
+        // last-completed snapshot, and the next invalidation retries.
+        log.warn("[route-snapshot] background rebuild failed", error as Error);
+      });
+    }, this.rebuildDebounceMs);
+    if (typeof this.rebuildTimer.unref === "function") this.rebuildTimer.unref();
+  }
+
+  /** Starts (or joins) the build for the current revision. */
+  private rebuildNow(): Promise<RouteSnapshot> {
     const revision = this.revision;
+    if (this.building && this.building.revision === revision) return this.building.promise;
     const promise = this.build(revision);
     this.building = { revision, promise };
-    try {
-      return await promise;
-    } finally {
+    void promise.finally(() => {
       // Only the build that is still current may clear the slot; a build
       // started after a mutation must not be dropped by an older one finishing.
       if (this.building?.promise === promise) this.building = undefined;
-    }
+    });
+    return promise;
   }
 
+  async getSnapshot(): Promise<RouteSnapshot> {
+    // G-02: serve the last-completed snapshot while a rebuild runs, so the
+    // page-open request path never pays the catalog build. Only a cold start
+    // (no snapshot at all) falls through to a synchronous build here.
+    if (this.snapshot) return this.snapshot;
+    return this.rebuildNow();
+  }
 
   async invalidate(): Promise<RoutingRevision> {
     this.revision += 1;
-    this.snapshot = undefined;
-    // Lazy: the next getSnapshot() rebuilds. Dashboard mutations only need
-    // the new revision token — they must not pay seven Postgres round-trips
-    // inside the mutating request while holding no pool pressure budget.
-    //
+    // G-02: trigger a BACKGROUND rebuild immediately instead of clearing the
+    // snapshot and making the next request pay. The rebuild is debounced so a
+    // burst of invalidates (a recovery sweep, a cascade of console writes)
+    // coalesces into one rebuild, and it never blocks the mutating request —
+    // a console write does not wait on its own rebuild here.
+    this.scheduleRebuild();
     // Broadcast, because `reusePort` runs several gateway processes and each
     // holds its own snapshot: a console write handled by one of them left the
     // others serving pre-write routing until something else invalidated them.
@@ -619,6 +661,15 @@ export class InMemoryRouteSnapshotService implements RouteSnapshotService {
     // notice carries no data, so there is nothing to deserialize.
     publishRoutingInvalidation();
     return this.revision;
+  }
+
+  /** Stops background rebuilds. Test/teardown helper. */
+  stop(): void {
+    this.stopped = true;
+    if (this.rebuildTimer !== undefined) {
+      clearTimeout(this.rebuildTimer);
+      this.rebuildTimer = undefined;
+    }
   }
 
   private async build(revision: RoutingRevision): Promise<RouteSnapshot> {

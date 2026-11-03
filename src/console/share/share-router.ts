@@ -42,6 +42,77 @@ const MIN_TOKEN_LENGTH = 20;
 const SHARE_STATS_STREAM_INTERVAL_MS = 30_000;
 
 /**
+ * A subscriber of the process-wide share-stats sampler. A recipient is keyed
+ * by its family (`tenantId` + template key) so one sampler tick can push to
+ * many links without a per-connection timer.
+ */
+type ShareStatsListener = (family: ShareFamilyStats) => void;
+
+/**
+ * One sampler per gateway for share-stats SSE delivery. Previously each
+ * `/share/:token/stats/stream` connection ran its own 30s timer and re-read
+ * the family rollup; with N open tabs that is N timers and N rollups all
+ * reading the same data. Now a single process-level sampler ticks on the
+ * shared cadence and fans each computed rollup out to the subscribers whose
+ * family it matches. Timers run only while at least one stream is open.
+ */
+function createShareStatsSampler(config: {
+  readonly db: CartethyiaDatabase;
+  readonly shareStore: ShareLinkStore;
+  readonly stats: ShareStatsPort;
+}): { subscribe(token: string, listener: ShareStatsListener): () => void } {
+  const subscribers = new Map<string, Set<ShareStatsListener>>();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const tick = async (): Promise<void> => {
+    // One resolve per family token: a recipient with several tabs shares one
+    // rollup, and a family with no open stream is never computed.
+    const tokens = new Set(subscribers.keys());
+    for (const token of tokens) {
+      const listeners = subscribers.get(token);
+      if (listeners === undefined || listeners.size === 0) continue;
+      try {
+        const family = await resolveFamilyStats(config.db, config.shareStore, config.stats, token);
+        if (family === null) continue;
+        for (const listener of listeners) listener(family);
+      } catch {
+        // A transient read must not interrupt the sampler.
+      }
+    }
+  };
+
+  const start = (): void => {
+    if (timer !== undefined) return;
+    timer = setTimeout(async function run() {
+      timer = setTimeout(run, SHARE_STATS_STREAM_INTERVAL_MS);
+      await tick();
+    }, SHARE_STATS_STREAM_INTERVAL_MS);
+  };
+
+  const stop = (): void => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+
+  return {
+    subscribe(token, listener) {
+      let listeners = subscribers.get(token);
+      if (listeners === undefined) {
+        listeners = new Set();
+        subscribers.set(token, listeners);
+      }
+      listeners.add(listener);
+      if (subscribers.size > 0) start();
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0) subscribers.delete(token);
+        if (subscribers.size === 0) stop();
+      };
+    },
+  };
+}
+
+/**
  * Context and capabilities for one allowed model, sourced from the public
  * catalog. Every field is nullable/optional so the page can show what is known
  * and omit the rest rather than invent a value.
@@ -263,6 +334,12 @@ async function resolveFamilyStats(
 /** Creates the public enrollment page and one-time shared-key issuance route. */
 export function createShareRouter(options: ShareRouterOptions): AnyElysia {
   const { db, shareStore } = options;
+  // The sampler is shared by every stats stream this router serves; it is a
+  // no-op when the composition omits `stats` (tests that do not exercise the
+  // stream), because `tick` never runs with no subscribers.
+  const statsSampler = options.stats === undefined
+    ? undefined
+    : createShareStatsSampler({ db, shareStore, stats: options.stats });
 
   return new Elysia()
     /**
@@ -443,48 +520,38 @@ export function createShareRouter(options: ShareRouterOptions): AnyElysia {
     /**
      * Live family activity for the share page's stats section, pushed over SSE.
      *
-     * The stream sends one snapshot immediately on connect, then re-reads on a
-     * short cadence so the recipient watches the shared quota move instead of
-     * refreshing. Telemetry is buffered server-side and drained in under a
-     * second, so a DB re-read on this cadence is as fresh as an event bus would
-     * be. Same bearer token and same masked-IP rollup as the one-shot route; a
-     * token that stops resolving closes the stream rather than reporting zeros.
+     * The stream sends one snapshot immediately on connect, then pushes on a
+     * shared sampler cadence so the recipient watches the shared quota move
+     * instead of refreshing. Telemetry is buffered server-side and drained in
+     * under a second, so the sampler's DB re-read is as fresh as an event bus
+     * would be. Same bearer token and same masked-IP rollup as the one-shot
+     * route; a token that stops resolving closes the stream rather than
+     * reporting zeros.
      */
     .get("/share/:token/stats/stream", async ({ params, request }) => {
       if (typeof params.token !== "string") return notFound();
       const token = params.token;
       if (token.length < MIN_TOKEN_LENGTH) return notFound();
       const stats = options.stats;
-      if (!stats) return json({ error: { code: "stats_unavailable", message: "Stats are unavailable" } }, 503);
+      if (!stats || statsSampler === undefined) {
+        return json({ error: { code: "stats_unavailable", message: "Stats are unavailable" } }, 503);
+      }
+      const sampler = statsSampler;
       return consoleSseResponse(
         createConsoleSseStream(request.signal, (sender) => {
-          let closed = false;
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          const push = async () => {
-            const family = await resolveFamilyStats(db, shareStore, stats, token);
-            if (closed) return;
+          const unsubscribe = sampler.subscribe(token, (family) => sender.send("stats", family));
+          // Bootstrap: deliver the link's current rollup immediately, and close
+          // the stream if the token no longer resolves — the same terminal
+          // behavior the per-connection timer had on a dead link.
+          void resolveFamilyStats(db, shareStore, stats, token).then((family) => {
             if (family === null) {
               sender.send("error", { code: "link_not_found" });
-              closed = true;
-              return;
+              unsubscribe();
+            } else {
+              sender.send("stats", family);
             }
-            sender.send("stats", family);
-          };
-          const schedule = () => {
-            timer = setTimeout(() => {
-              if (closed) return;
-              void push().finally(() => {
-                if (!closed) schedule();
-              });
-            }, SHARE_STATS_STREAM_INTERVAL_MS);
-          };
-          void push().finally(() => {
-            if (!closed) schedule();
-          });
-          return () => {
-            closed = true;
-            clearTimeout(timer);
-          };
+          }).catch(() => undefined);
+          return unsubscribe;
         }),
       );
     })

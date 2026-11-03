@@ -65,7 +65,7 @@ export interface QuotaRefreshDeps {
    */
   readonly resolveCredential: (providerId: ProviderId, accountId: string) => Promise<string>;
   /** Marks a stored api_key credential with the upstream-distinguishable envelope. */
-  readonly markApiKeyCredential?: (providerId: string, credential: string) => string;
+  readonly markApiKeyCredential?: (providerId: string, credential: string) => Promise<string>;
   /** Invalidates the route snapshot when a stamped figure may exclude an account. */
   readonly snapshotInvalidator?: { invalidate(): unknown } | undefined;
 }
@@ -365,7 +365,7 @@ async function runQuotaRefresh(
     // collector to the key-only probe, and OAuth credentials carry no key.
     const marked =
       target.credentialKind === "api_key"
-        ? (deps.markApiKeyCredential?.(target.providerId, credential) ?? credential)
+        ? (await deps.markApiKeyCredential?.(target.providerId, credential) ?? credential)
         : credential;
     try {
       const authState = asJsonbRecord(target.authState);

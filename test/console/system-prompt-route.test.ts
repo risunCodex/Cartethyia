@@ -17,7 +17,7 @@ dbDescribe("system-prompt route — dangling preset references", () => {
     });
     const gateway = await createTestGateway();
     try {
-      gateway.serveWorld(world);
+      await gateway.serveWorld(world);
 
       // A configuration that deletes the preset but leaves the combo pointing
       // at it. Previously this threw "combos references an unknown preset";
@@ -53,7 +53,7 @@ dbDescribe("system-prompt route — dangling preset references", () => {
     });
     const gateway = await createTestGateway();
     try {
-      gateway.serveWorld(world);
+      await gateway.serveWorld(world);
 
       const body = {
         global: null,

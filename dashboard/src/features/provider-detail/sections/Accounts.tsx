@@ -179,7 +179,7 @@ export function AccountsList({
   const runBulk = async (label: string, fn: (account: ProviderAccountResponse) => Promise<unknown>) => {
     if (selectedAccounts.length === 0) return;
     setBulkBusy(true);
-    const results = await Promise.allSettled(selectedAccounts.map((account) => fn(account)));
+    const results = await mapWithConcurrency(selectedAccounts, TEST_ALL_CONCURRENCY, fn);
     const failed = results.filter((result) => result.status === "rejected").length;
     const ok = results.length - failed;
     setBulkBusy(false);

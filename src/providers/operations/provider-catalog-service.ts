@@ -20,6 +20,7 @@ import { GATEWAY_USER_AGENT } from "./gateway-user-agent";
 import { isIP } from "node:net";
 import { isAddressAllowed } from "../../network/ssrf";
 import type { SsrfPolicy } from "../../config/network";
+import { BoundedLruMap } from "../../transport/routing/bounded-lru";
 
 /**
  * Revision of the compiled provider catalog, and the last one materialized.
@@ -234,14 +235,20 @@ export async function bundledModelCatalog(
  * 30 s timer, so an ungated re-seed could be pushed onto the next proxy
  * request for a catalog that had not changed. The paths that do change the
  * catalog bump the revision; everything else is a no-op here.
+ *
+ * `precomputedCatalog` supplies the compiled catalog when the caller already
+ * materialized it (the boot path's deferred B-01 resolution), so the seed
+ * shares that walk instead of running a second one. Absent, the walk runs
+ * here as before.
  */
 export async function refreshActiveProviderCatalogs(
   db: CartethyiaDatabase,
   registry: ProviderRegistry,
+  precomputedCatalog?: BundledProviderCatalog,
 ): Promise<void> {
   const revision = currentCatalogRevision();
   if (revision === lastSeededCatalogRevision) return;
-  const catalog = await bundledModelCatalog(registry);
+  const catalog = precomputedCatalog ?? (await bundledModelCatalog(registry));
   await seedBundledModels(db, catalog.modelsByProvider);
   lastSeededCatalogRevision = revision;
 }
@@ -251,8 +258,17 @@ export async function refreshActiveProviderCatalogs(
  * Last successfully applied BYOK config per normalized provider ID.
  * Makes repeated `syncByokProviders` runs cheap: an unchanged row is skipped,
  * while a changed one is re-registered instead of being rejected.
+ *
+ * Bounded (G-04 / B-04): provider IDs are operator-created strings, so an
+ * unbounded map would pin an entry for every retired or deleted custom
+ * provider forever. The LRU bound keeps only the most recently touched
+ * registrations resident; a dropped entry simply re-registers on the next
+ * pass (the fingerprint is a skip-ahead optimization, not correctness).
  */
-const byokRegistrationFingerprints = new Map<string, string>();
+const BYOK_FINGERPRINT_CACHE_MAX_ENTRIES = 1024;
+const byokRegistrationFingerprints = new BoundedLruMap<string, string>(
+  BYOK_FINGERPRINT_CACHE_MAX_ENTRIES,
+);
 
 function byokFingerprint(
   baseUrl: string,

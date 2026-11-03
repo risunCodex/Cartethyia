@@ -4,6 +4,7 @@
  * behavior.
  */
 import { log } from "../observability/logger";
+import { foregroundBusy } from "../shared/invoke-guard";
 import type { MaintenanceLeaseStore } from "./maintenance-lease";
 import { leaseTtlMs } from "./maintenance-lease";
 
@@ -12,6 +13,21 @@ export interface ScheduledTask {
   readonly intervalMs: number;
   /** Delay before the first run after the registry starts. */
   readonly initialDelayMs?: number;
+  /**
+   * True when this task should defer its tick while foreground activity is in
+   * flight (console requests / proxy invocations) — the G-03 InvokeGuard.
+   *
+   * Opt-in: tasks that only publish in-process gauges (`runtime-metrics`) or
+   * run at a far cadence (`telemetry-retention`) have no reason to yield, and
+   * a task that must run on schedule (a lease hold) would be the wrong place
+   * to pause. The heavy sweeps set it.
+   *
+   * The defer is a bounded pause, never a skip: a task waits up to
+   * {@link FOREGROUND_DEFER_MAX_MS} for the foreground to clear, then runs
+   * regardless. Foreground starvation of maintenance is worse than a sweep
+   * and foreground sharing one tick.
+   */
+  readonly deferWhenBusy?: boolean;
   /**
    * Whether this task's work is SHARED across the fleet, so only one process
    * should run it per interval.
@@ -62,6 +78,12 @@ export async function runGrowingWaves<T>(
     readonly maxConcurrency: number;
     readonly onItem: (item: T) => Promise<void> | void;
     readonly shouldStop?: () => boolean;
+    /**
+     * Invoked before each wave (after `shouldStop`). The sweep runner uses it
+     * to pause while foreground activity is busy (G-03); a caller that does not
+     * need that passes nothing.
+     */
+    readonly beforeWave?: () => Promise<void> | void;
   },
 ): Promise<void> {
   const limit = Math.max(1, options.maxConcurrency);
@@ -69,6 +91,7 @@ export async function runGrowingWaves<T>(
   let waveSize = Math.min(DEFAULT_INITIAL_BATCH_SIZE, limit);
   while (offset < items.length) {
     if (options.shouldStop?.() === true) return;
+    await options.beforeWave?.();
     const wave = items.slice(offset, offset + waveSize);
     offset += wave.length;
     await Promise.all(wave.map((item) => options.onItem(item)));
@@ -87,6 +110,28 @@ const DEFAULT_INITIAL_BATCH_SIZE = 2;
  * stalled lease store costs one interval instead of every future one.
  */
 const LEASE_ACQUIRE_TIMEOUT_MS = 5_000;
+
+/**
+ * How long a deferring task waits for foreground activity to clear before
+ * running anyway (G-03). Deliberately shorter than any sweep budget: the pause
+ * is a courtesy, not a schedule, and a continuous page/stream flood must not
+ * starve maintenance forever.
+ */
+const FOREGROUND_DEFER_MAX_MS = 3_000;
+
+/** Poll interval while waiting for foreground to clear. */
+const FOREGROUND_DEFER_POLL_MS = 50;
+
+/**
+ * Bounded wait for foreground activity to clear. Returns once the foreground
+ * is idle or the deadline elapses — never blocks past `FOREGROUND_DEFER_MAX_MS`.
+ */
+async function deferForForeground(now: () => number, sleep: (ms: number) => Promise<void>): Promise<void> {
+  const until = now() + FOREGROUND_DEFER_MAX_MS;
+  while (foregroundBusy() && now() < until) {
+    await sleep(FOREGROUND_DEFER_POLL_MS);
+  }
+}
 
 /** Resolves with the value, or rejects if `promise` has not settled in time. */
 async function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -277,6 +322,14 @@ export class ScheduledTaskRegistry {
     // every task fires at once once the blocker finishes, which is the burst
     // this rule exists to prevent.
     if (this.busy !== undefined) return;
+    // G-03: a foreground-deferring task waits out foreground activity (bounded)
+    // before latching the shared gate. The gate is NOT latched during the wait,
+    // so the re-check below is required: a different task can claim the gate
+    // (and finish) while this one is waiting.
+    if (task.deferWhenBusy === true) {
+      await deferForForeground(this.now, (ms) => new Promise((r) => setTimeout(r, ms)));
+    }
+    if (this.running.has(task.name) || this.busy !== undefined) return;
     this.running.add(task.name);
     this.busy = task.name;
     let lease: Awaited<ReturnType<MaintenanceLeaseStore["tryAcquire"]>> | undefined;

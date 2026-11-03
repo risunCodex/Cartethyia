@@ -184,8 +184,17 @@ function drainRetryDelayMs(attempt: number, baseDelayMs = DRAIN_RETRY_BASE_MS): 
   return exponentialBackoff(attempt, options);
 }
 
-/** Floor for the adaptive active interval so a full queue still drains promptly. */
-const ADAPTIVE_FLUSH_MIN_MS = 50;
+/**
+ * Floor for the adaptive active interval so a full queue still drains promptly.
+ *
+ * Raised to 200ms (from 50ms) so a flush does not collide with console reads:
+ * under load the queue saturates `maxBatch`, the interval fell to 50ms, and a
+ * drain landed in the middle of the console's own telemetry reads — the GROUP BY
+ * behind the Usage/ConsoleLog pages — making the page's queries wait on the
+ * drain's insert lock. 200ms still drains a 500-row batch ~5x/sec, which is a
+ * steady 2500 rows/sec ceiling; the adaptive curve otherwise keeps its shape.
+ */
+const ADAPTIVE_FLUSH_MIN_MS = 200;
 /** Multiplier applied to the base interval while the queue is empty. */
 const ADAPTIVE_IDLE_MULTIPLIER = 4;
 

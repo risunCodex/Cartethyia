@@ -34,16 +34,29 @@ export function useNetworkPools() {
   });
 }
 
-/** Health/error history for one network pool (used by the pool-account view). */
-export function usePoolHealthEvents(poolId: string | undefined) {
-  return useQuery<PoolHealthEvent[], ApiErrorShape>({
+/**
+ * Health/error history for one network pool.
+ *
+ * Shared by the pool-account view (`usePoolHealthEvents`, read on demand) and
+ * the pool health dialog (`useNetworkPoolHealthEvents`, polled while open).
+ * One implementation, two polling behaviors — the history itself only changes
+ * when the pool transitions, so the dialog's 10s poll is a freshness choice,
+ * not a data requirement.
+ */
+export function usePoolHealthEvents(
+  poolId: string | undefined,
+  options?: { refetchInterval?: number | false },
+) {
+  return useQuery<readonly PoolHealthEvent[], ApiErrorShape>({
     queryKey: queryKeys.network.poolHealthEvents(poolId ?? ""),
     queryFn: (context) =>
-      consoleRequest<PoolHealthEvent[]>(
+      consoleRequest<readonly PoolHealthEvent[]>(
         `/network/pools/${encodeURIComponent(poolId ?? "")}/health-events`,
         { signal: querySignal(context) },
       ),
-    enabled: poolId !== undefined,
+    enabled: Boolean(poolId),
+    ...DASHBOARD_QUERY_OPTIONS,
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }
 
@@ -214,19 +227,15 @@ export function useSetNetworkPoolStatusBatch() {
   });
 }
 
-/** Loads recent health and recovery activity for a pool. */
+/**
+ * Loads recent health and recovery activity for a pool (the pool-health dialog).
+ *
+ * Polls on the status cadence while mounted so a newly recorded transition
+ * appears without a manual refresh. Kept as a thin wrapper over
+ * `usePoolHealthEvents` so the two views share one implementation.
+ */
 export function useNetworkPoolHealthEvents(poolId: string | undefined) {
-  return useQuery<readonly PoolHealthEvent[], ApiErrorShape>({
-    queryKey: [...queryKeys.network.pools, poolId, "health-events"],
-    queryFn: (context) =>
-      consoleRequest<readonly PoolHealthEvent[]>(
-        `/network/pools/${encodeURIComponent(poolId ?? "")}/health-events`,
-        { signal: querySignal(context) },
-      ),
-    enabled: Boolean(poolId),
-    ...DASHBOARD_QUERY_OPTIONS,
-    refetchInterval: POLL.status,
-  });
+  return usePoolHealthEvents(poolId, { refetchInterval: POLL.status });
 }
 
 /** Recovers an automatically flagged proxy pool. */

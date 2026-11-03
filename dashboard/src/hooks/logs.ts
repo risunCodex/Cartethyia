@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { consoleRequest, isRecord } from "../data/api";
-import { STREAM_RETRY_MS } from "../lib/stream-retry";
-import { useSseWhenVisible } from "./sse-visibility";
+import { useConsoleEventSource } from "./use-console-event-source";
 
 export type ConsoleLogLevel = "debug" | "info" | "warn" | "error";
 
@@ -66,7 +65,6 @@ export function useConsoleLogStream() {
   const [lines, setLines] = useState<readonly ConsoleLogEntry[]>([]);
   const [newLineIds, setNewLineIds] = useState<ReadonlySet<string>>(new Set());
   const [status, setStatus] = useState<ConsoleLogStatus>("idle");
-  const attempt = useRef(0);
   const nextId = useRef(0);
   // Every timer the stream effect schedules, tracked so unmount can cancel the
   // pending ones — one highlight timer is scheduled per streamed line and would
@@ -79,51 +77,26 @@ export function useConsoleLogStream() {
     id: `l${(nextId.current += 1)}`,
   });
 
-  const visible = useSseWhenVisible();
+  const scheduleTimeout = (fn: () => void, delayMs: number): void => {
+    const handle = window.setTimeout(() => {
+      timers.current.delete(handle);
+      fn();
+    }, delayMs);
+    timers.current.add(handle);
+  };
 
-  useEffect(() => {
-    if (!visible) return;
-    let stopped = false;
-    let source: EventSource | undefined;
-    const runId = (attempt.current += 1);
-
-    const scheduleTimeout = (fn: () => void, delayMs: number): void => {
-      const handle = window.setTimeout(() => {
-        timers.current.delete(handle);
-        fn();
-      }, delayMs);
-      timers.current.add(handle);
-    };
-
-    const append = (line: ConsoleLogLine) => {
-      const stored = tag(line);
-      setNewLineIds((prev) => {
-        const next = new Set(prev);
-        next.add(stored.id);
-        return next;
-      });
-      // Drop the "new" highlight shortly after arrival so the list settles
-      // into a steady state instead of every recent line staying flagged.
-      scheduleTimeout(() => {
-        setNewLineIds((prev) => {
-          if (!prev.has(stored.id)) return prev;
-          const next = new Set(prev);
-          next.delete(stored.id);
-          return next;
-        });
-      }, NEW_LINE_HIGHLIGHT_MS);
-      setLines((prev) => {
-        const next = [...prev, stored];
-        return next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next;
-      });
-    };
-
-    const openStream = () => {
-      source = new EventSource("/console/api/logs/stream");
-      source.addEventListener("init", (event) => {
-        if (stopped) return;
+  useConsoleEventSource({
+    url: "/console/api/logs/stream",
+    preflight: async () => {
+      const snapshot = await consoleRequest<unknown>("/logs?limit=200");
+      setLines(readLines(snapshot).slice(-MAX_LINES).map(tag));
+      setNewLineIds(new Set());
+    },
+    events: ["init", "line", "clear"],
+    onEvent: (event, data) => {
+      if (event === "init") {
         try {
-          const payload = JSON.parse((event as MessageEvent).data as string) as unknown;
+          const payload = JSON.parse(data) as unknown;
           if (isRecord(payload)) {
             setLines(readLines(payload).slice(-MAX_LINES).map(tag));
             setNewLineIds(new Set());
@@ -132,55 +105,46 @@ export function useConsoleLogStream() {
         } catch {
           // Malformed frame: keep polling state.
         }
-      });
-      source.addEventListener("line", (event) => {
-        if (stopped) return;
-        try {
-          const payload = JSON.parse((event as MessageEvent).data as string) as unknown;
-          if (isLogLine(payload)) {
-            append(payload);
-            setStatus("live");
-          }
-        } catch {
-          // Malformed frame: keep the last good state.
-        }
-      });
-      source.addEventListener("clear", () => {
-        if (!stopped) {
-          setLines([]);
-          setNewLineIds(new Set());
-        }
-      });
-      source.onerror = () => {
-        source?.close();
-        if (stopped) return;
-        setStatus("reconnecting");
-        scheduleTimeout(() => {
-          if (!stopped && runId === attempt.current) void snapshotThenStream();
-        }, STREAM_RETRY_MS);
-      };
-    };
-
-    const snapshotThenStream = async () => {
-      try {
-        const snapshot = await consoleRequest<unknown>("/logs?limit=200");
-        if (stopped || runId !== attempt.current) return;
-        setLines(readLines(snapshot).slice(-MAX_LINES).map(tag));
-        setNewLineIds(new Set());
-        openStream();
-      } catch {
-        // Unauthenticated (shell handles the transition) or offline: stay idle.
+        return;
       }
-    };
-
-    void snapshotThenStream();
-    return () => {
-      stopped = true;
-      for (const handle of timers.current) window.clearTimeout(handle);
-      timers.current.clear();
-      source?.close();
-    };
-  }, [visible]);
+      if (event === "clear") {
+        setLines([]);
+        setNewLineIds(new Set());
+        return;
+      }
+      if (event === "line") {
+        let payload: unknown;
+        try {
+          payload = JSON.parse(data);
+        } catch {
+          return;
+        }
+        if (!isLogLine(payload)) return;
+        const stored = tag(payload);
+        setNewLineIds((prev) => {
+          const next = new Set(prev);
+          next.add(stored.id);
+          return next;
+        });
+        // Drop the "new" highlight shortly after arrival so the list settles
+        // into a steady state instead of every recent line staying flagged.
+        scheduleTimeout(() => {
+          setNewLineIds((prev) => {
+            if (!prev.has(stored.id)) return prev;
+            const next = new Set(prev);
+            next.delete(stored.id);
+            return next;
+          });
+        }, NEW_LINE_HIGHLIGHT_MS);
+        setLines((prev) => {
+          const next = [...prev, stored];
+          return next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next;
+        });
+        setStatus("live");
+      }
+    },
+    onClose: () => setStatus("reconnecting"),
+  });
 
   const clear = useCallback(async () => {
     await consoleRequest<unknown>("/logs", { method: "DELETE" });

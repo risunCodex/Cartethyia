@@ -17,6 +17,7 @@ import {
   REASONING_EFFORT_LADDER,
   type ReasoningEffortLevel,
 } from "../thinking";
+import { BoundedLruMap } from "../../../transport/routing/bounded-lru";
 
 /** How a reasoning effort is transported on the wire. */
 export type ThinkingControlMode =
@@ -185,8 +186,16 @@ function familyDefaultMode(wireFamily: WireFamily): ThinkingControlMode {
  * the no-declared-efforts result (the common case) is memoized per
  * model/wire/provider key. Declared efforts bypass the cache because the
  * `declared` object identity changes per call.
+ *
+ * The cache is a {@link BoundedLruMap}: the key space is bounded by the model
+ * catalog, but a request can name an arbitrary model string, so an unbounded
+ * map would pin an entry for every miss forever. The bound keeps memory flat
+ * while hot models stay resident.
  */
-const THINKING_RESOLVE_CACHE = new Map<string, ThinkingConfig>();
+const THINKING_RESOLVE_CACHE_MAX_ENTRIES = 1024;
+const THINKING_RESOLVE_CACHE = new BoundedLruMap<string, ThinkingConfig>(
+  THINKING_RESOLVE_CACHE_MAX_ENTRIES,
+);
 
 export function resolveThinkingForModel(
   modelId: string,

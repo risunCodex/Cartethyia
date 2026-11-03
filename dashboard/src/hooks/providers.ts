@@ -256,9 +256,10 @@ export function useDeleteProviderModel() {
 /**
  * Loads accounts configured for one provider.
  *
- * Health and usage move faster than the catalog, so 30 s freshness — still
- * lazy (cached render first, background revalidate), with account mutations
- * invalidating this key on write.
+ * Health and usage move faster than the catalog, but the Providers page no
+ * longer reads accounts — only the detail page does. 120 s freshness, with no
+ * refetch on remount, means revisiting the page never re-fetches a list that
+ * has not moved; account mutations still invalidate this key on write.
  */
 export function useProviderAccounts(providerId: string | undefined) {
   return useQuery({
@@ -270,7 +271,8 @@ export function useProviderAccounts(providerId: string | undefined) {
       ),
     enabled: Boolean(providerId),
     ...DASHBOARD_QUERY_OPTIONS,
-    staleTime: 30_000,
+    staleTime: 120_000,
+    refetchOnMount: false,
     gcTime: 600_000,
   });
 }

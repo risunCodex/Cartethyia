@@ -1,90 +1,136 @@
 /**
- * Provider-card status counts, against the shape the API actually returns.
+ * Provider-card status badges, against the new list-item overview shape.
  *
- * A throttled account used to be counted as healthy. An account-wide cooldown
- * writes `status: "cooldown"`, but a model-scoped backoff leaves `status:
- * "active"` and writes `modelCooldowns` instead — so a card built from status
- * alone read "1 Healthy · 1 Cooling" for a single account that could not serve
- * the model being asked for. That is the case pinned here.
+ * Cards no longer fetch accounts/models per provider — they render straight
+ * from the `GET /console/api/providers` list fields (`accountCount` /
+ * `activeAccountCount` / `modelCount`). This suite mounts the real page with a
+ * seeded catalog carrying those fields and asserts the badge text, so a card
+ * that reads the wrong field (or still tries to fetch) fails here.
  *
- * These are counts, not markup: the badge text is derived from these numbers,
- * so asserting the numbers is what catches a miscount. A markup assertion would
- * pass on a card that reports two problems for one connection.
+ * It also pins the G-05 d1 lazy-mount gate: the largest section ("Other API
+ * Key Providers") is collapsed on first visit, so its cards are not mounted
+ * until the operator expands it.
  */
-import { describe, expect, test } from "bun:test";
-import { summarizeAccounts } from "../../src/features/providers/ProvidersPage";
-import type { ProviderAccountResponse } from "../../src/data/contracts";
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { createElement } from "react";
+import { mount } from "../helpers/render";
+import { registerDom } from "../helpers/dom";
+import Providers from "../../src/features/providers/ProvidersPage";
+import { queryKeys } from "../../src/data/query-keys";
+import type { ProviderResponse } from "../../src/data/contracts";
 
-/** Minutes from now, as the ISO string the API writes into the cooldown maps. */
-function minutesFromNow(minutes: number): string {
-  return new Date(Date.now() + minutes * 60_000).toISOString();
-}
+// Bun evaluates imports before any hook, and `beforeEach` touches
+// `localStorage`, so the DOM has to be installed at module scope.
+registerDom();
 
-function minutesAgo(minutes: number): string {
-  return new Date(Date.now() - minutes * 60_000).toISOString();
-}
+const COLLAPSED_KEY = "cartethyia.providerSectionsCollapsed";
 
-function account(
-  status: ProviderAccountResponse["status"],
-  modelCooldowns?: Record<string, string>,
-): ProviderAccountResponse {
+function provider(
+  providerId: string,
+  overrides: Partial<ProviderResponse> = {},
+): ProviderResponse {
   return {
-    id: `acct-${Math.random().toString(36).slice(2, 8)}`,
-    providerId: "cb",
-    label: "test",
-    status,
-    ...(modelCooldowns === undefined ? {} : { modelCooldowns }),
-  } as ProviderAccountResponse;
+    providerId,
+    serviceKinds: ["llm"],
+    displayName: providerId,
+    enabled: true,
+    isBuiltIn: true,
+    configured: false,
+    requiresAccount: true,
+    hasAdapterUserAgent: false,
+    supportsWebSearch: false,
+    supportsModelDiscovery: true,
+    routeIdentityVersions: { codex: "1", claude: "1" },
+    ...overrides,
+  };
 }
 
-describe("provider card status counts", () => {
-  test("a model-cooled account is not counted as healthy", () => {
-    // The reported bug: status stays "active" for a per-model throttle, so this
-    // account is connected but cannot serve. It must not appear under Healthy.
-    const counts = summarizeAccounts([
-      account("active", { "deepseek-v4.1-pro": minutesFromNow(30) }),
-    ]);
-    expect(counts.healthy).toBe(0);
-    expect(counts.throttled).toBe(1);
-    expect(counts.cooling).toBe(1);
+/** The InferHub marketplace summary the page's sibling sections may read. */
+const INFERHUB_SEED = {
+  key: queryKeys.inferhub.summary,
+  data: {
+    models: [],
+    providers: [],
+    pricingConfig: null,
+    meta: { fetchedAt: 0, ageSeconds: 0, stale: false },
+    error: null,
+  },
+};
+
+function visibleIds(container: HTMLElement): string[] {
+  return [...container.querySelectorAll('a[href*="/providers/"]')]
+    .map((el) => el.getAttribute("href") ?? "")
+    .map((href) => href.split("/providers/")[1]?.split(/[?#]/)[0] ?? "")
+    .filter(Boolean);
+}
+
+describe("provider card badges from the list overview fields", () => {
+  beforeEach(() => {
+    localStorage.removeItem(COLLAPSED_KEY);
+  });
+  afterEach(() => {
+    localStorage.removeItem(COLLAPSED_KEY);
   });
 
-  test("an account-wide cooldown is throttled, not healthy", () => {
-    const counts = summarizeAccounts([account("cooldown")]);
-    expect(counts.healthy).toBe(0);
-    expect(counts.throttled).toBe(1);
-    // Not "cooling": the whole account is held back, which is a different fact
-    // and the badge says which.
-    expect(counts.cooling).toBe(0);
-  });
-
-  test("an expired per-model backoff stops counting", () => {
-    // A stale entry must not hold the account out of Healthy forever.
-    const counts = summarizeAccounts([
-      account("active", { "deep-model": minutesAgo(5) }),
-    ]);
-    expect(counts.healthy).toBe(1);
-    expect(counts.throttled).toBe(0);
-  });
-
-  test("counts are mutually exclusive and add up to the total", () => {
-    // One connection is never reported as two problems.
-    const accounts = [
-      account("active"),
-      account("active", { "hy3-preview": minutesFromNow(10) }),
-      account("cooldown", { "deep-model": minutesFromNow(10) }),
-      account("disabled"),
+  test("renders Healthy/Unhealthy connection badges and the model badge from the overview fields", async () => {
+    const CATALOG = [
+      // All accounts active → one Healthy badge.
+      provider("anthropic", { configured: true, accountCount: 3, activeAccountCount: 3, modelCount: 5 }),
+      // Mixed: 1 of 3 routable → Healthy + Unhealthy.
+      provider("openai", { configured: true, accountCount: 3, activeAccountCount: 1, modelCount: 2 }),
+      // No accounts at all.
+      provider("mistral", { configured: true, accountCount: 0, modelCount: 0 }),
+      // Credential-less provider: no accounts by design, not omission.
+      provider("opencode", { requiresAccount: false, accountCount: 0, modelCount: 0 }),
     ];
-    const counts = summarizeAccounts(accounts);
-    expect(counts.healthy).toBe(1);
-    expect(counts.throttled).toBe(2);
-    expect(counts.disabled).toBe(1);
-    expect(counts.healthy + counts.throttled + counts.disabled).toBe(accounts.length);
+    const view = await mount(createElement(Providers), {
+      seed: [{ key: queryKeys.providers.all, data: CATALOG }, INFERHUB_SEED],
+    });
+    await view.flush();
+
+    const text = view.container.textContent ?? "";
+    expect(text).toContain("3 Healthy");
+    expect(text).toContain("5 models");
+    expect(text).toContain("1 Healthy");
+    expect(text).toContain("2 Unhealthy");
+    expect(text).toContain("2 models");
+    expect(text).toContain("No connections");
+    expect(text).toContain("No models");
+    expect(text).toContain("Free Endpoint");
+    view.unmount();
   });
 
-  test("a clean set of accounts is all healthy", () => {
-    const counts = summarizeAccounts([account("active"), account("active")]);
-    expect(counts.healthy).toBe(2);
-    expect(counts.throttled).toBe(0);
+  test("default-collapses Other API Key Providers and mounts its cards only when expanded", async () => {
+    const OTHER = provider("oddball", {
+      configured: true,
+      accountCount: 4,
+      activeAccountCount: 2,
+      modelCount: 3,
+    });
+    const view = await mount(createElement(Providers), {
+      seed: [{ key: queryKeys.providers.all, data: [OTHER] }, INFERHUB_SEED],
+    });
+    await view.flush();
+
+    // First visit: the largest section stays collapsed, so its cards are not
+    // mounted at all — a lightweight placeholder (the header) is all that
+    // exists for it.
+    expect(visibleIds(view.container)).not.toContain("oddball");
+
+    const header = [...view.container.querySelectorAll("button")].find((button) =>
+      /Other API Key Providers/.test(button.textContent ?? ""),
+    );
+    expect(header).toBeTruthy();
+    await view.act(() => {
+      header!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    await view.flush();
+
+    expect(visibleIds(view.container)).toContain("oddball");
+    const text = view.container.textContent ?? "";
+    expect(text).toContain("2 Healthy");
+    expect(text).toContain("2 Unhealthy");
+    expect(text).toContain("3 models");
+    view.unmount();
   });
 });
