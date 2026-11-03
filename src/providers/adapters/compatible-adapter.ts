@@ -29,6 +29,19 @@ import {
 const TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
 
 /**
+ * Provider ids that understand the OpenAI-style `service_tier` control. Only
+ * these upstreams accept the field; every other OpenAI-compatible provider
+ * either ignores it or rejects the whole request with `unsupported_value`
+ * (measured: GitHub Copilot returns 400). `service_tier` is advisory on the
+ * providers that do support it, so dropping it elsewhere is lossless.
+ */
+const SERVICE_TIER_SUPPORTED_PROVIDERS: ReadonlySet<string> = new Set([
+  "openai",
+  "codex",
+  "anthropic",
+]);
+
+/**
  * The subset of a canonical request a native-service header hook may read.
  *
  * `prepareHeaders` takes a full `CanonicalRequest`, but a native route has no
@@ -279,6 +292,18 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
       }
     }
     this.config.prePayload?.(payload, effectiveRequest, candidate, context);
+    // `service_tier` is an OpenAI-style control that only a small set of
+    // upstreams understand. Every other OpenAI-compatible provider either
+    // ignores it silently or rejects the whole request with
+    // `unsupported_value` (measured: GitHub Copilot returns 400). Since the
+    // field is purely advisory on the providers that support it, dropping it
+    // everywhere else is safe and prevents avoidable upstream 400s.
+    if (
+      payload["service_tier"] !== undefined &&
+      !SERVICE_TIER_SUPPORTED_PROVIDERS.has(candidate.provider_id)
+    ) {
+      delete payload["service_tier"];
+    }
     return payload;
   }
 
