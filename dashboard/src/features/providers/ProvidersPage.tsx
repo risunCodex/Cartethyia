@@ -1,4 +1,4 @@
-import { ChevronDown, Eye, EyeOff, Plus, Server, Trash2 } from "lucide-react";
+import { ChevronDown, Eye, EyeOff, LayoutGrid, Plus, Rows3, Server, Trash2 } from "lucide-react";
 import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import { cn } from "../../lib/classnames";
 import { Link, useSearchParams } from "react-router-dom";
@@ -68,10 +68,10 @@ const ENDPOINT_TAIL = /\/(?:v\d+\/)?(?:messages|chat\/completions|responses|comp
  * The root to use when the typed Base URL ends at a per-request endpoint, or
  * null when it already looks like a root.
  *
- * The suggestion is the bare origin, matching the server's
- * `splitEndpointBaseUrl`: for `…/anthropic/v1/messages` the whole path belongs
- * to that endpoint, and offering `…/anthropic` would still derive the model
- * list at `…/anthropic/models` and fail.
+ * Only the endpoint **tail** is stripped; any gateway prefix before it survives.
+ * For `…/anthropic/v1/messages` the suggestion is `…/anthropic` (LongCat-style
+ * prefix), matching the server's `splitEndpointBaseUrl` so the dashboard warns
+ * about the same root the gateway would test against.
  */
 function pastedEndpointRoot(value: string): string | null {
   const trimmed = value.trim().replace(/\/+$/, "");
@@ -84,7 +84,10 @@ function pastedEndpointRoot(value: string): string | null {
   } catch {
     return null;
   }
-  return ENDPOINT_TAIL.test(pathname) ? url.origin : null;
+  const match = ENDPOINT_TAIL.exec(pathname);
+  if (match === null) return null;
+  const kept = pathname.slice(0, match.index);
+  return `${url.origin}${kept}`;
 }
 
 
@@ -1053,10 +1056,15 @@ export default function Providers(): ReactNode {
    *  so a large catalog never renders hundreds of cards at once. */
   const SECTION_PAGE_SIZE = 8;
   const [sectionPages, setSectionPages] = useState<Readonly<Record<string, number>>>({});
+  // When set, every section renders all its providers (pagination disabled).
+  const [showAllSections, setShowAllSections] = useState(false);
   const pageFor = (title: string) => sectionPages[title] ?? 1;
   const setPageFor = (title: string) => (page: number) =>
     setSectionPages((current) => ({ ...current, [title]: page }));
   const visibleProvidersFor = (providers: readonly ProviderResponse[], title: string) => {
+    if (showAllSections) {
+      return { visible: providers, pageCount: 1, safePage: 1 };
+    }
     const page = pageFor(title);
     const pageCount = Math.max(1, Math.ceil(providers.length / SECTION_PAGE_SIZE));
     const safePage = Math.min(page, pageCount);
@@ -1125,6 +1133,19 @@ export default function Providers(): ReactNode {
           }
         >
           {hideUnconfiguredOn ? "Show unconfigured" : "Hide unconfigured"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={showAllSections ? <Rows3 size={12} /> : <LayoutGrid size={12} />}
+          onClick={() => setShowAllSections((value) => !value)}
+          title={
+            showAllSections
+              ? "Paginate each section (8 per page)"
+              : "Show every provider in each section at once"
+          }
+        >
+          {showAllSections ? "Paginated" : "Show All"}
         </Button>
         <span className="ml-auto text-micro text-text-tertiary">
           {tab === "search"

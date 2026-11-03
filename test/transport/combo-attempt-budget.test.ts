@@ -150,3 +150,56 @@ test("the cap still binds when members are interleaved, not contiguous", async (
   expect(seen.includes("wb")).toBe(true);
   expect(seen.filter((p) => p === "cb").length).toBeLessThanOrEqual(4);
 });
+
+/**
+ * An API-key admission rejection (`capacity_exhausted`) is decided before the
+ * upstream is ever called, so every candidate fails identically. The loop must
+ * stop at the first attempt instead of walking the rest of the combo and
+ * burning the budget — and must not write account-health rows for a ceiling
+ * the key's `max_concurrent` imposed.
+ */
+test("a key-level concurrency rejection is terminal and does not fail over", async () => {
+  const priorAttempts = process.env["CARTETHYIA_ROUTE_MAX_ATTEMPTS"];
+  const priorBase = process.env["CARTETHYIA_FALLBACK_RETRY_BASE_MS"];
+  process.env["CARTETHYIA_ROUTE_MAX_ATTEMPTS"] = "8";
+  process.env["CARTETHYIA_FALLBACK_RETRY_BASE_MS"] = "0";
+  try {
+    const candidates: RouteCandidate[] = [candidate("cb", "cb-1"), candidate("wb", "wb-1")];
+    const seen: string[] = [];
+    const error = await runAttemptLoop<string, unknown>({
+      state: attemptState("req-key-concurrency"),
+      deps: { db: {} as never },
+      leaseSource: attemptLeaseSource(candidates),
+      candidates,
+      tenantId: "tenant-1",
+      strictPoolSelection: false,
+      prepare: prepareAttempt,
+      attempt: async (context: { readonly candidate: RouteCandidate }) => {
+        seen.push(context.candidate.provider_id);
+        // A key admission rejection happens before dispatch; the stubbed lease
+        // source admits always, so simulate it by throwing from the first
+        // attempt with the key-level code.
+        if (context.candidate.provider_id === "cb") {
+          throw new GatewayError(
+            "capacity_exhausted",
+            429,
+            "This API key is already serving its maximum number of concurrent requests (request {requestId}). Retry shortly, or raise the key's concurrency limit. It'll free up in a moment 🌊",
+            { reason: "concurrency-limit" },
+          );
+        }
+        return "ok";
+      },
+      exhaustedError: new GatewayError("accounts_unavailable", 503, "exhausted"),
+    }).catch((thrown: unknown) => thrown);
+    // Only the first candidate was attempted — no failover to wb.
+    expect(seen).toEqual(["cb"]);
+    // The key-level error surfaces as-is.
+    expect(error instanceof GatewayError).toBe(true);
+    expect((error as GatewayError).code).toBe("capacity_exhausted");
+  } finally {
+    if (priorAttempts === undefined) delete process.env["CARTETHYIA_ROUTE_MAX_ATTEMPTS"];
+    else process.env["CARTETHYIA_ROUTE_MAX_ATTEMPTS"] = priorAttempts;
+    if (priorBase === undefined) delete process.env["CARTETHYIA_FALLBACK_RETRY_BASE_MS"];
+    else process.env["CARTETHYIA_FALLBACK_RETRY_BASE_MS"] = priorBase;
+  }
+});

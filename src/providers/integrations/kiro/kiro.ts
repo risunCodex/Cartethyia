@@ -52,7 +52,6 @@ import {
 } from "./kiro-request";
 import { machineIdForAuthState } from "./kiro-machine-id";
 import { estimateKiroSessionCache } from "./kiro-cache";
-import { applyCacheMode } from "../../provider-usage";
 import { resolveKiroProfileArn } from "./kiro-profile";
 import {
   AWS_REGION_PATTERN,
@@ -284,7 +283,7 @@ function kiroUsage(
   // The runtime never reports cache hits; close the gap with our own history.
   // A genuine ( >0) report conserves the complete record. Then the operator's
   // cache mode decides whether a hit makes the whole input count as cached.
-  return applyCacheMode(estimateKiroSessionCache(record, sessionId, messages));
+  return estimateKiroSessionCache(record, sessionId, messages);
 }
 
 /**

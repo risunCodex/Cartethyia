@@ -92,12 +92,11 @@ const ENDPOINT_TAIL = /\/(?:v\d+\/)?(?:messages|chat\/completions|responses|comp
  * The root an operator's pasted URL really meant, plus the endpoint tail that
  * was removed.
  *
- * The suggestion is the bare **origin**, not the path left behind. For
- * `https://api.deepseek.com/anthropic/v1/messages` the tail `/v1/messages` is
- * only the last segment; `/anthropic` is part of that same endpoint, and
- * suggesting `https://api.deepseek.com/anthropic` would still derive the model
- * list at `…/anthropic/models` and 404 — the very failure this corrects. A URL
- * that is already a root comes back with an empty `stripped`.
+ * Only the **tail** is stripped. Any path before it belongs to the gateway
+ * root and survives, so `https://api.longcat.ai/anthropic/v1/messages`
+ * resolves to `https://api.longcat.ai/anthropic` (not the bare origin) — the
+ * `/anthropic` prefix is where LongCat actually serves the API. A URL that is
+ * already a root comes back with an empty `stripped`.
  */
 export function splitEndpointBaseUrl(baseUrl: string): { readonly baseUrl: string; readonly stripped: string } {
   const trimmed = baseUrl.replace(/\/+$/, "");
@@ -110,20 +109,22 @@ export function splitEndpointBaseUrl(baseUrl: string): { readonly baseUrl: strin
   const basePath = parsed.pathname.replace(/\/+$/, "");
   const match = ENDPOINT_TAIL.exec(basePath);
   if (match === null) return { baseUrl: trimmed, stripped: "" };
-  return { baseUrl: parsed.origin, stripped: basePath };
+  const keptPath = basePath.slice(0, match.index);
+  return { baseUrl: `${parsed.origin}${keptPath}`, stripped: basePath };
 }
 
 /**
  * Base URL an operator's model list lives under (`<base>/models`). A bare host
  * has no version segment, so it gets the `/v1` prefix; a base that already
  * carries a path (conventionally `/v1`) is used as-is. A pasted endpoint path
- * is stripped first, so `…/anthropic/v1/messages` discovers at `<host>/v1/models`
- * rather than one level below a per-request path.
+ * is stripped first, so `…/anthropic/v1/messages` discovers at
+ * `<origin>/anthropic/v1/models` — the gateway prefix before the endpoint tail
+ * belongs to the root and is preserved.
  */
 export function modelDiscoveryBaseUrl(baseUrl: string): string {
-  // A pasted endpoint is not a base at all, so its whole path is discarded and
-  // the list is looked for at `<origin>/v1`. A base that already IS a root —
-  // bare host, or a version/gateway prefix — keeps that path, because
+  // A pasted endpoint has its tail removed; whatever path came before it is a
+  // real gateway prefix and stays. A base that already IS a root — bare host,
+  // or a version/gateway prefix — keeps that path, because
   // `https://gateway.example/api/v1` legitimately serves its list there.
   const trimmed = baseUrl.replace(/\/+$/, "");
   let parsed: URL;
@@ -133,9 +134,12 @@ export function modelDiscoveryBaseUrl(baseUrl: string): string {
     return `${trimmed}/v1`;
   }
   const basePath = parsed.pathname.replace(/\/+$/, "");
-  const isPastedEndpoint = ENDPOINT_TAIL.test(basePath);
-  const listBase = isPastedEndpoint ? parsed.origin : `${parsed.origin}${basePath}`;
-  if (isPastedEndpoint || basePath === "" || basePath === "/") return `${listBase}/v1`;
+  const match = ENDPOINT_TAIL.exec(basePath);
+  const listBase =
+    match === null
+      ? `${parsed.origin}${basePath}`
+      : `${parsed.origin}${basePath.slice(0, match.index)}`;
+  if (match !== null || basePath === "" || basePath === "/") return `${listBase}/v1`;
   return listBase;
 }
 

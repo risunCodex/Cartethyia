@@ -11,7 +11,6 @@ export interface OpenAiUsage {
   };
 }
 import { modelsDevCatalog } from "./discovery/models-dev-catalog";
-import { resolveCacheMode } from "../config/providers";
 
 /**
  * Extract cost multipliers from catalog model cost JSONB.
@@ -124,36 +123,6 @@ export function repriceUsage(
   return estimatedCost === undefined
     ? { ...usage, estimated_cost: null }
     : { ...usage, estimated_cost: estimatedCost };
-}
-
-/**
- * Simplified cache accounting: when the provider reported a cache hit, the
- * whole prompt counts as cached — request input ber-cache = cache-eligible →
- * input = cache. The cache-write volume is already inside the all-in input
- * total on cache-aware shapes, so it stays separate and is not double-counted
- * as a hit. A reported `0` or an absent report stay a cache miss. In `real`
- * mode the provider's reported split is kept as-is.
- *
- * Exported so the hand-built record producers (Cursor, Kiro) apply the same
- * rule as `normalizeUsage`.
- */
-export function applyCacheMode(usage: UsageRecord): UsageRecord {
-  if (resolveCacheMode() !== "simplified") return usage;
-  if (
-    typeof usage.cached_input_tokens === "number" &&
-    usage.cached_input_tokens > 0 &&
-    usage.input_tokens > 0
-  ) {
-    const writes =
-      typeof usage.cache_write_tokens === "number" ? Math.max(0, usage.cache_write_tokens) : 0;
-    const cached = Math.min(usage.input_tokens, Math.max(0, usage.input_tokens - writes));
-    return {
-      ...usage,
-      cached_input_tokens: cached,
-      uncached_input_tokens: 0,
-    };
-  }
-  return usage;
 }
 
 /**
@@ -279,21 +248,6 @@ export function normalizeUsage(input: Record<string, unknown>): UsageRecord {
     }
   } else if (hasAnthropicCacheShape && typeof cache_write_tokens === "number") {
     input_tokens += cache_write_tokens;
-  }
-
-  // Simplified cache accounting: a reported hit makes the whole prompt count as
-  // cached — request input ber-cache = cache-eligible → input = cache. The
-  // cache-write volume is already inside the all-in input total on cache-aware
-  // shapes, so it stays separate and is not double-counted as a hit. Applied
-  // before pricing so the estimated cost reads the same simplified split as the
-  // record.
-  if (typeof cached_input_tokens === "number" && cached_input_tokens > 0 && input_tokens > 0) {
-    if (resolveCacheMode() === "simplified") {
-      const writes =
-        typeof cache_write_tokens === "number" ? Math.max(0, cache_write_tokens) : 0;
-      cached_input_tokens = Math.min(input_tokens, Math.max(0, input_tokens - writes));
-      uncached_input_tokens = 0;
-    }
   }
 
   // Handle reasoning tokens: Anthropic and OpenAI both use output_tokens_details

@@ -62,6 +62,27 @@ function comboCandidateKey(candidate: RouteCandidate): string {
 }
 
 /**
+ * True when the rejection is about the API key or the gateway's own policy,
+ * not about the provider account that was dialled.
+ *
+ * These are decided before the upstream is ever called, so every candidate in
+ * the plan fails identically; walking the rest of the list would just burn
+ * attempts and write phantom account-health rows (a local `capacity_exhausted`
+ * used to read as a provider `rate_limit_transient` cooldown).
+ */
+function isClientScopedRejection(error: unknown): boolean {
+  if (!(error instanceof GatewayError)) return false;
+  return (
+    error.code === "capacity_exhausted" ||
+    error.code === "tenant_capacity_exhausted" ||
+    error.code === "admission_unavailable" ||
+    error.code === "model_not_allowed" ||
+    error.code === "ambiguous_model" ||
+    error.code === "route_unavailable"
+  );
+}
+
+/**
  * Which combo member a candidate belongs to.
  *
  * A combo's members are distinct models (usually one per provider), so the
@@ -402,6 +423,7 @@ export async function runAttemptLoop<TResult, TAdapter>(
       }
       const terminalAttempt =
         cancelled ||
+        isClientScopedRejection(error) ||
         !isRetryableFailure(error) ||
         (index === candidates.length - 1 && !poolScopedFailure);
       // Track only the most recent fired exchange; the array this replaced

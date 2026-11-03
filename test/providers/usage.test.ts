@@ -30,29 +30,16 @@
  *
  * Everything here is a pure function of a plain object.
  */
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   normalizeUsage,
   usageFromProvider,
   usageToChatWire,
   usageToMessagesWire,
   usageToResponsesWire,
-  applyCacheMode,
   type OpenAiUsage,
 } from "../../src/providers/provider-usage";
-import { resolveCacheMode } from "../../src/config/providers";
 import type { UsageRecord } from "../../src/protocol/canonical-model";
-
-const CACHE_MODE_ENV = "CARTETHYIA_CACHE_MODE";
-
-beforeEach(() => {
-  // Isolate from a host environment that set a mode.
-  delete process.env[CACHE_MODE_ENV];
-});
-
-afterEach(() => {
-  delete process.env[CACHE_MODE_ENV];
-});
 
 describe("normalizeUsage: the OpenAI shape", () => {
   test("reads prompt and completion tokens", () => {
@@ -63,15 +50,15 @@ describe("normalizeUsage: the OpenAI shape", () => {
 
   test("treats the reported total as all-in and derives the uncached part", () => {
     // OpenAI's `prompt_tokens` includes the cached subset, so uncached is
-    // total minus cached — not the other way round. In the default simplified
-    // mode a reported hit makes the WHOLE input count as cached.
+    // total minus cached — not the other way round. The provider-reported
+    // split is preserved as-is.
     const usage = normalizeUsage({
       prompt_tokens: 100,
       completion_tokens: 10,
       prompt_tokens_details: { cached_tokens: 60 },
     });
-    expect(usage.cached_input_tokens).toBe(100);
-    expect(usage.uncached_input_tokens).toBe(0);
+    expect(usage.cached_input_tokens).toBe(60);
+    expect(usage.uncached_input_tokens).toBe(40);
     // The canonical total stays the provider's own all-in figure.
     expect(usage.input_tokens).toBe(100);
   });
@@ -82,15 +69,6 @@ describe("normalizeUsage: the OpenAI shape", () => {
       prompt_tokens_details: { cached_tokens: 999 },
     });
     expect(usage.cached_input_tokens).toBe(50);
-    expect(usage.uncached_input_tokens).toBe(0);
-  });
-
-  test("reads the Responses API details field as well", () => {
-    const usage = normalizeUsage({
-      input_tokens: 100,
-      input_tokens_details: { cached_tokens: 25 },
-    });
-    expect(usage.cached_input_tokens).toBe(100);
     expect(usage.uncached_input_tokens).toBe(0);
   });
 
@@ -111,17 +89,15 @@ describe("normalizeUsage: the Anthropic shape", () => {
   test("input_tokens counts fresh tokens only, and the total adds the cache volumes", () => {
     // The distinction the whole module exists for: Anthropic's `input_tokens`
     // excludes the cache read and write, so the canonical all-in total is
-    // fresh + read + written. In simplified mode the whole *prompt* counts as
-    // cached (input minus the separate write volume, which is already inside
-    // the all-in total and would otherwise be double-counted).
+    // fresh + read + written. The provider-reported split is preserved as-is.
     const usage = normalizeUsage({
       input_tokens: 10,
       output_tokens: 5,
       cache_read_input_tokens: 90,
       cache_creation_input_tokens: 30,
     });
-    expect(usage.uncached_input_tokens).toBe(0);
-    expect(usage.cached_input_tokens).toBe(100);
+    expect(usage.uncached_input_tokens).toBe(10);
+    expect(usage.cached_input_tokens).toBe(90);
     expect(usage.cache_write_tokens).toBe(30);
     expect(usage.input_tokens).toBe(130);
   });
@@ -129,8 +105,8 @@ describe("normalizeUsage: the Anthropic shape", () => {
   test("a cache read with no write still adds the read to the total", () => {
     const usage = normalizeUsage({ input_tokens: 10, cache_read_input_tokens: 90 });
     expect(usage.input_tokens).toBe(100);
-    expect(usage.cached_input_tokens).toBe(100);
-    expect(usage.uncached_input_tokens).toBe(0);
+    expect(usage.cached_input_tokens).toBe(90);
+    expect(usage.uncached_input_tokens).toBe(10);
     expect(usage.cache_write_tokens).toBe("unavailable");
   });
 
@@ -142,8 +118,8 @@ describe("normalizeUsage: the Anthropic shape", () => {
       cache_read_input_tokens: 178_304,
     });
     expect(usage.input_tokens).toBe(178_479);
-    expect(usage.cached_input_tokens).toBe(178_479);
-    expect(usage.uncached_input_tokens).toBe(0);
+    expect(usage.cached_input_tokens).toBe(178_304);
+    expect(usage.uncached_input_tokens).toBe(175);
   });
 
   test("a write-only report records the write but leaves the total alone", () => {
@@ -189,8 +165,8 @@ describe("normalizeUsage: the Anthropic shape", () => {
 describe("normalizeUsage: the cache-count spellings", () => {
   test("reads DeepSeek's flat prompt_cache_hit_tokens", () => {
     const usage = normalizeUsage({ prompt_tokens: 100, prompt_cache_hit_tokens: 70 });
-    expect(usage.cached_input_tokens).toBe(100);
-    expect(usage.uncached_input_tokens).toBe(0);
+    expect(usage.cached_input_tokens).toBe(70);
+    expect(usage.uncached_input_tokens).toBe(30);
   });
 
   test("prefers the flat hit count over a zeroed details field", () => {
@@ -202,19 +178,19 @@ describe("normalizeUsage: the cache-count spellings", () => {
       prompt_cache_hit_tokens: 70,
       prompt_tokens_details: { cached_tokens: 0 },
     });
-    expect(usage.cached_input_tokens).toBe(100);
+    expect(usage.cached_input_tokens).toBe(70);
   });
 
   test("reads Gemini's flat cached_tokens", () => {
     const usage = normalizeUsage({ prompt_tokens: 100, cached_tokens: 30 });
-    expect(usage.cached_input_tokens).toBe(100);
-    expect(usage.uncached_input_tokens).toBe(0);
+    expect(usage.cached_input_tokens).toBe(30);
+    expect(usage.uncached_input_tokens).toBe(70);
   });
 
   test("reads Gemini's cachedContentTokenCount", () => {
     const usage = normalizeUsage({ prompt_tokens: 100, cachedContentTokenCount: 30 });
-    expect(usage.cached_input_tokens).toBe(100);
-    expect(usage.uncached_input_tokens).toBe(0);
+    expect(usage.cached_input_tokens).toBe(30);
+    expect(usage.uncached_input_tokens).toBe(70);
   });
 
   test("the DeepSeek flat field outranks the Anthropic field, against the field order", () => {
@@ -230,9 +206,9 @@ describe("normalizeUsage: the cache-count spellings", () => {
       prompt_cache_hit_tokens: 22,
     });
     // The hit forces the Anthropic additive path (input becomes 1+22), so the
-    // simplified hit is the full input — 23 — with nothing uncached.
-    expect(usage.cached_input_tokens).toBe(23);
-    expect(usage.uncached_input_tokens).toBe(0);
+    // split is the reported flat hit with the rest uncached.
+    expect(usage.cached_input_tokens).toBe(22);
+    expect(usage.uncached_input_tokens).toBe(1);
   });
 
   test("the Anthropic field outranks the remaining flat and nested spellings", () => {
@@ -243,9 +219,10 @@ describe("normalizeUsage: the cache-count spellings", () => {
       cachedContentTokenCount: 44,
       prompt_tokens_details: { cached_tokens: 55 },
     });
-    // Input becomes 1+11 on the Anthropic additive path; the simplified hit is
-    // the full input — 12.
-    expect(usage.cached_input_tokens).toBe(12);
+    // Input becomes 1+11 on the Anthropic additive path; the split preserves
+    // the reported read with fresh input uncached.
+    expect(usage.cached_input_tokens).toBe(11);
+    expect(usage.uncached_input_tokens).toBe(1);
   });
 });
 
@@ -548,8 +525,8 @@ describe("the round trip through a wire builder keeps the canonical totals", () 
     });
     const wire = usageToChatWire(normalized);
     expect(wire.prompt_tokens).toBe(100);
-    // Simplified mode counts the whole input as cached on a reported hit.
-    expect(wire.prompt_tokens_details?.cached_tokens).toBe(100);
+    // The provider-reported split is preserved on the wire.
+    expect(wire.prompt_tokens_details?.cached_tokens).toBe(60);
   });
 
   test("a cached Anthropic turn survives normalize then messages-wire", () => {
@@ -560,10 +537,10 @@ describe("the round trip through a wire builder keeps the canonical totals", () 
       cache_creation_input_tokens: 30,
     });
     const wire = usageToMessagesWire(normalized);
-    // Simplified mode: everything but the write volume is cached, so the fresh
-    // input is zero and the read is input minus writes. The write stays split.
-    expect(wire["input_tokens"]).toBe(0);
-    expect(wire["cache_read_input_tokens"]).toBe(100);
+    // The provider-reported split is preserved: fresh input stays fresh, the
+    // read is the reported read, and the write stays split.
+    expect(wire["input_tokens"]).toBe(10);
+    expect(wire["cache_read_input_tokens"]).toBe(90);
     expect(wire["cache_creation_input_tokens"]).toBe(30);
   });
 
@@ -586,85 +563,6 @@ describe("the round trip through a wire builder keeps the canonical totals", () 
     expect(chat.prompt_tokens).toBe(130);
     expect(responses["input_tokens"]).toBe(130);
     expect(messagesTotal).toBe(130);
-  });
-});
-
-describe("CARTETHYIA_CACHE_MODE", () => {
-  test("real mode keeps the provider-reported split", () => {
-    process.env[CACHE_MODE_ENV] = "real";
-    expect(resolveCacheMode()).toBe("real");
-    const usage = normalizeUsage({
-      prompt_tokens: 100,
-      prompt_tokens_details: { cached_tokens: 60 },
-    });
-    expect(usage.cached_input_tokens).toBe(60);
-    expect(usage.uncached_input_tokens).toBe(40);
-  });
-
-  test("simplified mode is the default and counts the whole input as cached on a hit", () => {
-    expect(resolveCacheMode()).toBe("simplified");
-    const usage = normalizeUsage({
-      prompt_tokens: 100,
-      prompt_tokens_details: { cached_tokens: 60 },
-    });
-    expect(usage.cached_input_tokens).toBe(100);
-    expect(usage.uncached_input_tokens).toBe(0);
-  });
-
-  test("a reported zero cache count stays a cache miss", () => {
-    const usage = normalizeUsage({
-      prompt_tokens: 100,
-      prompt_tokens_details: { cached_tokens: 0 },
-    });
-    expect(usage.cached_input_tokens).toBe(0);
-    expect(usage.uncached_input_tokens).toBe(100);
-  });
-
-  test("no reported cache stays unmeasured in simplified mode", () => {
-    const usage = normalizeUsage({ prompt_tokens: 100 });
-    expect(usage.cached_input_tokens).toBe("unavailable");
-    expect(usage.uncached_input_tokens).toBe("unavailable");
-  });
-
-  test("unknown mode values fall back to real accounting", () => {
-    process.env[CACHE_MODE_ENV] = "banana";
-    expect(resolveCacheMode()).toBe("real");
-    const usage = normalizeUsage({
-      prompt_tokens: 100,
-      prompt_tokens_details: { cached_tokens: 60 },
-    });
-    expect(usage.cached_input_tokens).toBe(60);
-  });
-
-  test("applyCacheMode applies the simplified rule to a hand-built record", () => {
-    const record: UsageRecord = {
-      input_tokens: 100,
-      cached_input_tokens: 40,
-      cache_write_tokens: "unavailable",
-      uncached_input_tokens: 60,
-      output_tokens: 10,
-      reasoning_tokens: "unavailable",
-      estimated_cost: null,
-    };
-    const applied = applyCacheMode(record);
-    expect(applied.cached_input_tokens).toBe(100);
-    expect(applied.uncached_input_tokens).toBe(0);
-  });
-
-  test("applyCacheMode leaves a hand-built record untouched in real mode", () => {
-    process.env[CACHE_MODE_ENV] = "real";
-    const record: UsageRecord = {
-      input_tokens: 100,
-      cached_input_tokens: 40,
-      cache_write_tokens: "unavailable",
-      uncached_input_tokens: 60,
-      output_tokens: 10,
-      reasoning_tokens: "unavailable",
-      estimated_cost: null,
-    };
-    const applied = applyCacheMode(record);
-    expect(applied.cached_input_tokens).toBe(40);
-    expect(applied.uncached_input_tokens).toBe(60);
   });
 });
 

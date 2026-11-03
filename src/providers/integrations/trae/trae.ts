@@ -7,7 +7,7 @@
 import { GatewayError } from "../../../protocol/gateway-error";
 import type { CanonicalEvent, CanonicalMessage, CanonicalRequest, CanonicalStopReason } from "../../../protocol/canonical-model";
 import type { UsageRecord } from "../../../protocol/canonical-model";
-import { applyCacheMode, usageFromProvider } from "../../provider-usage";
+import { usageFromProvider } from "../../provider-usage";
 import {
   readCredentialSecret,
   assertWireFamily,
@@ -482,7 +482,7 @@ class TraeAdapter implements ProviderAdapter {
     // prefixes we estimate them locally (see trae-cache.ts). Then the
     // operator's cache mode decides whether a hit makes the whole input count
     // as cached.
-    return applyCacheMode(estimateTraeSessionCache(record, sessionId, messages));
+    return estimateTraeSessionCache(record, sessionId, messages);
   }
 
 }

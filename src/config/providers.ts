@@ -90,15 +90,3 @@ export function resolveGithubEnterpriseDomain(): string {
     return "";
   }
 }
-
-/**
- * How cached prompt tokens are accounted. Unknown values fall back to `real`
- * so a typo cannot silently flip every provider to simplified accounting.
- */
-export function resolveCacheMode(): "simplified" | "real" {
-  const raw = readText(
-    "CARTETHYIA_CACHE_MODE",
-    CONFIG_SPEC.CARTETHYIA_CACHE_MODE,
-  ).toLowerCase();
-  return raw === "simplified" ? "simplified" : "real";
-}

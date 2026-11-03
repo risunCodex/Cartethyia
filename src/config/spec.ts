@@ -300,18 +300,6 @@ export const CONFIG_SPEC = {
   // Only the literal true opts active ZCode accounts into daily gift claims.
   CARTETHYIA_ZCODE_AUTO_CLAIM: { kind: "text", default: "false" },
   /**
-   * How cached prompt tokens are accounted.
-   *
-   * - `simplified` (default): the request is cache-eligible when the provider
-   *   reports a cache hit (`cached_input_tokens > 0`); every input token is
-   *   then counted as cached. A reported `0` or an absent report are both a
-   *   cache miss and stay uncached.
-   * - `real`: the provider's reported cache numbers are kept as-is (the
-   *   pre-2.7.6 behavior). Use it when the exact per-provider split matters
-   *   more than a uniform hit-rate reading.
-   */
-  CARTETHYIA_CACHE_MODE: { kind: "text", default: "simplified" },
-  /**
    * Free-tier OpenCode ids the listing still advertises but upstream refuses.
    * Replaces the bundled list outright; the single token `none` trusts the
    * listing completely.

@@ -1471,7 +1471,7 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
   },
   {
     name: "quota-exhausted",
-    match: (s) => s.quotaSignal,
+    match: (s) => s.origin === "upstream" && s.quotaSignal,
     decide: (s) => {
       // xAI Grok Build's free tier resets on a rolling window. Use a duration
       // stated by the provider when present; otherwise park for the conservative
@@ -1525,6 +1525,7 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
     // moves to the next account and the flagged one returns almost at once.
     name: "inception-per-minute-limit",
     match: (s) =>
+      s.origin === "upstream" &&
       s.providerId === "inception" &&
       (s.statusCode === 429 ||
         s.providerCode === "rate_limit_reached" ||
@@ -1549,15 +1550,16 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
   {
     name: "rate-limit",
     match: (s) =>
-      s.statusCode === 429 ||
-      s.providerCode === "rate_limit_exceeded" ||
-      s.lower.includes("rate_limit") ||
-      s.lower.includes("rate limit") ||
-      s.lower.includes("too many requests") ||
-      s.lower.includes("requests per minute") ||
-      s.lower.includes("tokens per minute") ||
-      s.lower.includes("tpm limit") ||
-      s.lower.includes("rpm limit"),
+      s.origin === "upstream" &&
+      (s.statusCode === 429 ||
+        s.providerCode === "rate_limit_exceeded" ||
+        s.lower.includes("rate_limit") ||
+        s.lower.includes("rate limit") ||
+        s.lower.includes("too many requests") ||
+        s.lower.includes("requests per minute") ||
+        s.lower.includes("tokens per minute") ||
+        s.lower.includes("tpm limit") ||
+        s.lower.includes("rpm limit")),
     decide: (s) => {
       const cooldownMs = s.statedCooldownMs ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS();
       // Same per-account reasoning as quota above: the failing account (or
@@ -1576,13 +1578,14 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
   {
     name: "model-capacity",
     match: (s) =>
-      s.statusCode === 503 ||
-      s.statusCode === 529 ||
-      s.providerCode === "model_capacity" ||
-      s.queuedUpstream ||
-      s.lower.includes("model overloaded") ||
-      s.lower.includes("capacity exceeded") ||
-      s.lower.includes("temporarily unavailable"),
+      s.origin === "upstream" &&
+      (s.statusCode === 503 ||
+        s.statusCode === 529 ||
+        s.providerCode === "model_capacity" ||
+        s.queuedUpstream ||
+        s.lower.includes("model overloaded") ||
+        s.lower.includes("capacity exceeded") ||
+        s.lower.includes("temporarily unavailable")),
     decide: (s) => {
       const cooldownMs = s.statedCooldownMs ?? MODEL_CAPACITY_COOLDOWN_MS();
       const modelScopedMutation = s.origin === "upstream" && s.modelId !== undefined;

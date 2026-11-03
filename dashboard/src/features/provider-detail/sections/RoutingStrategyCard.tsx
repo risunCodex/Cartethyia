@@ -542,6 +542,18 @@ export function RoutingStrategyCard({
                     itself, on the Proxies page.
                   </dd>
                 </div>
+                <div>
+                  <dt className="font-semibold">API key concurrency</dt>
+                  <dd className="text-badge text-text-tertiary">
+                    The key's <em>own</em> limit ({" "}
+                    <code>max_concurrent</code>, set on the key), which counts every
+                    request this key sends across all providers. It is separate from the
+                    two limits above: raising this provider's max-inflight does not raise
+                    the key's ceiling, and a rejection message that says “This API key is
+                    already serving its maximum number of concurrent requests” refers to
+                    this number, not to any setting here.
+                  </dd>
+                </div>
               </dl>
               <p className="text-badge text-text-tertiary">
                 A request must clear all three. When a pool is full for this provider, the

@@ -27,7 +27,6 @@ import type {
 } from "../../../protocol/canonical-model";
 import { resolveImageSource, splitDataUrl } from "../../../protocol/codecs";
 import { IMAGE_CLAMP_MAX_BYTES } from "../../../protocol/image-clamp";
-import { applyCacheMode } from "../../provider-usage";
 import type { ProviderAdapter, ProviderDispatchContext, ProviderDispatchTarget } from "../../provider-contracts";
 import { readCredentialSecret } from "../../provider-contracts";
 import type { Http2BidiEndReason, ValidatedHttp2BidiStream } from "../../../network/http2-bidi";
@@ -281,7 +280,7 @@ function usageFromTurnEnded(turnEnded: Record<string, unknown>): UsageRecord {
   const input = count(turnEnded["input_tokens"]);
   const output = count(turnEnded["output_tokens"]);
   const cacheRead = count(turnEnded["cache_read"]);
-  return applyCacheMode({
+  return {
     input_tokens: input,
     cached_input_tokens: cacheRead,
     cache_write_tokens: count(turnEnded["cache_write"]),
@@ -290,7 +289,7 @@ function usageFromTurnEnded(turnEnded: Record<string, unknown>): UsageRecord {
     reasoning_tokens: count(turnEnded["reasoning_tokens"]),
     estimated_cost: null,
     total_tokens: input + output,
-  });
+  };
 }
 
 function nonEmptyStringOf(value: unknown): string | undefined {

@@ -6,8 +6,10 @@
  * looked like a credential or egress problem.
  *
  * These cases pin the two halves of the fix: `modelListUrl` lands on the real
- * index, and `splitEndpointBaseUrl` names the origin an operator should save
- * (not the leftover `/anthropic`, which still 404s).
+ * index, and `splitEndpointBaseUrl` names the root an operator should save —
+ * the endpoint **tail** is stripped, but any gateway prefix before it (`/anthropic`)
+ * is preserved, because that prefix is part of the root on providers that serve
+ * the API under a path.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -20,14 +22,19 @@ import {
 describe("BYOK base URL path confusion", () => {
   test("a pasted endpoint still discovers the real model list", () => {
     // The exact input from documentation/fix-byok-base-url-path.md.
+    // The gateway prefix `/anthropic` belongs to the root, so the list lives
+    // under it, not at the bare origin.
     expect(modelListUrl("https://api.deepseek.com/anthropic/v1/messages")).toBe(
-      "https://api.deepseek.com/v1/models",
+      "https://api.deepseek.com/anthropic/v1/models",
     );
     expect(modelListUrl("https://api.openai.com/v1/chat/completions")).toBe(
       "https://api.openai.com/v1/models",
     );
     expect(modelListUrl("https://api.anthropic.com/v1/messages")).toBe(
       "https://api.anthropic.com/v1/models",
+    );
+    expect(modelListUrl("https://api.longcat.ai/anthropic/v1/messages")).toBe(
+      "https://api.longcat.ai/anthropic/v1/models",
     );
   });
 
@@ -41,9 +48,13 @@ describe("BYOK base URL path confusion", () => {
     );
   });
 
-  test("the suggested correction is the origin, not the leftover path", () => {
+  test("the suggested correction keeps the gateway prefix, only the tail is stripped", () => {
     expect(splitEndpointBaseUrl("https://api.deepseek.com/anthropic/v1/messages")).toEqual({
-      baseUrl: "https://api.deepseek.com",
+      baseUrl: "https://api.deepseek.com/anthropic",
+      stripped: "/anthropic/v1/messages",
+    });
+    expect(splitEndpointBaseUrl("https://api.longcat.ai/anthropic/v1/messages")).toEqual({
+      baseUrl: "https://api.longcat.ai/anthropic",
       stripped: "/anthropic/v1/messages",
     });
     expect(splitEndpointBaseUrl("https://api.openai.com/v1/chat/completions")).toEqual({
