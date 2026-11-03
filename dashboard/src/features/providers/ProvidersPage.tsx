@@ -19,6 +19,7 @@ import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { EmptyState, ErrorState, LoadingState } from "../../components/ui/state";
 import { Switch } from "../../components/ui/switch";
+import { PaginationControls } from "../../components/ui/pagination";
 import { Inline } from "../../components/ui/inline";
 import { Stack } from "../../components/ui/stack";
 import { useHideUnconfiguredProviders } from "../../lib/privacy-mode";
@@ -1048,6 +1049,24 @@ export default function Providers(): ReactNode {
     })).filter((section) => section.providers.length > 0);
   }, [llmProviders, orderedSearch, mediaProviders, tab]);
 
+  /** Providers shown per section; `section.providers` is sliced to the page
+   *  so a large catalog never renders hundreds of cards at once. */
+  const SECTION_PAGE_SIZE = 8;
+  const [sectionPages, setSectionPages] = useState<Readonly<Record<string, number>>>({});
+  const pageFor = (title: string) => sectionPages[title] ?? 1;
+  const setPageFor = (title: string) => (page: number) =>
+    setSectionPages((current) => ({ ...current, [title]: page }));
+  const visibleProvidersFor = (providers: readonly ProviderResponse[], title: string) => {
+    const page = pageFor(title);
+    const pageCount = Math.max(1, Math.ceil(providers.length / SECTION_PAGE_SIZE));
+    const safePage = Math.min(page, pageCount);
+    return {
+      visible: providers.slice((safePage - 1) * SECTION_PAGE_SIZE, safePage * SECTION_PAGE_SIZE),
+      pageCount,
+      safePage,
+    };
+  };
+
   const state = q.isPending && !q.data
     ? <LoadingState label="Loading providers..." />
     : q.isError
@@ -1161,7 +1180,7 @@ export default function Providers(): ReactNode {
 
             {collapsed ? null : (
             <ProviderCardGrid>
-              {section.providers.map((p) => (
+              {visibleProvidersFor(section.providers, section.title).visible.map((p) => (
                 <ProviderCard
                   key={p.providerId}
                   provider={p}
@@ -1178,6 +1197,19 @@ export default function Providers(): ReactNode {
               ))}
             </ProviderCardGrid>
             )}
+            {!collapsed ? (
+              (() => {
+                const { pageCount, safePage } = visibleProvidersFor(section.providers, section.title);
+                return pageCount > 1 ? (
+                  <PaginationControls
+                    page={safePage}
+                    pageCount={pageCount}
+                    onPageChange={setPageFor(section.title)}
+                    testId={`providers-section-pagination-${section.title}`}
+                  />
+                ) : null;
+              })()
+            ) : null}
           </section>
           );
         })

@@ -1,10 +1,11 @@
-import { Check, ChevronDown, Cpu, FileText, FileUp, Globe2, Layers, Settings2, Trash2, Plus, Pencil } from "lucide-react";
+import { Check, ChevronDown, Cpu, FileText, FileUp, Globe2, Layers, Settings2, Trash2, Plus, Pencil, Search } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Badge } from "./ui/badge";
 import { Banner } from "./patterns/banner";
 import { Button } from "./ui/button";
 import { Card, CardBody, CardHeader } from "./ui/card";
 import { Dialog } from "./ui/dialog";
+import { PaginationControls } from "./ui/pagination";
 import { CardActions } from "./ui/inline";
 import { Textarea } from "./ui/input";
 import { Select } from "./ui/select";
@@ -31,6 +32,9 @@ const EMPTY_STATE: TenantSystemPrompts = {
   aliases: {},
 };
 export { EMPTY_STATE };
+
+/** How many rows a surfaced list shows before pagination kicks in. */
+const PAGE_SIZE = 8;
 
 function modelKey(providerId: string, modelId: string): string {
   return `${providerId}::${modelId}`;
@@ -844,6 +848,41 @@ export function InjectSystemPromptDialog({
   const aliases = aliasesQuery.data ?? [];
   const combos = combosQuery.data ?? [];
 
+  /** Paginates a list client-side: `slice` is the visible window, `pageCount`
+   *  the number of windows, and `page` is clamped when the list shrinks. */
+  const usePaged = (length: number, page: number, setPage: (page: number) => void) => {
+    const pageCount = Math.max(1, Math.ceil(length / PAGE_SIZE));
+    const safePage = Math.min(page, pageCount);
+    const slice = (items: readonly unknown[]) => items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+    const clamp = () => {
+      if (page > pageCount) setPage(pageCount);
+    };
+    return { pageCount, safePage, slice, clamp };
+  };
+
+  const [providerPage, setProviderPage] = useState(1);
+  const providerPaged = usePaged(filteredProviders.length, providerPage, setProviderPage);
+  useEffect(() => providerPaged.clamp(), [providerPaged.pageCount, providerPage]);
+  const visibleProviders = providerPaged.slice(filteredProviders) as ProviderResponse[];
+
+  const [modelPage, setModelPage] = useState(1);
+  const modelPaged = usePaged(modelRows.length, modelPage, setModelPage);
+  useEffect(() => modelPaged.clamp(), [modelPaged.pageCount, modelPage]);
+  const visibleModels = modelPaged.slice(modelRows) as typeof modelRows;
+
+  const [comboPage, setComboPage] = useState(1);
+  const [namedSearch, setNamedSearch] = useState("");
+  const namedQuery = namedSearch.trim().toLowerCase();
+  const flattenedNamed = [
+    ...combos.map((combo) => ({ kind: "combo" as const, name: combo.name })),
+    ...aliases.map((alias) => ({ kind: "alias" as const, name: alias.alias })),
+  ].filter((entry) =>
+    namedQuery === "" || entry.name.toLowerCase().includes(namedQuery),
+  );
+  const namedPaged = usePaged(flattenedNamed.length, comboPage, setComboPage);
+  useEffect(() => namedPaged.clamp(), [namedPaged.pageCount, comboPage]);
+  const visibleNamed = namedPaged.slice(flattenedNamed) as { kind: "combo" | "alias"; name: string }[];
+
   const patchGlobal = (next: ScopePromptRef | null) =>
     setDraft((prev) => ({ ...prev, global: next }));
   const patchPresets = (next: Readonly<Record<string, SystemPromptPreset>>) =>
@@ -974,7 +1013,7 @@ export function InjectSystemPromptDialog({
                   );
                 })()}
                 <div className="grid grid-cols-3 gap-4 max-medium:grid-cols-2 max-small:grid-cols-1">
-                  {modelRows.map((model) => (
+                  {visibleModels.map((model) => (
                     <ModelScopeRow
                       key={modelKey(modelProviderId, model.modelId)}
                       providerId={modelProviderId}
@@ -986,6 +1025,16 @@ export function InjectSystemPromptDialog({
                     />
                   ))}
                 </div>
+                {modelPaged.pageCount > 1 ? (
+                  <div className="mt-4">
+                    <PaginationControls
+                      page={modelPaged.safePage}
+                      pageCount={modelPaged.pageCount}
+                      onPageChange={setModelPage}
+                      testId="isp-model-pagination"
+                    />
+                  </div>
+                ) : null}
               </>
             )}
           </div>
@@ -1021,17 +1070,29 @@ export function InjectSystemPromptDialog({
                   No providers match “{providerSearch.trim()}”.
                 </p>
               ) : (
-                <div className="mt-4 grid grid-cols-3 gap-4 max-medium:grid-cols-2 max-small:grid-cols-1">
-                  {filteredProviders.map((provider) => (
-                    <ProviderScopeCard
-                      key={provider.providerId}
-                      provider={provider}
-                      entry={draft.providers[provider.providerId]}
-                      presets={draft.presets}
-                      onChange={(next) => patchProvider(provider.providerId, next)}
-                    />
-                  ))}
-                </div>
+                <>
+                  <div className="mt-4 grid grid-cols-3 gap-4 max-medium:grid-cols-2 max-small:grid-cols-1">
+                    {visibleProviders.map((provider) => (
+                      <ProviderScopeCard
+                        key={provider.providerId}
+                        provider={provider}
+                        entry={draft.providers[provider.providerId]}
+                        presets={draft.presets}
+                        onChange={(next) => patchProvider(provider.providerId, next)}
+                      />
+                    ))}
+                  </div>
+                  {providerPaged.pageCount > 1 ? (
+                    <div className="mt-4">
+                      <PaginationControls
+                        page={providerPaged.safePage}
+                        pageCount={providerPaged.pageCount}
+                        onPageChange={setProviderPage}
+                        testId="isp-provider-pagination"
+                      />
+                    </div>
+                  ) : null}
+                </>
               )}
             </>
           )}
@@ -1055,42 +1116,53 @@ export function InjectSystemPromptDialog({
               No combos or aliases configured — create them in Routing first.
             </p>
           ) : (
-            <div className="grid grid-cols-2 gap-4 max-medium:grid-cols-1">
-              {combos.length > 0 ? (
-                <div>
-                  <p className="mb-2 text-badge font-semibold text-text-tertiary">Combos</p>
-                  <div className="space-y-3">
-                    {combos.map((combo) => (
-                      <NamedScopeRow
-                        key={combo.name}
-                        kind="combo"
-                        name={combo.name}
-                        value={draft.combos[combo.name]}
-                        presets={draft.presets}
-                        onChange={(next) => patchNamed("combo", combo.name, next)}
-                      />
-                    ))}
-                  </div>
+            <>
+              <div className="relative">
+                <Search
+                  size={14}
+                  className="absolute left-5 top-1/2 -translate-y-1/2 text-text-tertiary"
+                />
+                <input
+                  type="search"
+                  value={namedSearch}
+                  onChange={(event) => {
+                    setNamedSearch(event.target.value);
+                    setComboPage(1);
+                  }}
+                  placeholder="Search combos or aliases…"
+                  aria-label="Search combos and aliases"
+                  className="form-input w-full rounded-control border border-inner-border bg-surface-2 py-4 pr-5 pl-16 text-body text-text-primary outline-none transition-[border-color,box-shadow] duration-(--dur-micro) ease-spring focus:border-accent focus:shadow-focus"
+                />
+              </div>
+              {visibleNamed.length === 0 ? (
+                <p className="mt-4 text-badge leading-normal text-text-tertiary">
+                  No combos or aliases match “{namedSearch.trim()}”.
+                </p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {visibleNamed.map((entry) => (
+                    <NamedScopeRow
+                      key={`${entry.kind}:${entry.name}`}
+                      kind={entry.kind}
+                      name={entry.name}
+                      value={draft[entry.kind === "combo" ? "combos" : "aliases"][entry.name]}
+                      presets={draft.presets}
+                      onChange={(next) => patchNamed(entry.kind, entry.name, next)}
+                    />
+                  ))}
+                </div>
+              )}
+              {namedPaged.pageCount > 1 ? (
+                <div className="mt-4">
+                  <PaginationControls
+                    page={namedPaged.safePage}
+                    pageCount={namedPaged.pageCount}
+                    onPageChange={setComboPage}
+                    testId="isp-named-pagination"
+                  />
                 </div>
               ) : null}
-              {aliases.length > 0 ? (
-                <div>
-                  <p className="mb-2 text-badge font-semibold text-text-tertiary">Aliases</p>
-                  <div className="space-y-3">
-                    {aliases.map((alias) => (
-                      <NamedScopeRow
-                        key={alias.alias}
-                        kind="alias"
-                        name={alias.alias}
-                        value={draft.aliases[alias.alias]}
-                        presets={draft.presets}
-                        onChange={(next) => patchNamed("alias", alias.alias, next)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            </>
           )}
         </section>
       </Stack>

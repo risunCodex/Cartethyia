@@ -1,36 +1,28 @@
 /**
  * An inline control for scoping system-prompt injection to a named route
  * (combo / alias). Shows the current state and the editable choices directly —
- * Off / Global / Preset / Custom — with no intermediate dialog. Every change
- * persists immediately to the tenant's system-prompt configuration via
- * `PUT /system-prompt`.
+ * Off / Global / Preset / Custom — with no intermediate dialog.
+ *
+ * The component is controlled: the caller owns the current `ScopePromptRef`
+ * and receives changes through `onChange`. The parent decides when to persist
+ * (typically together with the route save), so a rename or a cancel cannot
+ * strand a prompt under a stale key.
  */
 import { type ReactNode } from "react";
 import { Badge } from "./ui/badge";
 import { Select } from "./ui/select";
 import { Textarea } from "./ui/input";
 import { FileText } from "lucide-react";
-import { EMPTY_STATE } from "./InjectSystemPromptPanel";
-import { useSystemPrompt, useUpdateSystemPrompt } from "../hooks/system-prompt";
-import { mergeBuiltinPresets } from "../data/builtin-prompts";
-import { toast } from "../lib/toast";
-import { getErrorMessage } from "../data/api";
 import type {
   PromptSetting,
   ScopePromptRef,
   SystemPromptPreset,
-  TenantSystemPrompts,
 } from "../../../src/console/system-prompt/contracts";
 
 const MODE_OPTIONS = [
   { value: "append", label: "Append" },
   { value: "override", label: "Override" },
 ] as const;
-
-/** The current source kind, normalized (undefined → "global"). */
-function sourceKind(ref: ScopePromptRef): "off" | "global" | "preset" | "custom" {
-  return ref.kind;
-}
 
 /** Status label for the chip. */
 function describeRef(ref: ScopePromptRef, presets: Readonly<Record<string, SystemPromptPreset>>): {
@@ -54,45 +46,26 @@ function describeRef(ref: ScopePromptRef, presets: Readonly<Record<string, Syste
 
 /**
  * Inline system-prompt injection field for a named scope (combo or alias).
- * `name` is the combo/alias name as keyed in the tenant's saved config.
+ * `name` is the scope name as keyed in the tenant's saved config; it only
+ * disambiguates form control ids.
  */
 export function ScopeInjectionField({
   kind,
   name,
+  value,
+  onChange,
+  presets,
 }: {
   readonly kind: "combo" | "alias";
   readonly name: string;
+  readonly value: ScopePromptRef;
+  readonly onChange: (next: ScopePromptRef) => void;
+  readonly presets: Readonly<Record<string, SystemPromptPreset>>;
 }): ReactNode {
-  const settingsQuery = useSystemPrompt();
-  const update = useUpdateSystemPrompt();
-
-  const state = mergeBuiltinPresets(settingsQuery.data ?? EMPTY_STATE);
-  const savedRef = kind === "combo" ? state.combos[name] : state.aliases[name];
-  const ref = savedRef ?? { kind: "global" as const };
-  const { label, active } = describeRef(ref, state.presets);
-
-  const save = (next: ScopePromptRef) => {
-    const updated: TenantSystemPrompts = {
-      ...state,
-      combos:
-        kind === "combo"
-          ? { ...state.combos, [name]: next }
-          : state.combos,
-      aliases:
-        kind === "alias"
-          ? { ...state.aliases, [name]: next }
-          : state.aliases,
-    };
-    update.mutate(updated, {
-      onSuccess: () => toast.success("System prompt updated"),
-      onError: (error) =>
-        toast.error(getErrorMessage(error, "Could not update system prompt.")),
-    });
-  };
-
-  const kindNow = sourceKind(ref);
-
-  const presetList = Object.values(state.presets);
+  const ref = value;
+  const { label, active } = describeRef(ref, presets);
+  const kindNow = ref.kind;
+  const presetList = Object.values(presets);
 
   return (
     <div className="rounded-control border border-inner-border bg-surface-2 p-4">
@@ -112,7 +85,7 @@ export function ScopeInjectionField({
             type="radio"
             name={`scp-${kind}-${name}`}
             checked={kindNow === "off"}
-            onChange={() => save({ kind: "off" })}
+            onChange={() => onChange({ kind: "off" })}
             className="accent-accent"
           />
           Off
@@ -122,7 +95,7 @@ export function ScopeInjectionField({
             type="radio"
             name={`scp-${kind}-${name}`}
             checked={kindNow === "global"}
-            onChange={() => save({ kind: "global" })}
+            onChange={() => onChange({ kind: "global" })}
             className="accent-accent"
           />
           Global
@@ -134,7 +107,7 @@ export function ScopeInjectionField({
             checked={kindNow === "preset"}
             onChange={() => {
               const first = presetList.find((p) => p.enabled) ?? presetList[0];
-              save(first ? { kind: "preset", presetId: first.id } : { kind: "global" });
+              onChange(first ? { kind: "preset", presetId: first.id } : { kind: "global" });
             }}
             className="accent-accent"
           />
@@ -145,7 +118,7 @@ export function ScopeInjectionField({
             type="radio"
             name={`scp-${kind}-${name}`}
             checked={kindNow === "custom"}
-            onChange={() => save({ kind: "custom", setting: { enabled: true, mode: "append", text: "" } })}
+            onChange={() => onChange({ kind: "custom", setting: { enabled: true, mode: "append", text: "" } })}
             className="accent-accent"
           />
           Custom
@@ -157,7 +130,7 @@ export function ScopeInjectionField({
           <Select
             aria-label="Preset"
             value={ref.kind === "preset" ? ref.presetId : ""}
-            onValueChange={(v) => save({ kind: "preset", presetId: v })}
+            onValueChange={(v) => onChange({ kind: "preset", presetId: v })}
             options={presetList.map((p) => ({ value: p.id, label: `${p.name}${p.enabled ? "" : " (off)"}` }))}
             size="sm"
             className="w-full"
@@ -177,7 +150,7 @@ export function ScopeInjectionField({
               aria-label="Injection mode"
               value={ref.kind === "custom" ? ref.setting.mode : "append"}
               onValueChange={(v) =>
-                save({
+                onChange({
                   kind: "custom",
                   setting: {
                     enabled: true,
@@ -201,7 +174,7 @@ export function ScopeInjectionField({
             rows={4}
             value={ref.kind === "custom" ? ref.setting.text : ""}
             onChange={(event) =>
-              save({
+              onChange({
                 kind: "custom",
                 setting: {
                   enabled: true,
