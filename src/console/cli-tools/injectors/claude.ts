@@ -1,6 +1,6 @@
 import type {} from "../contracts";
 import { jsonDownload } from "../contracts";
-import { homeDir, isLocalEndpoint, readJsonFile, stripV1Suffix, writeJsonFile } from "../fs-ops";
+import { homeDir, isLocalEndpoint, readJsonFile, stripV1Suffix, writeJsonFileWithBackup } from "../fs-ops";
 import type { ApplyInput, InjectorSpec } from "../contracts";
 
 
@@ -94,7 +94,7 @@ export const claudeSpec: InjectorSpec = {
     settings.env = env;
     settings.model = claudeModel(input);
     for (const [key, value] of Object.entries(CLAUDE_BASELINE)) settings[key] = value;
-    await writeJsonFile(path, settings);
+    await writeJsonFileWithBackup(path, settings);
   },
 
   async reset(path) {
@@ -106,7 +106,7 @@ export const claudeSpec: InjectorSpec = {
     }
     delete settings.model;
     delete settings.smallModel;
-    await writeJsonFile(path, settings);
+    await writeJsonFileWithBackup(path, settings);
   },
 
   download(input) {

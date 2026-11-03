@@ -42,9 +42,7 @@ export default function CliTools(): ReactNode {
   }
 
   const tools = registryQuery.data;
-  const fileTools = tools.filter((tool) => tool.configType !== "guide");
-  const guideTools = tools.filter((tool) => tool.configType === "guide");
-  const configuredCount = fileTools.filter((tool) => statusMap.get(tool.id)?.configured).length;
+  const configuredCount = tools.filter((tool) => statusMap.get(tool.id)?.configured).length;
   if (tools.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center p-12 border border-dashed border-transparent rounded-card bg-transparent text-center">
@@ -60,19 +58,19 @@ export default function CliTools(): ReactNode {
       <Card>
         <CardHeader
           title="CLI Tools"
-          subtitle={`${configuredCount}/${fileTools.length} file-injected tools configured`}
+          subtitle={`${configuredCount}/${tools.length} tools configured`}
           icon={<Terminal size={16} />}
           action={<Badge tone="accent">{`${tools.length} tools`}</Badge>}
         />
         <CardBody className="flex flex-col gap-8">
       <section className="flex flex-col gap-6">
         <SectionHeading
-          title={`File-injected tools (${fileTools.length})`}
+          title={`Supported tools (${tools.length})`}
           description="Direct config file writing and preset model mappings"
         />
 
         <div className="provider-grid grid gap-6 w-full min-w-0">
-          {fileTools.map((tool) => {
+          {tools.map((tool) => {
             const status = statusMap.get(tool.id);
             return (
               <Card
@@ -120,51 +118,6 @@ export default function CliTools(): ReactNode {
               </Card>
             );
           })}
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-6">
-        <SectionHeading
-          title={`Guide-only tools (${guideTools.length})`}
-          description="Manual setup steps and exportable config templates"
-        />
-
-        <div className="provider-grid grid gap-6 w-full min-w-0">
-          {guideTools.map((tool) => (
-            <Card
-              key={tool.id}
-              interactive
-              className="relative overflow-hidden rounded-panel"
-            >
-              <Link
-                to={`/cli-tools/${tool.id}`}
-                className="no-underline text-inherit block p-6"
-              >
-                <Inline gap="10px">
-                  <ToolIcon toolId={tool.id} name={tool.name} color={tool.color} size={32} />
-                  <div className="min-w-0 flex-1">
-                    <div
-                      className="text-body font-semibold overflow-hidden truncate whitespace-nowrap"
-                    >
-                      {tool.name}
-                    </div>
-                    <div className="mt-1.5">
-                      <Badge tone="info">Guide</Badge>
-                    </div>
-                  </div>
-
-                  <div
-                    className="flex flex-col items-end gap-1.5 shrink-0"
-                  >
-                    <span className="font-mono tabular-nums text-micro font-semibold bg-kbd-bg py-0.5 px-2.5 rounded-tiny text-text-secondary">
-                      {tool.id}
-                    </span>
-                    {tool.surface ? <Badge tone="default">{tool.surface}</Badge> : null}
-                  </div>
-                </Inline>
-              </Link>
-            </Card>
-          ))}
         </div>
       </section>
         </CardBody>

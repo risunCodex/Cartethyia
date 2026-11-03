@@ -1,6 +1,7 @@
 import type {} from "../contracts";
-import { ensureV1Suffix, homeDir, join, readJsonFile, writeJsonFile } from "../fs-ops";
+import { ensureV1Suffix, homeDir, join, readJsonFile, writeJsonFileWithBackup } from "../fs-ops";
 import type { InjectorSpec } from "../contracts";
+import { DEFAULT_SDK } from "../contracts";
 
 
 // OpenCode injector spec.
@@ -71,8 +72,9 @@ export const opencodeSpec: InjectorSpec = {
 
     if (!config.provider) config.provider = {};
     const prior = config.provider.cartethyia;
+    const otherProviders = Object.keys(config.provider).filter((id) => id !== "cartethyia");
     config.provider.cartethyia = {
-      npm: "@ai-sdk/openai-compatible",
+      npm: input.sdk ?? prior?.npm ?? DEFAULT_SDK,
       options: {
         ...(prior?.options ?? {}),
         baseURL: ensureV1Suffix(input.endpoint),
@@ -84,6 +86,22 @@ export const opencodeSpec: InjectorSpec = {
     const activeModel = input.activeModel ?? input.modelIds[0] ?? "";
     config.model = activeModel === "" ? "" : `cartethyia/${activeModel}`;
 
+    if (input.websearch !== undefined) {
+      config.websearch = { provider: input.websearch };
+    }
+
+    // YOLO mode: auto-approve shell/read/write. When on, write OpenCode's
+    // permission rules; when off, leave whatever the user had (or nothing).
+    if (input.bypassPermissions === true) {
+      config.permissions = [
+        { action: "shell", resource: "*", effect: "allow" },
+        { action: "external_directory", resource: "*", effect: "allow" },
+        { action: "question", resource: "*", effect: "deny" },
+      ];
+    } else if (input.bypassPermissions === false) {
+      delete config.permissions;
+    }
+
     if (!config.agent) config.agent = {};
     const subagentModel = input.subagentModel ?? input.modelIds[0] ?? activeModel;
     config.agent.explorer = {
@@ -92,7 +110,12 @@ export const opencodeSpec: InjectorSpec = {
       model: `cartethyia/${subagentModel}`,
     };
 
-    await writeJsonFile(path, config);
+    await writeJsonFileWithBackup(path, config);
+    return otherProviders.length > 0
+      ? [
+          `Config already has other provider(s): ${otherProviders.join(", ")}. They were kept as-is — only cartethyia was written/updated.`,
+        ]
+      : undefined;
   },
 
   async reset(path) {
@@ -113,7 +136,7 @@ export const opencodeSpec: InjectorSpec = {
       if (Object.keys(config.agent).length === 0) delete config.agent;
     }
 
-    await writeJsonFile(path, config);
+    await writeJsonFileWithBackup(path, config);
   },
 
   download(input) {
@@ -122,7 +145,7 @@ export const opencodeSpec: InjectorSpec = {
     const config: OpencodeConfig = {
       provider: {
         cartethyia: {
-          npm: "@ai-sdk/openai-compatible",
+          npm: input.sdk ?? DEFAULT_SDK,
           options: {
             baseURL: ensureV1Suffix(input.endpoint),
             apiKey: input.apiKey,

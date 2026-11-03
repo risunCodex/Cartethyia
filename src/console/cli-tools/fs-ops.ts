@@ -54,6 +54,17 @@ export async function writeJsonFile(path: string, data: unknown): Promise<void> 
   await Bun.write(path, JSON.stringify(data, null, 2));
 }
 
+/**
+ * Write JSON to a file, but first preserve the current contents at `path.bak`
+ * when the file already exists. Callers use this for tools whose config is
+ * precious (anything the user hand-edited): a broken merge must never destroy
+ * the only copy of that file, and the operator can always restore `.bak`.
+ */
+export async function writeJsonFileWithBackup(path: string, data: unknown): Promise<void> {
+  await backupExistingFile(path);
+  await writeJsonFile(path, data);
+}
+
 /** Read a text file, returning null if it doesn't exist. */
 export async function readTextFile(path: string): Promise<string | null> {
   try {
@@ -66,6 +77,24 @@ export async function readTextFile(path: string): Promise<string | null> {
 /** Write text to a file. */
 export async function writeTextFile(path: string, content: string): Promise<void> {
   await Bun.write(path, content);
+}
+
+/**
+ * Write text to a file, preserving the current contents at `path.bak` first.
+ * See `writeJsonFileWithBackup`.
+ */
+export async function writeTextFileWithBackup(path: string, content: string): Promise<void> {
+  await backupExistingFile(path);
+  await writeTextFile(path, content);
+}
+
+/**
+ * Copy an existing file to `path.bak` (overwriting an old backup). Missing
+ * source files are skipped — there is nothing to protect yet.
+ */
+async function backupExistingFile(path: string): Promise<void> {
+  if (!(await fileExists(path))) return;
+  await Bun.write(`${path}.bak`, await Bun.file(path).text());
 }
 
 /** Remove a file if it exists. */

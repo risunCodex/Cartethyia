@@ -44,8 +44,6 @@ function toToolRegistryEntry(def: ToolDef): ToolRegistryEntry {
     ...(def.settingsFile === undefined ? {} : { settingsFile: def.settingsFile }),
     ...(def.docsUrl === undefined ? {} : { docsUrl: def.docsUrl }),
     ...(def.notes === undefined ? {} : { notes: def.notes }),
-    ...(def.guideSteps === undefined ? {} : { guideSteps: def.guideSteps }),
-    ...(def.codeBlock === undefined ? {} : { codeBlock: def.codeBlock }),
   };
 }
 
@@ -64,8 +62,8 @@ function applyMessage(outcome: ApplyOutcome, toolId: string, fileMessage: string
     case "remote":
       return `Saved the remote route for ${toolId}. No config file was written.`;
     case "none":
-      // A guide tool has no config to inject; the injector's own message says
-      // what to do instead (download the guide), so surface it verbatim.
+      // Nothing was written and no remote route was saved; surface the
+      // injector's own message verbatim.
       return fileMessage.length > 0 ? fileMessage : `Nothing to apply for ${toolId}.`;
   }
 }
@@ -274,8 +272,8 @@ export class CliToolService {
    *
    * `mode` defaults to `both` so the common single-machine case does the
    * obviously-right thing without the operator choosing. A tool that has no
-   * injectable config (a guide tool) reports `remote` honestly instead of
-   * claiming a file write it never performed.
+   * injectable config reports `remote` honestly instead of claiming a file
+   * write it never performed.
    */
   async applyConfig(
     tenantId: string,
@@ -292,12 +290,14 @@ export class CliToolService {
     let wroteFile = false;
     let settingsPath: string | undefined;
     let fileMessage = "";
+    let fileWarnings: readonly string[] | undefined;
 
     if (wantsFile) {
       const result: ApplyResult = await injector.apply(input);
       wroteFile = result.success;
       if (result.settingsPath !== undefined) settingsPath = result.settingsPath;
       fileMessage = result.message;
+      fileWarnings = result.warnings;
     }
 
     let savedRemoteRoute = false;
@@ -321,6 +321,7 @@ export class CliToolService {
       savedRemoteRoute,
       ...(settingsPath === undefined ? {} : { settingsPath }),
       message: applyMessage(outcome, toolId, fileMessage),
+      ...(fileWarnings && fileWarnings.length > 0 ? { warnings: fileWarnings } : {}),
     };
   }
 

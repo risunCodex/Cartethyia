@@ -102,6 +102,10 @@ function parseApplyInput(
     ...(value.mode === "file" || value.mode === "remote" || value.mode === "both"
       ? { mode: value.mode }
       : {}),
+    ...(typeof value.sdk === "string" && value.sdk.length > 0 ? { sdk: value.sdk } : {}),
+    ...(typeof value.websearch === "string" && value.websearch.length > 0
+      ? { websearch: value.websearch }
+      : {}),
   };
 }
 
@@ -128,6 +132,8 @@ const applyBody = t.Object({
     }),
   ),
   bypassPermissions: t.Optional(t.Boolean()),
+  sdk: t.Optional(t.String()),
+  websearch: t.Optional(t.String()),
 });
 
 const mappingBody = t.Object({

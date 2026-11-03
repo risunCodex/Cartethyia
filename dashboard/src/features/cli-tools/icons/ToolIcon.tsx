@@ -3,22 +3,8 @@ import { useState, type ReactNode } from "react";
 const TOOL_ICONS: Record<string, { file: string; ext: "svg" | "webp" }> = {
   claude: { file: "claude-code", ext: "svg" },
   codex: { file: "codex", ext: "webp" },
-  cline: { file: "cline", ext: "webp" },
   opencode: { file: "opencode", ext: "webp" },
-  droid: { file: "droid", ext: "webp" },
-  hermes: { file: "hermes", ext: "webp" },
-  "grok-build": { file: "grok-build", ext: "svg" },
-  copilot: { file: "copilot", ext: "webp" },
-  "deepseek-tui": { file: "deepseek-tui", ext: "webp" },
-  jcode: { file: "jcode", ext: "webp" },
   kilo: { file: "kilocode", ext: "webp" },
-  openclaw: { file: "openclaw", ext: "webp" },
-  cowork: { file: "claude", ext: "webp" },
-  cursor: { file: "cursor", ext: "webp" },
-  roo: { file: "roo", ext: "webp" },
-  continue: { file: "continue", ext: "webp" },
-  amp: { file: "amp", ext: "webp" },
-  qwen: { file: "qwen", ext: "webp" },
 };
 
 const failedIcons = new Set<string>();

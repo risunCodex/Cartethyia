@@ -32,8 +32,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFileInjector, INJECTORS } from "../../src/console/cli-tools/injectors/driver";
 import { codexSpec } from "../../src/console/cli-tools/injectors/codex";
-import { readTextFile, textGet, textHas, writeTextFile } from "../../src/console/cli-tools/fs-ops";
-import { TOOL_IDS, TOOL_REGISTRY } from "../../src/console/cli-tools/contracts";
+import { readTextFile, textGet, textHas, writeJsonFile, writeTextFile } from "../../src/console/cli-tools/fs-ops";
+import { TOOL_IDS } from "../../src/console/cli-tools/contracts";
 import { sandboxConfigHome } from "../helpers/sandbox";
 
 /** A config the user has been maintaining by hand, with content to preserve. */
@@ -86,35 +86,6 @@ describe("the injector registry", () => {
       expect(typeof injector.reset).toBe("function");
       expect(typeof injector.download).toBe("function");
     }
-  });
-
-  test("a guide-only tool refuses to apply and says why", async () => {
-    // Guide tools have no file to write, so `apply` must fail loudly rather
-    // than report success for a change that never happened.
-    const guideId = TOOL_IDS.find((id) => TOOL_REGISTRY[id].configType === "guide");
-    expect(guideId).toBeDefined();
-    if (guideId === undefined) return;
-    const result = await INJECTORS[guideId].apply(APPLY_INPUT);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("guide-only");
-  });
-
-  test("a guide-only tool still produces a downloadable config", async () => {
-    const guideId = TOOL_IDS.find((id) => TOOL_REGISTRY[id].configType === "guide");
-    if (guideId === undefined) return;
-    const download = await INJECTORS[guideId].download(APPLY_INPUT);
-    expect(download.content.length).toBeGreaterThan(0);
-    expect(download.filename).toContain(guideId);
-  });
-
-  test("a guide-only status is always uninstalled and carries a message", async () => {
-    const guideId = TOOL_IDS.find((id) => TOOL_REGISTRY[id].configType === "guide");
-    if (guideId === undefined) return;
-    const status = await INJECTORS[guideId].getStatus();
-    expect(status.installed).toBe(false);
-    expect(status.configured).toBe(false);
-    expect(status.settingsPath).toBeNull();
-    expect(status.message).toBeDefined();
   });
 });
 
@@ -520,12 +491,6 @@ describe("every file injector round-trips apply → status → reset", () => {
   let home: string;
   let restoreHome: () => void;
 
-  /** Tools whose `apply` deliberately does not configure anything. */
-  const NOT_CONFIGURED_BY_DESIGN: ReadonlySet<string> = new Set([
-    // No MCP bridge exists yet, so `apply` only removes a stale managed server.
-    "cowork",
-  ]);
-
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "cartethyia-all-tools-"));
     restoreHome = sandboxConfigHome(home);
@@ -550,12 +515,12 @@ describe("every file injector round-trips apply → status → reset", () => {
     },
   };
 
-  const fileToolIds = TOOL_IDS.filter((id) => TOOL_REGISTRY[id].configType !== "guide");
+  const fileToolIds = TOOL_IDS;
 
   test("the registry has file injectors to exercise", () => {
     // Guards the loop below against silently testing nothing if the registry
     // ever changes shape.
-    expect(fileToolIds.length).toBeGreaterThan(10);
+    expect(fileToolIds.length).toBeGreaterThan(3);
   });
 
   test("apply succeeds and reset succeeds for every tool", async () => {
@@ -568,11 +533,88 @@ describe("every file injector round-trips apply → status → reset", () => {
     }
   });
 
+  test("apply preserves unrelated config sections (permissions, mcp, agents) and other providers", async () => {
+    // The regression this guards: applying Cartethyia to an existing config must
+    // never clobber unrelated top-level sections or pre-existing providers.
+    // This runs against a temp HOME — never the operator's real config — and
+    // only writes to that temp sandbox.
+    const complexExisting = {
+      $schema: "https://opencode.ai/config.json",
+      permissions: [
+        { action: "shell", resource: "*", effect: "allow" },
+        { action: "external_directory", resource: "*", effect: "allow" },
+      ],
+      mcp: {
+        servers: {
+          codegraph: { type: "local", command: ["codegraph", "serve", "--mcp"] },
+        },
+      },
+      agents: {
+        compaction: { model: "inception/mercury-3" },
+      },
+      provider: {
+        anthropic: { npm: "@opencode/ai/providers/anthropic" },
+      },
+      model: "anthropic/claude-sonnet-5-5",
+    };
+
+    for (const toolId of ["opencode", "kilo"] as const) {
+      const injector = INJECTORS[toolId];
+      const path = (await injector.apply(INPUT)).settingsPath;
+      expect(path).toBeDefined();
+      // Seed the temp config with the unrelated sections, then re-apply.
+      await writeJsonFile(path!, complexExisting);
+      const result = await injector.apply(INPUT);
+      const body = (await readTextFile(path!)) ?? "";
+      const parsed = JSON.parse(body) as Record<string, unknown>;
+
+      // Unrelated top-level sections survive.
+      expect(parsed.permissions).toEqual(complexExisting.permissions);
+      expect(parsed.mcp).toEqual(complexExisting.mcp);
+      expect(parsed.agents).toEqual(complexExisting.agents);
+
+      // The pre-existing provider survives, and cartethyia is added alongside it.
+      const providers = parsed.provider as Record<string, unknown>;
+      expect(providers.anthropic).toEqual(complexExisting.provider.anthropic);
+      expect(providers.cartethyia).toBeDefined();
+
+      // The operator is warned that other providers were preserved.
+      expect(result.warnings?.join(" ")).toContain("anthropic");
+    }
+  });
+
+  test("apply reports a warning when the config already has other providers (dry-run safe)", async () => {
+    // This reads back what apply wrote in the temp sandbox — it never touches
+    // a real user config. It verifies the warning contract end to end.
+    const withOtherProvider = {
+      provider: {
+        openai: { package: "@opencode/ai/providers/openai" },
+        cartethyia: {
+          package: "@opencode/ai/providers/openai-compatible",
+          settings: { baseURL: "http://old/v1", apiKey: "old" },
+        },
+      },
+    };
+
+    const injector = INJECTORS["opencode"];
+    const path = (await injector.apply(INPUT)).settingsPath;
+    expect(path).toBeDefined();
+    await writeJsonFile(path!, withOtherProvider);
+    const result = await injector.apply(INPUT);
+    expect(result.warnings).toBeDefined();
+    expect(result.warnings?.join(" ")).toContain("openai");
+
+    const body = (await readTextFile(path!)) ?? "";
+    const parsed = JSON.parse(body) as { provider: Record<string, unknown> };
+    // The pre-existing cartethyia entry is updated, openai untouched.
+    expect(parsed.provider.openai).toEqual(withOtherProvider.provider.openai);
+    expect(parsed.provider.cartethyia).toBeDefined();
+  });
+
   test("status reports configured after apply, and never returns the secret", async () => {
     // One pass, not two: `getStatus` probes PATH with a real `where`/`which`
     // process spawn per tool, and this suite is meant to stay fast.
     for (const toolId of fileToolIds) {
-      if (NOT_CONFIGURED_BY_DESIGN.has(toolId)) continue;
       const injector = INJECTORS[toolId];
       await injector.apply(INPUT);
       const status = await injector.getStatus();
@@ -626,6 +668,135 @@ describe("every file injector round-trips apply → status → reset", () => {
       expect(`${toolId}:header=${hasGluedHeader(body)}`).toBe(`${toolId}:header=false`);
       expect(`${toolId}:value=${hasGluedValue(body)}`).toBe(`${toolId}:value=false`);
     }
+  });
+
+  test("apply backs up the prior config to a .bak file", async () => {
+    // A broken merge must never destroy the operator's only copy of a hand
+    // -edited config, so every apply that rewrites an existing file must leave
+    // the previous contents at `<path>.bak`.
+    for (const toolId of fileToolIds) {
+      const injector = INJECTORS[toolId];
+      const first = await injector.apply(INPUT);
+      const path = first.settingsPath;
+      if (path === undefined) continue;
+
+      const original = (await readTextFile(path)) ?? "";
+      // Second apply touches the file again; the .bak must now hold the first
+      // version's contents.
+      await injector.apply(INPUT);
+      const backup = (await readTextFile(`${path}.bak`)) ?? "";
+      expect(`${toolId}:bak=${backup.length > 0}`).toBe(`${toolId}:bak=true`);
+      expect(`${toolId}:bak-matches=${backup === original}`).toBe(`${toolId}:bak-matches=true`);
+    }
+  });
+
+  test("opencode apply honors the selected SDK package", async () => {
+    // The default is OpenCode's native package, not the AI SDK — the whole
+    // point of the picker. A custom choice must land in the written config.
+    const injector = INJECTORS["opencode"];
+    const custom = {
+      ...INPUT,
+      sdk: "@opencode/ai/providers/anthropic-compatible",
+    };
+    const applied = await injector.apply(custom);
+    const path = applied.settingsPath;
+    expect(path).toBeDefined();
+    const body = (await readTextFile(path ?? "")) ?? "";
+    expect(body).toContain("@opencode/ai/providers/anthropic-compatible");
+    // The download path always emits the default native OpenAI-compatible
+    // package unless an SDK is chosen — never the AI SDK.
+    const download = await injector.download(INPUT);
+    expect(download.content).toContain("@opencode/ai/providers/openai-compatible");
+    expect(download.content).not.toContain("@ai-sdk/openai-compatible");
+  });
+
+  test("kilo apply writes kilo.jsonc with the AI SDK and honors a custom SDK", async () => {
+    // Kilo runs on the AI SDK — the default npm must be an @ai-sdk/*
+    // package, never an @opencode/ai/providers/* package.
+    const injector = INJECTORS["kilo"];
+    const applied = await injector.apply(INPUT);
+    const path = applied.settingsPath;
+    expect(path).toBeDefined();
+    expect(path?.endsWith("kilo.jsonc")).toBe(true);
+    const body = (await readTextFile(path ?? "")) ?? "";
+    expect(body).toContain("@ai-sdk/openai-compatible");
+    expect(body).not.toContain("@opencode/ai/providers/openai-compatible");
+
+    const custom = {
+      ...INPUT,
+      sdk: "@ai-sdk/anthropic",
+    };
+    const customApplied = await injector.apply(custom);
+    const customPath = customApplied.settingsPath;
+    const customBody = (await readTextFile(customPath ?? "")) ?? "";
+    expect(customBody).toContain("@ai-sdk/anthropic");
+
+    const download = await injector.download(INPUT);
+    expect(download.content).toContain("@ai-sdk/openai-compatible");
+    expect(download.content).not.toContain("@opencode/ai/providers/openai-compatible");
+  });
+
+  test("opencode apply writes the websearch provider selection", async () => {
+    const injector = INJECTORS["opencode"];
+    const withCarte = {
+      ...INPUT,
+      websearch: "carte",
+    };
+    const applied = await injector.apply(withCarte);
+    const path = applied.settingsPath;
+    expect(path).toBeDefined();
+    const body = (await readTextFile(path ?? "")) ?? "";
+    expect(body).toContain('"websearch"');
+    expect(body).toContain('"provider": "carte"');
+
+    const withNative = {
+      ...INPUT,
+      websearch: "random",
+    };
+    const nativeApplied = await injector.apply(withNative);
+    const nativePath = nativeApplied.settingsPath;
+    const nativeBody = (await readTextFile(nativePath ?? "")) ?? "";
+    expect(nativeBody).toContain('"provider": "random"');
+  });
+
+  test("opencode apply writes YOLO permissions when enabled and clears them when disabled", async () => {
+    const injector = INJECTORS["opencode"];
+    const path = (await injector.apply(INPUT)).settingsPath;
+    expect(path).toBeDefined();
+
+    const on = { ...INPUT, bypassPermissions: true };
+    const onResult = await injector.apply(on);
+    const onBody = (await readTextFile(path!)) ?? "";
+    expect(onBody).toContain('"permissions"');
+    expect(onBody).toContain('"action": "shell"');
+    expect(onResult.warnings).toBeUndefined();
+
+    const off = { ...INPUT, bypassPermissions: false };
+    await injector.apply(off);
+    const offBody = (await readTextFile(path!)) ?? "";
+    expect(offBody).not.toContain('"permissions"');
+  });
+
+  test("opencode apply preserves other providers and reports them as a warning", async () => {
+    const injector = INJECTORS["opencode"];
+    const path = (await injector.apply(INPUT)).settingsPath;
+    expect(path).toBeDefined();
+
+    // Seed a config with an unrelated provider, then apply Cartethyia on top.
+    await writeJsonFile(path!, {
+      provider: {
+        anthropic: { npm: "@opencode/ai/providers/anthropic" },
+      },
+    });
+    const result = await injector.apply(INPUT);
+    const body = (await readTextFile(path!)) ?? "";
+    // The pre-existing provider survives.
+    expect(body).toContain('"anthropic"');
+    // Cartethyia is added/updated alongside it.
+    expect(body).toContain('"cartethyia"');
+    // The operator is warned.
+    expect(result.warnings).toBeDefined();
+    expect(result.warnings?.join(" ")).toContain("anthropic");
   });
 
   test("every download produces a non-empty named payload", async () => {

@@ -31,6 +31,10 @@
     "staticInline": 0,
     "arbitrary": 3
   },
+  "src/features/cli-tools/CliToolDetailPage.tsx": {
+    "staticInline": 0,
+    "arbitrary": 1
+  },
   "src/features/provider-detail/sections/Models.tsx": {
     "staticInline": 0,
     "arbitrary": 4

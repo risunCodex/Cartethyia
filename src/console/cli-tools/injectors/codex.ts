@@ -1,5 +1,5 @@
 import type {} from "../contracts";
-import { ensureV1Suffix, homeDir, readJsonFile, readTextFile, removeFile, textGet, textHas, textRemove, textUpsert, writeJsonFile, writeTextFile } from "../fs-ops";
+import { ensureV1Suffix, homeDir, readJsonFile, readTextFile, removeFile, textGet, textHas, textRemove, textUpsert, writeJsonFileWithBackup, writeTextFileWithBackup } from "../fs-ops";
 import type { InjectorSpec } from "../contracts";
 
 
@@ -93,12 +93,12 @@ export const codexSpec: InjectorSpec = {
         `  refresh_interval_ms = 0`,
       ].join("\n"),
     );
-    await writeTextFile(path, text);
+    await writeTextFileWithBackup(path, text);
 
     const auth = ((await readJsonFile(codexAuthPath())) as Record<string, string> | null) ?? {};
     auth[CODEX_PROVIDER] = input.apiKey;
-    await writeJsonFile(codexAuthPath(), auth);
-    await writeTextFile(codexAuthHelperPath(), CODEX_AUTH_HELPER_SOURCE);
+    await writeJsonFileWithBackup(codexAuthPath(), auth);
+    await writeTextFileWithBackup(codexAuthHelperPath(), CODEX_AUTH_HELPER_SOURCE);
   },
 
   async reset(path) {
@@ -118,12 +118,12 @@ export const codexSpec: InjectorSpec = {
     if (textGet(text, { kind: "flat", key: "model_provider" }) === CODEX_PROVIDER) {
       text = textUpsert(text, { kind: "flat", key: "model_provider", insertAtTop: true }, "openai");
     }
-    await writeTextFile(path, text);
+    await writeTextFileWithBackup(path, text);
 
     const auth = (await readJsonFile(codexAuthPath())) as Record<string, string> | null;
     if (auth?.[CODEX_PROVIDER]) {
       delete auth[CODEX_PROVIDER];
-      await writeJsonFile(codexAuthPath(), auth);
+      await writeJsonFileWithBackup(codexAuthPath(), auth);
     }
     await removeFile(codexAuthHelperPath());
   },

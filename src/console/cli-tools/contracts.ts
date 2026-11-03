@@ -6,12 +6,11 @@ import { ensureV1Suffix } from "./fs-ops";
  * CLI Tools type contracts — shared across registry, injectors, service,
  * dashboard, and API routes.
  *
- * Each supported CLI coding agent ([CC], Codex, Cline, etc.) has a `ToolDef`
- * with static metadata and (when `configType !== "guide"`) a paired
- * `ToolInjector` that reads and writes the tool's config files on the host
- * filesystem. The dashboard picks an API key + models, POSTs to the backend,
- * and the injector merges Cartethyia-specific fields into the tool's config
- * without clobbering user settings.
+ * Each supported CLI coding agent ([CC], Codex, Kilo, OpenCode) has a `ToolDef`
+ * with static metadata and a paired `ToolInjector` that reads and writes the
+ * tool's config files on the host filesystem. The dashboard picks an API key +
+ * models, POSTs to the backend, and the injector merges Cartethyia-specific
+ * fields into the tool's config without clobbering user settings.
  */
 
 /**
@@ -22,7 +21,7 @@ import { ensureV1Suffix } from "./fs-ops";
 type CliToolSurface = "chat" | "responses" | "messages";
 
 /** How the tool's config is managed. */
-type ConfigType = "env" | "custom" | "guide";
+type ConfigType = "env" | "custom";
 
 /** A native model slot exposed by a CLI tool. */
 interface ToolModelDef {
@@ -53,6 +52,13 @@ export interface CliMappingInput {
 /** The user-facing routing mode for a CLI tool: `remote` routes are resolved by the gateway, `local` routes are baked into the tool's own config file. */
 export type CliMappingMode = "remote" | "local";
 
+/**
+ * The default runtime SDK package for OpenCode: its native
+ * `@opencode/ai/providers/openai-compatible` package (bundled with OpenCode
+ * itself, not the AI SDK).
+ */
+export const DEFAULT_SDK: string = "@opencode/ai/providers/openai-compatible";
+
 /** Persisted mapping settings for one CLI tool + API key pair. */
 export interface CliMappingSettings {
   readonly toolId: string;
@@ -68,21 +74,6 @@ interface ToolNote {
   readonly text: string;
 }
 
-/** A guide step for guide-only tools. */
-interface GuideStep {
-  readonly step: number;
-  readonly title: string;
-  readonly desc?: string;
-  readonly value?: string;
-  readonly type?: "apiKeySelector" | "modelSelector";
-}
-
-/** A code block for guide-only tools. */
-interface GuideCodeBlock {
-  readonly language: string;
-  readonly code: string;
-}
-
 /** Static metadata for a CLI tool — consumed by both backend and frontend. */
 export interface ToolDef {
   readonly id: string;
@@ -95,8 +86,6 @@ export interface ToolDef {
   readonly settingsFile?: string;
   readonly docsUrl?: string;
   readonly notes?: readonly ToolNote[];
-  readonly guideSteps?: readonly GuideStep[];
-  readonly codeBlock?: GuideCodeBlock;
   /**
    * How this tool's slot→route mapping behaves, which also decides whether the
    * tool has a mapping surface at all.
@@ -109,9 +98,7 @@ export interface ToolDef {
    *   so a slot has one value (written to the file) rather than a separate
    *   target. There is nothing to persist; the model is baked into the file.
    *
-   * Absent means the tool exposes no configurable model slots at all (a
-   * guide-only tool). This replaces a separate `mappingSupported` flag that
-   * had to be kept consistent with the mode by hand — the mode already says it.
+   * Absent means the tool exposes no configurable model slots at all.
    */
   readonly mappingMode?: CliMappingMode;
 }
@@ -137,8 +124,6 @@ export type ToolRegistryEntry = Pick<
   | "settingsFile"
   | "docsUrl"
   | "notes"
-  | "guideSteps"
-  | "codeBlock"
 > & { readonly mappingSupported: boolean };
 
 /** Runtime status of a CLI tool on the host. */
@@ -175,6 +160,17 @@ export interface ApplyInput {
   readonly mapping?: CliMappingInput;
   /** Enables [CC]'s bypass-permissions (YOLO) mode when explicitly selected. */
   readonly bypassPermissions?: boolean;
+  /**
+   * The runtime SDK package to write into the tool's config (e.g. OpenCode's
+   * `provider.*.npm`). Absent = the tool's default.
+   */
+  readonly sdk?: string;
+  /**
+   * WebSearch provider selection written into OpenCode's config. "carte"
+   * routes search through the Cartethyia gateway; "native" (or absent) leaves
+   * OpenCode's own provider selection in place.
+   */
+  readonly websearch?: string;
 }
 
 /** Result of an apply or reset operation. */
@@ -182,6 +178,8 @@ export interface ApplyResult {
   readonly success: boolean;
   readonly settingsPath?: string;
   readonly message: string;
+  /** Non-fatal notes for the operator, e.g. preserved pre-existing providers. */
+  readonly warnings?: readonly string[];
 }
 
 /**
@@ -195,9 +193,9 @@ export interface ApplyResult {
  *   persisted routing rows on each `/v1/*` call. Works when the gateway is
  *   remote, containerised, or the CLI lives on another machine.
  * - `both` — the tool's config was written and a remote route was recorded.
- * - `none` — nothing ran: the tool has no injectable config (a guide tool) and
- *   the request asked for no remote route. Reported rather than folded into
- *   `file`, so the UI never claims a write that did not happen.
+ * - `none` — nothing ran: the tool has no injectable config and the request
+ *   asked for no remote route. Reported rather than folded into `file`, so
+ *   the UI never claims a write that did not happen.
  */
 export type ApplyOutcome = "file" | "remote" | "both" | "none";
 
@@ -210,6 +208,8 @@ export interface ApplyConfigResult {
   readonly savedRemoteRoute: boolean;
   readonly settingsPath?: string;
   readonly message: string;
+  /** Non-fatal notes for the operator (see `ApplyResult.warnings`). */
+  readonly warnings?: readonly string[];
 }
 
 /** Result of a download-config operation. */
@@ -220,8 +220,7 @@ export interface DownloadResult {
 }
 
 /**
- * Injector contract — one per file-based tool.
- * Guide-only tools share a single GuideInjector that generates config text.
+ * Injector contract — one per tool.
  */
 export interface ToolInjector {
   readonly toolId: string;
@@ -325,8 +324,12 @@ export interface InjectorSpec {
   /** Extract status details from existing settings file(s) */
   readonly readStatus: (path: string) => Promise<StatusDetails> | StatusDetails;
 
-  /** Apply Cartethyia configuration to the settings file(s) */
-  readonly apply: (input: ApplyInput, path: string) => Promise<void> | void;
+  /**
+   * Apply Cartethyia configuration to the settings file(s). Return an array of
+   * non-fatal warning strings to surface them to the operator (e.g. preserved
+   * pre-existing providers).
+   */
+  readonly apply: (input: ApplyInput, path: string) => Promise<readonly string[] | void> | readonly string[] | void;
 
   /**
    * Reset Cartethyia configuration from settings file(s).
@@ -449,32 +452,6 @@ export const TOOL_REGISTRY = {
     ],
   },
 
-  cline: {
-    id: "cline",
-    name: "Cline",
-    color: "#00D1B2",
-    description: "Cline AI Coding Assistant (VS Code)",
-    configType: "custom" as const,
-    surface: "chat" as const,
-    settingsFile: "~/.cline/data/globalState.json",
-    defaultModels: [
-      {
-        id: "claude/claude-sonnet-5",
-        name: "Claude Sonnet 5",
-        alias: "sonnet",
-        roleLabel: "Primary Agent",
-        roleKind: "primary",
-      },
-      {
-        id: "claude/claude-opus-4-8",
-        name: "Claude Opus",
-        alias: "opus",
-        roleLabel: "Advanced Agent",
-        roleKind: "secondary",
-      },
-    ],
-  },
-
   opencode: {
     id: "opencode",
     name: "OpenCode",
@@ -501,86 +478,6 @@ export const TOOL_REGISTRY = {
     ],
   },
 
-  droid: {
-    id: "droid",
-    name: "Factory Droid",
-    color: "#00D4FF",
-    description: "Factory Droid AI Assistant",
-    configType: "custom" as const,
-    surface: "chat" as const,
-    settingsFile: "~/.factory/settings.json",
-    defaultModels: [
-      { id: "claude/claude-sonnet-5", name: "Claude Sonnet 5", alias: "sonnet" },
-      { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", alias: "gpt-5.6-sol" },
-    ],
-  },
-
-  hermes: {
-    id: "hermes",
-    name: "Hermes Agent",
-    color: "#8B5CF6",
-    description: "Nous Research self-improving AI agent",
-    configType: "custom" as const,
-    surface: "chat" as const,
-    settingsFile: "~/.hermes/config.yaml",
-    defaultModels: [{ id: "claude/claude-sonnet-5", name: "Claude Sonnet 5", alias: "sonnet" }],
-  },
-
-  "grok-build": {
-    id: "grok-build",
-    name: "Grok Build",
-    color: "#1DA1F2",
-    description: "xAI Grok Build CLI",
-    configType: "custom" as const,
-    surface: "chat" as const,
-    settingsFile: "~/.grok/config.toml",
-    defaultModels: [{ id: "grok/grok-4", name: "Grok 4", alias: "grok-4" }],
-  },
-
-  copilot: {
-    id: "copilot",
-    name: "GitHub Copilot",
-    color: "#1F6FEB",
-    description: "GitHub Copilot Chat (VS Code chatLanguageModels.json)",
-    configType: "custom" as const,
-    surface: "chat" as const,
-    settingsFile: "Code/User/chatLanguageModels.json",
-    defaultModels: [
-      { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", alias: "gpt-5.6-sol" },
-      { id: "claude/claude-sonnet-5", name: "Claude Sonnet 5", alias: "sonnet" },
-    ],
-  },
-
-  "deepseek-tui": {
-    id: "deepseek-tui",
-    name: "DeepSeek TUI",
-    color: "#4D6BFE",
-    description: "DeepSeek Terminal Coding Agent (Rust TUI)",
-    configType: "custom" as const,
-    surface: "chat" as const,
-    settingsFile: "~/.deepseek/config.toml",
-    defaultModels: [
-      { id: "deepseek/deepseek-chat", name: "DeepSeek Chat", alias: "deepseek-chat" },
-      {
-        id: "deepseek/deepseek-reasoner",
-        name: "DeepSeek Reasoner",
-        alias: "deepseek-reasoner",
-      },
-    ],
-  },
-
-  jcode: {
-    id: "jcode",
-    name: "jcode",
-    color: "#FF6B35",
-    description: "High-performance Rust-based coding agent harness",
-    configType: "custom" as const,
-    surface: "chat" as const,
-    settingsFile: "~/.jcode/config.toml",
-    docsUrl: "https://github.com/1jehuang/jcode",
-    defaultModels: [{ id: "claude/claude-sonnet-5", name: "Claude Sonnet 5", alias: "sonnet" }],
-  },
-
   kilo: {
     id: "kilo",
     name: "Kilo Code",
@@ -590,159 +487,6 @@ export const TOOL_REGISTRY = {
     surface: "chat" as const,
     settingsFile: "~/.local/share/kilo/auth.json",
     defaultModels: [{ id: "claude/claude-sonnet-5", name: "Claude Sonnet 5", alias: "sonnet" }],
-  },
-
-  openclaw: {
-    id: "openclaw",
-    name: "Open Claw",
-    color: "#FF6B35",
-    description: "Open Claw AI Assistant",
-    configType: "custom" as const,
-    surface: "messages" as const,
-    settingsFile: "~/.openclaw/openclaw.json",
-    defaultModels: [{ id: "claude/claude-sonnet-5", name: "Claude Sonnet 5", alias: "sonnet" }],
-  },
-
-  cowork: {
-    id: "cowork",
-    name: "Claude Cowork",
-    color: "#D97757",
-    description: "Claude Desktop Cowork (third-party inference)",
-    configType: "custom" as const,
-    surface: "messages" as const,
-    settingsFile: "Claude/configLibrary/_meta.json",
-    defaultModels: [{ id: "claude/claude-sonnet-5", name: "Claude Sonnet 5", alias: "sonnet" }],
-  },
-  // ── Guide-only tools (no fs injection — show steps + downloadable config) ──
-  roo: {
-    id: "roo",
-    name: "Roo",
-    color: "#FF6B6B",
-    description: "Roo AI Assistant",
-    configType: "guide" as const,
-    surface: "chat" as const,
-    defaultModels: [{ id: "claude/claude-sonnet-5", name: "Claude Sonnet 5", alias: "sonnet" }],
-    guideSteps: [
-      { step: 1, title: "Open Settings", desc: "Go to Roo Settings panel" },
-      { step: 2, title: "Select Provider", desc: "Choose API Provider → Ollama" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}" },
-      { step: 4, title: "API Key", type: "apiKeySelector" },
-      { step: 5, title: "Select Model", type: "modelSelector" },
-    ],
-  },
-
-  continue: {
-    id: "continue",
-    name: "Continue",
-    color: "#7C3AED",
-    description: "Continue AI Assistant",
-    configType: "guide" as const,
-    surface: "chat" as const,
-    defaultModels: [{ id: "claude/claude-sonnet-5", name: "Claude Sonnet 5", alias: "sonnet" }],
-    guideSteps: [
-      { step: 1, title: "Open Config", desc: "Open Continue configuration file" },
-      { step: 2, title: "API Key", type: "apiKeySelector" },
-      { step: 3, title: "Select Model", type: "modelSelector" },
-      {
-        step: 4,
-        title: "Add Model Config",
-        desc: "Add the following configuration to your models array:",
-      },
-    ],
-    codeBlock: {
-      language: "json",
-      code: `{
-  "apiBase": "{{baseUrl}}",
-  "title": "{{model}}",
-  "model": "{{model}}",
-  "provider": "openai",
-  "apiKey": "{{apiKey}}"
-}`,
-    },
-  },
-
-  amp: {
-    id: "amp",
-    name: "Amp CLI",
-    color: "#F97316",
-    description: "Sourcegraph Amp coding assistant CLI",
-    configType: "guide" as const,
-    surface: "chat" as const,
-    docsUrl: "/docs?section=cli-tools&tool=amp",
-    defaultModels: [{ id: "claude/claude-sonnet-5", name: "Claude Sonnet 5", alias: "sonnet" }],
-    notes: [
-      {
-        type: "info",
-        text: "Use Cartethyia model aliases to keep Amp shorthand mappings stable across provider updates.",
-      },
-    ],
-    guideSteps: [
-      {
-        step: 1,
-        title: "Install Amp",
-        desc: "Install the Amp CLI using the package manager supported by your environment.",
-      },
-      { step: 2, title: "API Key", type: "apiKeySelector" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}" },
-      { step: 4, title: "Select Model", type: "modelSelector" },
-      {
-        step: 5,
-        title: "Add Shorthands",
-        desc: "Map Amp shorthand names to Cartethyia aliases in your local config.",
-      },
-    ],
-    codeBlock: {
-      language: "bash",
-      code: `export OPENAI_API_KEY="{{apiKey}}"
-export OPENAI_BASE_URL="{{baseUrl}}"
-amp --model "{{model}}"`,
-    },
-  },
-
-  qwen: {
-    id: "qwen",
-    name: "Qwen Code",
-    color: "#10B981",
-    description: "Alibaba Qwen Code CLI — OpenAI-compatible via Cartethyia",
-    configType: "guide" as const,
-    surface: "chat" as const,
-    docsUrl: "https://qwenlm.github.io/qwen-code-docs/en/users/configuration/model-providers/",
-    defaultModels: [
-      { id: "claude/claude-sonnet-5", name: "Claude Sonnet 5", alias: "sonnet" },
-      { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", alias: "gpt-5.6-sol" },
-    ],
-    notes: [
-      {
-        type: "warning",
-        text: "Config path: Linux/macOS ~/.qwen/settings.json - Windows %USERPROFILE%\\.qwen\\settings.json",
-      },
-    ],
-    guideSteps: [
-      { step: 1, title: "Install Qwen Code", desc: "npm install -g @qwen-code/qwen-code" },
-      { step: 2, title: "API Key", type: "apiKeySelector" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}" },
-      { step: 4, title: "Select Model", type: "modelSelector" },
-      {
-        step: 5,
-        title: "Save Config",
-        desc: "Copy the JSON below to your ~/.qwen/settings.json file.",
-      },
-    ],
-    codeBlock: {
-      language: "json",
-      code: `{
-  "security": {
-    "auth": {
-      "selectedType": "openai",
-      "apiKey": "{{apiKey}}",
-      "baseUrl": "{{baseUrl}}"
-    }
-  },
-  "model": {
-    "name": "{{model}}"
-  }
-}`,
-    },
   },
 } satisfies Record<string, ToolDef>;
 
