@@ -411,6 +411,20 @@ describe("buildLabRequest", () => {
       expect(detectMediaIntent("What is an image model good at?")).toBeUndefined();
     });
 
+    test("does not mistake discussions that merely mention media for a request", () => {
+      // Regression: long prompts that explain or ask about image/video
+      // generation must not trigger the media pipeline — the planner answers
+      // them instead, and "model asked for" decides tool use.
+      expect(detectMediaIntent("Explain how to create a good prompt for generating images with AI")).toBeUndefined();
+      expect(detectMediaIntent("How do I generate an image?")).toBeUndefined();
+      expect(detectMediaIntent("Tolong jelaskan cara membuat aplikasi yang menampilkan gambar")).toBeUndefined();
+      expect(detectMediaIntent("I want to make a website that shows images uploaded by users")).toBeUndefined();
+      expect(detectMediaIntent("Draw conclusions from this data")).toBeUndefined();
+      // Short, direct requests still work.
+      expect(detectMediaIntent("Buatkan gambar logo sederhana")).toBe("image");
+      expect(detectMediaIntent("gambarkan kucing")).toBe("image");
+    });
+
     test("falls back to the native worker unless the planner called the requested media tool", () => {
       expect(shouldFallbackToMediaWorker("image", [])).toBe(true);
       expect(shouldFallbackToMediaWorker("image", [{ name: "web_search" }])).toBe(true);

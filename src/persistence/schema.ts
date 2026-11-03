@@ -131,20 +131,20 @@ export const wireFamily = pgEnum("wire_family", ["chat", "responses", "messages"
 // `https` is a hosted relay front door (Vercel, Cloudflare, Deno, Netlify):
 // plain HTTP CONNECT to an origin that terminates TLS itself, so the transport
 // is recorded as what it speaks rather than as a generic proxy.
-const networkPoolKind = pgEnum("network_pool_kind", ["http", "https", "socks5"]);
+export const networkPoolKind = pgEnum("network_pool_kind", ["http", "https", "socks5"]);
 
 //  health_events.entity_kind — distinguishes which owning
 // table entity_id/account_id/network_pool_id references.
-const healthEntityKind = pgEnum("health_entity_kind", ["account", "pool"]);
+export const healthEntityKind = pgEnum("health_entity_kind", ["account", "pool"]);
 
-const telemetrySourceSurface = pgEnum("telemetry_source_surface", [
+export const telemetrySourceSurface = pgEnum("telemetry_source_surface", [
   "chat",
   "responses",
   "messages",
   "completion",
 ]);
 
-const telemetryStatus = pgEnum("telemetry_status", [
+export const telemetryStatus = pgEnum("telemetry_status", [
   "completed",
   "failed",
   "cancelled",
@@ -809,7 +809,7 @@ export const providerRoutingSettings = pgTable(
   }),
 );
 
-const poolRoutingStrategy = pgEnum("pool_routing_strategy", [
+export const poolRoutingStrategy = pgEnum("pool_routing_strategy", [
   "least_loaded",
   "round_robin",
   "random",

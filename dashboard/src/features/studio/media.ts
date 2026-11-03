@@ -24,15 +24,55 @@ const IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "imag
 const VIDEO_MIME_TYPES = new Set(["video/mp4", "video/webm"]);
 const MAX_BASE64_LENGTH = 20_000_000;
 
+/** Question/explanation/discussion cues — these never describe a media request. */
+const DISCUSSION_INDICATORS =
+  /\b(how|what|why|when|which|who|where|explain|describe|tell me|cara|bagaimana|jelaskan|perbedaan|kenapa|apakah|mengapa|apa itu|diskusikan|belajar|panduan|tutorial)\b/i;
+
+/** Technical context tokens between the action and the media noun indicate a
+ *  software/UI discussion, not a request to produce media. */
+const TECH_CONTEXT =
+  /\b(program|code|function|api|script|pipeline|library|module|component|database|server|client|button|page|window|file|data|upload|process|analyze|convert|show|display|embed|render|automate|framework|system|interface|service|loop|array|variable|object|method|class|query|input|output|text-to-image|image-to-text|generation)\b/i;
+
+/** Abstract targets that make a verb like draw/paint figurative rather than a request. */
+const ABSTRACT_TARGETS = /\b(conclusion|conclusions|attention|parallel|analogy|comparison|distinction|similarity|difference|lesson|moral|insight|meaning|point|boundary)\b/i;
+
 /** Detects an explicit image or video creation request without affecting ordinary chat. */
 export function detectMediaIntent(prompt: string): LabMediaIntent | undefined {
-  const normalized = prompt.toLocaleLowerCase();
+  const normalized = prompt.toLocaleLowerCase().trim();
+  if (normalized.length === 0) return undefined;
+  // A question or explanation mentions media without requesting it — the
+  // planner should answer it, not fire a generation tool.
+  if (DISCUSSION_INDICATORS.test(normalized)) return undefined;
+
   const action = "(?:generate|create|make|draw|design|produce|animate|buat(?:kan)?|bikin|hasilkan)";
-  if (new RegExp(`\\b${action}\\b[\\s\\S]{0,100}\\b(video|clip|movie|film|animation)\\b`).test(normalized)) return "video";
-  if (new RegExp(`\\b${action}\\b[\\s\\S]{0,100}\\b(image|picture|illustration|drawing|photo|photograph|gambar|ilustrasi|lukisan|foto|potret|logo|icon|wallpaper|poster|avatar|graphic)\\b`).test(normalized)) {
+  const findRequest = (mediaWord: string, intent: LabMediaIntent): LabMediaIntent | undefined => {
+    const match = new RegExp(`\\b(${action})\\b[\\s\\S]{0,60}\\b(${mediaWord})\\b`).exec(normalized);
+    if (match === null) return undefined;
+    // The text between the action verb and the media noun must read as one
+    // direct request: a sentence boundary or a technical-context token means
+    // the media word belongs to a discussion, not to the request.
+    const between = normalized.slice(match.index + match[1]!.length, match.index + match[0]!.length - match[2]!.length);
+    if (/[.!?;"\n]/.test(between)) return undefined;
+    if (TECH_CONTEXT.test(between)) return undefined;
+    return intent;
+  };
+
+  const video = findRequest("video|clip|movie|film|animation", "video");
+  if (video !== undefined) return video;
+
+  const image = findRequest(
+    "image|picture|illustration|drawing|photo|photograph|gambar|ilustrasi|lukisan|foto|potret|logo|icon|wallpaper|poster|avatar|graphic",
+    "image",
+  );
+  if (image !== undefined) return image;
+
+  // Single verbs that directly request a drawing/painting. Only trust them on
+  // short prompts: a long sentence using them is more likely figurative or a
+  // discussion, and discussion indicators were already rejected above.
+  if (normalized.length <= 120 && /\b(draw|sketch|paint|ilustrasikan|gambarkan)\b/.test(normalized)) {
+    if (ABSTRACT_TARGETS.test(normalized)) return undefined;
     return "image";
   }
-  if (/\b(draw|sketch|paint|ilustrasikan|gambarkan)\b/.test(normalized)) return "image";
   return undefined;
 }
 
