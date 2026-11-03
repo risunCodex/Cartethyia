@@ -1081,6 +1081,17 @@ export function buildQoderRequest(
       const choice = qoderToolChoice(request.tool_choice);
       return choice === undefined ? {} : { tool_choice: choice };
     })(),
+    // Passthrough knobs the IDE surface reads from `parameters` (worker `vyl`):
+    // parallel_tool_calls, tool_choice, top_p, seed, user, response_format, …
+    // Only include what the caller actually set.
+    parameters: (() => {
+      const out: Record<string, unknown> = {};
+      const choice = qoderToolChoice(request.tool_choice);
+      if (choice !== undefined) out["tool_choice"] = choice;
+      const parallel = request.generation_controls.parallel_tool_calls;
+      if (parallel !== undefined) out["parallel_tool_calls"] = parallel;
+      return Object.keys(out).length > 0 ? out : undefined;
+    })(),
   };
 }
 
@@ -1104,11 +1115,21 @@ export function buildQoderIdeRequest(
 ): Record<string, unknown> {
   const legacy = buildQoderRequest(modelId, request, modelConfig, auth, realm);
   const messages = legacy.messages as Array<Record<string, unknown>>;
+  // The IDE surface (`model/v1/chat/completions`) must ship the same tool
+  // declaration as the legacy builder. The unpacked desktop client (worker
+  // `PFn`) injects `tools` directly when present — without it the upstream
+  // sees no toolset and answers with a DSML text block (or claims no tool
+  // exists) instead of a structured `tool_calls`. The remaining knobs
+  // (`parallel_tool_calls`, `tool_choice`, …) ride the `parameters`
+  // passthrough (worker `vyl`), matching the reference exactly.
+  const tools = legacy.tools as Array<Record<string, unknown>> | undefined;
   return {
     model: modelId,
     messages,
     stream: true,
     stream_options: { include_usage: true },
+    ...(tools !== undefined && tools.length > 0 ? { tools } : {}),
+    ...(legacy.parameters === undefined ? {} : { parameters: legacy.parameters }),
     // The same reasoning-effort field the legacy surface uses; without it the
     // IDE surface streams no thinking for models that need the push (Sonus,
     // Cantus). Undefined when the caller asked for none and the roster has no
