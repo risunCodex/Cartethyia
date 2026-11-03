@@ -98,6 +98,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   admission bucket is keyed by the right scope.
 - **Antigravity system prompt generalized.** The adapter no longer assumes a
   single fixed wording; the reference wording is preserved in a comment.
+- Reject ZCode Start business-error envelopes returned with HTTP 200 instead
+  of decoding them as successful empty completions.
+- Summarize Start Plan badges as one name plus the extra-plan count and show
+  grant/period headings without model captions. Preserve upstream names in
+  titles and keep future quota windows visible. Manual gift claims remain in
+  provider account details rather than quota cards.
 
 ## [2.7.5] - 2026-11-03
 

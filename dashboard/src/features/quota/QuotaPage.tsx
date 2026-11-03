@@ -24,7 +24,6 @@ import { StatePanel, EmptyState, LoadingState, ErrorState } from "../../componen
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { HealthEventsModal } from "../../components/HealthEventsModal";
-import { ClaimGiftsButton } from "../../components/ClaimGiftsButton";
 import { Select } from "../../components/ui/select";
 
 import { Stack } from "../../components/ui/stack";
@@ -48,6 +47,7 @@ import {
 import {
   friendlyQuotaError,
   formatQuotaRefresh,
+  formatQuotaPlanLabel,
   formatQuotaWindowLabel,
   formatResetDistance,
   quotaBarTone,
@@ -384,14 +384,14 @@ function QuotaCard({
       {/* Header: icon + provider name + plan + account hint + actions */}
       <div className="flex flex-wrap items-center gap-5 px-7 py-4">
         <ProviderIcon icon={account.providerIcon} name={account.providerName} size={32} />
-        <div className="flex-[1_1_160px]">
+        <div className="min-w-0 flex-[1_1_160px]">
           <div className="flex min-w-0 items-center gap-4">
             <div className="truncate text-caption font-bold text-text-primary text-body">
               {account.providerName}
             </div>
             {quota?.plan && (
-              <span className="shrink-0 rounded-chip bg-accent-soft px-4 py-1 text-micro font-semibold text-accent">
-                {quota.plan}
+              <span title={quota.plan} className="min-w-0 max-w-44 truncate rounded-chip bg-accent-soft px-4 py-1 text-micro font-semibold text-accent">
+                {formatQuotaPlanLabel(quota.plan, quota.source)}
               </span>
             )}
           </div>
@@ -447,9 +447,6 @@ function QuotaCard({
           )}
         </div>
         <div className="flex items-center gap-1.75 gap-3 ml-auto">
-          {account.provider === "zcode-start" && (
-            <ClaimGiftsButton accountId={account.id} accountName={account.name} />
-          )}
           {canReset && (
             <Button
               variant="ghost"
@@ -581,8 +578,7 @@ function QuotaCard({
             if (state !== "current") {
               return (
                 <div key={`${window.kind ?? window.label}:${window.startsAt}:${index}`} className="flex flex-col gap-2 text-badge">
-                  <span className="font-semibold text-text-primary">{formatQuotaWindowLabel(window.label)}</span>
-                  {window.modelIds?.length ? <span className="text-text-secondary">Models: {window.modelIds.join(", ")}</span> : null}
+                  <span title={window.label} className="break-words font-semibold text-text-primary">{formatQuotaWindowLabel(window.label, quota.source, window.modelIds)}</span>
                   <span className="text-text-tertiary">{state === "expired" ? "Expired" : `Not started yet · Starts ${new Date(window.startsAt!).toLocaleString()}`}</span>
                 </div>
               );
@@ -609,19 +605,16 @@ function QuotaCard({
               if (rounded > 0 && rounded < 0.1) return "<0.1";
               return rounded.toLocaleString(undefined, { maximumFractionDigits: 1 });
             };
-            const label = formatQuotaWindowLabel(window.label);
+            const label = formatQuotaWindowLabel(window.label, quota.source, window.modelIds);
             return (
               <div
                 className="quota-window-row grid grid-cols-quota-window min-w-0 items-center gap-x-6 gap-y-2 max-small:grid-cols-[minmax(0,1fr)_auto] max-small:gap-x-4 max-small:gap-y-2.5"
                 key={`${window.kind ?? window.label}:${window.resetsAt ?? "none"}:${index}`}
               >
                 <div className="quota-window-heading min-w-0 max-small:col-start-1">
-                  <span className="text-badge font-semibold text-text-primary">
+                  <span title={window.label} className="break-words text-badge font-semibold text-text-primary">
                     {label}
                   </span>
-                  {window.modelIds?.length ? (
-                    <div className="text-micro text-text-tertiary">Models: {window.modelIds.join(", ")}</div>
-                  ) : null}
                 </div>
                 <div
                   className="quota-bar-track quota-window-bar min-w-0 w-full h-5 rounded-tiny bg-inner-border overflow-hidden max-small:col-span-full max-small:row-start-2"

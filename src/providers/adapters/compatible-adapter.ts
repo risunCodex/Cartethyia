@@ -454,12 +454,15 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
       // the absence of every completion shape so a provider that merely
       // echoes an `error` field alongside real output is not misread.
       const envelopeError = json["error"];
+      const startPlanError = this.provider_id === "zcode-start" &&
+        (json["success"] === false || (json["code"] !== undefined &&
+          ![0, 200, "0", "200"].includes(json["code"] as string | number)));
       const hasCompletionShape =
         json["choices"] !== undefined ||
         json["output"] !== undefined ||
         json["content"] !== undefined ||
         json["candidates"] !== undefined;
-      if (envelopeError !== undefined && envelopeError !== null && !hasCompletionShape) {
+      if (((envelopeError !== undefined && envelopeError !== null) || startPlanError) && !hasCompletionShape) {
         const errorObject = isRecord(envelopeError) ? envelopeError : json;
         const identifier = upstreamErrorIdentifier(json);
         const providerStatus = [
