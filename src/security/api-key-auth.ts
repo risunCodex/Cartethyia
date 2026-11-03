@@ -388,9 +388,11 @@ export async function resolveApiKeyAuthorization(
     tenant_id: row.tenantId,
     // Family quota / concurrency share one admission counter namespace so two
     // recipients cannot each burn a full lifetime/daily budget. In `per_key`
-    // concurrency mode the child is its own admission identity so its cap and
-    // counter are independent.
-    ...(parent && !perKeyConcurrency ? { admission_identity: parent.id } : {}),
+    // concurrency mode the child keeps its own cap and counter for
+    // *concurrency* only — token budgets (daily/monthly/lifetime) stay
+    // family-wide on the parent, so the admission identity is always the
+    // parent's.
+    ...(parent ? { admission_identity: parent.id } : {}),
     ...(policy.modelList ? { model_list: policy.modelList as string[] } : {}),
     model_access_mode: policy.modelAccessMode ?? "whitelist",
     ...(policy.clientRouterDenylist

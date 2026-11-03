@@ -105,7 +105,7 @@ test("family scope: child admits against the parent's identity and cap", async (
   }
 });
 
-test("per_key scope: child admits as itself and carries its copied cap", async () => {
+test("per_key scope: child keeps its own cap but shares the family budget identity", async () => {
   const { handle, cleanup } = await setup();
   try {
     const tenantId = await insertTenant(handle);
@@ -126,14 +126,17 @@ test("per_key scope: child admits as itself and carries its copied cap", async (
 
     const resolved = await resolveApiKeyAuthorization(handle.db, token);
     expect(resolved).toBeDefined();
-    expect(resolved!.snapshot.admission_identity).not.toBe(parentId);
+    // Token budgets (daily/monthly/lifetime) stay family-wide: the child admits
+    // against the parent's identity so 33 recipients cannot each burn a full
+    // 1B daily budget. Only concurrency is per-key.
+    expect(resolved!.snapshot.admission_identity).toBe(parentId);
     expect(resolved!.snapshot.max_concurrent).toBe(5);
   } finally {
     await cleanup();
   }
 });
 
-test("per_key child with no cap copies nothing (unlimited per key)", async () => {
+test("per_key child with no cap copies nothing (unlimited concurrency, family budget)", async () => {
   const { handle, cleanup } = await setup();
   try {
     const tenantId = await insertTenant(handle);
@@ -154,7 +157,7 @@ test("per_key child with no cap copies nothing (unlimited per key)", async () =>
 
     const resolved = await resolveApiKeyAuthorization(handle.db, token);
     expect(resolved).toBeDefined();
-    expect(resolved!.snapshot.admission_identity).not.toBe(parentId);
+    expect(resolved!.snapshot.admission_identity).toBe(parentId);
     expect(resolved!.snapshot.max_concurrent).toBeNull();
   } finally {
     await cleanup();

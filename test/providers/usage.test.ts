@@ -111,15 +111,27 @@ describe("normalizeUsage: the Anthropic shape", () => {
   });
 
   test("an inclusive total is not inflated when a bridge reuses the Anthropic cache field", () => {
-    const usage = normalizeUsage({
-      input_tokens: 178_479,
-      output_tokens: 142,
-      total_tokens: 178_621,
-      cache_read_input_tokens: 178_304,
-    });
-    expect(usage.input_tokens).toBe(178_479);
-    expect(usage.cached_input_tokens).toBe(178_304);
-    expect(usage.uncached_input_tokens).toBe(175);
+    // Under `as-is` (the legacy reader) the `total_tokens == input + output`
+    // heuristic wins: a bridge that reports an already-inclusive prompt plus
+    // the Anthropic cache fields is not inflated. The default `inclusive`
+    // mode intentionally trades this protection for cross-provider
+    // consistency — see provider-usage-input-mode.test.ts.
+    const previous = process.env.CARTETHYIA_USAGE_INPUT_MODE;
+    process.env.CARTETHYIA_USAGE_INPUT_MODE = "as-is";
+    try {
+      const usage = normalizeUsage({
+        input_tokens: 178_479,
+        output_tokens: 142,
+        total_tokens: 178_621,
+        cache_read_input_tokens: 178_304,
+      });
+      expect(usage.input_tokens).toBe(178_479);
+      expect(usage.cached_input_tokens).toBe(178_304);
+      expect(usage.uncached_input_tokens).toBe(175);
+    } finally {
+      if (previous === undefined) delete process.env.CARTETHYIA_USAGE_INPUT_MODE;
+      else process.env.CARTETHYIA_USAGE_INPUT_MODE = previous;
+    }
   });
 
   test("a write-only report records the write but leaves the total alone", () => {

@@ -188,6 +188,13 @@ export const CONFIG_SPEC = {
     min: 1 * 1024 * 1024,
     max: 16 * 1024 * 1024,
   },
+  // Input-token accounting for usage display. Providers disagree on whether
+  // `input_tokens` already includes cached tokens: OpenAI/DeepSeek report the
+  // inclusive total with a cached subset, while Anthropic reports fresh-only
+  // with cache reads separate. `inclusive` (default) folds cache into input so
+  // every provider reads alike — IN is always the whole prompt and CACHED its
+  // subset. `as-is` keeps the raw upstream semantics.
+  CARTETHYIA_USAGE_INPUT_MODE: { kind: "text", default: "inclusive" },
 
   // Upstream request timeout + retry backoff
   //
