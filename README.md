@@ -1,6 +1,6 @@
 # Cartethyia
 
-<img width="1760" height="576" alt="Cartethyia banner" src="https://github.com/user-attachments/assets/666f3a3d-136e-49d7-8bec-ff967f93b78f" />
+<img width="1760" height="576" alt="og_image" src="https://github.com/user-attachments/assets/1f5f609f-42a3-4556-bfcb-82510f787a50" />
 
 **A self-hosted multi-provider AI gateway.**
 
