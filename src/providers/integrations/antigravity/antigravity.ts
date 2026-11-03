@@ -781,8 +781,13 @@ function antigravityThinkingBudget(modelId: string): number | undefined {
   return modelId.includes("3.1-pro") ? 10_001 : 10_000;
 }
 
+// Original reference instruction (captured from the Antigravity client):
+//   "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**"
+// Generalized to a neutral identity so the gateway does not impersonate the
+// vendor's branded assistant. The brand-specific wording is kept above for
+// reference; re-enable it if an upstream behavior ever depends on it.
 const ANTIGRAVITY_SYSTEM_INSTRUCTION =
-  "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
+  "You are a helpful assistant.";
 
 /**
  * Restatement appended as a trailing user turn when a Gemini route carries a
