@@ -287,21 +287,14 @@ export function StudioPage(): ReactNode {
   }, [session, hydrated]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || session.imageWorkerModel.length === 0) return;
     const models = availableToolModels(modelCatalog.items, "imageGeneration", "");
-    // First run: pick a worker when the operator has not chosen one.
-    if (session.imageWorkerModel.length === 0) {
-      const imageWorkerModel = preferredImageWorker(models);
-      if (imageWorkerModel === undefined) return;
-      setSession((current) => current.imageWorkerModel.length > 0
-        ? current
-        : { ...current, imageWorkerModel, updatedAt: Date.now() });
-      return;
-    }
     // A worker this catalog does not offer is a stale selection — a model the
     // provider dropped, or one that was never synced here. Left alone it makes
     // every later image request fail, because the worker is what gates the
-    // tool's declaration. Re-point it at a model that exists.
+    // tool's declaration. Re-point it at a model that exists. An empty
+    // selection is respected (unset = no image worker), never auto-selected,
+    // matching how the video worker behaves.
     if (models.length > 0 && !models.includes(session.imageWorkerModel)) {
       const replacement = preferredImageWorker(models);
       if (replacement === undefined) return;

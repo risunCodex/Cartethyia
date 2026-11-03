@@ -101,7 +101,7 @@ export function SettingsDrawer({
         />
         <WorkerModelPicker
           label="Image generation model"
-          description="Generates images requested in chat; it does not replace the planner."
+          description="Generates images requested in chat; leave unset when no image worker is configured."
           serviceKind="imageGeneration"
           value={draft.imageWorkerModel}
           catalog={catalog}

@@ -534,6 +534,14 @@ describe("buildLabRequest", () => {
         videoCount: "1",
       });
       expect(migrated).not.toHaveProperty("mode");
+
+      // Regression: an unset (empty) image worker must stay unset — it is never
+      // auto-selected, matching the video worker. This is what keeps the
+      // `generate_image` tool out of the planner's toolset until the operator
+      // explicitly chooses a worker.
+      expect(migrated?.imageWorkerModel).toBe("");
+      expect(migrated?.videoWorkerModel).toBe("");
+
       const configured = migrateLabSessionRecord({
         id: "configured",
         title: "configured",
