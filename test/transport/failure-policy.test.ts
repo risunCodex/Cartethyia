@@ -2145,3 +2145,25 @@ describe("a queued upstream response", () => {
     ).toBe(true);
   });
 });
+
+describe("a platform-unavailable upstream response without a body message", () => {
+  test("gets a human explanation instead of a bare HTTP status", async () => {
+    const response = new Response("", { status: 502 });
+    const error = await mapUpstreamHttpError(response, "inception").catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(GatewayError);
+    expect((error as GatewayError).code).toBe("platform_unavailable");
+    expect((error as GatewayError).status).toBe(502);
+    expect((error as GatewayError).message).not.toBe("Provider returned HTTP 502.");
+    expect((error as GatewayError).message).toContain("temporarily unavailable");
+  });
+
+  test("keeps an upstream-provided message verbatim", async () => {
+    const response = new Response(
+      JSON.stringify({ error: { message: "origin is down for maintenance" } }),
+      { status: 502, headers: { "content-type": "application/json" } },
+    );
+    const error = await mapUpstreamHttpError(response, "inception").catch((err: unknown) => err);
+    expect((error as GatewayError).code).toBe("platform_unavailable");
+    expect((error as GatewayError).message).toBe("origin is down for maintenance");
+  });
+});

@@ -920,7 +920,21 @@ export async function mapUpstreamHttpError(response: Response, providerId: strin
       ? { code: "context_length_exceeded" as const, status: 413, origin: "upstream" as const }
       : classifyUpstreamError(response.status, identifier);
   const extracted = extractUpstreamMessage(parsedBody ?? text);
-  const message = (extracted.length > 0 ? extracted : text.trim() || `Provider returned HTTP ${response.status}.`).slice(0, MAX_UPSTREAM_ERROR_BYTES).replace(/[\r\n]+/g, " ");
+  let message =
+    extracted.length > 0
+      ? extracted
+      : text.trim() || `Provider returned HTTP ${response.status}.`;
+  // A bare "Provider returned HTTP <5xx>" tells the operator nothing actionable;
+  // platform-unavailable fallbacks get the same human sign-off every other
+  // gateway error carries. The raw upstream body stays in `details.raw` for
+  // diagnostics either way.
+  if (
+    classification.code === "platform_unavailable" &&
+    message === `Provider returned HTTP ${response.status}.`
+  ) {
+    message = `The provider's service is temporarily unavailable (HTTP ${response.status}) (request {requestId}). Your request did not go through — wait a moment and try again. Hold tight ☁️`;
+  }
+  message = message.slice(0, MAX_UPSTREAM_ERROR_BYTES).replace(/[\r\n]+/g, " ");
   const headerWaitMs = parseUpstreamBackoff(response.headers);
   // A queue carries its own interval, which is the one the caller must honour:
   // it is what the upstream promised, while `Retry-After` may be absent or may
