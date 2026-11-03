@@ -16,6 +16,7 @@ import { ProviderIcon } from "./ProviderIcon";
 import { useProviderModels, useProviders } from "../hooks/providers";
 import { useModelAliases, useModelCombos } from "../hooks/routing";
 import { useSystemPrompt, useUpdateSystemPrompt } from "../hooks/system-prompt";
+import { useDialogDirty } from "../hooks/use-dialog-dirty";
 import { mergeBuiltinPresets, BUILTIN_PRESET_BY_ID } from "../data/builtin-prompts";
 import { toast } from "../lib/toast";
 import { getErrorMessage } from "../data/api";
@@ -525,6 +526,13 @@ function PresetEditorDialog({
   const [text, setText] = useState(preset.text);
   const [enabled, setEnabled] = useState(preset.enabled);
 
+  const dirty =
+    name !== preset.name ||
+    mode !== preset.mode ||
+    text !== preset.text ||
+    enabled !== preset.enabled;
+  useDialogDirty(dirty);
+
   return (
     <Dialog
       open
@@ -883,31 +891,58 @@ export function InjectSystemPromptDialog({
   useEffect(() => namedPaged.clamp(), [namedPaged.pageCount, comboPage]);
   const visibleNamed = namedPaged.slice(flattenedNamed) as { kind: "combo" | "alias"; name: string }[];
 
+  // Auto-save: every change commits immediately to both the local draft and the
+  // server, so there is no "Save changes" step to forget.
+  const commit = (next: TenantSystemPrompts) => {
+    setDraft(next);
+    onSave(next);
+  };
+
   const patchGlobal = (next: ScopePromptRef | null) =>
-    setDraft((prev) => ({ ...prev, global: next }));
+    commit({ ...draft, global: next });
   const patchPresets = (next: Readonly<Record<string, SystemPromptPreset>>) =>
-    setDraft((prev) => ({ ...prev, presets: next }));
+    commit({ ...draft, presets: next });
   const patchProvider = (providerId: string, next: ScopePromptRef | undefined) =>
-    setDraft((prev) => {
-      const providers = { ...prev.providers };
-      if (next === undefined) delete providers[providerId];
-      else providers[providerId] = next;
-      return { ...prev, providers };
+    commit({
+      ...draft,
+      providers: (() => {
+        const providers = { ...draft.providers };
+        if (next === undefined) delete providers[providerId];
+        else providers[providerId] = next;
+        return providers;
+      })(),
     });
   const patchModel = (providerId: string, modelId: string, next: ScopePromptRef | undefined) =>
-    setDraft((prev) => {
-      const models = { ...prev.models };
-      const key = modelKey(providerId, modelId);
-      if (next === undefined) delete models[key];
-      else models[key] = next;
-      return { ...prev, models };
+    commit({
+      ...draft,
+      models: (() => {
+        const models = { ...draft.models };
+        const key = modelKey(providerId, modelId);
+        if (next === undefined) delete models[key];
+        else models[key] = next;
+        return models;
+      })(),
     });
   const patchNamed = (kind: "combo" | "alias", name: string, next: ScopePromptRef | undefined) =>
-    setDraft((prev) => {
-      const map = { ...(kind === "combo" ? prev.combos : prev.aliases) };
-      if (next === undefined) delete map[name];
-      else map[name] = next;
-      return kind === "combo" ? { ...prev, combos: map } : { ...prev, aliases: map };
+    commit({
+      ...draft,
+      ...(kind === "combo"
+        ? {
+            combos: (() => {
+              const map = { ...draft.combos };
+              if (next === undefined) delete map[name];
+              else map[name] = next;
+              return map;
+            })(),
+          }
+        : {
+            aliases: (() => {
+              const map = { ...draft.aliases };
+              if (next === undefined) delete map[name];
+              else map[name] = next;
+              return map;
+            })(),
+          }),
     });
 
   const providerOptions = providerRows.map((provider) => ({
@@ -924,16 +959,7 @@ export function InjectSystemPromptDialog({
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              onSave(draft);
-              onClose();
-            }}
-          >
-            Save changes
+            Done
           </Button>
         </>
       }

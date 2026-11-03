@@ -23,6 +23,7 @@ import { Button } from "../../src/components/ui/button";
 import { Card } from "../../src/components/ui/card";
 import { Dialog } from "../../src/components/ui/dialog";
 import { Switch } from "../../src/components/ui/switch";
+import { useDialogDirty } from "../../src/hooks/use-dialog-dirty";
 import { mount, renderMarkup } from "../helpers/render";
 
 /** The class tokens on the outermost `<button>` of a rendered Button. */
@@ -318,6 +319,134 @@ describe("Dialog", () => {
     );
     await view.click('[aria-label="Close dialog"]');
     expect(closes).toBe(1);
+    view.unmount();
+  });
+
+  test("when canClose is false, clicking close is blocked, shakes, and notifies", async () => {
+    let closes = 0;
+    let blocked = 0;
+    const view = await mount(
+      createElement(
+        Dialog,
+        {
+          open: true,
+          onClose: () => { closes += 1; },
+          canClose: false,
+          onCloseBlocked: () => { blocked += 1; },
+          title: "Settings",
+          children: "body",
+        },
+      ),
+    );
+    await view.click('[aria-label="Close dialog"]');
+    expect(closes).toBe(0);
+    expect(blocked).toBe(1);
+    // The panel carries the shake animation class while blocked.
+    const panel = document.querySelector(".dialog-panel");
+    expect(panel?.className).toContain("dialog-shake");
+    view.unmount();
+  });
+
+  test("when canClose is false, backdrop click is also blocked", async () => {
+    let closes = 0;
+    let blocked = 0;
+    const view = await mount(
+      createElement(
+        Dialog,
+        {
+          open: true,
+          onClose: () => { closes += 1; },
+          canClose: false,
+          onCloseBlocked: () => { blocked += 1; },
+          title: "Settings",
+          children: "body",
+        },
+      ),
+    );
+    // Click the overlay itself (the backdrop).
+    await view.click(".dialog-overlay");
+    expect(closes).toBe(0);
+    expect(blocked).toBe(1);
+    view.unmount();
+  });
+
+  test("backdrop closes when canClose is true", async () => {
+    let closes = 0;
+    const view = await mount(
+      createElement(
+        Dialog,
+        { open: true, onClose: () => { closes += 1; }, title: "Settings", children: "body" },
+      ),
+    );
+    await view.click(".dialog-overlay");
+    expect(closes).toBe(1);
+    view.unmount();
+  });
+
+  test("a drag that starts inside the panel and ends on the backdrop does not close", async () => {
+    // Selecting text inside the modal, then releasing over the backdrop, is not
+    // an intent to close — the overlay must ignore that click.
+    let closes = 0;
+    const view = await mount(
+      createElement(
+        Dialog,
+        { open: true, onClose: () => { closes += 1; }, title: "Settings", children: "body" },
+      ),
+    );
+    // mousedown inside the panel…
+    const panel = document.querySelector(".dialog-panel") as HTMLElement | null;
+    expect(panel).not.toBeNull();
+    panel?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    // …then mouseup/click on the overlay (the drag tail).
+    await view.click(".dialog-overlay");
+    expect(closes).toBe(0);
+    view.unmount();
+  });
+
+  test("a form using useDialogDirty blocks backdrop close while dirty", async () => {
+    let closes = 0;
+    function FormWithDirty() {
+      const [dirty, setDirty] = useState(false);
+      useDialogDirty(dirty);
+      return createElement(
+        "button",
+        { type: "button", "data-testid": "make-dirty", onClick: () => setDirty(true) },
+        "make dirty",
+      );
+    }
+    const view = await mount(
+      createElement(
+        Dialog,
+        { open: true, onClose: () => { closes += 1; }, title: "Settings", children: createElement(FormWithDirty) },
+      ),
+    );
+    await view.click('[data-testid="make-dirty"]');
+    // Now dirty: backdrop must NOT close.
+    await view.click(".dialog-overlay");
+    expect(closes).toBe(0);
+    view.unmount();
+  });
+
+  test("the close control is blocked while the form is dirty", async () => {
+    let closes = 0;
+    function FormWithDirty() {
+      const [dirty, setDirty] = useState(false);
+      useDialogDirty(dirty);
+      return createElement(
+        "button",
+        { type: "button", "data-testid": "make-dirty", onClick: () => setDirty(true) },
+        "make dirty",
+      );
+    }
+    const view = await mount(
+      createElement(
+        Dialog,
+        { open: true, onClose: () => { closes += 1; }, title: "Settings", children: createElement(FormWithDirty) },
+      ),
+    );
+    await view.click('[data-testid="make-dirty"]');
+    await view.click('[aria-label="Close dialog"]');
+    expect(closes).toBe(0);
     view.unmount();
   });
 });

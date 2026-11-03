@@ -3,6 +3,8 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePresence } from "../../hooks/use-presence";
 import { useModalFocus } from "../../hooks/use-modal-focus";
+import { DialogDirtyContext } from "../../hooks/use-dialog-dirty";
+import { toast } from "../../lib/toast";
 import { cn } from "../../lib/classnames";
 
 const TRAFFIC_LIGHT =
@@ -32,6 +34,14 @@ export interface DialogProps {
   size?: DialogSize;
   /** Optional action row pinned below the scrollable body (buttons stay put). */
   footer?: ReactNode;
+  /**
+   * When false, the dialog refuses to close (backdrop, X, Escape) and instead
+   * shakes the panel and calls `onCloseBlocked`. Use for forms with unsaved
+   * changes so a stray drag/click outside cannot lose edits.
+   */
+  canClose?: boolean;
+  /** Called when a close attempt is blocked (canClose === false). */
+  onCloseBlocked?: () => void;
 }
 
 export function Dialog({
@@ -43,6 +53,8 @@ export function Dialog({
   width = 520,
   size,
   footer,
+  canClose = true,
+  onCloseBlocked,
 }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -50,7 +62,30 @@ export function Dialog({
   const { mounted, closing } = usePresence(open);
   const [minimized, setMinimized] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [shaking, setShaking] = useState(false);
+  // Set by forms inside this dialog via `useDialogDirty`. When true, the
+  // dialog refuses to close (backdrop, X, Escape) and shakes + warns.
+  const [dirty, setDirty] = useState(false);
+  // Tracks drags that started inside the panel (e.g. selecting text). If the
+  // pointer releases on the backdrop, that is not an intent to close — it is
+  // the tail of a selection drag, so the overlay must not close on that click.
+  const dragStartedInsideRef = useRef(false);
   useModalFocus({ open, mounted, panelRef, onClose });
+
+  const attemptClose = () => {
+    if (canClose && !dirty) {
+      onClose();
+      return;
+    }
+    // Blocked: shake the panel and let the caller surface a notification.
+    setShaking(true);
+    window.setTimeout(() => setShaking(false), 400);
+    if (onCloseBlocked) {
+      onCloseBlocked();
+    } else {
+      toast.warning("Unsaved changes — finish editing or save before closing.");
+    }
+  };
 
   // Same contract as `Drawer`: shut the mobile nav rail so its dim overlay
   // never sits under this panel and traps touch scroll.
@@ -74,17 +109,26 @@ export function Dialog({
         closing && "closing pointer-events-none",
       )}
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        // Only close when this is a genuine backdrop click — not the tail of a
+        // text-selection drag that started inside the panel.
+        if (event.target === event.currentTarget && !dragStartedInsideRef.current) {
+          attemptClose();
+        }
+        dragStartedInsideRef.current = false;
       }}
       role="presentation"
     >
       <div
         ref={panelRef}
         tabIndex={-1}
+        onMouseDown={() => {
+          dragStartedInsideRef.current = true;
+        }}
         className={cn(
           "dialog-panel modal-window m-auto box-border flex flex-col overflow-hidden rounded-sidebar border border-border-strong bg-surface-1 shadow-window",
           closing && "closing",
           expanded && "expanded",
+          shaking && "dialog-shake",
         )}
         style={
           expanded
@@ -114,7 +158,7 @@ export function Dialog({
             <button
               type="button"
               className={cn(TRAFFIC_LIGHT, "traffic-light-close bg-window-close text-window-close-ink")}
-              onClick={onClose}
+              onClick={attemptClose}
               aria-label="Close dialog"
               title="Close"
             >
@@ -147,7 +191,11 @@ export function Dialog({
           </h3>
           <span className="window-traffic-lights-spacer w-29 shrink-0" aria-hidden="true" />
         </div>
-        {minimized ? null : <div className="modal-body scroll-region min-h-0 flex-auto overflow-y-auto px-9 py-8">{children}</div>}
+        {minimized ? null : (
+          <div className="modal-body scroll-region min-h-0 flex-auto overflow-y-auto px-9 py-8">
+            <DialogDirtyContext.Provider value={{ setDirty }}>{children}</DialogDirtyContext.Provider>
+          </div>
+        )}
         {minimized || footer === undefined ? null : <div className="modal-footer flex shrink-0 items-center justify-end gap-4 border-t border-inner-border px-9 py-6">{footer}</div>}
         {description ? (
           // `sr-only` is exactly the visually-hidden pattern that was inlined here

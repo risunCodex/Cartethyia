@@ -23,7 +23,7 @@ import {
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "./ui/button";
 import { FileInput, Input } from "./ui/input";
 import { Switch } from "./ui/switch";
@@ -31,6 +31,7 @@ import { Select } from "./ui/select";
 import { ModelPickerModal } from "./ModelPicker";
 import { useResetToolMappings, useSaveToolMappings, useToolMappings, useToolRegistry } from "../hooks/cli-tools";
 import { useUpdateApiKey } from "../hooks/api-keys";
+import { useDialogDirty } from "../hooks/use-dialog-dirty";
 import { toast } from "../lib/toast";
 import { getErrorMessage } from "../data/api";
 import {
@@ -489,6 +490,85 @@ export function ApiKeyForm({ mode, record, busy, onDone, onClose, actionsRef }: 
   // template to a personal key (or back) revokes its children and links, so the
   // edit form shows the mode but never lets it change.
   const modeLocked = mode === "edit";
+
+  // Dirty = any editable field differs from the record's initial value. Used by
+  // the parent to block closing the dialog while edits are unsaved.
+  const dirty = useMemo(() => {
+    if (mode === "create") {
+      return (
+        label.trim().length > 0 ||
+        customKey.trim().length > 0 ||
+        prefix.trim().length > 0 ||
+        rpm.trim().length > 0 ||
+        daily.trim().length > 0 ||
+        monthly.trim().length > 0 ||
+        lifetime.trim().length > 0 ||
+        concurrent.trim().length > 0 ||
+        maxChildren.trim().length > 0 ||
+        notesTitle.trim().length > 0 ||
+        notesSubtitle.trim().length > 0 ||
+        notesBody.trim().length > 0 ||
+        scopes.length > 0 ||
+        models.length > 0 ||
+        blockedRouters.length > 0 ||
+        sharePopupImageDataUrl !== null ||
+        sharePopupImageRemoved
+      );
+    }
+    const r = record;
+    if (r === null) return false;
+    return (
+      label.trim() !== (r.label ?? "") ||
+      rpm.trim() !== (r.requestsPerMinute?.toString() ?? "") ||
+      daily.trim() !== tokenInputValue((r as unknown as { dailyTokenLimit?: number | null })?.dailyTokenLimit ?? null) ||
+      monthly.trim() !== tokenInputValue((r as unknown as { monthlyTokenLimit?: number | null })?.monthlyTokenLimit ?? null) ||
+      lifetime.trim() !== tokenInputValue((r as unknown as { lifetimeTokenBudget?: number | null })?.lifetimeTokenBudget ?? null) ||
+      budgetMode !== ((r as unknown as { lifetimeTokenBudget?: number | null })?.lifetimeTokenBudget != null ? "one-time" : "recurring") ||
+      concurrent.trim() !== (r.maxConcurrentRequests?.toString() ?? "") ||
+      concurrencyScope !== (r.concurrencyScope ?? "family") ||
+      maxChildren.trim() !== ((r as unknown as { maxChildren?: number | null })?.maxChildren?.toString() ?? "") ||
+      notesTitle.trim() !== ((r as unknown as { notesTitle?: string | null })?.notesTitle ?? "") ||
+      notesSubtitle.trim() !== ((r as unknown as { notesSubtitle?: string | null })?.notesSubtitle ?? "") ||
+      notesBody.trim() !== ((r as unknown as { notesBody?: string | null })?.notesBody ?? "") ||
+      scopes.join(",") !== initialApiKeyScopes(r).join(",") ||
+      modelAccessMode !== ((r as unknown as { modelAccessMode?: "whitelist" | "blacklist" | null })?.modelAccessMode ?? "whitelist") ||
+      models.join(",") !== (r.modelList ?? []).join(",") ||
+      blockedRouters.join(",") !== ((r as unknown as { clientRouterDenylist?: string[] | null })?.clientRouterDenylist ?? []).join(",") ||
+      sharePopupEnabled !== (r.sharePopupEnabled ?? true) ||
+      sharePopupImageDataUrl !== null ||
+      sharePopupImageRemoved ||
+      sharePopupTitle.trim() !== (r.sharePopupTitle ?? "Support via QRIS") ||
+      sharePopupBody.trim() !== (r.sharePopupBody ?? "Scan the QR code above with any QRIS-compatible banking or e-wallet app to support this gateway's upkeep. Every contribution helps keep the service running — thank you! 🙏")
+    );
+  }, [
+    mode,
+    record,
+    label,
+    customKey,
+    prefix,
+    rpm,
+    daily,
+    monthly,
+    lifetime,
+    budgetMode,
+    concurrent,
+    concurrencyScope,
+    maxChildren,
+    scopes,
+    modelAccessMode,
+    models,
+    blockedRouters,
+    notesTitle,
+    notesSubtitle,
+    notesBody,
+    sharePopupEnabled,
+    sharePopupImageDataUrl,
+    sharePopupImageRemoved,
+    sharePopupTitle,
+    sharePopupBody,
+  ]);
+
+  useDialogDirty(dirty);
   // Persists the routing scope the instant the Remote routing switch flips,
   // rather than deferring it to "Save changes".
   const updateKey = useUpdateApiKey();
