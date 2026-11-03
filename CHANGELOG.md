@@ -140,6 +140,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   "Test" button now sends a 256-token budget and a prompt asking the model to
   identify itself and its knowledge cutoff, producing a useful sample instead of
   a canned `ping` echo.
+- **Provider list carries overview counts.** `GET /providers` items now include
+  `accountCount`, `activeAccountCount`, and `modelCount`, computed from two
+  grouped SQL queries instead of per-provider loops. The dashboard renders the
+  connection/model badges from these list fields, so the page no longer fires
+  per-card model/account fetches (2N requests → 1) and providers' heavy
+  per-account usage reads are gone from the card path.
+- **Server-side batch-delete endpoints.** `POST /accounts/batch-delete` (tenant)
+  and `POST /global/accounts/batch-delete` (platform admin) delete many accounts
+  in a single statement, one audit row, and one cache-invalidation pass, and
+  return `{ ok, deleted, missing }` with per-id 404s surfaced in `missing`.
+- **Daily-growth runs as a background job.** `POST /quota/daily-growth`
+  enqueues and returns immediately with `{ jobId }`; `GET
+  /quota/daily-growth/status/:jobId` reports `queued | running | done | failed`
+  with per-account errors. Bounded concurrency 3, per-leg budget + timeout
+  signal, and an in-flight guard so a concurrent sweep/route cannot stamp the
+  same account twice in one window.
 
 ### Changed
 
@@ -233,6 +249,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   token rotation grew it without limit. It is now capped at 1024 entries with
   oldest-first eviction and keyed by a hash of the credential instead of the
   token itself.
+- **SSE streams reconnect with backoff and close server-side.** All console SSE
+  hooks share one EventSource wrapper with exponential backoff + jitter (2s →
+  60s cap, reset on open) and the visibility gate. Streams gain a max lifetime
+  (45 min) and idle timeout (5 min, heartbeats don't count) that send a
+  terminal `close` event, so abandoned tabs stop holding subscriptions and
+  timers forever. Notifications/share-stats sampling is process-wide (one
+  sampler → subscriber set) instead of per-connection timers; the encoder is a
+  shared module-level `TextEncoder`.
+- **Update delivery is unified.** The notifications stream's `update-available`
+  event drives the update badge/dialog; the old 30-min release poll is now a
+  cold-start fallback fetch only. The 3s `/updates/status` poll remains only
+  while an install is applying (the gateway restarts mid-install, so SSE is not
+  reliable there).
+- **Usage-page streams merged.** In-flight and requests streams are one
+  connection with one preflight (backend `/live/in-flight/stream` tags frames by
+  kind); the two pool-health hooks are unified and the dialog uses live health
+  events instead of a 10s poll.
+- **The route snapshot rebuilds eagerly in the background.** Invalidation marks
+  the snapshot dirty and schedules a debounced (~500ms) background rebuild;
+  requests keep serving the last-completed snapshot while it runs (single-flight
+  guarded). The rebuild cost is off the page-open request path.
+- **Foreground-aware scheduling (InvokeGuard).** A process-local gauge counts
+  console requests and proxy in-flight activity; the scheduled-task registry and
+  sweep runner defer ticks/waves while foreground is busy (bounded pause, not
+  skip). Account-health sweep interval 30s → 60s, OAuth/buddy sweeps get pass
+  budgets, and the client-version monitor's first external check moves to 90s.
+- **Startup defers heavy work.** The bundled model catalog (73 providers'
+  integration modules) is resolved and seeded on the first snapshot build
+  instead of before listen; console/worker integration modules (buddy/qoder/
+  cline/kiro) are lazy-imported off the boot graph; thinking/dialect resolver
+  and BYOK-fingerprint caches are size-bounded; `pino-pretty` moves to
+  devDependencies. `CARTETHYIA_DISABLED_TASKS` is documented.
+- **Bulk account actions are concurrency-bounded.** Dashboard delete/recover/
+  enable/disable run 3 at a time instead of all-at-once.
+- **Gzip skips small responses.** Console responses under 1KB are no longer
+  compressed (the sync-gzip cost exceeds the bytes saved); SSE stays excluded.
+- **Telemetry flush floor raised.** Under load the flush floor is 200ms instead
+  of 50ms, so flushes collide less with console reads.
 
 ### Fixed
 
@@ -454,6 +508,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   cache-control builder, and duplicated FNV-1a hash implementations — all gone,
   with the type-level duplicates (`BackupExportResult` near-miss naming)
   renamed so the next grep finds one of each.
+- **Context-size overflow guarded.** Output-token limits are bounded against the
+  model catalog, preventing context-size booming (int32 overflow).
+- **Daily check-in ledger rows follow account deletion.** Migration `0041` adds
+  the missing FK (`daily_checkin_ledger.account_id` → `provider_accounts.id`,
+  `ON DELETE CASCADE`) on both Postgres and SQLite, so deleting an account no
+  longer orphans its daily markers.
+- **Reset-credits reads are cached.** `GET /accounts/:id/resets` serves a
+  short-TTL per-account cache instead of hitting upstream on every dialog open,
+  with a timeout signal on the warm path.
 
 ### Removed
 
