@@ -59,6 +59,27 @@ full arguments, no empty `input: {}` reproduced. Same result on the chat
 (`openai-compatible`) and Responses (`openai`) wires. The `{}` miss remains
 intermittent/upstream-specific rather than a stable property of this model.
 
+**Update (2026-11-03) — upstream slot matrix.** A controlled battery against
+the local gateway (chat completions, one `bash` function tool, stream +
+non-stream, 4 trials per combination, `tool_choice`/`parameters`/`strict`
+variants) shows the empty-arguments behavior is **stable per roster slot**, not
+intermittent:
+
+| Slot (virtual id) | Arguments |
+| --- | --- |
+| `dfmodel` (`deepseek-v4.1-flash`) | ✅ populated |
+| `lite` (`lite-qwen-3.7-plus`) | ✅ populated |
+| `qmodel` (`qwen3.7-plus`) | ✅ populated |
+| `qmodel_38max` (`qwen3.8-max`) | ✅ populated |
+| `qfmodel` (`qwen3.8-flash`) | ❌ always `""` |
+| `qmodel_latest` (`qwen3.7-max`) | ❌ always `""` |
+
+`qfmodel` and `qmodel_latest` always emit `tool_calls` with `arguments: ""`
+(with correct `finish_reason` and tool name) across every request shape tried —
+so the `{}` path is an upstream model/slot behavior, not the gateway. For tool
+execution, route to a populated slot (`dfmodel`, `lite`, `qmodel`,
+`qmodel_38max`). Full evidence: `documentation/research/qoder/2026-11-03-qoder-tool-call-matrix.md`.
+
 ---
 
 ## 2. Intermittent "Encrypted reasoning must remain a string artifact" on Responses surface

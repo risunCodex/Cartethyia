@@ -1365,6 +1365,9 @@ export async function* qoderBodyToCanonicalEvents(
   // (recovered) or ordinary prose (released).
   let leakBuf = "";
   let leakFrames = 0;
+  // Tool-call argument fragments, keyed by call id, reconciled at end of
+  // stream (see the tool_calls handling in the loop).
+  const toolCallBuffer = new Map<string, { index: number; name: string | undefined; arguments: string }>();
 
   for await (const sse of decodeQoderSseEvents(body, signal)) {
     const sseData = sse.data;
@@ -1549,14 +1552,27 @@ export async function* qoderBodyToCanonicalEvents(
               } else {
                 callId = `call_${String(index ?? 0)}`;
               }
-              yield {
-                type: "tool_call_delta",
-                sequence_number: seq++,
-                call_id: callId,
-                ...(index !== undefined ? { index } : {}),
-                ...(fragName === undefined ? {} : { name: fragName }),
-                arguments_delta: (fn?.["arguments"] as string) ?? "",
-              } as CanonicalEvent;
+              // Buffer tool-call argument fragments per call id until the end of
+              // stream. Upstream streaming fragments occasionally drop or mangle
+              // a byte mid-arguments; forwarding each fragment as an
+              // `arguments_delta` would hand the client a malformed JSON blob to
+              // stitch. Holding and reconciling here yields one complete,
+              // parseable arguments string per call — flush happens at end of
+              // stream (or when a terminal frame arrives).
+              const existing = toolCallBuffer.get(callId);
+              if (existing) {
+                existing.index = index ?? existing.index;
+                if (fragName !== undefined) existing.name = fragName;
+                if (typeof fn?.["arguments"] === "string") {
+                  existing.arguments += (fn["arguments"] as string);
+                }
+              } else {
+                toolCallBuffer.set(callId, {
+                  index: index ?? 0,
+                  name: fragName,
+                  arguments: typeof fn?.["arguments"] === "string" ? (fn["arguments"] as string) : "",
+                });
+              }
             }
           }
         }
@@ -1617,6 +1633,19 @@ export async function* qoderBodyToCanonicalEvents(
   const stopReason = mapQoderFinishReason(finishReason);
   const _providerStop = typeof finishReason === "string" ? finishReason : undefined;
   void hasTerminal;
+  // Flush buffered tool-call fragments as complete, stitched calls — one
+  // `arguments_delta` per call with the full JSON string, so the client never
+  // has to repair upstream frame-loss.
+  for (const [callId, buffered] of toolCallBuffer) {
+    yield {
+      type: "tool_call_delta",
+      sequence_number: seq++,
+      call_id: callId,
+      index: buffered.index,
+      name: buffered.name,
+      arguments_delta: buffered.arguments,
+    } as CanonicalEvent;
+  }
   yield {
     type: "terminal",
     sequence_number: seq++,
