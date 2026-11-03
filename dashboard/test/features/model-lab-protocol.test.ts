@@ -12,6 +12,7 @@ const settings = (patch: Partial<LabRequestSettings> = {}): LabRequestSettings =
   protocol: "chat",
   persona: "cartethyia",
   model: "openai/gpt-4.1",
+  maxOutputTokens: 131_072,
   systemPrompt: "",
   temperature: "",
   topP: "",
@@ -64,8 +65,24 @@ describe("buildLabRequest", () => {
     const messages = buildLabRequest(turns, settings({ protocol: "messages", persona: "unset", systemPrompt: "stay on topic" }));
     expect(messages.path).toBe("/v1/messages");
     expect(messages.body.system).toBe("stay on topic");
-    expect(messages.body.max_tokens).toBe(4096);
+    // The model catalog output ceiling replaces the fixed 4096 default.
+    expect(messages.body.max_tokens).toBe(131_072);
     expect(messages.body.messages).toEqual([{ role: "user", content: "draw a cat" }]);
+  });
+
+  test("chat and responses carry the catalog output ceiling", () => {
+    const turns = [{ role: "user" as const, text: "draw a cat" }];
+    const chat = buildLabRequest(turns, settings({ protocol: "chat" }));
+    expect(chat.path).toBe("/v1/chat/completions");
+    expect(chat.body.max_tokens).toBe(131_072);
+
+    const responses = buildLabRequest(turns, settings({ protocol: "responses", effort: "high" }));
+    expect(responses.path).toBe("/v1/responses");
+    expect(responses.body.max_output_tokens).toBe(131_072);
+
+    const noLimit = buildLabRequest(turns, settings({ maxOutputTokens: undefined }));
+    expect(noLimit.body.max_tokens).toBeUndefined();
+    expect(noLimit.body.max_output_tokens).toBeUndefined();
   });
 
   test("the default persona stays stable across turns and combines the user's prompt across all wires", () => {

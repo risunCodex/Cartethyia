@@ -86,6 +86,8 @@ export interface LabRequestSettings {
   readonly protocol: LabProtocol;
   readonly persona: LabPersona;
   readonly model: string;
+  /** Model catalog output ceiling in tokens; undefined = let the gateway default. */
+  readonly maxOutputTokens?: number;
   readonly systemPrompt: string;
   readonly temperature: string;
   readonly topP: string;
@@ -345,7 +347,7 @@ export function buildLabRequest(turns: readonly LabTurn[], settings: LabRequestS
       body: {
         model: settings.model,
         stream: true,
-        max_tokens: 4096,
+        max_tokens: settings.maxOutputTokens ?? 4096,
         ...(system.length > 0 ? { system } : {}),
         messages: spoken.map((turn) => ({ role: turn.role, content: userContent("messages", turn) })),
         ...sample,
@@ -366,6 +368,9 @@ export function buildLabRequest(turns: readonly LabTurn[], settings: LabRequestS
         ],
         ...sample,
         ...effort,
+        ...(settings.maxOutputTokens === undefined
+          ? {}
+          : { max_output_tokens: settings.maxOutputTokens }),
       },
     };
   }
@@ -381,6 +386,7 @@ export function buildLabRequest(turns: readonly LabTurn[], settings: LabRequestS
       ],
       ...sample,
       ...effort,
+      ...(settings.maxOutputTokens === undefined ? {} : { max_tokens: settings.maxOutputTokens }),
       ...(agenticTools(settings).length > 0 ? { tools: agenticTools(settings) } : {}),
       ...(settings.forcedTool !== undefined
         ? { tool_choice: { type: "function", function: { name: settings.forcedTool } } }

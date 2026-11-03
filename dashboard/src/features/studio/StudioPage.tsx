@@ -444,6 +444,9 @@ export function StudioPage(): ReactNode {
       const requestSettings = {
         ...draft,
         protocol: "chat" as const,
+        maxOutputTokens:
+          modelCatalog.items.find((entry) => entry.qualified === draft.model)?.entry.outputLimit ??
+          undefined,
         webSearchModels: toolModels.webSearch,
         imageGenerationModels: toolModels.imageGeneration,
         videoGenerationModels: toolModels.videoGeneration,
