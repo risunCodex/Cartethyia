@@ -6,6 +6,7 @@ import { Input } from "../../components/ui/input";
 import { consoleRequest } from "../../data/api";
 import { queryClient } from "../../data/query-client";
 import { queryKeys } from "../../data/query-keys";
+import AuthLayout from "./AuthLayout";
 
 interface LoginResult {
   readonly status: "success" | "failed";
@@ -89,28 +90,22 @@ export default function Login(): ReactNode {
 
   if (checkingSetup) {
     return (
-      <main className="auth-viewport">
-        <div className="card-solid auth-window">
-          <div className="auth-header">
-            <div className="auth-logo" aria-hidden="true" />
-            <h1 className="auth-title">Cartethyia Console</h1>
-            <p className="auth-desc">Checking console setup...</p>
-          </div>
+      <AuthLayout title="Cartethyia Console" description="Checking console setup...">
+        <div className="flex flex-col gap-7" aria-hidden="true">
+          <div className="h-20 rounded-control bg-surface-2 animate-pulse" />
+          <div className="h-20 rounded-control bg-surface-2 animate-pulse" />
+          <div className="h-20 rounded-control bg-surface-2 animate-pulse" />
         </div>
-      </main>
+      </AuthLayout>
     );
   }
 
   return (
-    <main className="auth-viewport">
-      <div className="card-solid auth-window">
-        <div className="auth-header">
-          <div className="auth-logo" aria-hidden="true" />
-          <h1 className="auth-title">Cartethyia Console</h1>
-          <p className="auth-desc">Sign in to manage AI Gateway routing and providers</p>
-        </div>
-
-        <form onSubmit={submit} className="flex flex-col gap-7">
+    <AuthLayout
+      title="Cartethyia Console"
+      description="Sign in to manage AI Gateway routing and providers"
+    >
+      <form onSubmit={submit} className="flex flex-col gap-7">
           <Input
             label="Username"
             id="login-username"
@@ -150,7 +145,6 @@ export default function Login(): ReactNode {
             {pending ? "Authenticating…" : "Sign In"}
           </Button>
         </form>
-      </div>
-    </main>
+      </AuthLayout>
   );
 }

@@ -8,6 +8,7 @@ import { consoleRequest } from "../../data/api";
 import { readBackupFile } from "../../lib/backup-file";
 import { queryClient } from "../../data/query-client";
 import { queryKeys } from "../../data/query-keys";
+import AuthLayout from "./AuthLayout";
 
 interface SetupResult {
   readonly status: "success" | "failed";
@@ -233,41 +234,32 @@ export default function Setup(): ReactNode {
 
   if (open === false) {
     return (
-      <main className="auth-viewport">
-        <div className="card-solid auth-window">
-          <div className="auth-header">
-            <div className="auth-logo" aria-hidden="true" />
-            <h1 className="auth-title">Account Already Registered</h1>
-            <p className="auth-desc">
-              This console already has an administrator account, so setup is closed.
-              Sign in with the account that was created.
-            </p>
-          </div>
-          <div className="flex flex-col gap-7">
-            <SetupError message="Setup is already finished. Creating a second administrator is not possible from here." />
-            <Link to="/login" className="no-underline">
-              <Button variant="primary" type="button" className="w-full h-20">
-                Go to sign in
-              </Button>
-            </Link>
-          </div>
+      <AuthLayout
+        title="Account Already Registered"
+        description="This console already has an administrator account, so setup is closed. Sign in with the account that was created."
+      >
+        <div className="flex flex-col gap-7">
+          <SetupError message="Setup is already finished. Creating a second administrator is not possible from here." />
+          <Link to="/login" className="no-underline">
+            <Button variant="primary" type="button" className="w-full h-20">
+              Go to sign in
+            </Button>
+          </Link>
         </div>
-      </main>
+      </AuthLayout>
     );
   }
 
   return (
-    <main className="auth-viewport">
-      <div className="card-solid auth-window">
-        <div className="auth-header">
-          <div className="auth-logo" aria-hidden="true" />
-          <h1 className="auth-title">Cartethyia Console Setup</h1>
-          {mode === "create" ? (
-            <p className="auth-desc">Configure the administrator account for Cartethyia AI Gateway</p>
-          ) : null}
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 mb-7">
+    <AuthLayout
+      title="Cartethyia Console Setup"
+      description={
+        mode === "create"
+          ? "Configure the administrator account for Cartethyia AI Gateway"
+          : "Restore a previous installation's settings and create the administrator account"
+      }
+    >
+      <div className="grid grid-cols-2 gap-2 mb-7">
           <Button type="button" variant={mode === "create" ? "primary" : "secondary"} onClick={() => setMode("create")}>
             New account
           </Button>
@@ -424,8 +416,7 @@ export default function Setup(): ReactNode {
           </Button>
         </form>
         )}
-      </div>
-    </main>
+    </AuthLayout>
   );
 }
 

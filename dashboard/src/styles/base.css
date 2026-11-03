@@ -764,80 +764,260 @@ main > .state-viewport {
   font-weight: 500;
 }
 
-/* Auth View (Login & Setup) */
+/* Auth View (Login & Setup) — full-bleed key art. The image covers the
+   whole viewport edge to edge (right up to the login panel), and the form
+   floats on a frosted-glass panel at the right edge. On narrow screens the
+   panel centers as a card over the image. */
 .auth-viewport {
+  position: relative;
   min-height: 100vh;
   min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  /* The login and setup screens carry their own key art. The veil sits over
-     the image so the card stays readable; it is the only thing that changes
-     between themes. */
-  --auth-backdrop-veil: 0.35;
-  background-image:
-    linear-gradient(
-      color-mix(in srgb, var(--page-bg) calc(var(--auth-backdrop-veil) * 100%), transparent),
-      color-mix(in srgb, var(--page-bg) calc(var(--auth-backdrop-veil) * 100%), transparent)
-    ),
-    url("/assets/brand/login_register.jpg");
-  background-position: center, center;
-  background-repeat: no-repeat, no-repeat;
-  background-size: cover, cover;
-  background-attachment: fixed, fixed;
+  display: flex;
+  /* Thin veil on desktop so the key art stays visible and vivid behind the
+     frosted panel; mobile overrides this back to the denser veil. */
+  --auth-backdrop-veil: 0.18;
 }
 
-/* The error boundary renders inside the console, so it must not carry the
-   login key art. The shell already has its own background behind it. */
+/* The error boundary renders inside the console, so its image pane must not
+   carry the login key art — the shell already has its own background behind
+   it. The accent gradient keeps the split surface readable. */
 .app-shell-root .auth-viewport {
-  background: none;
+  display: grid;
+  grid-template-columns: minmax(0, 85fr) minmax(440px, 15fr);
 }
 
 [data-theme="dark"] .auth-viewport {
   --auth-backdrop-veil: 0.5;
 }
 
-.auth-window {
-  width: min(100%, 420px);
-  border-radius: var(--radius-card);
-  padding: 36px 32px;
-  /* The key art shows through the card. A flat shadow only â€” the shared card
-     shadow carries a colored glow that reads as a halo over the art. */
-  background: color-mix(in srgb, var(--surface-1) 78%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(120%);
-  backdrop-filter: blur(16px) saturate(120%);
-  box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.5);
+.auth-image-col {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--page-bg) calc(var(--auth-backdrop-veil) * 100%), transparent),
+      color-mix(in srgb, var(--page-bg) calc(var(--auth-backdrop-veil) * 100%), transparent)
+    ),
+    url("/assets/brand/login_register.jpg");
+  /* The key art renders at full height, uncropped — no zoom. On wide
+     viewports the image is wider than the left pane, so it extends just
+     beneath the frosted panel, whose blur picks up its tones like a
+     reflection. Mobile overrides to full-bleed cover (see the media query). */
+  background-position: left center, left center;
+  background-repeat: no-repeat, no-repeat;
+  background-size: auto 100%, auto 100%;
 }
 
-.auth-header {
+.app-shell-root .auth-image-col {
+  position: static;
+  background: linear-gradient(160deg, var(--accent-hover), var(--accent));
+}
+
+.auth-form-col {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  width: min(100%, 460px);
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 36px;
+  /* Frosted glass: the key art shows through, blurred, so the background is
+     part of the surface instead of hidden behind a solid panel. */
+  background: color-mix(in srgb, var(--surface-1) 62%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  backdrop-filter: blur(20px) saturate(130%);
+  border-left: 1px solid color-mix(in srgb, var(--border-strong) 35%, transparent);
+  box-shadow: -24px 0 64px -32px rgba(0, 0, 0, 0.45);
+}
+
+.app-shell-root .auth-form-col {
+  margin-left: 0;
+  background: var(--surface-1);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.auth-form-inner {
+  width: min(100%, 380px);
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.auth-brand-head {
   text-align: center;
-  margin-bottom: 24px;
 }
 
 .auth-logo {
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   border-radius: var(--radius-control);
   background: var(--accent) center / cover no-repeat url("/assets/brand/favicon.jpg");
   color: var(--accent-foreground);
   display: grid;
   place-items: center;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 800;
   margin: 0 auto 14px;
 }
 
 .auth-title {
-  font-size: 20px;
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
 .auth-desc {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-secondary);
-  margin-top: 4px;
+  margin-top: 6px;
+}
+
+.auth-form-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.auth-brand-links-label {
+  display: block;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.auth-brand-links-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.auth-brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--inner-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.auth-brand-link:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+@media (max-width: 940px) {
+  /* Standalone auth surfaces: the key art is pinned to the viewport and never
+     moves, and the form floats as a fixed centered card above it. */
+  .auth-viewport {
+    position: fixed;
+    inset: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 24px;
+    --auth-backdrop-veil: 0.35;
+  }
+
+  /* On narrow screens the full-bleed key art covers the whole viewport
+     (portrait framing fits the screen); the wide, full-height treatment and
+     the edge fade are desktop-only. */
+  .auth-image-col {
+    background-image:
+      linear-gradient(
+        color-mix(in srgb, var(--page-bg) calc(var(--auth-backdrop-veil) * 100%), transparent),
+        color-mix(in srgb, var(--page-bg) calc(var(--auth-backdrop-veil) * 100%), transparent)
+      ),
+      url("/assets/brand/login_register.jpg");
+    background-position: center, center;
+    background-size: cover, cover;
+  }
+
+  /* Inside the shell the surface is a normal flowing block with its own
+     gradient; the fixed full-screen behavior belongs to the standalone pages
+     only. */
+  .app-shell-root .auth-viewport {
+    position: static;
+    inset: auto;
+    display: grid;
+    grid-template-columns: 1fr;
+    padding: 24px;
+    place-items: center;
+    overflow: visible;
+    background: none;
+  }
+
+  .app-shell-root .auth-image-col {
+    display: none;
+  }
+
+  /* The form pane becomes a full-screen centering layer; the visible card is
+     the inner block, which keeps a natural height (never full top-to-bottom),
+     stays pinned to the viewport, and scrolls internally when its content is
+     taller than the screen. */
+  .auth-form-col {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    width: 100%;
+    padding: 24px;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  .auth-form-inner {
+    width: min(100%, 420px);
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+    padding: 36px 32px;
+    border-radius: var(--radius-card);
+    background: color-mix(in srgb, var(--surface-1) 78%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(120%);
+    backdrop-filter: blur(16px) saturate(120%);
+    box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.5);
+  }
+
+  .app-shell-root .auth-form-col {
+    position: static;
+    inset: auto;
+    width: min(100%, 380px);
+    padding: 0;
+    background: var(--surface-1);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+    border-radius: var(--radius-card);
+  }
+
+  .app-shell-root .auth-form-inner {
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
 }
 
 /* GitHub repo link with live star/fork badges. Shared by the landing page and

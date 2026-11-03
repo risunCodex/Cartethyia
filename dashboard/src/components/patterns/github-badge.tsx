@@ -105,7 +105,7 @@ function DiscordMark({ size = 15 }: { size?: number }): ReactElement {
   );
 }
 
-function MarkFor({ id, size }: { id: SourceLink["id"]; size?: number }): ReactElement {
+export function MarkFor({ id, size }: { id: SourceLink["id"]; size?: number }): ReactElement {
   if (id === "npm") return <NpmMark size={size} />;
   if (id === "gitlab") return <GitlabMark size={size} />;
   if (id === "discord") return <DiscordMark size={size} />;

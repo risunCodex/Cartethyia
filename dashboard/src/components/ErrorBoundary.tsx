@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import AuthLayout from "../features/session/AuthLayout";
 
 interface ErrorBoundaryProps {
   /** Distinguishes navigation targets. A change clears a recovered error so a
@@ -49,41 +50,37 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
           ? errorStack
           : null;
     return (
-      <main className="auth-viewport">
-        <div className="card-solid auth-window border border-red-soft">
-          <div className="auth-header">
-            <h1 className="auth-title">Console view failed</h1>
-            <p className="auth-desc">This view could not be rendered.</p>
-          </div>
-
-          <div className="rounded-panel border border-inner-border bg-surface-2 p-7 leading-normal text-caption text-text-secondary">
-            <strong className="block text-text-primary mb-2">
-              Rendering error
-            </strong>
-            <span className="select-text break-words">
-              {this.state.error.message}
-            </span>
-            {/* One trace, not two. `componentStack` and `error.stack` name the
-                same failure and overlap almost entirely, so showing both read
-                as the same error printed twice. The component stack wins when
-                present because it names the component that threw; the raw stack
-                is the fallback for an error caught without one. */}
-            {trace !== null ? (
-              <pre className="mt-4 max-h-80 overflow-auto whitespace-pre-wrap break-words text-badge text-text-tertiary">
-                {trace}
-              </pre>
-            ) : null}
-          </div>
-
-          <button
-            type="button"
-            className="btn btn-primary inline-flex w-full items-center justify-center rounded-control bg-accent font-semibold text-accent-foreground mt-3 h-20 text-caption"
-            onClick={() => window.location.reload()}
-          >
-            Reload console
-          </button>
+      <AuthLayout
+        title="Console view failed"
+        description="This view could not be rendered."
+      >
+        <div className="rounded-panel border border-inner-border bg-surface-2 p-7 leading-normal text-caption text-text-secondary">
+          <strong className="block text-text-primary mb-2">
+            Rendering error
+          </strong>
+          <span className="select-text break-words">
+            {this.state.error.message}
+          </span>
+          {/* One trace, not two. `componentStack` and `error.stack` name the
+              same failure and overlap almost entirely, so showing both read
+              as the same error printed twice. The component stack wins when
+              present because it names the component that threw; the raw stack
+              is the fallback for an error caught without one. */}
+          {trace !== null ? (
+            <pre className="mt-4 max-h-80 overflow-auto whitespace-pre-wrap break-words text-badge text-text-tertiary">
+              {trace}
+            </pre>
+          ) : null}
         </div>
-      </main>
+
+        <button
+          type="button"
+          className="btn btn-primary inline-flex w-full items-center justify-center rounded-control bg-accent font-semibold text-accent-foreground mt-3 h-20 text-caption"
+          onClick={() => window.location.reload()}
+        >
+          Reload console
+        </button>
+      </AuthLayout>
     );
   }
 }
