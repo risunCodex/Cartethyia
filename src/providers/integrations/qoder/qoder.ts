@@ -1226,93 +1226,90 @@ function qoderIdeEntitlementRefused(response: Response): boolean {
  * normal stop with reasoning only and no output text/tool calls (observed ~1
  * in 4 runs with Sonus). That is not a valid completion — the lab would show a
  * thought with "No text came back". Replay such a stream before committing to
- * it. Buffering the body is required: the decision is only knowable after the
- * stream ends, and the bytes are replayed to the canonical parser.
+ * it. `sniffQoderStream` below inspects just enough of the body to make that
+ * call without buffering the whole (possibly long) stream.
  */
-interface QoderStreamDrain {
-  readonly bytes: Uint8Array;
-  readonly meaningful: boolean;
-  readonly thoughtOnly: boolean;
-}
 
-async function drainQoderResponse(
+/**
+ * Reads the upstream body just far enough to decide whether it carries real
+ * output, then returns a replay stream that re-emits the already-read bytes
+ * followed by the rest of the original body. If the body ends before any
+ * meaningful output is seen, `meaningful` is false and the caller replays the
+ * whole request (empty / thought-only recovery) without ever buffering a large
+ * response: the original `drainQoderResponse` read the entire stream before
+ * forwarding, which made every stream appear to complete in one burst at the
+ * end.
+ */
+async function sniffQoderStream(
   response: Response,
   signal: AbortSignal,
-): Promise<QoderStreamDrain> {
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  const reader = response.body!.getReader();
-  try {
-    for (;;) {
-      if (signal.aborted) break;
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        total += value.byteLength;
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  let dataEvents = 0;
-  let meaningful = false;
-  let thoughtOnly = false;
+): Promise<{ meaningful: boolean; response: Response }> {
+  const body = response.body;
+  if (body === null) return { meaningful: true, response };
+  const reader = body.getReader();
   const decoder = new TextDecoder();
-  const text = decoder.decode(bytes);
-  for (const frame of text.split(/\r?\n\r?\n/)) {
-    if (frame.trim().length === 0) continue;
-    const dataLines: string[] = [];
-    for (const line of frame.split(/\r?\n/)) {
-      if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+  const pending: Uint8Array[] = [];
+  let inspected = "";
+  let meaningful = false;
+  for (let i = 0; i < 32 && !meaningful; i += 1) {
+    const { done, value } = await reader.read();
+    if (signal.aborted) break;
+    if (done) break;
+    pending.push(value);
+    inspected += decoder.decode(value, { stream: true });
+    // Peek at completed SSE frames only: a content delta or a tool-call
+    // fragment means real output is coming. Reasoning-only streams are NOT
+    // meaningful (they are exactly what empty-stream recovery replays), and a
+    // finish reason alone is not output either.
+    if (/data:/.test(inspected)) {
+      for (const frame of inspected.split(/\r?\n\r?\n/)) {
+        if (!frame.includes("data:")) continue;
+        if (frame.includes('"content":"') || frame.includes('"tool_calls"')) {
+          meaningful = true;
+          break;
+        }
+      }
     }
-    const data = dataLines.join("\n").trim();
-    if (data.length === 0 || data === "[DONE]") continue;
-    dataEvents++;
-    for (const { data: frameData } of qoderEnvelopeToFrames(data)) {
-      if (frameData === "[DONE]") continue;
-      let json: Record<string, unknown>;
-      try {
-        json = JSON.parse(frameData) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-      const choices = json["choices"];
-      if (!Array.isArray(choices)) continue;
-      for (const choice of choices as Array<Record<string, unknown>>) {
-        const delta = choice["delta"] as Record<string, unknown> | undefined;
-        if (delta === undefined) continue;
-        if (typeof delta["content"] === "string" && (delta["content"] as string).length > 0) {
-          meaningful = true;
-          return { bytes, meaningful, thoughtOnly };
-        }
-        if (Array.isArray(delta["tool_calls"]) && (delta["tool_calls"] as unknown[]).length > 0) {
-          meaningful = true;
-          return { bytes, meaningful, thoughtOnly };
-        }
-        if (
-          typeof delta["reasoning_content"] === "string" &&
-          (delta["reasoning_content"] as string).length > 0
-        ) {
-          thoughtOnly = true;
-        }
-      }
+    if (inspected.length > 65536) {
+      meaningful = true;
+      break;
     }
   }
-  return { bytes, meaningful, thoughtOnly };
+  // Replay: previously-read bytes first, then continue the original body.
+  let offset = 0;
+  const replay = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (; offset < pending.length; offset += 1) controller.enqueue(pending[offset]);
+    },
+    async pull(controller) {
+      if (offset < pending.length) {
+        controller.enqueue(pending[offset]);
+        offset += 1;
+        return;
+      }
+      const { done, value } = await reader.read();
+      if (signal.aborted) {
+        controller.close();
+        return;
+      }
+      if (done) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+  return { meaningful, response: new Response(replay, response) };
 }
 
 /**
  * Runs the IDE request up to `1 + maxReplays` times, returning the first
  * response whose stream carried real output (text or tool calls). A 200 with
- * no output (empty or thought-only) is replayed rather than surfaced.
+ * no output (empty or thought-only) is replayed rather than surfaced. The
+ * stream is forwarded progressively (not buffered to completion).
  */
 async function fetchQoderIdeWithEmptyRecovery(
   requestOnce: () => Promise<Response>,
@@ -1323,12 +1320,9 @@ async function fetchQoderIdeWithEmptyRecovery(
   for (let attempt = 0; attempt <= maxReplays; attempt += 1) {
     const res = await requestOnce();
     if (!res.ok || !res.body) return res;
-    const drain = await drainQoderResponse(res, signal);
-    last = new Response(drain.bytes as BodyInit, {
-      status: 200,
-      headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
-    });
-    if (drain.meaningful) return last;
+    const sniff = await sniffQoderStream(res, signal);
+    last = sniff.response;
+    if (sniff.meaningful) return last;
   }
   return last!;
 }
@@ -1524,7 +1518,14 @@ export async function* qoderBodyToCanonicalEvents(
             for (const tc of toolCalls) {
               const fn = tc["function"] as Record<string, unknown> | undefined;
               const index = typeof tc["index"] === "number" ? (tc["index"] as number) : undefined;
-              const declaredId = typeof tc["id"] === "string" ? (tc["id"] as string) : undefined;
+              // `id` is only meaningful when non-empty: some Qoder slots echo
+              // `id: ""` on continuation chunks, and treating that as a fresh
+              // call id would orphan every argument fragment (the real call
+              // keeps its first-seen id, the fragments pile up under "").
+              const declaredId =
+                typeof tc["id"] === "string" && (tc["id"] as string).length > 0
+                  ? (tc["id"] as string)
+                  : undefined;
               const fragName = typeof fn?.["name"] === "string" ? (fn["name"] as string) : undefined;
               // OpenAI continuation chunks re-identify their call by wire
               // `index` alone — the `id` appears only once, in the first chunk.
