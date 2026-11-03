@@ -239,8 +239,18 @@ export const PROVIDER_CAPABILITIES = {
     loadAuthentication: oauthCapability(() => import("./integrations/antigravity/antigravity-oauth"), "antigravityOAuthClient", { withRefresher: true }),
     loadQuotaCollector: quotaCapability(() => import("./integrations/antigravity/antigravity-quota"), "fetchAntigravityQuota"),
     loadModelDiscovery: async () => async ({ baseUrl, credential, fetcher }) => {
-      const { discoverAntigravityModels } = await import("./integrations/antigravity/antigravity-protocol");
-      return discoverAntigravityModels(credential, { baseUrl, ...(fetcher ? { fetcher } : {}) });
+      const { discoverAntigravityModels, loadAntigravityProject } = await import("./integrations/antigravity/antigravity-protocol");
+      // The reference client resolves the project before catalog calls; the
+      // live backend accepts both, but sending it matches the captured wire.
+      const projectId = await loadAntigravityProject(credential, {
+        ...(baseUrl === undefined ? {} : { baseUrl }),
+        ...(fetcher ? { fetcher } : {}),
+      }).catch(() => undefined);
+      return discoverAntigravityModels(credential, {
+        baseUrl,
+        ...(fetcher ? { fetcher } : {}),
+        ...(projectId === undefined ? {} : { projectId }),
+      });
     },
   },
   muse: {
