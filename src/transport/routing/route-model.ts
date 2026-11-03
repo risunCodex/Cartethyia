@@ -106,6 +106,8 @@ export interface RouteCandidate {
   readonly usage_floor_unit?: "credit" | "percent";
   /** Live quota windows (cache) the floor check evaluates. */
   readonly quota_windows?: readonly ProviderQuotaWindow[];
+  /** A successful Start Plan balance authoritatively lists its model grants. */
+  readonly quota_entitlements_known?: boolean;
 }
 
 /**

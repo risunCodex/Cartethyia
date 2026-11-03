@@ -804,6 +804,20 @@ export function classifyAccountError(
   const staticToken = options?.staticToken === true;
   const credentialKind = options?.credentialKind;
 
+  // Start Plan is a separate provider: its named trial refusal rests only that model.
+  const providerId = options?.providerId ?? (error instanceof GatewayError ? error.details.providerId : undefined);
+  const refusedModel = statusCode === 400
+    ? /no active limited quota for ([\w.-]+)/i.exec(message)?.[1]
+    : statusCode === 429
+      ? /limited quota(?: for)? ([\w.-]+)(?: is)? exhausted/i.exec(message)?.[1]
+      : undefined;
+  if (providerId === "zcode-start" && modelId !== undefined && refusedModel !== undefined &&
+    refusedModel.toLowerCase().replace(/-trial$/, "") === modelId.toLowerCase().replace(/-trial$/, "")) {
+    const cooldownMs = statedCooldownMs ?? DEFAULT_QUOTA_COOLDOWN_MS();
+    return result("model_unreachable", "cooldown", cooldownMs, new Date(Date.now() + cooldownMs),
+      reason("Start Plan trial unavailable for this model"), origin === "upstream");
+  }
+
   // A price refusal is a verdict on the *request*, not on the account. inferhub
   // answers 402 with `no provider's ask matches your max-per-mtok bid`: the
   // caller's own price ceiling was below every upstream ask, which says nothing
@@ -1077,7 +1091,8 @@ export function classifyAccountError(
   // for all other models. Disabling the whole account breaks healthy models.
   const modelEntitlementFailure =
     statusCode === 403 &&
-    (lower.includes("not have a valid license") ||
+    ((providerId === "commandcode" && lower.includes("model_not_in_plan")) ||
+      lower.includes("not have a valid license") ||
       lower.includes("valid license of this product") ||
       lower.includes("model not supported") ||
       lower.includes("not entitled to") ||

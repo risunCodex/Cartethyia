@@ -54,6 +54,7 @@ export function filterCandidateQuotaWindows(
   if (windows.length === 0) return windows;
   const providerId = candidate.provider_id?.toLowerCase() ?? "";
   const modelId = candidate.model_id?.toLowerCase() ?? "";
+  windows = windows.filter((window) => window.modelIds === undefined || window.modelIds.includes(modelId));
 
   if (providerId === "antigravity") {
     const isGemini = /gemini|tab_flash/i.test(modelId);
@@ -95,9 +96,39 @@ export function filterCandidateQuotaWindows(
  */
 function belowUsageFloor(state: RoutedCandidate): boolean {
   const rawWindows = state.quota_windows;
+  // A successful Start Plan balance (`quota_entitlements_known`) authoritatively
+  // lists its model grants: when the provider is zcode-start and no window
+  // matches the requested model, the account is below the floor even with an
+  // empty/absent window list — there is no grant to fund the model.
+  if (state.provider_id === "zcode-start" && state.quota_entitlements_known === true) {
+    if (rawWindows === undefined || rawWindows.length === 0) return true;
+    const knownGrants = rawWindows.some((window) => window.modelIds !== undefined);
+    if (!knownGrants) return true;
+  }
   if (rawWindows === undefined || rawWindows.length === 0) return false;
-  const windows = filterCandidateQuotaWindows(rawWindows, state);
-  if (windows.length === 0) return false;
+  const relevant = filterCandidateQuotaWindows(rawWindows, state);
+  // Model-scoped grants (Start Plan) are checked separately: a grant that has
+  // not started, has expired, or is exhausted cannot fund the requested model,
+  // so it must not count as credit.
+  const now = Date.now();
+  const grants = relevant.filter((window) => window.modelIds !== undefined);
+  if (state.provider_id === "zcode-start" && grants.length === 0 && rawWindows.some((window) => window.modelIds !== undefined)) {
+    return true;
+  }
+  if (
+    grants.length > 0 &&
+    !grants.some((window) => {
+      if (window.startsAt && Date.parse(window.startsAt) > now) return false;
+      if (window.resetsAt && Date.parse(window.resetsAt) <= now) return false;
+      if (typeof window.remaining === "number" && window.remaining <= 0) return false;
+      if (typeof window.remainingPercent === "number" && window.remainingPercent <= 0) return false;
+      const remaining = state.usage_floor_unit === "credit" ? window.remaining : window.remainingPercent;
+      return state.usage_floor === undefined || remaining == null || remaining > state.usage_floor;
+    })
+  ) {
+    return true;
+  }
+  const windows = relevant.filter((window) => window.modelIds === undefined);
   const credit = totalRemainingCredit(windows);
   const percent = totalRemainingPercent(windows);
   const exhaustedIndependentWindow = windows.some(
@@ -296,10 +327,17 @@ function spreadDeadline(cooldownUntil: number | undefined): { cooldown_until?: n
 function earliestWindowResetMs(
   windows: readonly ProviderQuotaWindow[] | undefined,
   nowMs: number,
+  candidate: RouteCandidate,
 ): number | undefined {
   if (windows === undefined) return undefined;
+  windows = filterCandidateQuotaWindows(windows, candidate);
   let earliest: number | undefined;
   for (const window of windows) {
+    if (window.startsAt && Date.parse(window.startsAt) > nowMs) {
+      const at = Date.parse(window.startsAt);
+      if (earliest === undefined || at < earliest) earliest = at;
+      continue;
+    }
     if (typeof window.resetsAt !== "string" || window.resetsAt.length === 0) continue;
     const at = Date.parse(window.resetsAt);
     if (!Number.isFinite(at) || at <= nowMs) continue;
@@ -346,7 +384,7 @@ export class EligibilityEvaluator {
         eligible: false,
         reason: "quota_exhausted",
         candidate,
-        ...spreadDeadline(earliestWindowResetMs(candidate.quota_windows, Date.now())),
+        ...spreadDeadline(earliestWindowResetMs(candidate.quota_windows, Date.now(), candidate)),
       };
     // A slow lane is orthogonal to cooldown, never a member of it: the account
     // still serves on spare capacity when the request carries the slow usage
@@ -523,24 +561,26 @@ export class RoutingEngine {
     // still prefers accounts that actually have remaining credit. The snapshot
     // is never fresher than the cache, but a stale balance beats an unknown
     // one for ordering, and the sweep refreshes it on schedule.
-    let rawWindows = cached?.quota.windows;
-    if (rawWindows === undefined && this.db !== undefined) {
-      const snapshot = await readQuotaSnapshot(this.db, accountId).catch(() => null);
-      rawWindows = snapshot?.quota.windows;
+    let quota = cached?.quota;
+    if (quota === undefined && this.db !== undefined) {
+      const stored = await readQuotaSnapshot(this.db, accountId).catch(() => null);
+      quota = stored?.quota;
     }
+    const rawWindows = quota?.windows;
     // The cache is authoritative when it has a reading; when it does not,
     // keep whatever the candidate already carried (the credit ordering reads
     // these windows, and a miss must not erase a stamped value).
     const quotaWindows =
       rawWindows === undefined
         ? undefined
-        : filterCandidateQuotaWindows(rawWindows, candidate);
+        : candidate.provider_id === "zcode-start" ? rawWindows : filterCandidateQuotaWindows(rawWindows, candidate);
     return {
       ...candidate,
       ...(setting?.usageFloor == null
         ? {}
         : { usage_floor: setting.usageFloor, usage_floor_unit: setting.usageFloorUnit }),
       ...(quotaWindows === undefined ? {} : { quota_windows: quotaWindows }),
+      ...(quota?.source === "zcode-start" && quota.error === null ? { quota_entitlements_known: true } : {}),
     };
   }
 

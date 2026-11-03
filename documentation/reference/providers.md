@@ -187,6 +187,72 @@ Verified in code only. `bespokeWire` = the adapter frames its own protocol, not 
 | factory / cloudflareai / alibabacp catalogs | Static rosters in `integrations/*/*-models.ts`; none publishes a listable endpoint, so the catalog is the list. Limits come from the base catalog via `models-dev-catalog.ts` remaps; capability is declared per row. |
 | cursor | Bespoke (`provider-metadata.ts`). Connect-RPC over protobuf on a bidirectional HTTP/2 stream, so it uses the validated `outbound_http2` capability rather than `fetch`. The Run origin comes from `GetServerConfig` per dispatch, not from the metadata base URL (which serves auth and catalog only). Its tool loop spans two client requests on one upstream Run, so the Run and its account/pool slot outlive the request that opened them — see [Cursor provider](../features/08-cursor-provider.md). No quota collector: no endpoint is established. The `x-cursor-client-version` identity is `cli-<version>-<sha7>` and is **discovered** from the official download API (`VERSION_SOURCES.cursor`), which is the only source returning both halves; the constant in `cursor-shared.ts` is only what a cold process sends before the first fetch. |
 
+## Commandcode Go and ZCode Start Plan
+
+Commandcode Go is a subscription tier of `commandcode`, not another provider.
+Requests use the CLI generation envelope and NDJSON response. Quota reads are
+organization-scoped; monthly allowance, purchased/free credits, and independent
+five-hour/weekly limits remain separate. Purchased credits are not capped by
+the monthly plan allowance. An unknown allowance cap does not erase a known
+spendable balance.
+An upstream reset timestamp of zero means no reset deadline is available, not
+a reset in January 1970.
+
+`zcode-start` (displayed as **ZCode Start**) is separate from `zcode` (the regular Z.AI Coding Plan). Sign in
+with its device flow or import the ZCode login JWT; a Coding Plan API key or
+the short-lived Z.AI access token is not interchangeable. There is no refresh
+grant: sign in again if the session is expired or revoked. Requests use
+`https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages`, bearer auth,
+ZCode identity headers and the three-block client prompt. Caller instructions
+are appended inside the third block, not discarded or sent as a fourth block.
+
+Quota reads `GET /api/v1/zcode-plan/billing/balance`. Each balance keeps its
+`capabilities` model IDs, owning `user_plan_id`/`plan_id`, entitlement period,
+`total_units`, `used_units`, `remaining_units`, and activation/expiry times.
+Alternative grants can fund the same model; a spent grant cannot disable an
+unrelated model. Future grants show **Not started yet** and their start time,
+but cannot fund requests. Expired grants cannot fund requests even if their
+last reported remaining amount was positive. Missing usage is unknown, not zero.
+Built-in Start Plan windows use the short **Start** label; referral/promo grant
+names remain as reported upstream. Timeout, network and unreadable-JSON quota
+failures remain distinct; a timeout does not advance the account failure streak.
+A successful balance is authoritative: a model with no matching grant is not
+eligible. Dashboard availability follows the same grant lifetimes and treats
+same-model grants as alternatives, rather than showing a spent sibling as an
+account-wide zero balance.
+
+The **Claim gifts** button in Quota Management or the provider account row is an
+explicit manual action. It reads marketing banners and billing preview, then
+posts each offered `plan_id` to `/api/v1/zcode-plan/billing/claim`. Claim codes
+`0`, `1003`, and `3007` mean claimed, already claimed, and CAPTCHA respectively.
+Complete CAPTCHA in the ZCode app. Unknown/unreadable replies are failures;
+mixed outcomes are partial, never an unconditional success. A successful
+no-data preview is a valid empty list. New grants invalidate both the live cache
+and the persisted quota snapshot used after a cold start.
+
+Automatic claims are **off by default**. Set `CARTETHYIA_ZCODE_AUTO_CLAIM=true`
+to opt active accounts in; the first pass runs after 24 hours and repeats daily.
+Each daily pass drains the eligible accounts in bounded pages; the page size
+does not defer the remaining accounts to another day.
+`CARTETHYIA_DISABLED_TASKS=zcode-gift-claim` still disables that task. Manual
+claim remains available independently. Disabled/cooling accounts are not
+automatically claimed, and this scheduler does not enable them.
+
+### Upstream reference
+
+The [Magpie ZCode integration](https://github.com/yetone/magpie) and its
+[`opencode-zcode-auth` package](https://www.npmjs.com/package/@magpie-community/opencode-zcode-auth/v/0.1.42)
+document the billing shapes, `capabilities` model mapping, legitimate empty
+preview and claim codes. Magpie's `-Trial` suffix distinguishes gifts from
+Coding Plan entries in its combined picker; upstream requests use raw model
+IDs. The separate `zcode-start` provider keeps those raw IDs without a fallback
+that spends the regular Coding Plan.
+
+Commandcode plan entitlement is model-specific: a `MODEL_NOT_IN_PLAN` refusal
+rests the selected model rather than invalidating the account. The provider's
+[Go plan roster](https://commandcode.ai/docs/plans/go) is the entitlement
+reference, not the unfiltered model catalog.
+
 ## Where to change what
 
 | Change | Start here |

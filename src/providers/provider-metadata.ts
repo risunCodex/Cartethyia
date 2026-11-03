@@ -279,6 +279,19 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
     credentialUrl: "https://chat.z.ai",
   },
   {
+    // The ZCode Start Plan is the free plan minted by the referral flow. The
+    // endpoint refuses bare Anthropic traffic ("3012 request has been blocked
+    // due to unusual activity"); the integration adds the ZCode identity
+    // headers and the system/date/cache-control dress in-process.
+    id: "zcode-start",
+    displayName: "ZCode Start",
+    baseUrl: "https://zcode.z.ai/api/v1/zcode-plan/anthropic",
+    wireFamilyDefault: "messages",
+    hasAdapterUserAgent: true,
+    credentialUrl: "https://zcode.z.ai",
+    credentialHint: "Use the ZCode login JWT, not a Z.AI access token or Coding Plan API key.",
+  },
+  {
     // Factory Droid's LLM proxy. The base URL is the global residency host; an
     // EU account resolves to `api.eu.factory.ai` from the region recorded in
     // account state, because the two hosts serve different accounts.

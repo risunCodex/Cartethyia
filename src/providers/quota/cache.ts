@@ -347,6 +347,35 @@ export async function invalidateQuotaCaches(
   }
 }
 
+/**
+ * Drops one account from EVERY cache lens. Global accounts are shared, but a
+ * release-N writer may have written the same account under a per-tenant lens,
+ * so a global mutation clears all of them rather than assuming which lens this
+ * instance last wrote. Release N+1 collapses this to a single `del` once every
+ * writer goes through `quotaLens()` and no per-tenant copy can exist.
+ */
+export async function invalidateQuotaCacheForAccount(
+  accountId: string,
+  redis: RedisClient | undefined,
+): Promise<void> {
+  const suffix = `:${accountId}`;
+  for (const key of inMemoryQuotaCache.keys()) {
+    if (key.endsWith(suffix)) inMemoryQuotaCache.delete(key);
+  }
+  if (redis === undefined) return;
+  try {
+    let cursor = "0";
+    do {
+      const [next, keys] = await redis.scan(cursor, "MATCH", `${QUOTA_KEY_PREFIX}*${suffix}`, "COUNT", 500);
+      cursor = next;
+      if (keys.length > 0) await redis.del(...keys);
+    } while (cursor !== "0");
+  } catch (error) {
+    metrics.quota_cache_invalidate_failed.inc(1);
+    log.warn("quota cache invalidate-all failed", { accountId, error: String(error) });
+  }
+}
+
 /** Tracked keys in the in-process tier, for the runtime-metrics gauge. */
 export function quotaCacheSize(): number {
   return inMemoryQuotaCache.size;

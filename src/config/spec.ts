@@ -297,6 +297,8 @@ export const CONFIG_SPEC = {
    * an operator on one has no other way to point the login at it.
    */
   CARTETHYIA_GITHUB_ENTERPRISE_DOMAIN: { kind: "text", default: "" },
+  // Only the literal true opts active ZCode accounts into daily gift claims.
+  CARTETHYIA_ZCODE_AUTO_CLAIM: { kind: "text", default: "false" },
   /**
    * Free-tier OpenCode ids the listing still advertises but upstream refuses.
    * Replaces the bundled list outright; the single token `none` trusts the

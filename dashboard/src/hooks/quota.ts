@@ -18,6 +18,8 @@ export interface QuotaWindow {
   readonly remainingPercent: number | null;
   readonly usedPercent?: number | null;
   readonly resetsAt: string | null;
+  readonly modelIds?: readonly string[];
+  readonly startsAt?: string | null;
   readonly used?: number | null;
   readonly limit?: number | null;
   /** Absolute remaining credits/value when the source does not report a percentage. */
@@ -137,6 +139,34 @@ export function useRefreshAccountQuota(accountId: string) {
         // The test stamps lastSuccessAt/lastError on the account row, so the
         // account list (Last check) must refetch too — otherwise the test
         // looks like it did nothing.
+        queryClient.invalidateQueries({ queryKey: queryKeys.providers.all }),
+      ]);
+    },
+  });
+}
+
+export interface GiftClaimResult {
+  readonly state: "claimed" | "already_claimed" | "nothing" | "captcha" | "error" | "partial";
+  readonly claimed: readonly string[];
+  readonly detail: string | null;
+}
+
+/** Explicit operator action; new entitlements invalidate the cached quota views. */
+export function useClaimAccountGifts(accountId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<GiftClaimResult, ApiErrorShape, void>({
+    mutationFn: async () => {
+      const result = await consoleRequest<{ readonly data: GiftClaimResult }>(
+        `/accounts/${encodeURIComponent(accountId)}/claim-gifts`,
+        { method: "POST" },
+      );
+      return result.data;
+    },
+    onSuccess: async (result) => {
+      if (result.claimed.length === 0) return;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.quota.account(accountId), exact: true }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.quota.all }),
         queryClient.invalidateQueries({ queryKey: queryKeys.providers.all }),
       ]);
     },

@@ -13,6 +13,23 @@
  * It restores the real clock in a `finally`, so a failing assertion cannot
  * leave a later test running against frozen time.
  */
+import { setSystemTime } from "bun:test";
+
+/**
+ * Runs `body` with `Date.now()` and `new Date()` pinned to `atMs`.
+ *
+ * Only the wall clock is affected: real timers still fire, so a suite that
+ * needs both a fixed `now` and a live `setTimeout` keeps working.
+ */
+export async function withFrozenTime<T>(atMs: number, body: () => Promise<T> | T): Promise<T> {
+  setSystemTime(new Date(atMs));
+  try {
+    return await body();
+  } finally {
+    setSystemTime();
+  }
+}
+
 /**
  * Runs `body` with Bun's timers detached from the wall clock, then advances
  * them by `advanceMs`.

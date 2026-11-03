@@ -17,11 +17,12 @@ import { useMysteriousAccounts } from "../../../lib/privacy-mode";
 import { lastModelCooldownAt } from "../../../components/AccountCooldown";
 import { Button } from "../../../components/ui/button";
 import { HealthEventsModal } from "../../../components/HealthEventsModal";
+import { ClaimGiftsButton } from "../../../components/ClaimGiftsButton";
 import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Inline } from "../../../components/ui/inline";
 import { Stack } from "../../../components/ui/stack";
-import { formatResetDistance, quotaPillSummary } from "../../../lib/format/quota";
+import { formatResetDistance, quotaPillSummary, quotaWindowState } from "../../../lib/format/quota";
 import { toast } from "../../../lib/toast";
 import { usePoolHealthEvents, usePoolProviderProbe } from "../../../hooks/network";
 import { EmptyState, LoadingState, ErrorState } from "../../../components/ui/state";
@@ -37,25 +38,28 @@ function credentialExpiryLabel(expiresAt: string | undefined): string | undefine
   return formatResetDistance(expiresAt, false);
 }
 
-/**
- * One chip for pooled credits when available, otherwise the lowest independent
- * quota percent. Sits before the inflight chip so the operator sees allowance
- * before concurrency. The aggregation lives in `quotaPillSummary` — the same
- * shapes the server-side totals read, so the pill and the Quota page cannot
- * drift apart.
- */
+/** Shared balance and model availability, followed by information-only grants. */
 function QuotaPill({
   windows,
 }: {
   readonly windows: readonly QuotaWindow[] | undefined;
 }): ReactNode {
   const summary = quotaPillSummary(windows ?? []);
-  if (summary.text === null) return null;
+  const inactive = windows?.filter((window) => quotaWindowState(window) !== "current") ?? [];
   return (
-    <span className="inline-flex items-center gap-2.5 max-w-full px-3.5 py-1 border border-inner-border rounded-chip bg-surface-1 text-text-secondary text-badge leading-normal whitespace-nowrap" data-tone={summary.low ? "warn" : undefined} title={summary.hasCredits ? `${trimNumber(summary.remaining)} credits available of ${trimNumber(summary.total)}` : "Lowest remaining percent across this account's quota windows"}>
-      <span className="text-text-tertiary text-micro font-semibold uppercase tracking-label">Quota</span>
-      {summary.text}
-    </span>
+    <>
+      {summary.text !== null && (
+        <span className="inline-flex items-center gap-2.5 max-w-full px-3.5 py-1 border border-inner-border rounded-chip bg-surface-1 text-text-secondary text-badge leading-normal whitespace-nowrap" data-tone={summary.low ? "warn" : undefined} title={summary.hasCredits ? `${trimNumber(summary.remaining)} credits available` : "Current model grants and account-wide quota limits"}>
+          <span className="text-text-tertiary text-micro font-semibold uppercase tracking-label">Quota</span>
+          {summary.text}
+        </span>
+      )}
+      {inactive.map((window, index) => (
+        <span key={`${window.kind ?? window.label}:${window.startsAt}:${index}`} className="text-badge text-text-tertiary">
+          {window.label}{window.modelIds?.length ? ` · ${window.modelIds.join(", ")}` : ""} · {quotaWindowState(window) === "expired" ? "Expired" : `Not started yet · Starts ${new Date(window.startsAt!).toLocaleString()}`}
+        </span>
+      ))}
+    </>
   );
 }
 
@@ -370,6 +374,9 @@ export function AccountRow({
         </div>
 
         <div className="account-row-actions flex items-center justify-end gap-3 flex-wrap">
+          {providerId === "zcode-start" && !isPool && (
+            <ClaimGiftsButton accountId={account.id} accountName={label} />
+          )}
           {!isPool ? (
             <Button
               size="icon"

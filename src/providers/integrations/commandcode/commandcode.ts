@@ -6,13 +6,15 @@ import { canContainToolResult, joinTextParts, toolCallParts, toolResultParts } f
 import {
   classifyUpstreamError,
   extractUpstreamMessage,
+  mapUpstreamHttpError,
   upstreamErrorIdentifier,
 } from "../../../transport/failure-policy";
-import { createApiKeyAdapter } from "../../configured-provider";
-import type { CanonicalEvent, CanonicalRequest, CanonicalStopReason, ContentPart } from "../../../protocol/canonical-model";
+import { postUpstreamJson } from "../../../protocol/upstream/post-json";
+import type { CanonicalEvent, CanonicalRequest, CanonicalStopReason, ContentPart, UsageRecord } from "../../../protocol/canonical-model";
 import { isRecord, readNumber, readString, resolveImageSource, splitDataUrl } from "../../../protocol/codecs";
 import { usageFromProvider } from "../../provider-usage";
 import { readCredentialSecret, type ProviderDispatchTarget, type ProviderAdapter, type ProviderDispatchContext } from "../../provider-contracts";
+import { abortGatewayError } from "../../operations/upstream-deadline";
 import { providerBaseUrl } from "../../provider-metadata";
 import { defineModel } from "../../provider-model-definition";
 import type { ModelDefinition } from "../../provider-model-definition";
@@ -446,7 +448,7 @@ export function transformLine(line: string, state: StreamState, seqBase: number)
     if (!text) return [];
     const split = state.think.push(text);
     const events: CanonicalEvent[] = [];
-    if (split.reasoning) events.push({ type: "content_delta", sequence_number: seqBase, content: { kind: "reasoning", payload: null, summary: split.reasoning } } as CanonicalEvent);
+    if (split.reasoning) events.push({ type: "content_delta", sequence_number: seqBase++, content: { kind: "reasoning", payload: null, summary: split.reasoning } } as CanonicalEvent);
     if (split.text) events.push({ type: "content_delta", sequence_number: seqBase, content: { kind: "text", text: split.text } } as CanonicalEvent);
     return events;
   }
@@ -481,9 +483,11 @@ export function transformLine(line: string, state: StreamState, seqBase: number)
   if (type === "finish") {
     const reason = state.finishReason ?? readString(event, "finishReason") ?? "stop";
     const canonicalReason = ccMapFinishReason(reason);
-    const events: CanonicalEvent[] = [
-      { type: "terminal", sequence_number: seqBase, state: "complete", stop_reason: canonicalReason, provider_stop_reason: reason } as CanonicalEvent,
-    ];
+    const rest = state.think.flush();
+    const events: CanonicalEvent[] = [];
+    if (rest.reasoning) events.push({ type: "content_delta", sequence_number: seqBase++, content: { kind: "reasoning", payload: null, summary: rest.reasoning } });
+    if (rest.text) events.push({ type: "content_delta", sequence_number: seqBase++, content: { kind: "text", text: rest.text } });
+    let usage: UsageRecord | undefined;
     if (state.usage) {
       const prompt = readNumber(state.usage, "promptTokens") ?? readNumber(state.usage, "inputTokens") ?? 0;
       const completion = readNumber(state.usage, "completionTokens") ?? readNumber(state.usage, "outputTokens") ?? 0;
@@ -496,9 +500,9 @@ export function transformLine(line: string, state: StreamState, seqBase: number)
         cached_tokens: cached,
         cache_creation_input_tokens: readNumber(state.usage, "cacheWriteTokens") ?? undefined,
       } as unknown as Record<string, unknown>);
-      // Append usage to terminal
-      (events[0] as unknown as Record<string, unknown>)["usage"] = usageRecord;
+      usage = usageRecord;
     }
+    events.push({ type: "terminal", sequence_number: seqBase, state: "complete", stop_reason: canonicalReason, provider_stop_reason: reason, ...(usage === undefined ? {} : { usage }) });
     return events;
   }
   if (type === "error") {
@@ -542,30 +546,29 @@ export function transformLine(line: string, state: StreamState, seqBase: number)
   return [];
 }
 
-/** NDJSON transform — beta-style simple loop + signal-aware read for abort/timeout propagation. */
-export async function* transformNdjson(body: ReadableStream<Uint8Array>, signal: AbortSignal): AsyncIterable<CanonicalEvent> {
+/** NDJSON decoding uses the request signal after the opening deadline is released. */
+export async function* transformNdjson(body: ReadableStream<Uint8Array>, signal: AbortSignal, model: string): AsyncIterable<CanonicalEvent> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const state: StreamState = { toolIndexById: new Map(), nextToolIndex: 0, finishReason: undefined, usage: undefined, think: new ThinkSplitter() };
   let buffer = "";
-  let hasTerminal = false;
   let seq = 1;
-  // initial response_start
-  yield { type: "response_start", sequence_number: seq++, model: "commandcode" } as CanonicalEvent;
 
-  const readWithAbort = (): Promise<{ done: boolean; value?: Uint8Array }> => {
-    if (signal.aborted) throw new GatewayError("transport_closed", 499, "Command Code stream aborted (request {requestId}). Send it again whenever ready 🙃");
-    const { promise, resolve, reject } = Promise.withResolvers<{ done: boolean; value?: Uint8Array }>() as unknown as { promise: Promise<{ done: boolean; value?: Uint8Array }>; resolve: (v: unknown) => void; reject: (e: unknown) => void };
-    const onAbort = (): void => {
-      if (signal.aborted) reject(new GatewayError("transport_closed", 499, "Command Code stream aborted (request {requestId}). Send it again whenever ready 🙃"));
-      else reject(new GatewayError("platform_unavailable", 502, "Command Code stream error (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream"));
-    };
+  const readWithAbort = async (): Promise<{ readonly done: boolean; readonly value?: Uint8Array | undefined }> => {
+    if (signal.aborted) throw signal.reason;
+    const { promise, resolve, reject } = Promise.withResolvers<{ readonly done: boolean; readonly value?: Uint8Array | undefined }>();
+    const onAbort = (): void => reject(signal.reason);
     signal.addEventListener("abort", onAbort, { once: true });
-    void reader.read().then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
-    return promise;
+    void reader.read().then(resolve, reject);
+    try {
+      return await promise;
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
   };
 
   try {
+    yield { type: "response_start", sequence_number: seq++, model };
     while (true) {
       const { done, value } = await readWithAbort();
       if (done) break;
@@ -575,20 +578,11 @@ export async function* transformNdjson(body: ReadableStream<Uint8Array>, signal:
         const line = buffer.slice(0, nl).trim();
         buffer = buffer.slice(nl + 1);
         if (line) {
-          let evs: CanonicalEvent[] = [];
-          try {
-            evs = transformLine(line, state, seq);
-          } catch (e) {
-            throw e;
-          }
-          for (const ev of evs) {
-            // Strictly increasing per line, in emission order: the Responses
-            // surface throws on any non-monotonic sequence mid-stream, after
-            // partial bytes are already flushed. No special-casing for
-            // dual-event lines — order is order.
-            (ev as unknown as Record<string, unknown>)["sequence_number"] = seq++;
-            if (ev.type === "terminal") hasTerminal = true;
-            yield ev;
+          const events = transformLine(line, state, seq);
+          seq += events.length;
+          for (const event of events) {
+            yield event;
+            if (event.type === "terminal") return;
           }
         }
         nl = buffer.indexOf("\n");
@@ -597,101 +591,71 @@ export async function* transformNdjson(body: ReadableStream<Uint8Array>, signal:
     buffer += decoder.decode();
     const tail = buffer.trim();
     if (tail) {
-      for (const ev of transformLine(tail, state, seq)) {
-        if (ev.type === "terminal") hasTerminal = true;
-        (ev as unknown as Record<string, unknown>)["sequence_number"] = seq++;
-        yield ev;
+      const events = transformLine(tail, state, seq);
+      seq += events.length;
+      for (const event of events) {
+        yield event;
+        if (event.type === "terminal") return;
       }
     }
     const rest = state.think.flush();
-    if (rest.reasoning) yield { type: "content_delta", sequence_number: seq++, content: { kind: "reasoning", payload: null, summary: rest.reasoning } } as CanonicalEvent;
-    if (rest.text) yield { type: "content_delta", sequence_number: seq++, content: { kind: "text", text: rest.text } } as CanonicalEvent;
-    if (!hasTerminal) {
-      // NDJSON ended with no terminal envelope: truncated, never complete.
-      yield { type: "terminal", sequence_number: seq++, state: "failed", stop_reason: ccMapFinishReason(state.finishReason ?? "stop"), provider_stop_reason: state.finishReason ?? "stop" } as CanonicalEvent;
-    }
+    if (rest.reasoning) yield { type: "content_delta", sequence_number: seq++, content: { kind: "reasoning", payload: null, summary: rest.reasoning } };
+    if (rest.text) yield { type: "content_delta", sequence_number: seq++, content: { kind: "text", text: rest.text } };
+    // NDJSON ended with no terminal envelope: truncated, never complete.
+    yield { type: "terminal", sequence_number: seq++, state: "failed", stop_reason: ccMapFinishReason(state.finishReason ?? "stop"), provider_stop_reason: state.finishReason ?? "stop" };
   } finally {
-    try {
-      reader.releaseLock?.();
-    } catch {
-      // Best-effort reader unlock during stream cleanup.
-    }
-    void reader.cancel().catch(() => {});
+    void reader.cancel(signal.reason).catch(() => {});
+    reader.releaseLock();
   }
 }
 
-// CommandCode model catalog.
-
-
-
-// ProviderAdapter — the Provider API serves three wires, so dispatch is the
-// shared OpenAI-compatible adapter rather than one bespoke NDJSON reader.
-//
-// Generation goes to `/alpha/generate` for every model: that is the CLI's own
-// surface and the one the reference client calls, and it does not vary the path
-// by the wire a model row declares. `/provider/v1` is the catalog surface — it
-// answers `GET /models`, which discovery still uses — so a completion posted to
-// `/provider/v1/<wire>` was reaching a surface the CLI never calls to
-// generate. The wire family still decides how the body is shaped; only the
-// endpoint is shared.
+// The CLI generation surface takes a proprietary envelope and returns NDJSON
+// regardless of the catalog row's wire family.
 
 interface CommandCodeAdapterOptions {
   readonly fetch?: typeof fetch;
 }
 
-function commandCodeIdentityHeaders(_token: string): Record<string, string> {
-  return {
-    "x-command-code-version": getCommandCodeVersion(),
-    "x-cli-environment": "production",
-    "x-taste-learning": "true",
-    "x-project-slug": "cartethyia",
-    "user-agent": "cli",
-    // Per-request, as the CLI client sends it. The upstream expects a session
-    // id on every generate call and the reference client mints a fresh UUID
-    // for each one; sending a constant correlated requests that had nothing
-    // to do with each other.
-    "x-session-id": randomUUID(),
-  };
-}
-
-function providerApiAdapter(options: CommandCodeAdapterOptions): ProviderAdapter {
-  return createApiKeyAdapter(
-    {
-      provider_id: COMMANDCODE_PROVIDER_ID,
-      // The host, not the `/provider/v1` base: generation is a sibling
-      // surface, so every wire resolves under the host and the path below
-      // supplies the CLI endpoint. Nesting it under `/provider/v1` produced a
-      // URL that is neither surface.
-      base_url: COMMANDCODE_HOST,
-      endpoint_paths_by_wire_family: {
-        // Every wire, not one per family: the reference client sends all
-        // generation to `/alpha/generate` regardless of the row's declared
-        // wire, so dispatch must not fan out across three paths.
-        chat: COMMANDCODE_GENERATE_PATH,
-        responses: COMMANDCODE_GENERATE_PATH,
-        messages: COMMANDCODE_GENERATE_PATH,
-      },
-      buildExtraHeaders: async (context: ProviderDispatchContext) =>
-        commandCodeIdentityHeaders(await readCredentialSecret(context.credential, "Command Code bearer token is required")),
-    },
-    options.fetch,
-  );
-}
 
 class CommandCodeAdapter implements ProviderAdapter {
   readonly provider_id = COMMANDCODE_PROVIDER_ID;
-  private readonly inner: ProviderAdapter;
+  private readonly fetchFn: typeof fetch;
 
   constructor(options: CommandCodeAdapterOptions = {}) {
-    this.inner = providerApiAdapter(options);
+    this.fetchFn = options.fetch ?? globalThis.fetch;
   }
 
-  dispatch(
+  async *dispatch(
     request: CanonicalRequest,
     candidate: ProviderDispatchTarget,
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent> {
-    return this.inner.dispatch(request, candidate, context);
+    const token = readCredentialSecret(context.credential, "Command Code bearer token is required");
+    const sessionId = randomUUID();
+    const payload = buildRequest(candidate.model_id, {
+      messages: request.messages,
+      tools: (request.tools ?? []).map(({ name, description, jsonSchema }) => ({ name, description, jsonSchema })),
+      maxOutputTokens: request.generation_controls.max_output_tokens ?? request.generation_controls.max_tokens ?? request.generation_controls.max_completion_tokens ?? null,
+      temperature: request.generation_controls.temperature ?? null,
+      topP: request.generation_controls.top_p ?? null,
+      reasoningEffort: request.reasoning?.effort ?? null,
+    }, sessionId, [request.system, request.instructions].map((parts) => joinTextParts(parts ?? [])).filter(Boolean).join("\n"));
+    const { res, release } = await postUpstreamJson(
+      `${COMMANDCODE_HOST}${COMMANDCODE_GENERATE_PATH}`,
+      await headers(sessionId, token),
+      payload,
+      context,
+      context.outbound_fetch ?? this.fetchFn,
+    );
+    release();
+    try {
+      if (!res.ok) throw await mapUpstreamHttpError(res, COMMANDCODE_PROVIDER_ID);
+      if (!res.body) throw new GatewayError("platform_unavailable", 502, "Command Code returned an empty stream (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
+      // NDJSON carries no model identity; use the selected model, not the provider id.
+      yield* transformNdjson(res.body, context.abort_signal, candidate.model_id);
+    } catch (error: unknown) {
+      throw abortGatewayError({ signal: context.abort_signal, release }, error) ?? error;
+    }
   }
 }
 
