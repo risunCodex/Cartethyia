@@ -1,9 +1,4 @@
----
-name: cartethyia-engineering-proposal
-description: "Write a Cartethyia implementation proposal: audit the codebase first, produce a decision-ready markdown proposal in documentation/proposals/ with a consistent format, link the owning engineering skill and references, and keep it replayable by another agent."
----
-
-# Cartethyia engineering proposal
+# Proposal workflow
 
 A proposal is a decision document, not a plan file. It exists to let the
 operator (or another agent) decide *whether* and *how* to build before any code
@@ -20,7 +15,7 @@ be read, not to be discussed into existence.
 - A request that starts with "audit dulu" or "bikin proposal".
 
 For small, single-owner changes, skip the proposal and implement directly. This
-skill exists to prevent the *wide* change from being designed inside a code
+flow exists to prevent the *wide* change from being designed inside a code
 edit.
 
 ## Workflow
@@ -41,8 +36,8 @@ edit.
    master proposal in `documentation/proposals/` with an executive summary
    table (finding → verdict → behavior-change? → severity → effort) and
    tiered priorities. The parts stay as the per-area source of truth.
-3. **Find the canonical owner of the change.** Read the closest skill from
-   `.skills/cartethyia-engineering/SKILL.md` and name it in the proposal. A
+3. **Find the canonical owner of the change.** Read the closest section of
+   `SKILL.md` in this engineering skill and name it in the proposal. A
    proposal that spans routing + schema + dashboard names all three.
 4. **Verify the proposal's code claims.** Every "current behavior" statement
    must name the file/symbol that proves it. If you cannot point at code, say
@@ -151,17 +146,14 @@ and the master composes them.
 
 ## Links
 
-- `.skills/cartethyia-engineering/SKILL.md` — entry point, canonical owners,
-  fix-vs-hide rules, cutover.
-- `.skills/cartethyia-engineering/references/verification.md` — the gates a
-  proposal's test list must satisfy once implemented.
-- `.skills/cartethyia-engineering/references/taste.md` — how the implementation
-  should read.
-- `.skills/cartethyia-engineering/references/development.md` — how to add a
-  feature, contract/schema procedure.
-- `.skills/cartethyia-schema-telemetry/SKILL.md` — when the proposal includes a
+- `SKILL.md` — entry point, canonical owners, fix-vs-hide rules, cutover.
+- `verification.md` — the gates a proposal's test list must satisfy once
+  implemented.
+- `taste.md` — how the implementation should read.
+- `development.md` — how to add a feature, contract/schema procedure.
+- `../../cartethyia-schema-telemetry/SKILL.md` — when the proposal includes a
   migration or telemetry.
-- `.skills/cartethyia-dashboard/SKILL.md` — when the proposal includes a
+- `../../cartethyia-dashboard/SKILL.md` — when the proposal includes a
   dashboard surface.
 
 ## Done

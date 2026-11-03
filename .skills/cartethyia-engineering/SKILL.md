@@ -17,8 +17,8 @@ Entry point for repo work. Most tasks belong to a focused skill — pick it firs
 | What a model can do — vision, tools, reasoning, free tier — and proving it | `cartethyia-provider-catalog` → `references/capabilities.md` |
 | Remove a bundled provider and its leftover global row | `cartethyia-provider-catalog` → `references/provider-removal.md` |
 | Understand undocumented behavior by tracing this repo's own code | `cartethyia-reverse-engineering` |
-| Write a decision-ready implementation proposal (audit first, format, links) | `cartethyia-engineering-proposal` |
-| Multi-area campaign: parallel audit → composed proposal → approval → parallel execution → ✅/⛔ marking | `cartethyia-engineering-proposal` |
+| Write a decision-ready implementation proposal (audit first, format, links) | `references/proposal.md` |
+| Multi-area campaign: parallel audit → composed proposal → approval → parallel execution → ✅/⛔ marking | `references/proposal.md` |
 | Image generation wires, catalog rows, and account entitlement | `cartethyia-provider-catalog` |
 | Account health, cooldown class, pool selection, retries, leases | `cartethyia-health-routing` |
 | Add/change a `src/console/` domain; contract→store→dashboard mirror | `cartethyia-console-api` |
@@ -42,7 +42,7 @@ Entry point for repo work. Most tasks belong to a focused skill — pick it firs
 3. **Act immediately.** Read, search, reproduce, edit, or run a command. Never
    spend a turn on planning alone. For a wide change (multiple owners, a
    migration, a contract), the "act" is the proposal flow — see
-   `cartethyia-engineering-proposal`: parallel per-area audit subagents → one
+   `references/proposal.md`: parallel per-area audit subagents → one
    composed proposal → operator approval → parallel execution on file-disjoint
    clusters → full validation → honest ✅/⛔ markers → single local commit.
    Do not implement a wide change by editing directly.

@@ -19,9 +19,9 @@
 6. Run `verification.md`.
 
 If the change spans more than one owner, or a migration, or a contract, do not
-edit directly — route through the proposal flow
-(`cartethyia-engineering-proposal`): parallel per-area audit, one composed
-proposal, operator approval, then parallel execution on file-disjoint clusters.
+edit directly — route through the proposal flow (`proposal.md`): parallel
+per-area audit, one composed proposal, operator approval, then parallel
+execution on file-disjoint clusters.
 
 ## Add a provider
 
