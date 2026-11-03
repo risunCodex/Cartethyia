@@ -206,6 +206,20 @@ describe("GitHub Copilot Auto routing", () => {
         type: "response.created",
         response: { id: "response-stream-1", model: "gpt-6-luna", status: "in_progress" },
       },
+      {
+        type: "response.reasoning_summary_text.delta",
+        item_id: "reasoning-item-1",
+        output_index: 0,
+        summary_index: 0,
+        delta: "When it reaches",
+      },
+      {
+        type: "response.reasoning_summary_text.delta",
+        item_id: "reasoning-item-2",
+        output_index: 1,
+        summary_index: 0,
+        delta: "GitHub Copilot's parser",
+      },
       { type: "response.output_text.delta", delta: "routed answer" },
       {
         type: "response.completed",
@@ -267,13 +281,20 @@ describe("GitHub Copilot Auto routing", () => {
     expect(events.map((event) => event.type)).toEqual([
       "response_start",
       "content_delta",
+      "content_delta",
+      "content_delta",
       "terminal",
     ]);
-    expect(events[1]).toMatchObject({
+    expect(events[3]).toMatchObject({
       type: "content_delta",
       content: { kind: "text", text: "routed answer" },
     });
+    const clientResponse = JSON.parse(
+      new TextDecoder().decode(chatAdapter.encode(events).bytes),
+    ) as { choices: Array<{ message: { reasoning_content?: string } }> };
+    expect(clientResponse.choices[0]?.message.reasoning_content)
+      .toBe("When it reaches GitHub Copilot's parser");
     expect(JSON.stringify(events)).not.toContain("Auto selected GPT-6 Luna.");
-    expect(events[2]).toMatchObject({ type: "terminal", state: "complete" });
+    expect(events[4]).toMatchObject({ type: "terminal", state: "complete" });
   });
 });

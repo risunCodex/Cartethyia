@@ -15,8 +15,18 @@ describe("reasoning summary separator", () => {
     expect(reasoningSummarySeparator(first, second, "Gil", "iran")).toBe("");
   });
 
-  test("breaks only when the previous item ended a sentence", () => {
+  test("does not start a new paragraph just because the next item starts with a capital", () => {
+    expect(reasoningSummarySeparator(first, second, "I will inspect", "The parser"))
+      .toBe(" ");
+  });
+
+  test("starts a new paragraph when the previous item ended a sentence", () => {
     expect(reasoningSummarySeparator(first, second, "selesai.", "Giliran")).toBe("\n\n");
+  });
+
+  test("starts a new paragraph for an explicit Markdown block", () => {
+    expect(reasoningSummarySeparator(first, second, "Current thought", "**Next step**"))
+      .toBe("\n\n");
   });
 
   test("joins a continuation of the same item without a break", () => {

@@ -94,7 +94,10 @@ describe("Responses reasoning decoder", () => {
     ) as { choices: Array<{ message: { reasoning_content?: string } }> };
 
     expect(clientResponse.choices[0]?.message.reasoning_content).toBe(
-      "**Summarizing in Indonesian**\n\nSaya akan menyam laju tangkapan per kucing.",
+      // A fragmented summary joins without losing text; the separator between
+      // a part that ends mid-sentence and a capitalized continuation is a
+      // space, not a paragraph break (see reasoningSummarySeparator).
+      "**Summarizing in Indonesian** Saya akan menyam laju tangkapan per kucing.",
     );
   });
 
