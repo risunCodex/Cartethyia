@@ -77,6 +77,30 @@ dbDescribe("api key shared page", () => {
     expect(page.rows.map((row) => row.label)).toEqual(["mike", "alpha"]);
   });
 
+  test("lists active bans from share children, excluding expired and revoked keys", async () => {
+    const pool = await getTestPool();
+    const activeChildId = childIds[0]!;
+    const expiredChildId = childIds[2]!;
+    const revokedChildId = childIds[1]!;
+    await pool.query(
+      "UPDATE api_keys SET banned_at = now(), banned_until = NULL WHERE id = $1",
+      [activeChildId],
+    );
+    await pool.query(
+      "UPDATE api_keys SET banned_at = now(), banned_until = now() - interval '1 minute' WHERE id = $1",
+      [expiredChildId],
+    );
+    await pool.query(
+      "UPDATE api_keys SET banned_at = now(), banned_until = NULL WHERE id = $1",
+      [revokedChildId],
+    );
+
+    const banned = await new DrizzleApiKeyStore(getDb()).listActiveBanned(tenantId);
+    expect(banned.map((row) => row.id)).toEqual([activeChildId]);
+    expect(banned[0]?.parentKeyId).toBe(templateId);
+    expect(banned[0]?.bannedAt).toBeInstanceOf(Date);
+  });
+
   test("consumed is cumulative: template counter plus family telemetry", async () => {
     const pool = await getTestPool();
     // Seed a manual template counter, then a family telemetry total row.

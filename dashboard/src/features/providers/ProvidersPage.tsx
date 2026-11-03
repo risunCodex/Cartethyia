@@ -899,6 +899,27 @@ function compareConfiguredProviders(a: ProviderResponse, b: ProviderResponse): n
   return (a.label || a.displayName).localeCompare(b.label || b.displayName);
 }
 const COLLAPSED_SECTIONS_KEY = "cartethyia.providerSectionsCollapsed";
+const SHOW_ALL_SECTIONS_KEY = "cartethyia:providers:display-mode";
+
+function readShowAllSections(): boolean | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const stored = window.localStorage.getItem(SHOW_ALL_SECTIONS_KEY);
+    if (stored === "all") return true;
+    if (stored === "paginated") return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeShowAllSections(showAll: boolean): void {
+  try {
+    window.localStorage.setItem(SHOW_ALL_SECTIONS_KEY, showAll ? "all" : "paginated");
+  } catch {
+    // Keep the current in-memory choice when browser storage is unavailable.
+  }
+}
 
 /**
  * The section default-collapsed on first visit (G-05 d1). It is the largest
@@ -1057,7 +1078,14 @@ export default function Providers(): ReactNode {
   const SECTION_PAGE_SIZE = 8;
   const [sectionPages, setSectionPages] = useState<Readonly<Record<string, number>>>({});
   // When set, every section renders all its providers (pagination disabled).
-  const [showAllSections, setShowAllSections] = useState(false);
+  const [showAllSections, setShowAllSections] = useState(() => readShowAllSections() ?? false);
+  const toggleShowAllSections = () => {
+    setShowAllSections((current) => {
+      const next = !current;
+      writeShowAllSections(next);
+      return next;
+    });
+  };
   const pageFor = (title: string) => sectionPages[title] ?? 1;
   const setPageFor = (title: string) => (page: number) =>
     setSectionPages((current) => ({ ...current, [title]: page }));
@@ -1138,7 +1166,7 @@ export default function Providers(): ReactNode {
           variant="ghost"
           size="sm"
           icon={showAllSections ? <Rows3 size={12} /> : <LayoutGrid size={12} />}
-          onClick={() => setShowAllSections((value) => !value)}
+          onClick={toggleShowAllSections}
           title={
             showAllSections
               ? "Paginate each section (8 per page)"

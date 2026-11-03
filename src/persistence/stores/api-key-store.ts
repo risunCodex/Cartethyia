@@ -1,6 +1,6 @@
 // Persisted API-key store: the console API-key domain and gateway authentication both consume this boundary.
 
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { nextSortIndex, reorderSortIndex, type SortOrderDb } from "../sort-order";
 import { getDbHandle } from "../boot";
 import type { CartethyiaDatabase } from "../db-handle";
@@ -253,6 +253,8 @@ async function writeSharePopup(
 /** Explicit persistence boundary. Production must provide this; there is no fallback store. */
 export interface ApiKeyStore {
   list(tenantId: string): Promise<readonly ApiKeyRecord[]>;
+  /** Active, non-revoked bans for one tenant, including share children. */
+  listActiveBanned(tenantId: string): Promise<readonly ApiKeyRecord[]>;
   get(tenantId: string, keyId: string): Promise<ApiKeyRecord | undefined>;
   listChildren(tenantId: string, parentKeyId: string): Promise<readonly ApiKeyRecord[]>;
   revokeChildrenByScope(
@@ -381,6 +383,22 @@ export class DrizzleApiKeyStore implements ApiKeyStore {
       .orderBy(sql`(${apiKeys.parentKeyId} IS NOT NULL)`, apiKeys.sortIndex, apiKeys.createdAt, apiKeys.id)
       .limit(1000);
     return this.withPopups(this.db, rows);
+  }
+  async listActiveBanned(tenantId: string): Promise<readonly ApiKeyRecord[]> {
+    const now = new Date();
+    const rows = await this.db
+      .select()
+      .from(apiKeys)
+      .where(
+        and(
+          eq(apiKeys.tenantId, tenantId),
+          isNotNull(apiKeys.bannedAt),
+          isNull(apiKeys.revokedAt),
+          or(isNull(apiKeys.bannedUntil), gt(apiKeys.bannedUntil, now)),
+        ),
+      )
+      .orderBy(desc(apiKeys.bannedAt), apiKeys.id);
+    return rows.map((row) => this.map(row));
   }
 
   /** Rewrites the list order for one tenant; `keyIds` is the full order. */

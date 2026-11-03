@@ -3,7 +3,7 @@
  * Show All / Paginated toggle (next to Hide unconfigured) that switches the
  * whole page between paginated and full-list rendering.
  */
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { mount } from "../helpers/render";
 import { registerDom } from "../helpers/dom";
@@ -14,6 +14,7 @@ import type { ProviderResponse } from "../../src/data/contracts";
 registerDom();
 
 const COLLAPSED_KEY = "cartethyia.providerSectionsCollapsed";
+const DISPLAY_MODE_KEY = "cartethyia:providers:display-mode";
 
 // The "Other API Key Providers" section is default-collapsed on first visit.
 // Expand it explicitly so the paginated section actually renders.
@@ -83,6 +84,10 @@ function paginationControls(container: HTMLElement): Element | null {
 }
 
 describe("ProvidersPage — section pagination", () => {
+  afterEach(() => {
+    localStorage.removeItem(DISPLAY_MODE_KEY);
+  });
+
   test("renders 8 of 12 cards with pagination by default", async () => {
     expandSections();
     const view = await mount(createElement(Providers), { seed });
@@ -116,5 +121,25 @@ describe("ProvidersPage — section pagination", () => {
     expect(paginationControls(view.container)).not.toBeNull();
 
     view.unmount();
+  });
+
+  test("restores Show All preference after remount", async () => {
+    expandSections();
+    localStorage.removeItem(DISPLAY_MODE_KEY);
+    const firstView = await mount(createElement(Providers), { seed });
+    await firstView.flush();
+    await firstView.act(() => clickToggle(firstView.container));
+    await firstView.flush();
+
+    expect(visibleIds(firstView.container)).toHaveLength(12);
+    expect(localStorage.getItem(DISPLAY_MODE_KEY)).toBe("all");
+    firstView.unmount();
+
+    const secondView = await mount(createElement(Providers), { seed });
+    await secondView.flush();
+    expect(visibleIds(secondView.container)).toHaveLength(12);
+    expect(toggleButton(secondView.container)?.textContent?.trim()).toBe("Paginated");
+    expect(paginationControls(secondView.container)).toBeNull();
+    secondView.unmount();
   });
 });

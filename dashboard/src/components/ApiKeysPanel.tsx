@@ -480,7 +480,7 @@ export function ApiKeysPanel(): ReactNode {
 
       <ApiKeySecretDialog secret={revealedSecret} onClose={() => setRevealedSecret(null)} />
 
-      {bansOpen ? <BannedKeysDialog keys={keys} onClose={() => setBansOpen(false)} /> : null}
+      {bansOpen ? <BannedKeysDialog onClose={() => setBansOpen(false)} /> : null}
 
       <Dialog
         open={seeReasonTarget !== null}
