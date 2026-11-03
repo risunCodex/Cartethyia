@@ -107,7 +107,13 @@ and pitfalls) live in one general reference:
 
 **[`references/unpacking-and-wire-capture.md`](references/unpacking-and-wire-capture.md)**
 
-Use it when the investigation leaves Cartethyia's own source for a client
+For parsing minified bundles and encrypted/packed content recovered from a
+blob, see
+**[`references/minified-and-encrypted-parsing.md`](references/minified-and-encrypted-parsing.md)**
+(balanced-brace JSON carving, string-marker search, entropy/crypto checks,
+and the "stop guessing → capture the wire" fallback).
+
+Use them when the investigation leaves Cartethyia's own source for a client
 binary (CLI, desktop app, or SDK). Inspect statically — never launch an
 installer or extracted executable to discover behavior — and keep evidence in
 scratch (`D:\tmp\scratch\`), redacting credentials.
@@ -117,7 +123,7 @@ scratch (`D:\tmp\scratch\`), redacting credentials.
 Per-provider findings produced with those techniques live in
 `documentation/research/<provider>/` — the canonical home for dated evidence
 ledgers, not this skill. The current inventory (Kiro, OpenCode, Cursor,
-CodeBuddy, Qoder, Grok, Copilot) is in
+CodeBuddy, Qoder, Grok, Copilot, Antigravity) is in
 [`references/unpacking-and-wire-capture.md`](references/unpacking-and-wire-capture.md#5-where-per-provider-findings-live).
 
 When a reverse-engineered wire change lands in the adapter, remember it passes

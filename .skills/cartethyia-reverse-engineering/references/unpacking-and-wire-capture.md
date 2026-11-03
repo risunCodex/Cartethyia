@@ -22,10 +22,58 @@ Grok); per-provider findings live in `documentation/research/` (see below).
 | Artifact | Tool / recipe |
 |---|---|
 | `.dmg` (macOS) | `7z x <file>.dmg` → `4.hfs` (HFS+), then `7z x 4.hfs` → app volume |
-| `.exe` (Inno Setup) | `innoextract` (use a recent fork for Setup ≥6.4; 1.9 errors on 6.4.0.1). Alternative: `7z x` — Inno 6.4 payload is not a bare LZMA stream (`[0]` is the container; offsets 4–64 fail) |
+| `.exe` (Inno Setup) | `innoextract` (use a recent fork for Setup ≥6.4; 1.9 errors on 6.4.0.1). For 6.4+ use the manual LZMA recovery below — `7z x` only yields the compressed container `[0]` (not a bare LZMA stream) |
 | `.msi` | `7z x` → unpacked payload (may contain a single-file executable) |
 | `app.asar` (Electron) | `bun scripts/tools/asar-unpack.mjs <app.asar> <outdir>`. Nativev2 header: `[u32 @0]=4`, `[u32 @4]=header+8`, `[u32 @8]=header+4`, `[u32 @12]=header JSON length`, JSON begins at offset 16. **Offsets are relative to the data section start (`16 + headerSize`), not absolute** — reading them absolute yields garbage (verified) |
 | Single-file Bun/Rust executables | `7z x` often extracts embedded bundles; otherwise string-scan the binary directly (see §2) |
+
+### Inno Setup ≥6.4 (e.g. Antigravity IDE 2.6.0)
+
+`innoextract 1.9` errors on Setup 6.4.0.1 ("Unexpected setup data
+version"). Manual recovery works. There are **two independent payloads**:
+the setup headers (file table) and the data blob. Proven on
+Antigravity IDE 2.6.0 (Google VS Code fork).
+
+**A. Loader offset table — where everything lives.**
+Inno ≥5.1.5 stores offsets in a PE resource named `11111` (RCDATA).
+`7z x` extracts it (`.rsrc\0\RCDATA\11111`, 44 bytes). Parse per
+innoextract `src/loader/offsets.cpp`:
+- magic 12B (`rDlPtS\xcd\xe6\xd7{\x0b*` for 5.1.5+), revision u32 (=1),
+  then (checksum-fed) u32s: `exe_offset`, `exe_compressed_size` (=0 for
+  ≥4.1.6), `exe_uncompressed_size`, `exe_crc32`, `header_offset`,
+  `data_offset`, trailing `expected_checksum`.
+- Verify: `header_offset` holds the 64-byte version string
+  (`Inno Setup Setup Data (6.4.0.1)`); `data_offset` points at the
+  `zlb\x1A` data container.
+
+**B. Setup-header block (file table).**
+At `header_offset + 64` is the block header:
+`[crc32 u32][stored_size u32][compression u8]` (compression 1 = LZMA1;
+crc32 covers the next 5 bytes — verified). The following `stored_size`
+bytes are **NOT one LZMA stream**: they are chunked blocks, each
+`[crc32 u32][payload up to 4096B]` (last chunk shorter). Strip each crc,
+concatenate — the result is a raw LZMA1 stream (`5D ...` props, no size
+header). Decompress with Python `lzma.FORMAT_RAW` (filters lc/lp/pb from
+prop byte, dict_size u32 LE). Output is the setup header: UTF-16LE binary
+strings then counts (language/message/permission/type/component/task/
+directory/file/data_entry/icon/ini/registry/delete/uninstall_delete/run/
+uninstall_run).
+- **Caveat.** Inno 6.4 field order differs from 6.1: observed non-numeric
+  bytes where 6.1 expects counts (ASCII `IFPS` lands in the
+  permission_count slot; file_count read 0 despite a huge data blob). Treat
+  6.4 as an unknown variant — do not trust 6.1 offsets.
+
+**C. Data blob.**
+`data_offset` is the data container: `zlb\x1A` + raw LZMA1 (props
+immediately, no size header). Build a standalone 13-byte header (5 prop
+bytes + 8×0xFF unknown size) and feed it to `7z x` → decompresses to a
+~950 MB concatenated payload (often begins MZ; Electron / VS-Code-fork
+apps carry `resources/` files sequentially in it). This is the file
+content; names/offsets come from the header file table (B).
+
+PowerShell gotcha: `[0]` in a path is treated as a wildcard character
+class — use `-LiteralPath` (or `Resolve-Path -LiteralPath`) when reading
+files named like `[0]`.
 
 ## 2. String scanning
 
@@ -47,6 +95,9 @@ Grok); per-provider findings live in `documentation/research/` (see below).
   Use it to reformat extracted builder regions before reading them.
 - Search for behavior markers rather than reading linearly: e.g. `baseURL`,
   `/inference`, header builders, `User-Agent` construction, auth builders.
+- See [`minified-and-encrypted-parsing.md`](minified-and-encrypted-parsing.md)
+  for the full recipe: surviving strings, carving JSON from concatenated blobs
+  (balanced-brace scanner), and handling encrypted/packed streams.
 
 ## 4. Capturing a client's HTTPS traffic (Windows, Rust/Electron/CLI)
 
@@ -152,6 +203,7 @@ The evidence ledgers produced with these techniques are consolidated in
 | Qoder | `documentation/research/qoder/` — `2026-10-29-qoder-credits-claims-identity.md`, `2026-11-01-qoder-chat-wire-verification.md` (+ newer dated files in the same dir) |
 | Grok | `documentation/research/grok/2026-11-02-grok-build-1.0.70-unpack.md` |
 | Copilot | `documentation/research/copilot/` — `2026-10-15-copilot-chat-capability-map.md`, `-context-probe`, `-auto-routing`, `-auto-responses-500-repair-throw` |
+| Antigravity | unpack complete (Inno Setup 6.4 manual two-payload recovery, §1; `product.json` 44,752B carved; extension `google-antigravity` v0.0.1 located; OAuth endpoints `accounts.google.com`/`oauth2.googleapis.com` found). Wire-protocol research → `documentation/research/antigravity/` when written |
 
 ## Cleanup
 
