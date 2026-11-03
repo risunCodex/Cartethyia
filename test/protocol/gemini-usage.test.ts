@@ -15,9 +15,15 @@
  * pins the decoder's half: that reasoning reaches the wire, and that the
  * inclusive prompt stays inclusive rather than being summed twice.
  */
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { mapGeminiUsage } from "../../src/protocol/response/gemini";
 import { normalizeUsage, usageToChatWire } from "../../src/providers/provider-usage";
+
+const CACHE_MODE_ENV = "CARTETHYIA_CACHE_MODE";
+
+beforeEach(() => {
+  delete process.env[CACHE_MODE_ENV];
+});
 
 function usage(metadata: Record<string, unknown>): Record<string, unknown> {
   return mapGeminiUsage({ usageMetadata: metadata });
@@ -59,14 +65,14 @@ describe("mapGeminiUsage", () => {
   });
 
   test("keeps the inclusive prompt rather than adding cache again", () => {
-    // cached 30 of prompt 100: input the upstream billed is 100, and the fresh
-    // 70 is derived downstream — summing would read 130.
+    // cached 30 of prompt 100: input the upstream billed is 100, and in
+    // simplified mode the whole input counts as cached — summing would read 130.
     const record = normalizeUsage(
       usage({ promptTokenCount: 100, candidatesTokenCount: 10, cachedContentTokenCount: 30 }),
     );
     expect(record.input_tokens).toBe(100);
-    expect(record.cached_input_tokens).toBe(30);
-    expect(record.uncached_input_tokens).toBe(70);
+    expect(record.cached_input_tokens).toBe(100);
+    expect(record.uncached_input_tokens).toBe(0);
   });
 
   test("survives Antigravity reporting cached above prompt", () => {

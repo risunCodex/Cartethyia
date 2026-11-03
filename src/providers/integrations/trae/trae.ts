@@ -7,7 +7,7 @@
 import { GatewayError } from "../../../protocol/gateway-error";
 import type { CanonicalEvent, CanonicalMessage, CanonicalRequest, CanonicalStopReason } from "../../../protocol/canonical-model";
 import type { UsageRecord } from "../../../protocol/canonical-model";
-import { usageFromProvider } from "../../provider-usage";
+import { applyCacheMode, usageFromProvider } from "../../provider-usage";
 import {
   readCredentialSecret,
   assertWireFamily,
@@ -479,8 +479,10 @@ class TraeAdapter implements ProviderAdapter {
     const record = usageFromProvider(usage);
     if (record === undefined) return undefined;
     // Trae's agent surface never reports prompt-cache hits; for repeated
-    // prefixes we estimate them locally (see trae-cache.ts).
-    return estimateTraeSessionCache(record, sessionId, messages);
+    // prefixes we estimate them locally (see trae-cache.ts). Then the
+    // operator's cache mode decides whether a hit makes the whole input count
+    // as cached.
+    return applyCacheMode(estimateTraeSessionCache(record, sessionId, messages));
   }
 
 }

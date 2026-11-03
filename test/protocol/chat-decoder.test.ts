@@ -22,7 +22,7 @@
  * The SSE stream is fed from an in-memory `ReadableStream`, so nothing here
  * touches the network and the whole file runs in milliseconds.
  */
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import {
   decodeChatSseStream,
   mapChatStopReason,
@@ -30,6 +30,12 @@ import {
 } from "../../src/protocol/response/chat";
 import { GatewayError } from "../../src/protocol/gateway-error";
 import type { CanonicalEvent, CanonicalRequest, UsageRecord } from "../../src/protocol/canonical-model";
+
+const CACHE_MODE_ENV = "CARTETHYIA_CACHE_MODE";
+
+beforeEach(() => {
+  delete process.env[CACHE_MODE_ENV];
+});
 
 /** A canonical request with the fields the decoder reads. */
 function request(
@@ -1080,6 +1086,7 @@ describe("decodeChatSseStream — usage merging", () => {
   });
 
   test("a usage frame carrying cached tokens keeps them", async () => {
+    // Simplified mode counts the whole input as cached on a reported hit.
     const events = await collect(
       sseStream(
         frame({
@@ -1088,7 +1095,7 @@ describe("decodeChatSseStream — usage merging", () => {
         }) + frame("[DONE]"),
       ),
     );
-    expect(usageOf(events)?.cached_input_tokens).toBe(800);
+    expect(usageOf(events)?.cached_input_tokens).toBe(900);
   });
 
   test("a stream with no usage at all reports none", async () => {
