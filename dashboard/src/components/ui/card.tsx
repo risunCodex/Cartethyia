@@ -75,7 +75,7 @@ export function Card({
 }
 
 export interface CardHeaderProps {
-  title: string;
+  title: ReactNode;
   subtitle?: string;
   /** Compact controls or metadata kept alongside the subtitle. */
   subtitleAddon?: ReactNode;

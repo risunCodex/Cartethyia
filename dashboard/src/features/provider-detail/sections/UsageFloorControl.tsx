@@ -48,11 +48,17 @@ export function UsageFloorControl({ providerId }: { readonly providerId: string 
   const parsed = Number(value);
   const valid = Number.isInteger(parsed) && parsed >= 0 && parsed <= 1_000_000;
   const allowanceTone =
-    allowance === null || allowance.remaining <= 0
+    allowance === null
       ? "text-status-danger"
-      : allowance.percent <= 10
-        ? "text-status-warning"
-        : "text-status-success";
+      : allowance.pooled
+        ? allowance.remaining <= 0
+          ? "text-status-danger"
+          : allowance.percent <= 10
+            ? "text-status-warning"
+            : "text-status-success"
+        : allowance.percent <= 10
+          ? "text-status-warning"
+          : "text-status-success";
 
   const commit = (next: number | null, nextUnit: "credit" | "percent") => {
     if (next !== null && !valid) return;
@@ -106,12 +112,25 @@ export function UsageFloorControl({ providerId }: { readonly providerId: string 
                 className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-caption font-semibold tabular-nums text-text-primary"
                 title="Combined allowance across active accounts; the usage floor is evaluated per account"
               >
-                <strong className={`font-bold ${allowanceTone}`}>
-                  {formatCount(allowance.remaining)}
-                </strong>
-                <span className="font-medium text-text-secondary">credits available</span>
-                <span className="font-medium opacity-75">of {formatCount(allowance.total)}</span>
-                <span className={`font-bold ${allowanceTone}`}>{allowance.percent}%</span>
+                {allowance.pooled ? (
+                  <>
+                    <strong className={`font-bold ${allowanceTone}`}>
+                      {formatCount(allowance.remaining)}
+                    </strong>
+                    <span className="font-medium text-text-secondary">credits available</span>
+                    <span className="font-medium opacity-75">of {formatCount(allowance.total)}</span>
+                    <span className={`font-bold ${allowanceTone}`}>{allowance.percent}%</span>
+                  </>
+                ) : (
+                  <>
+                    <strong className={`font-bold ${allowanceTone}`}>
+                      {allowance.percent}% left
+                    </strong>
+                    <span className="font-medium text-text-secondary">
+                      lowest independent window
+                    </span>
+                  </>
+                )}
               </div>
               <p className="text-micro leading-normal text-text-tertiary">
                 {routing.usageFloor !== null
@@ -122,7 +141,7 @@ export function UsageFloorControl({ providerId }: { readonly providerId: string 
           )}
           {allowance === null && (
             <p className="flex min-h-24 min-w-0 flex-[1_1_20rem] flex-col justify-center gap-2 py-2 text-badge leading-normal text-text-tertiary">
-              <span>No combined credit balance is available. Separate quota windows are not added together, and exhausted windows are still skipped.</span>
+              <span>No quota data is available for these accounts yet. Exhausted quota windows are still skipped.</span>
               <span className="text-micro">
                 {routing.usageFloor !== null
                   ? `Floor ${formatCount(routing.usageFloor)} ${routing.usageFloorUnit === "credit" ? "credits" : "%"} per account`
@@ -243,7 +262,7 @@ function PrivacyModeControl({ providerId }: { readonly providerId: string }): Re
  * cannot serve requests and should not inflate the routable balance summary.
  */
 function combinedAllowance(
-  accounts: readonly { readonly provider: string; readonly active: boolean; readonly quota: { readonly windows: readonly { readonly accounting: "pooled" | "independent"; readonly kind?: string; readonly limit?: number | null; readonly remaining?: number | null; readonly used?: number | null }[] } | null }[],
+  accounts: readonly { readonly provider: string; readonly active: boolean; readonly quota: { readonly windows: readonly { readonly accounting: "pooled" | "independent"; readonly kind?: string; readonly limit?: number | null; readonly remaining?: number | null; readonly used?: number | null; readonly remainingPercent?: number | null }[] } | null }[],
   providerId: string,
 ): {
   readonly accounts: number;
@@ -251,12 +270,15 @@ function combinedAllowance(
   readonly remaining: number;
   readonly total: number;
   readonly percent: number;
+  readonly pooled: boolean;
 } | null {
   let remaining = 0;
   let total = 0;
   let activeAccounts = 0;
   let inactiveAccounts = 0;
   let hasQuota = false;
+  let hasIndependent = false;
+  let lowestPercent: number | null = null;
   for (const account of accounts) {
     if (account.provider !== providerId) continue;
     // Only active accounts contribute allowance — a disabled or cooled account
@@ -271,30 +293,55 @@ function combinedAllowance(
     activeAccounts += 1;
     if (account.quota === null) continue;
     for (const window of account.quota.windows) {
-      if (window.accounting !== "pooled") continue;
-      const limit = typeof window.limit === "number" && Number.isFinite(window.limit) ? window.limit : null;
-      if (limit === null) continue;
-      const left =
-        typeof window.remaining === "number" && Number.isFinite(window.remaining)
-          ? window.remaining
-          : typeof window.used === "number" && Number.isFinite(window.used)
-            ? limit - window.used
-            : null;
-      if (left === null) continue;
-      remaining += Math.min(limit, Math.max(0, left));
-      total += limit;
-      hasQuota = true;
+      if (window.accounting === "pooled") {
+        const limit = typeof window.limit === "number" && Number.isFinite(window.limit) ? window.limit : null;
+        if (limit === null) continue;
+        const left =
+          typeof window.remaining === "number" && Number.isFinite(window.remaining)
+            ? window.remaining
+            : typeof window.used === "number" && Number.isFinite(window.used)
+              ? limit - window.used
+              : null;
+        if (left === null) continue;
+        remaining += Math.min(limit, Math.max(0, left));
+        total += limit;
+        hasQuota = true;
+        continue;
+      }
+      // Independent windows cannot be summed, but the lowest remaining percent
+      // gates the account — surface that as the aggregate allowance instead of
+      // pretending there is no balance at all.
+      hasIndependent = true;
+      if (typeof window.remainingPercent === "number" && Number.isFinite(window.remainingPercent)) {
+        const clamped = Math.min(100, Math.max(0, window.remainingPercent));
+        lowestPercent = lowestPercent === null ? clamped : Math.min(lowestPercent, clamped);
+      }
     }
   }
-  return activeAccounts > 0 && hasQuota
-    ? {
-        accounts: activeAccounts,
-        inactiveAccounts,
-        remaining,
-        total,
-        percent: total > 0 ? Math.round((remaining / total) * 100) : 0,
-      }
-    : null;
+  if (activeAccounts === 0) return null;
+  if (hasQuota) {
+    return {
+      accounts: activeAccounts,
+      inactiveAccounts,
+      remaining,
+      total,
+      percent: total > 0 ? Math.round((remaining / total) * 100) : 0,
+      pooled: true,
+    };
+  }
+  // No summed credits (e.g. Antigravity's independent weekly windows) — report
+  // the lowest remaining percent when one is known.
+  if (hasIndependent && lowestPercent !== null) {
+    return {
+      accounts: activeAccounts,
+      inactiveAccounts,
+      remaining: 0,
+      total: 0,
+      percent: Math.round(lowestPercent),
+      pooled: false,
+    };
+  }
+  return null;
 }
 
 function formatCount(value: number): string {

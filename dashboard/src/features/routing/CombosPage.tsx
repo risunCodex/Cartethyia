@@ -1,4 +1,4 @@
-import { ArrowRight, Copy, CopyPlus, Image as ImageIcon, Layers, Pencil, Plus, Route, Search, Trash2, X } from "lucide-react";
+import { ArrowRight, Copy, CopyPlus, HelpCircle, Image as ImageIcon, Layers, Pencil, Plus, Route, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "../../components/ui/button";
 import { Card, CardBody, CardHeader } from "../../components/ui/card";
@@ -348,6 +348,7 @@ export function VisionHandoffSection(): ReactNode {
   const settingsQuery = useRuntimeSettings();
   const mutation = useUpdateRuntimeSettings();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const settings = settingsQuery.data;
   const models = settings?.visionHandoffModels ?? [];
   // Mirrors the server setting. Deliberately not a `useState` initializer: the
@@ -412,11 +413,27 @@ export function VisionHandoffSection(): ReactNode {
   return (
     <Card>
       <CardHeader
-        title="Vision Handoff"
+        title={
+          <span className="inline-flex items-center gap-2.5">
+            Vision Handoff
+            <span className="badge border border-warning-line bg-surface-2 text-micro tracking-label text-status-warning">
+              BETA
+            </span>
+          </span>
+        }
         subtitle="When the selected model cannot see images, describe them with a vision model first"
         icon={<ImageIcon size={16} />}
         action={
           <CardActions>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<HelpCircle size={14} />}
+              aria-label="How vision handoff works"
+              onClick={() => setHelpOpen(true)}
+            >
+              How it works
+            </Button>
             <Button
               variant="secondary"
               size="sm"
@@ -472,6 +489,35 @@ export function VisionHandoffSection(): ReactNode {
         multi
         filter={isVisionModel}
       />
+      <Dialog
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        title="How vision handoff works"
+        size="md"
+      >
+        <div className="flex flex-col gap-4 text-badge leading-relaxed text-text-secondary">
+          <p>
+            <strong>Vision handoff</strong> lets a text-only model still answer
+            when a request carries images. The gateway sends the image to the
+            first healthy model on your list and injects its description as
+            text back into the conversation — the chosen model never sees the
+            raw image, only the description.
+          </p>
+          <p>
+            The list is ordered: drag models to set priority. The first healthy
+            model wins; if it fails (cooldown, quota, upstream error), the
+            handoff falls to the next entry.
+          </p>
+          <p>
+            <strong>Empty list</strong> keeps the legacy{' '}
+            <code>[image]</code> placeholder behavior — the raw image marker is
+            passed through instead of a description.
+          </p>
+          <p className="text-micro text-text-tertiary">
+            Only image-capable chat models are offered in the picker.
+          </p>
+        </div>
+      </Dialog>
     </Card>
   );
 }
