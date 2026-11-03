@@ -23,12 +23,12 @@ import { allParts, type CanonicalEvent, type CanonicalRequest, type ContentPart 
 import { OpenAICompatibleAdapter, withBearerAuthentication } from "../../adapters/compatible-adapter";
 import { postUpstreamJson } from "../../../protocol/upstream/post-json";
 import { providerBaseUrl } from "../../provider-metadata";
-import { getOrCreateInstallId } from "../shared/install-id";
 import { resolveRedisClient } from "../../../persistence/redis";
 import { applyParamQuirks } from "../../../protocol/translation/quirks";
 import { resolveInboundSessionId } from "../../operations/session-resolution";
 import {
   GITHUB_REQUEST_HEADERS,
+  githubCopilotClientIds,
   parseGithubCredential,
 } from "./github-oauth";
 
@@ -653,15 +653,43 @@ class GithubAdapter extends OpenAICompatibleAdapter {
       headers["Copilot-Session-Token"] = autoSessionToken;
     }
     const requestId = context.request_id ?? randomUUID();
+    // Reference (`_mixinHeaders` + request path): the interaction id is a
+    // separate value from the request id (`X-Request-Id`), and the Copilot
+    // client identity is stamped as `VScode-SessionId`/`VScode-MachineId`.
+    // The library version header carries the fetcher library id (`node-http`
+    // etc.), not the extension version — we previously sent the extension
+    // version there, which the upstream reads as a different client fingerprint.
+    const interactionId = randomUUID();
+    const secret = context.credential.secret;
+    // Machine id is per-account (stable derive from install id + account
+    // fingerprint), so a pooled gateway does not make every account look like
+    // one device. Parse the credential once and reuse it for the bearer below.
+    let accountKey: string | undefined;
+    let parsedCredential: ReturnType<typeof parseGithubCredential> | undefined;
+    if (secret !== undefined && secret.length > 0) {
+      try {
+        parsedCredential = parseGithubCredential(new TextDecoder().decode(secret));
+        accountKey = createHash("sha256")
+          .update(`${parsedCredential.apiHost}:${parsedCredential.access}`)
+          .digest("hex");
+      } catch {
+        // Unparseable credential; fall back to the shared install id.
+      }
+    }
+    const { sessionId, machineId } = await githubCopilotClientIds(accountKey);
     Object.assign(headers, {
-      "editor-device-id": await getOrCreateInstallId("github"),
+      "editor-device-id": machineId,
+      "VScode-MachineId": machineId,
+      "VScode-SessionId": sessionId,
       "openai-intent": "conversation-agent",
+      // Reference stamps `Openai-Organization` on HTTP chat requests.
+      ...(candidate?.wire_family === "chat" ? { "Openai-Organization": "github-copilot" } : {}),
       "x-agent-task-id": requestId,
-      "x-interaction-id": requestId,
+      "x-interaction-id": interactionId,
       "x-initiator": isAgentInitiated(request) ? "agent" : "user",
       "x-interaction-type": "conversation-agent",
       "x-request-id": requestId,
-      "x-vscode-user-agent-library-version": "vscode-chat/0.72.0",
+      "x-vscode-user-agent-library-version": "node-http",
     });
     // The copy Claude family is served on the native Anthropic Messages wire,
     // which gates feature betas behind `anthropic-beta` (mirroring the
@@ -676,14 +704,8 @@ class GithubAdapter extends OpenAICompatibleAdapter {
     } else {
       delete headers["copilot-vision-request"];
     }
-    const secret = context.credential.secret;
-    if (secret === undefined || secret.length === 0) return headers;
-    try {
-      const { access } = parseGithubCredential(new TextDecoder().decode(secret));
-      headers.authorization = `Bearer ${access}`;
-    } catch {
-      // Left as the factory sent it: the request fails closed at the upstream
-      // auth boundary, and the parse error belongs to the credential boundary.
+    if (parsedCredential !== undefined) {
+      headers.authorization = `Bearer ${parsedCredential.access}`;
     }
     return headers;
   }

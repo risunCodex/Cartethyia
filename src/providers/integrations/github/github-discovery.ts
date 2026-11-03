@@ -33,7 +33,8 @@ import {
   GITHUB_AUTO_MODELS,
   recordGithubModelRoutes,
 } from "./github";
-import { GITHUB_REQUEST_HEADERS, parseGithubCredential } from "./github-oauth";
+import { GITHUB_REQUEST_HEADERS, githubCopilotClientIds, parseGithubCredential } from "./github-oauth";
+import { createHash } from "node:crypto";
 
 /** A context window above this is unsatisfiable headroom, not a real limit. */
 const MAX_CONTEXT = 1_000_000_000;
@@ -170,8 +171,20 @@ export async function discoverGithubModels(
   const signal =
     input.signal === undefined ? timeoutSignal : AbortSignal.any([input.signal, timeoutSignal]);
   try {
+    // The reference client stamps its Copilot identity on `/models` too
+    // (`_mixinHeaders` covers the Models request type): session + machine ids.
+    // Machine id is per-account — see `githubCopilotClientIds`.
+    const accountKey = createHash("sha256").update(`${apiHost}:${access}`).digest("hex");
+    const { sessionId, machineId } = await githubCopilotClientIds(accountKey);
     const response = await fetcher(`https://${apiHost}/models`, {
-      headers: { accept: "application/json", authorization: `Bearer ${access}`, ...GITHUB_REQUEST_HEADERS },
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${access}`,
+        ...GITHUB_REQUEST_HEADERS,
+        "VScode-SessionId": sessionId,
+        "VScode-MachineId": machineId,
+        "editor-device-id": machineId,
+      },
       signal,
     });
     if (!response.ok) return null;
