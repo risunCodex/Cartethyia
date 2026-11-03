@@ -118,9 +118,6 @@ function keepWorse(
   return candidateRemaining < currentRemaining ? candidate : current;
 }
 
-/** Total the upstream's fractional allowance is normalized against. */
-const QUOTA_TOTAL = 1000;
-
 /** Builds a window from a `remainingFraction` + `resetTime` pair. */
 function fractionWindow(
   kind: string,
@@ -129,9 +126,8 @@ function fractionWindow(
   resetsAt: string | null,
 ): ProviderQuotaWindow {
   const fraction = Math.min(1, Math.max(0, remainingFraction));
-  const used = QUOTA_TOTAL - Math.round(QUOTA_TOTAL * fraction);
   return {
-    ...percentWindow(kind, label, (1 - fraction) * 100, resetsAt, used, QUOTA_TOTAL, "independent"),
+    ...percentWindow(kind, label, (1 - fraction) * 100, resetsAt, null, null, "independent"),
     recurring: true,
   };
 }
@@ -316,7 +312,23 @@ export async function fetchAntigravityQuota(
           ...(project === undefined ? {} : { project }),
         }),
       );
-      windows.push(...parseModelQuotas(models));
+      // The summary endpoint already covers a family with a weekly window; the
+      // per-model windows are a subset of that same allowance, so rendering
+      // both doubles every row the operator sees. Per-model windows stay as a
+      // fallback when the summary was unavailable, so a family still reports
+      // something.
+      const summaryLabels = windows.map((window) => window.label.toLowerCase());
+      // Model family key → the summary family label it falls under.
+      const summaryLabelForModel = (key: string): string =>
+        key === "google" ? "gemini" : "claude";
+      const modelWindows = parseModelQuotas(models);
+      windows.push(
+        ...modelWindows.filter((window) => {
+          const familyKey = window.kind.split(":")[0] ?? "";
+          const summaryLabel = summaryLabelForModel(familyKey);
+          return !summaryLabels.some((label) => label.includes(summaryLabel));
+        }),
+      );
       plan = plan ?? text(models.tier) ?? text(models.plan);
       break;
     } catch {

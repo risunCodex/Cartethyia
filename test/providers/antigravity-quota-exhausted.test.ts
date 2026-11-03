@@ -25,6 +25,26 @@ function fetcherFor(models: Record<string, unknown>): typeof fetch {
   }) as typeof fetch;
 }
 
+/**
+ * A fetcher that answers both quota endpoints: the summary first (so the
+ * per-model parser is skipped for the families it covers), then models.
+ */
+function fetcherWithSummary(
+  summaryGroups: Record<string, unknown>[],
+  models: Record<string, unknown>,
+): typeof fetch {
+  return (async (url: string | URL) => {
+    const href = typeof url === "string" ? url : url.toString();
+    const body = href.includes("retrieveUserQuotaSummary")
+      ? { quotaSummary: { groups: summaryGroups } }
+      : { models };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+}
+
 /** One reportable model carrying a single quota bucket. */
 function model(quotaInfo: Record<string, unknown>): Record<string, unknown> {
   return { quotaInfo };
@@ -82,5 +102,42 @@ describe("antigravity per-model quota", () => {
     const claude = claudeWindows(result);
     expect(claude.length).toBeGreaterThan(0);
     expect(claude.every((window) => window.remainingPercent === 0)).toBe(true);
+  });
+
+  test("windows never fabricate a used/limit credit pair", async () => {
+    const result = await fetchAntigravityQuota(
+      JSON.stringify({ access_token: "token", projectId: "p" }),
+      fetcherFor({ "claude-sonnet-4-6": model({ remainingFraction: 0.6, resetTime: RESET }) }),
+    );
+    const claude = claudeWindows(result);
+    expect(claude.length).toBe(1);
+    expect(claude[0]?.used).toBeNull();
+    expect(claude[0]?.limit).toBeNull();
+    expect(claude[0]?.remainingPercent).toBe(60);
+  });
+
+  test("per-model windows are skipped when the summary already covers the family", async () => {
+    const result = await fetchAntigravityQuota(
+      JSON.stringify({ access_token: "token", projectId: "p" }),
+      fetcherWithSummary(
+        [
+          {
+            displayName: "Claude and GPT models",
+            buckets: [
+              { bucketId: "3p-weekly", window: "weekly", resetTime: RESET, remainingFraction: 0.7 },
+            ],
+          },
+        ],
+        {
+          "claude-sonnet-4-6": model({ remainingFraction: 0.6, resetTime: RESET }),
+          "claude-opus-4-6": model({ remainingFraction: 0.9, resetTime: RESET }),
+        },
+      ),
+    );
+    // Only the weekly summary row — the per-model rows are a subset of it.
+    const claude = claudeWindows(result);
+    expect(claude).toHaveLength(1);
+    expect(claude[0]?.label).toBe("Claude & GPT (Weekly)");
+    expect(claude[0]?.remainingPercent).toBe(70);
   });
 });
