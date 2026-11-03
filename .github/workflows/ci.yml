@@ -19,6 +19,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege: the workflow only reads repository contents. It writes
+# nothing back (no cache, no artifacts), so anything broader is unnecessary
+# attack surface for a public repository.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -94,4 +100,5 @@ jobs:
           bun-version-file: .bun-version
       - run: bun install --linker isolated --frozen-lockfile
       - run: bun run dashboard:typecheck
+      - run: bun run dashboard:build
       - run: bun run dashboard:test

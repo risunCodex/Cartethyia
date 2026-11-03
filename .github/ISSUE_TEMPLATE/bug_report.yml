@@ -1,0 +1,35 @@
+---
+name: Bug report
+about: Report a bug in Cartethyia so it can be fixed
+title: ""
+labels: ["bug"]
+assignees: []
+---
+
+**Describe the bug**
+A clear and concise description of what the bug is.
+
+**To reproduce**
+Steps to reproduce the behavior:
+1. Start the gateway with `bun run dev` (or Docker) …
+2. Send request `…` (include the exact provider/model and the wire shape)
+3. Observe …
+
+**Expected behavior**
+What you expected to happen.
+
+**Actual behavior**
+What actually happened. Include the error envelope / status code / log lines.
+
+**Environment**
+- Cartethyia version: `bun run carte --version` or the tag
+- Database mode: Lite (SQLite) / Full (PostgreSQL)
+- Runtime: Bun version, OS, Docker tag if using the image
+- Provider(s) involved
+
+**Checklist**
+- [ ] I searched existing issues and this is not a duplicate
+- [ ] I included the minimal reproduction, not a screenshot of the console
+
+**Additional context**
+Add any other context about the problem here.

@@ -16,7 +16,10 @@
 # ---------------------------------------------------------------------------
 # Builder: install, bundle the dashboard, then compile the standalone binary.
 # ---------------------------------------------------------------------------
-FROM oven/bun:debian AS builder
+# The builder image is pinned to the same Bun version the repo pins in
+# `.bun-version` (and that CI installs via setup-bun) so the container and the
+# verified toolchain cannot drift apart. Bump both together.
+FROM oven/bun:1.4.2-debian AS builder
 
 WORKDIR /build
 

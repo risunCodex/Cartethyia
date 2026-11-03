@@ -4,6 +4,9 @@
 
 **A self-hosted multi-provider AI gateway.**
 
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg)](LICENSE)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
+
 Cartethyia gives AI clients one stable, OpenAI and Anthropic-compatible endpoint. Behind it, the gateway handles the operational work: provider-aware translation, account selection, health-aware failover, quota and cooldown enforcement, usage accounting, telemetry, and optional proxy pools.
 
 Configure provider accounts once, issue an API key, and point OpenCode, Droid, Cline, Claude Code, Codex, or any compatible client at Cartethyia. The client keeps its native protocol; Cartethyia normalizes the request, selects a viable route, dispatches upstream, and returns the response in the contract the client expects.
@@ -180,3 +183,9 @@ suite never touches the runtime `DATABASE_URL`.
 
 [GNU GPL v3.0 only](LICENSE). You can use, change, and share it. If you ship a
 build or a fork, ship the source with it, under the same license. No warranty.
+
+## <img src="https://api.iconify.design/lucide/heart.svg?color=%238b949e" width="20" height="20" alt=""> Community
+
+- [Contributing](CONTRIBUTING.md) — workflow, code conventions, and pull requests.
+- [Code of Conduct](CODE_OF_CONDUCT.md) — expectations for everyone in the community.
+- [Security Policy](SECURITY.md) — how to report a vulnerability safely.

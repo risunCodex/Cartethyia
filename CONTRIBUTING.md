@@ -1,11 +1,15 @@
 # Contributing to Cartethyia
 
 This page covers contribution workflow, code conventions, and pull requests.
+By participating, you agree to abide by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 For requirements, PostgreSQL/Redis setup, local development, Docker, commands,
 migrations, and verification, use the single source of truth:
 
 - [Installation](documentation/installation.md)
+
+Found a security issue? See [SECURITY.md](SECURITY.md) for the responsible
+disclosure process — do not open a public issue for it.
 
 ## Before changing code
 
@@ -28,9 +32,9 @@ migrations, and verification, use the single source of truth:
 - Use concrete role filenames such as `contracts.ts`, `routes.ts`, `store.ts`,
   `service.ts`, and `errors.ts`. Avoid `index.ts` barrels.
 - Keep scripts organized by purpose under the existing `scripts/`
-  subdirectories — currently `binary`, `ci`, `cli`, `dev`, `generate`,
-  `install`, `operations`, `ops`, `perf`, and `qa`. Check the directory before
-  adding one; the set changes.
+  subdirectories — currently `build`, `cli`, `dev`, `install`,
+  `provider-probing`, `test`, and `tools`. Check the directory before adding
+  one; the set changes.
 - Use strict TypeScript: no `any`, suppressions, needless assertions, or weakened
   compiler settings. Narrow `unknown` at boundaries and use `import type` for types.
 - Comments explain policy, security, protocol behavior, or non-obvious tradeoffs;

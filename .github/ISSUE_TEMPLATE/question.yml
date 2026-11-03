@@ -1,0 +1,26 @@
+---
+name: Question / Support
+about: Ask how to use or troubleshoot Cartethyia
+title: ""
+labels: ["question"]
+assignees: []
+---
+
+**Checklist**
+- [ ] I read the [installation guide](https://github.com/risunCodex/Cartethyia/blob/main/documentation/installation.md)
+  and the relevant `documentation/reference/` page first.
+- [ ] I searched existing issues and discussions for an answer.
+
+**Question**
+What are you trying to do, and what is blocking you?
+
+**What you already tried**
+Include the exact command(s) and the output that led you here.
+
+**Environment**
+- Cartethyia version
+- Database mode: Lite / Full
+- Runtime: Bun version, OS, Docker tag (if any)
+
+**Additional context**
+Anything else that may help answer the question.
