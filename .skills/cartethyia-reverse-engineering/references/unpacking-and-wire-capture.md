@@ -22,7 +22,7 @@ Grok); per-provider findings live in `documentation/research/` (see below).
 | Artifact | Tool / recipe |
 |---|---|
 | `.dmg` (macOS) | `7z x <file>.dmg` → `4.hfs` (HFS+), then `7z x 4.hfs` → app volume |
-| `.exe` (Inno Setup) | `innoextract` (use a recent fork for Setup ≥6.4; 1.9 errors on 6.4.0.1). For 6.4+ use the manual LZMA recovery below — `7z x` only yields the compressed container `[0]` (not a bare LZMA stream) |
+| `.exe` (Inno Setup) | `innoextract` (use a recent fork for Setup ≥6.4; 1.9 errors on 6.4.0.1). **`innoextract 1.13.0` extracts 6.4 fine** (proven on Qoder IDE 1.38 — no manual LZMA needed). For 6.4+ when 1.13 is unavailable use the manual LZMA recovery below — `7z x` only yields the compressed container `[0]` (not a bare LZMA stream) |
 | `.msi` | `7z x` → unpacked payload (may contain a single-file executable) |
 | `app.asar` (Electron) | `bun scripts/tools/asar-unpack.mjs <app.asar> <outdir>`. Nativev2 header: `[u32 @0]=4`, `[u32 @4]=header+8`, `[u32 @8]=header+4`, `[u32 @12]=header JSON length`, JSON begins at offset 16. **Offsets are relative to the data section start (`16 + headerSize`), not absolute** — reading them absolute yields garbage (verified) |
 | Single-file Bun/Rust executables | `7z x` often extracts embedded bundles; otherwise string-scan the binary directly (see §2) |
@@ -74,6 +74,48 @@ content; names/offsets come from the header file table (B).
 PowerShell gotcha: `[0]` in a path is treated as a wildcard character
 class — use `-LiteralPath` (or `Resolve-Path -LiteralPath`) when reading
 files named like `[0]`.
+
+### Qoder IDE desktop (Inno Setup 6.4, v1.38.0)
+
+Source binary: `D:\tmp\binaries\QoderIDEUserSetup-x64.exe` (207,886,256 B,
+produced 2026-11-02). `innoextract 1.13.0` extracts it in one pass — no
+manual LZMA recovery needed.
+
+```
+innoextract-1.13.0-windows.exe --extract --output-dir <dst> QoderIDEUserSetup-x64.exe
+```
+
+Output layout (Electron / VS Code fork):
+
+- `code$GetDestDir\Qoder IDE.exe` (226 MB Electron shell)
+- `code$GetDestDir\resources\app\` — unpacked app (this fork ships **unpacked**,
+  no `app.asar`)
+  - `product.json` — `nameShort: "Qoder"`, `dataFolderName: ".qoder"`,
+    `win32AppUserModelId: "AlibabaCloud.Qoder"`, version 1.38.0
+  - `package.json` — `Qoder IDE` / `1.38.0`
+  - `out\lingma\agents-window\agents-window.desktop.main.js` (56 MB) — agent UI
+  - `out\lingma\aura-buddy\` etc.
+  - `out\vs\workbench\workbench.desktop.main.js`, `out\vs\code\electron-utility\sharedProcess\sharedProcessMain.js`
+  - `node_modules\@ali\qoder-config-service-sdk\` — config service SDK
+- `app\tools\inno_updater.exe`, `vcruntime140.dll` — installer tools
+
+Wire takeaways (Qoder IDE 1.38):
+
+- **Hosts**: `center.qoder.sh` (big-model/center), `openapi.qoder.sh`
+  (business), `qts2.qoder.sh` (quest — deprecated), `api2.qoder.sh`
+  (dynamic region default). CN: `gateway.qoder.com.cn` / `openapi.qoder.com.cn`.
+- **Dynamic endpoints**: the IDE does NOT hardcode the chat host. It calls
+  `GET /algo/api/v2/service/region/endpoints` (on center) and reads
+  `preferredInferenceNode.endpoint` (fallback `api2.qoder.sh`). Inference URLs
+  are built as `<inferenceEndpoint> + path` (e.g. voice polish
+  `/api/v2/service/voice/polish`, WebSocket `/api/v2/service/ws/asr`,
+  telemetry `/apm`).
+- Legacy COSY chat (`/algo/api/v2/service/pro/sse/agent_chat_generation`) and
+  the modern `/model/v1/chat/completions` are **not present** as literals in
+  the 1.38 bundles — chat now goes through the region-resolved inference
+  endpoint. The Cartethyia adapter still defaults to `/model/v1/chat/completions`
+  on `api2-v2.qoder.sh` with COSY fallback; see
+  `documentation/research/qoder/2026-11-01-qoder-chat-wire-verification.md`.
 
 ## 2. String scanning
 
@@ -200,7 +242,7 @@ The evidence ledgers produced with these techniques are consolidated in
 | OpenCode | `documentation/research/opencode/` — `2026-11-02-desktop-2.2.5-binary-evidence.md` (unpack + capture + replay), `2026-11-02-opencode-free-tier.md` |
 | Cursor | `documentation/research/cursor/2026-10-20-cursor-run-protocol.md` |
 | CodeBuddy | `documentation/research/buddy/2026-10-19-codebuddy-chat-dispatch-headers.md` — plus `2026-11-02-codebuddy-cli-2.179.2-unpack-wire-audit.md` and `2026-11-02-workbuddy-desktop-unpack-wire-audit.md` |
-| Qoder | `documentation/research/qoder/` — `2026-10-29-qoder-credits-claims-identity.md`, `2026-11-01-qoder-chat-wire-verification.md` (+ newer dated files in the same dir) |
+| Qoder | `documentation/research/qoder/` — `2026-10-29-qoder-credits-claims-identity.md`, `2026-11-01-qoder-chat-wire-verification.md` (+ newer dated files in the same dir). Qoder IDE desktop 1.38.0 unpack: `D:\tmp\unpacked\qoder\qoder-ide-inno\` — `code$GetDestDir` (Electron), `out/lingma` (agent), 1.13.0 innoextract |
 | Grok | `documentation/research/grok/2026-11-02-grok-build-1.0.70-unpack.md` |
 | Copilot | `documentation/research/copilot/` — `2026-10-15-copilot-chat-capability-map.md`, `-context-probe`, `-auto-routing`, `-auto-responses-500-repair-throw` |
 | Antigravity | unpack complete (Inno Setup 6.4 manual two-payload recovery, §1; `product.json` 44,752B carved; extension `google-antigravity` v0.0.1 located; OAuth endpoints `accounts.google.com`/`oauth2.googleapis.com` found). Wire-protocol research → `documentation/research/antigravity/` when written |
