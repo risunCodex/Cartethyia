@@ -998,8 +998,16 @@ export function buildQoderRequest(
   // When the caller sends no intent but the model needs the push to think
   // (verified live: Sonus/Cantus stream no reasoning without it), use the
   // roster's default effort.
+  //
+  // Only a reasoning-capable model carries the field. A non-reasoning model
+  // (e.g. `lite`) cannot think, so an effort is meaningless there; sending it
+  // would also assert a capability the model does not advertise. The upstream
+  // tolerates it today, but declaring reasoning on a model that has none is a
+  // latent contract violation, so the field is kept off non-reasoning models.
   const reasoningEffort =
-    reasoningEffortFromIntent(request.reasoning) ?? modelConfig.default_reasoning_effort;
+    reasoning
+      ? (reasoningEffortFromIntent(request.reasoning) ?? modelConfig.default_reasoning_effort)
+      : undefined;
   const sessionId = qoderStableHash("qoder-session", auth.userId, modelId);
   const recordId = qoderStableRecordId(modelId, allMessages, maxTokens);
   return {
