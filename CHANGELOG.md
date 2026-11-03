@@ -31,6 +31,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   automatic pass drains eligible accounts across bounded pages.
 - Built-in Start Plan quota windows use the short Start label while preserving
   referral grant names. Quota timeout, network and JSON failures stay distinct.
+- Reject ZCode Start business-error envelopes returned with HTTP 200 instead
+  of decoding them as successful empty completions.
+- Summarize Start Plan badges as one name plus the extra-plan count and show
+  grant/period headings without model captions. Preserve upstream names in
+  titles and keep future quota windows visible. Manual gift claims remain in
+  provider account details rather than quota cards.
 
 ## [2.7.5] - 2026-11-03
 

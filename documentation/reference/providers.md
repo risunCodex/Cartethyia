@@ -213,16 +213,22 @@ Alternative grants can fund the same model; a spent grant cannot disable an
 unrelated model. Future grants show **Not started yet** and their start time,
 but cannot fund requests. Expired grants cannot fund requests even if their
 last reported remaining amount was positive. Missing usage is unknown, not zero.
-Built-in Start Plan windows use the short **Start** label; referral/promo grant
-names remain as reported upstream. Timeout, network and unreadable-JSON quota
-failures remain distinct; a timeout does not advance the account failure streak.
+The dashboard summarizes multiple Start Plan grants as **Start +N** (no popup),
+with full upstream names in the badge title. Window headings show grant and
+period without a model caption. Known names are displayed as **Start** and
+**Global Build**; other promo/referral names remain unchanged. Stored quota
+and routing identities are not renamed. Future windows stay visible.
+Timeout, network and unreadable-JSON quota failures remain distinct; a timeout
+does not advance the account failure streak.
 A successful balance is authoritative: a model with no matching grant is not
 eligible. Dashboard availability follows the same grant lifetimes and treats
 same-model grants as alternatives, rather than showing a spent sibling as an
 account-wide zero balance.
+Generation business-error envelopes are failures even when the upstream HTTP
+status is 200; they must not produce successful empty completions.
 
-The **Claim gifts** button in Quota Management or the provider account row is an
-explicit manual action. It reads marketing banners and billing preview, then
+The **Claim gifts** button in the provider account row is an explicit manual
+action; quota cards do not expose gift claims. It reads marketing banners and billing preview, then
 posts each offered `plan_id` to `/api/v1/zcode-plan/billing/claim`. Claim codes
 `0`, `1003`, and `3007` mean claimed, already claimed, and CAPTCHA respectively.
 Complete CAPTCHA in the ZCode app. Unknown/unreadable replies are failures;
