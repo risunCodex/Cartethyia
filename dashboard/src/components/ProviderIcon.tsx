@@ -29,9 +29,14 @@ const iconAssets: Record<string, { file: string; ext: "svg" | "webp" }> = {
   perplexity: { file: "perplexity", ext: "webp" },
   tokenharbor: { file: "tokenharbor", ext: "svg" },
   aihubmix: { file: "aihubmix", ext: "svg" },
-  // The Coding Plan is a Z.AI product, so it reuses the coding-plan mark.
-  zcode: { file: "zai-coding-plan", ext: "svg" },
-  "zcode-start": { file: "zai-coding-plan", ext: "svg" },
+  // The Coding Plan is a Z.AI product; the official mark is a dark rounded
+  // tile with a white Z (from z.ai). ZCode uses its own official mark, which
+  // is the same family: dark tile + white Z.
+  zcode: { file: "zcode", ext: "webp" },
+  "zcode-start": { file: "zcode", ext: "webp" },
+  zai: { file: "zai", ext: "webp" },
+  "zai-plan": { file: "zai", ext: "webp" },
+  "zai-start": { file: "zai", ext: "webp" },
   "kimi-code": { file: "kimi-code", ext: "webp" },
   kimi: { file: "kimi-code", ext: "webp" },
   github: { file: "github", ext: "webp" },

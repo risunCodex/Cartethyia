@@ -10,7 +10,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [2.7.6] - 2026-11-04
+
 ### Added
+
+- **CLI tools streamlined to four supported CLIs.** The console's CLI tools
+  registry is trimmed to Claude Code, Codex, Kilo, and OpenCode (the removed
+  tools were guide-only and had no real injector). Each tool gained a SDK
+  picker (OpenAI Compatible, OpenAI Responses, Anthropic Messages, Gemini),
+  multi-select model picker that appends to the config, a semi-flat config
+  preview, and a YOLO mode toggle (default on). Applying a config preserves
+  existing provider entries and backs up the previous file with a `.bak`.
+- **Dialog unsaved-change protection is now reusable.** Forms register their
+  dirty state through `useDialogDirty`; the dialog then blocks backdrop
+  clicks, the close control, and Escape while edits are unsaved, shakes the
+  panel, and warns. API-key forms and the preset editor use it.
+- **The inject-system-prompt dialog auto-saves.** Every dropdown/toggle/text
+  change persists immediately; the Save changes button is gone.
 
 - ZCode Start Plan as a separate `zcode-start` provider with device sign-in,
   JWT import, model-scoped quota grants and activation/expiry times. Manual
@@ -104,6 +120,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   grant/period headings without model captions. Preserve upstream names in
   titles and keep future quota windows visible. Manual gift claims remain in
   provider account details rather than quota cards.
+- **Antigravity quota windows no longer fabricate credit pairs.** Fractional
+  allowance windows report a percentage without inventing a used/limit pair,
+  and per-model windows are skipped when the summary endpoint already covers
+  the family (rendering both doubled every row an operator saw).
+- **Usage floor shows the lowest independent window.** When an account has no
+  pooled balance, the usage floor shows the lowest independent window's
+  remaining percentage instead of claiming zero credits.
 
 ## [2.7.5] - 2026-11-03
 
