@@ -27,7 +27,9 @@ import { buildUpstreamDispatchContext } from "./dispatch/upstream";
 import type { GatewayHandlerDeps } from "./dispatch/handler-deps";
 import type { ByokUpstreamHost } from "../providers/operations/provider-catalog-service";
 import type { PreparedProxyRequest } from "./request/preparer";
-import { getCachedVisionDescription, hashImagePart, setCachedVisionDescription } from "./vision-handoff-cache";
+import { estimateInputTokens } from "./request/token-estimate";
+import { getCachedVisionDescription, setCachedVisionDescription } from "./vision-handoff-cache";
+import { modelsDevCatalog } from "../providers/discovery/models-dev-catalog";
 
 /** Dependency surface needed to run a vision handoff (a gateway-handler deps). */
 export interface VisionHandoffDeps extends GatewayHandlerDeps {
@@ -46,6 +48,16 @@ const VISION_HANDOFF_MIN_BUDGET_MS = 2_000;
 
 /** Per-model budget cap so one slow vision model cannot eat the whole deadline. */
 const VISION_HANDOFF_PER_MODEL_TIMEOUT_MS = 12_000;
+
+/**
+ * Fallback context window for a vision model whose catalog row is unknown.
+ * Used only to bound how much trailing history a handoff sub-request carries;
+ * absent that boundary a giant conversation could overflow the vision model.
+ */
+const VISION_HANDOFF_FALLBACK_CONTEXT_TOKENS = 200_000;
+
+/** Headroom kept for the describe-instruction and the active image turn. */
+const VISION_HANDOFF_CONTEXT_HEADROOM_TOKENS = 8_000;
 
 /** The result of one successful handoff. */
 export interface VisionHandoffResult {
@@ -99,26 +111,16 @@ function lastRealImageCarryingUserTurnIndex(request: CanonicalRequest): number {
   return -1;
 }
 
-/** Hash of the active image set (the last image-carrying user turn's images). */
-function hashActiveImageSet(request: CanonicalRequest): string {
-  const index = lastRealImageCarryingUserTurnIndex(request);
-  if (index < 0) return "";
-  const images = request.messages[index]!.content.filter(
-    (part): part is { kind: "image"; payload: unknown } => part.kind === "image",
-  );
-  const hashes = images.map(hashImagePart).sort();
-  return createHash("sha256").update(hashes.join("|")).digest("hex");
-}
-
 /**
- * Builds the sub-request sent to one vision model: only the *last*
- * image-carrying user turn, keeping its sibling text parts, prefixed by a
- * short describe-the-image instruction. No history, no tools, no system
- * prompt. The sub-request streams internally (`stream = true`) so the parent
- * keeps its own streaming reply once the description is folded in; the
- * description itself must still be whole before the parent is dispatched.
+ * Selects the messages sent to one vision model: the active image-carrying
+ * turn (with the describe-instruction) plus as much *trailing* history as fits
+ * the vision model's context window. Carrying only the last turn loses the
+ * surrounding conversation ("memory lost to handoff"), while carrying all of it
+ * overflows a small-context vision model. Walking backwards from the image turn
+ * and estimating tokens keeps the sub-request within the model's context without
+ * guessing.
  */
-function buildVisionSubRequest(parent: CanonicalRequest, model: string): CanonicalRequest {
+function selectVisionContextMessages(parent: CanonicalRequest): CanonicalMessage[] {
   const index = lastRealImageCarryingUserTurnIndex(parent);
   if (index < 0) {
     throw new GatewayError(
@@ -127,14 +129,60 @@ function buildVisionSubRequest(parent: CanonicalRequest, model: string): Canonic
       "vision handoff cannot build a sub-request from a request with no image-carrying user turns (request {requestId})",
     );
   }
-  const message = parent.messages[index]!;
-  const kept = message.content.filter((part) => part.kind === "text" || part.kind === "image");
-  const messages: CanonicalMessage[] = [
-    { role: "user", content: [{ kind: "text", text: VISION_HANDOFF_INSTRUCTION }, ...kept] },
-  ];
+  const active = parent.messages[index]!;
+  const kept = active.content.filter((part) => part.kind === "text" || part.kind === "image");
+  const activeTurn: CanonicalMessage = {
+    role: "user",
+    content: [{ kind: "text", text: VISION_HANDOFF_INSTRUCTION }, ...kept],
+  };
+
+  const contextLimit = visionModelContextLimit(parent);
+  const budget = Math.max(1, contextLimit - VISION_HANDOFF_CONTEXT_HEADROOM_TOKENS);
+  const messages: CanonicalMessage[] = [activeTurn];
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const message = parent.messages[i]!;
+    const candidateMessages = [message, ...messages];
+    const estimated = estimateInputTokens({ ...parent, messages: candidateMessages });
+    if (estimated > budget) break;
+    messages.length = 0;
+    messages.push(...candidateMessages);
+  }
+  return messages;
+}
+
+/**
+ * Resolves the vision model's context window. Prefers:
+ * 1. an explicit operator-provided limit on the request metadata;
+ * 2. the packed catalog row for the first vision model (the one the handoff
+ *    will actually dispatch to);
+ * 3. the fallback window.
+ */
+function visionModelContextLimit(parent: CanonicalRequest): number {
+  const explicit = parent.metadata?.["visionModelContextLimit"];
+  if (typeof explicit === "number" && Number.isFinite(explicit) && explicit > 0) {
+    return explicit;
+  }
+  const row = modelsDevCatalog.resolve("", parent.model);
+  if (row !== undefined && row.contextLimit !== null && row.contextLimit > 0) {
+    return row.contextLimit;
+  }
+  return VISION_HANDOFF_FALLBACK_CONTEXT_TOKENS;
+}
+
+/** Deterministic cache key: the exact context the vision model will see. */
+function visionContextCacheKey(parent: CanonicalRequest): string {
+  const messages = selectVisionContextMessages(parent);
+  const serialized = JSON.stringify(messages);
+  return createHash("sha256").update(serialized).digest("hex");
+}
+
+/**
+ * Builds the sub-request sent to one vision model.
+ */
+function buildVisionSubRequest(parent: CanonicalRequest, model: string): CanonicalRequest {
   return {
     model,
-    messages,
+    messages: selectVisionContextMessages(parent),
     generation_controls: {},
     stream: true,
     source_surface: "chat",
@@ -154,9 +202,16 @@ export async function tryVisionHandoff(
   input: VisionHandoffCall,
   models: readonly string[],
 ): Promise<readonly VisionHandoffResult[]> {
-  // Reusing the exact same active image set (same image, same conversation
-  // replay) skips the vision call entirely.
-  const cacheHash = hashActiveImageSet(input.canonicalRequest);
+  // The cache key covers the full vision context (active image turn plus the
+  // trailing history we actually send), so a changed conversation re-describes
+  // the same attachment instead of serving a stale description. A malformed
+  // request that cannot build a vision context simply skips the cache.
+  let cacheHash = "";
+  try {
+    cacheHash = visionContextCacheKey(input.canonicalRequest);
+  } catch {
+    cacheHash = "";
+  }
   const cached = cacheHash.length > 0 ? getCachedVisionDescription(cacheHash) : undefined;
   if (cached !== undefined && cached.trim().length > 0) {
     return [{ description: cached.trim(), model: models[0] ?? "cache" }];
