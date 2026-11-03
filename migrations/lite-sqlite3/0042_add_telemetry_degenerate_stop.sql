@@ -1,0 +1,12 @@
+-- Adds `telemetry_events.degenerate_stop` (boolean, nullable) — see the
+-- identically named PostgreSQL migration for why. Both backends must apply the
+-- same behavior; SQLite stores it as integer (0/1).
+--
+-- Idempotency comes from the migration ledger, not from the statement: the
+-- runner records the file inside the same transaction, so a file that has
+-- already run is never re-executed. The baseline is generated from
+-- `0000_baseline.sql` alone and does not carry this column.
+--
+-- NOTE: the runner already wraps each migration in a transaction, so this file
+-- must NOT issue BEGIN/COMMIT.
+ALTER TABLE "telemetry_events" ADD COLUMN "degenerate_stop" integer;

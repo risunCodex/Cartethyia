@@ -46,6 +46,12 @@ export interface ProxyRequestOutcome {
   readonly firstContentDeltaAtMs?: number;
   /** Last event timestamp (for generation duration calculation). */
   readonly lastEventAtMs?: number;
+  /**
+   * True for a completed request whose output was far smaller than the model's
+   * ceiling and which ended with an ordinary `stop` (a "degenerate stop").
+   * Set by completion bookkeeping; carried onto the telemetry row.
+   */
+  readonly degenerateStop?: boolean;
 }
 export interface ProxyRequestState {
   readonly requestId: string;

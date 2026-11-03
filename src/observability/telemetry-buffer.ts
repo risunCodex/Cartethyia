@@ -65,6 +65,12 @@ export interface TelemetryEventInput {
    * list instead of needing the server's logs.
    */
   readonly payloadCaptureState?: string;
+  /**
+   * True for a completed request whose output was far smaller than the model's
+   * ceiling and which ended with an ordinary `stop` (a "degenerate stop").
+   * Carried onto the telemetry row so this pattern can be measured.
+   */
+  readonly degenerateStop?: boolean;
 }
 
 function tokenCountToInt(value: number | "unavailable" | undefined): number | undefined {
@@ -155,6 +161,7 @@ function telemetryEventRow(event: TelemetryEventInput) {
     firstContentDeltaAtMs: event.firstContentDeltaAtMs ?? null,
     lastEventAtMs: event.lastEventAtMs ?? null,
     payloadCaptureState: event.payloadCaptureState ?? null,
+    degenerateStop: event.degenerateStop ?? null,
   };
 }
 

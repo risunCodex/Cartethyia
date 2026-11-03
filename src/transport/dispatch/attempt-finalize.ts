@@ -16,6 +16,7 @@ import { finalizeRequestTelemetry } from "../guards/error-lifecycle";
 import { debitCachedQuota, quotaLens } from "../../providers/quota/cache";
 import { BUDDY_PROVIDER_IDS } from "../../providers/provider-metadata";
 import { log } from "../../observability/logger";
+import { modelsDevCatalog } from "../../providers/discovery/models-dev-catalog";
 import {
   disablePoolForProxyHttpStatus,
   recordPoolDispatchOutcome,
@@ -711,6 +712,32 @@ async function debitBuddySpend(completion: AttemptCompletion): Promise<void> {
   }
 }
 
+/**
+ * Whether a completed attempt is a "degenerate stop": output far smaller than
+ * the model's ceiling, ended by an ordinary `stop` rather than `length`.
+ *
+ * This is the signature of a model truncating itself on a cached prefix — the
+ * pattern that surfaced as short, cut-off chat replies that the upstream still
+ * reported as a clean stop. It is measured so the operator can see how often
+ * it happens instead of eyeballing request detail.
+ */
+export function isDegenerateStop(
+  usage: UsageRecord | undefined,
+  outputLimit: number | undefined,
+): boolean {
+  if (usage === undefined) return false;
+  const output = usage.output_tokens;
+  const reasoning = typeof usage.reasoning_tokens === "number" ? usage.reasoning_tokens : 0;
+  const totalOutput = output + reasoning;
+  if (totalOutput === 0 || totalOutput > 512) return false;
+  // A model with no meaningful ceiling cannot be "far smaller than it can
+  // produce", so the flag is only meaningful when a ceiling exists.
+  if (!(typeof outputLimit === "number" && Number.isFinite(outputLimit) && outputLimit > 0)) {
+    return false;
+  }
+  return totalOutput <= Math.max(1, Math.floor(outputLimit / 10));
+}
+
 export async function completeAttempt(
   state: ProxyRequestState,
   completion: AttemptCompletion,
@@ -761,6 +788,15 @@ export async function completeAttempt(
     ...(completion.firstContentDeltaAtMs === undefined ? {} : { firstContentDeltaAtMs: completion.firstContentDeltaAtMs }),
     ...(completion.lastEventAtMs === undefined ? {} : { lastEventAtMs: completion.lastEventAtMs }),
     ...(completion.reportedModel === undefined ? {} : { reportedModel: completion.reportedModel }),
+    ...(completion.status === "completed" &&
+    isDegenerateStop(
+      completion.usage,
+      completion.providerId !== undefined && completion.modelId !== undefined
+        ? (modelsDevCatalog.resolve(completion.providerId, completion.modelId)?.outputLimit ?? undefined)
+        : undefined,
+    )
+      ? { degenerateStop: true }
+      : {}),
   };
   if (completion.terminal) state.completed = true;
   // Usage reconciliation is bookkeeping, and it is the last thing standing

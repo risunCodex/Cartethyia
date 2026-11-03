@@ -165,6 +165,9 @@ function mapUsageRequestItem(
     // Why the drawer is empty for this request — see the contract field. This is
     // what makes the blank panels diagnosable without server logs.
     ...(event.payloadCaptureState ? { payloadCaptureState: event.payloadCaptureState } : {}),
+    // Degenerate stop (short output ended by an ordinary `stop`) — carried so
+    // the request detail can flag the pattern.
+    ...(event.degenerateStop ? { degenerateStop: true } : {}),
   };
 }
 async function resolveProxyLabel(

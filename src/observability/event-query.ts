@@ -184,6 +184,7 @@ function eventRecordFromRow(row: {
   readonly firstContentDeltaAtMs: number | null;
   readonly lastEventAtMs: number | null;
   readonly payloadCaptureState: string | null;
+  readonly degenerateStop: boolean | null;
 }): TelemetryEventRecord {
   return {
     id: row.id ?? row.requestId,
@@ -219,6 +220,7 @@ function eventRecordFromRow(row: {
     firstContentDeltaAtMs: row.firstContentDeltaAtMs,
     lastEventAtMs: row.lastEventAtMs,
     payloadCaptureState: row.payloadCaptureState,
+    ...(row.degenerateStop === true ? { degenerateStop: true } : {}),
   };
 }
 

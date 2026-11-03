@@ -1,0 +1,14 @@
+-- Adds `telemetry_events.degenerate_stop` (boolean, nullable).
+--
+-- Marked on completed requests whose output is far smaller than the model's
+-- ceiling and which ended with an ordinary `stop`. This is the signature of a
+-- model truncating itself on a cached prefix: a short, cut-off reply that the
+-- upstream reported as a clean stop. The column lets an operator measure how
+-- often that happens instead of having to eyeball request detail.
+--
+-- NULL means the row predates this column (or the request never reached a
+-- completed outcome). Only completed requests can carry a value.
+--
+-- `ADD COLUMN IF NOT EXISTS` keeps the file idempotent: a database built from a
+-- newer baseline that already carries the column must not fail startup.
+ALTER TABLE "telemetry_events" ADD COLUMN IF NOT EXISTS "degenerate_stop" boolean;

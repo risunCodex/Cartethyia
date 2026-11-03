@@ -1483,6 +1483,14 @@ export const telemetryEvents = pgTable(
      * tell "not configured" from "broken".
      */
     payloadCaptureState: text("payload_capture_state"),
+    /**
+     * Set for a completed request whose output is far smaller than what the
+     * model can produce AND which the model ended with an ordinary `stop`
+     * (a "degenerate stop"). Introduced to measure how often a model
+     * truncates itself on a cached prefix — the pattern that surfaced as
+     * short, cut-off chat replies. NULL/unset for everything else.
+     */
+    degenerateStop: boolean("degenerate_stop"),
   },
   (table) => [
     index("telemetry_events_created_at_idx").on(table.createdAt),

@@ -233,6 +233,12 @@ export interface UsageRequestItem {
    */
   payloadCaptureState?: string;
   /**
+   * True for a completed request whose output was far smaller than the model's
+   * ceiling and which ended with an ordinary `stop` (a "degenerate stop").
+   * Absent for everything else — including rows written before the column.
+   */
+  degenerateStop?: boolean;
+  /**
    * Bitmask of the payload stages captured for this request: 1 request,
    * 2 provider request, 4 provider response, 8 client response. Read from the
    * payload row so the list can mark each drawer panel without inflating a
