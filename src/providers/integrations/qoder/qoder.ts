@@ -623,13 +623,23 @@ function qoderMaxContextFor(modelId: string, modelConfig: QoderModelConfig, real
   return modelConfig.max_input_tokens;
 }
 
-function qoderRequestedMaxTokens(request: CanonicalRequest, modelConfig: QoderModelConfig): number {
+function qoderRequestedMaxTokens(
+  request: CanonicalRequest,
+  modelConfig: QoderModelConfig,
+  realm: QoderRealm,
+): number {
   /**
    * The ceiling is the roster's stated one. A fixed 32k fallback would clamp
    * every model alike, so a request asking for more would be silently lowered
-   * no matter which model it named.
+   * no matter which model it named. A discovered row carries no
+   * `max_output_tokens` (upstream's model list reports none), so consult the
+   * static roster for the key before the 65_536 last resort — and keep that
+   * last resort only when neither the caller nor the roster states a limit.
    */
-  const configured = typeof modelConfig.max_output_tokens === "number" ? modelConfig.max_output_tokens : 65_536;
+  const configured =
+    typeof modelConfig.max_output_tokens === "number"
+      ? modelConfig.max_output_tokens
+      : qoderRosterMaxOutput(modelConfig.id, realm) ?? 65_536;
   const controls = request.generation_controls as Record<string, unknown>;
   const requested =
     typeof controls["max_tokens"] === "number"
@@ -638,6 +648,17 @@ function qoderRequestedMaxTokens(request: CanonicalRequest, modelConfig: QoderMo
         ? (controls["max_output_tokens"] as number)
         : null;
   return typeof requested === "number" && requested > 0 ? Math.min(requested, configured) : configured;
+}
+
+/**
+ * The static roster's stated output ceiling for one key, when the roster states
+ * one. Dispatch builds a live-discovered model's config without an output limit
+ * (upstream's model list reports none); this lookup restores the roster's
+ * ceiling so such a model is not capped at the 65_536 last resort.
+ */
+function qoderRosterMaxOutput(modelId: string, realm: QoderRealm): number | undefined {
+  const configs = realm === "cn" ? QODER_CN_MODEL_CONFIGS : QODER_INTL_MODEL_CONFIGS;
+  return configs[modelId]?.max_output_tokens;
 }
 
 /**
@@ -968,7 +989,7 @@ export function buildQoderRequest(
   }
   const latestUserMessage = [...qoderMessages].reverse().find((m) => m["role"] === "user");
   const latestUserText = typeof latestUserMessage?.["content"] === "string" ? (latestUserMessage["content"] as string) : "";
-  const maxTokens = qoderRequestedMaxTokens(request, modelConfig);
+  const maxTokens = qoderRequestedMaxTokens(request, modelConfig, realm);
   const reasoning = modelConfig.is_reasoning === true;
   // 1:1 with the IDE worker's `FTn` legacy builder, which sends reasoning
   // effort as a top-level camelCase field (`reasoningEffort`), derived from
@@ -1033,8 +1054,9 @@ export function buildQoderRequest(
       max_input_tokens: qoderMaxContextFor(modelId, modelConfig, realm),
       // Mirrors the roster's stated ceiling. A fixed 32k fallback would be sent
       // for every model alike, so the request would declare a cap the catalog
-      // does not publish.
-      max_output_tokens: modelConfig.max_output_tokens ?? 65_536,
+      // does not publish. A discovered model's config carries no output limit,
+      // so consult the roster for the key before the 65_536 last resort.
+      max_output_tokens: modelConfig.max_output_tokens ?? qoderRosterMaxOutput(modelId, realm) ?? 65_536,
       source: modelConfig.source ?? "system",
     },
     messages: qoderMessages,

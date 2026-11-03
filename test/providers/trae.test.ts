@@ -379,6 +379,33 @@ describe("buildTraeChatBody", () => {
     const body = buildTraeChatBody("gpt-5.5", request(), "intl");
     expect("session_id" in body).toBe(false);
   });
+
+  test("a huge max_tokens is clamped to the roster output limit", () => {
+    const body = buildTraeChatBody(
+      "gpt-5.2",
+      request({ generation_controls: { max_tokens: 1_000_000_000 } }),
+      "intl",
+      undefined,
+      128_000,
+    );
+    expect(body.max_tokens).toBe(128_000);
+  });
+
+  test("a caller max_tokens within the roster limit is forwarded unchanged", () => {
+    const body = buildTraeChatBody(
+      "gpt-5.2",
+      request({ generation_controls: { max_tokens: 32_000 } }),
+      "intl",
+      undefined,
+      128_000,
+    );
+    expect(body.max_tokens).toBe(32_000);
+  });
+
+  test("no max_tokens still means no max_tokens field", () => {
+    const body = buildTraeChatBody("gpt-5.5", request(), "intl", undefined, 128_000);
+    expect("max_tokens" in body).toBe(false);
+  });
 });
 
 describe("toTraeAgentBody", () => {

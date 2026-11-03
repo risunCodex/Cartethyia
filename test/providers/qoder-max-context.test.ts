@@ -115,4 +115,38 @@ describe("Qoder max-context dispatch", () => {
     const modelConfig = req.model_config as Record<string, unknown>;
     expect(modelConfig.max_input_tokens).toBe(180_000);
   });
+
+  test("does not shrink a discovered model to 65536 when the roster states a higher ceiling", async () => {
+    // A live-discovered model's config carries no `max_output_tokens` (upstream
+    // reports none). The roster states 384k for `dmodel`, so a caller asking for
+    // more than 65536 must be clamped to the roster's ceiling — not to the
+    // 65536 fallback.
+    const req = requestFor("dmodel");
+    (req.generation_controls as Record<string, unknown>)["max_tokens"] = 200_000;
+    const built = buildQoderRequest(
+      "dmodel",
+      req,
+      { id: "dmodel", display_name: "DeepSeek-V4-Pro", max_input_tokens: 1000000, is_vl: true, is_reasoning: true },
+      AUTH,
+      "intl",
+    );
+    expect(built.max_tokens).toBe(200_000);
+    const modelConfig = built.model_config as Record<string, unknown>;
+    expect(modelConfig.max_output_tokens).toBe(384_000);
+  });
+
+  test("keeps the 65536 fallback when neither caller nor roster states a limit", async () => {
+    // A discovered model with no roster entry (unknown key) carries no ceiling,
+    // so the 65536 fallback is the only bound.
+    const req = requestFor("xmodel");
+    (req.generation_controls as Record<string, unknown>)["max_tokens"] = 200_000;
+    const built = buildQoderRequest(
+      "xmodel",
+      req,
+      { id: "xmodel", display_name: "Unknown Model", max_input_tokens: 180000, is_vl: true, is_reasoning: false },
+      AUTH,
+      "intl",
+    );
+    expect(built.max_tokens).toBe(65_536);
+  });
 });

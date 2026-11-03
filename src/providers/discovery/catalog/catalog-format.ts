@@ -420,13 +420,24 @@ export class PackedCatalog {
     return metadata;
   }
 
-  /** Stated context limit, or `null`. */
+  /**
+   * Stated context limit, or `null`.
+   *
+   * Stored in a `Uint32Array` column; the generator
+   * (`scripts/tools/generate-models.ts`) refuses to write a value ≥ 2^31
+   * (`checkedPackedLimit`), so no row here can wrap modulo 2^32 and decode as a
+   * garbage limit.
+   */
   rowContext(index: number): number | null {
     const value = this.u32At(this.layout.ctx + index * 4);
     return value > 0 ? value : null;
   }
 
-  /** Stated output limit, or `null`. */
+  /**
+   * Stated output limit, or `null`.
+   *
+   * Same u32 storage contract as `rowContext` — see the generator guard.
+   */
   rowOutput(index: number): number | null {
     const value = this.u32At(this.layout.out + index * 4);
     return value > 0 ? value : null;

@@ -65,6 +65,7 @@ export function canonicalToResponsesPayload(
     readonly promptCacheKey?: string;
     readonly dialectPolicy?: DialectPolicy;
     readonly thinking?: ThinkingConfig;
+    readonly maxOutputTokens?: number;
   } = {},
 ): Record<string, unknown> {
   const supportsPromptCaching = options.supportsPromptCaching ?? true;
@@ -344,7 +345,9 @@ export function canonicalToResponsesPayload(
   // Resolved unconditionally so the wire's `defaultMaxTokens` applies: an
   // omitted limit must reach the upstream as a real number, not as an absent
   // field (see the worked "wkwk" case in the WIRE_TOKEN_BOUNDS comment).
-  const bounded = resolveWireMaxTokens("responses", { max_tokens: requested });
+  const bounded = resolveWireMaxTokens("responses", { max_tokens: requested }, {
+    ...(options.maxOutputTokens === undefined ? {} : { maxOutputTokens: options.maxOutputTokens }),
+  });
   if (bounded !== undefined) picked["max_output_tokens"] = bounded;
   Object.assign(payload, picked);
   // Responses top-level params carried as `extension:responses.<field>` and

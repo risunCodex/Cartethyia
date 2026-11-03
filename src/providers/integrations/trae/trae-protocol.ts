@@ -13,6 +13,7 @@
 // `iter_events` in `trae_client.py`).
 
 import type { CanonicalRequest, ContentPart } from "../../../protocol/canonical-model";
+import { resolveWireMaxTokens } from "../../../protocol/translation/quirks";
 import {
   TRAE_AGENT_CHAT_PATH,
   TRAE_AGENT_FUNCTION,
@@ -160,6 +161,7 @@ export function buildTraeChatBody(
   request: CanonicalRequest,
   realm: TraeRealm,
   sessionId?: string,
+  maxOutputTokens?: number,
 ): TraeChatBody {
   if (modelId.length === 0) throw new Error("trae model name is required");
 
@@ -256,13 +258,26 @@ export function buildTraeChatBody(
       },
     }));
   }
+  const requestedMaxTokens =
+    typeof controls.max_tokens === "number" && Number.isFinite(controls.max_tokens)
+      ? controls.max_tokens
+      : undefined;
   const options: Record<string, unknown> = {
     temperature: controls.temperature,
     top_p: controls.top_p,
-    max_tokens: controls.max_tokens,
     stop: controls.stop,
-
   };
+  // Route a numeric `max_tokens` through the shared chat-wire bound so it is
+  // floored to the wire minimum and clamped to the model's roster output limit
+  // — it must never balloon unboundedly (the roster's `out` is the ceiling).
+  // Non-numeric values keep the previous verbatim passthrough, and an absent
+  // value still omits the field (the chat bound must not invent a default here).
+  options["max_tokens"] =
+    requestedMaxTokens === undefined
+      ? controls.max_tokens
+      : resolveWireMaxTokens("chat", { max_tokens: requestedMaxTokens }, {
+          ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+        });
   for (const key of PASSTHROUGH_OPTIONS) {
     const value = options[key];
     if (value !== undefined && value !== null) body[key] = value;

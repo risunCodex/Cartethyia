@@ -299,11 +299,27 @@ export function mapQoderCatalogResponse(raw: unknown): QoderCatalogEntry[] {
   return entries;
 }
 
+/**
+ * The static roster's stated output ceiling for one slot, when the roster
+ * states one.
+ *
+ * Upstream's live `/model/list` rows report no output limit, so a discovered
+ * row cannot read one from the wire. Inheriting the roster's number keeps the
+ * discovered row's `outputLimit` honest — without it `defineModel` falls back
+ * to a base-catalog/majority vote that can sit below the roster's ceiling
+ * (e.g. `qwen3.7-plus` votes 64k while the roster says 131k).
+ */
+function qoderRosterMaxOutputFor(providerId: string, key: string): number | undefined {
+  const configs = providerId === "qodercn" ? QODER_CN_MODEL_CONFIGS : QODER_INTL_MODEL_CONFIGS;
+  return configs[key]?.max_output_tokens;
+}
+
 /** Projects one live catalog row onto a Cartethyia catalog row. */
 export function qoderCatalogModel(
   entry: QoderCatalogEntry,
   providerId: string,
 ): ModelDefinition {
+  const rosterOutput = qoderRosterMaxOutputFor(providerId, entry.key);
   return defineModel({
     id: entry.key,
     providerId,
@@ -320,6 +336,9 @@ export function qoderCatalogModel(
     // a free row bills zero per token and belongs to the provider's free tier.
     free: entry.isFree,
     freeTier: entry.isFree,
+    // The live row carries no output ceiling, so inherit the static roster's
+    // stated one when it exists (see `qoderRosterMaxOutputFor`).
+    ...(rosterOutput === undefined ? {} : { out: rosterOutput }),
   });
 }
 
@@ -493,6 +512,7 @@ export async function discoverQoderModels(input: {
         // is published.
         const virtuals = QODER_VIRTUAL_MODELS.filter((virtual) => virtual.target === entry.key);
         if (virtuals.length === 0) return [qoderCatalogModel(entry, providerId)];
+        const rosterOutput = qoderRosterMaxOutputFor(providerId, entry.key);
         return virtuals.map((virtual) =>
           defineModel({
             id: virtual.id,
@@ -502,7 +522,14 @@ export async function discoverQoderModels(input: {
             ctx: entry.maxInputTokens ?? null,
             vision: virtual.vision ?? entry.isVl,
             reasoning: entry.isReasoning,
-            ...(virtual.outputLimit !== undefined ? { out: virtual.outputLimit } : {}),
+            // A virtual override wins; otherwise inherit the static roster's
+            // ceiling for the slot instead of a base-catalog/majority estimate
+            // (see `qoderRosterMaxOutputFor`).
+            ...(virtual.outputLimit !== undefined
+              ? { out: virtual.outputLimit }
+              : rosterOutput === undefined
+                ? {}
+                : { out: rosterOutput }),
             free: virtual.free ?? entry.isFree,
             freeTier: virtual.free ?? entry.isFree,
           }),

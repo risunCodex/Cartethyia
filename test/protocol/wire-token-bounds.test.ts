@@ -9,6 +9,7 @@ import { canonicalToChatPayload } from "../../src/protocol/request/chat";
 import { canonicalToResponsesPayload } from "../../src/protocol/request/responses";
 import { canonicalToClaudeMessagesPayload } from "../../src/protocol/request/messages";
 import { WIRE_TOKEN_BOUNDS } from "../../src/protocol/translation/quirks";
+import { GatewayError } from "../../src/protocol/gateway-error";
 import type { CanonicalRequest } from "../../src/protocol/canonical-model";
 
 function request(controls: Record<string, unknown>): CanonicalRequest {
@@ -96,6 +97,36 @@ describe("output-token bounds — the caller's stated limit is never invented ov
     expect(floor).toBeDefined();
     expect(canonicalToChatPayload(request({ max_tokens: 2 }))["max_tokens"]).toBe(floor);
   });
+
+  test("responses clamps to the catalog output limit when one is supplied", () => {
+    expect(
+      canonicalToResponsesPayload(request({ max_output_tokens: 1_000_000_000 }), {
+        maxOutputTokens: 32_000,
+      })["max_output_tokens"],
+    ).toBe(32_000);
+  });
+
+  test("responses passes a huge limit through when no catalog limit is supplied", () => {
+    expect(
+      canonicalToResponsesPayload(request({ max_output_tokens: 1_000_000_000 }))["max_output_tokens"],
+    ).toBe(1_000_000_000);
+  });
+
+  test("messages clamps max_tokens to the catalog output limit", () => {
+    expect(
+      canonicalToClaudeMessagesPayload(request({ max_tokens: 500_000 }), {
+        maxOutputTokens: 64_000,
+      })["max_tokens"],
+    ).toBe(64_000);
+  });
+
+  test("messages keeps a small max_tokens unchanged under a catalog limit", () => {
+    expect(
+      canonicalToClaudeMessagesPayload(request({ max_tokens: 8_000 }), {
+        maxOutputTokens: 64_000,
+      })["max_tokens"],
+    ).toBe(8_000);
+  });
 });
 
 describe("an omitted limit still reaches the upstream as a number", () => {
@@ -132,5 +163,34 @@ describe("an omitted limit still reaches the upstream as a number", () => {
     for (const [wire, bound] of Object.entries(WIRE_TOKEN_BOUNDS)) {
       expect(bound.defaultMaxTokens, `${wire} must declare a default`).toBeDefined();
     }
+  });
+});
+
+describe("messages — the catalog output limit bounds thinking budgets", () => {
+  function thinkingRequest(budgetTokens: number): CanonicalRequest {
+    return {
+      ...request({}),
+      source_surface: "messages",
+      reasoning: { thinking_type: "enabled", budget_tokens: budgetTokens },
+    } as CanonicalRequest;
+  }
+
+  test("an impossible budget over the catalog limit fails fast as a local 400", () => {
+    // budget 1_000_000 + buffer 1024 > 64_000 catalog limit → the guard fires.
+    const encode = () =>
+      canonicalToClaudeMessagesPayload(thinkingRequest(1_000_000), {
+        maxOutputTokens: 64_000,
+      });
+    expect(encode).toThrow(GatewayError);
+    expect(encode).toThrow(expect.objectContaining({ status: 400 }));
+  });
+
+  test("a normal budget under the catalog limit stays unchanged", () => {
+    // budget 32_000 + buffer 1024 = 33_024 < 64_000 → raised to 33_024, not
+    // clamped, not rejected.
+    const payload = canonicalToClaudeMessagesPayload(thinkingRequest(32_000), {
+      maxOutputTokens: 64_000,
+    });
+    expect(payload["max_tokens"]).toBe(33_024);
   });
 });

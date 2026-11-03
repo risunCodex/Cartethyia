@@ -26,6 +26,7 @@
  */
 import path from "node:path";
 import { brotliCompressSync, constants } from "node:zlib";
+import { checkedPackedLimit, positiveInt } from "./generate-models-util";
 
 const OUT_PATH = path.join(
   import.meta.dir,
@@ -82,10 +83,6 @@ function text(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value.trim().toLowerCase() : undefined;
 }
 
-function positiveInt(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
-}
-
 function stringList(value: unknown): readonly string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }
@@ -140,8 +137,10 @@ function modelsDevRows(provider: string, rawModels: Record<string, unknown>): Ca
     rows.push({
       provider,
       id,
-      context: positiveInt(model.limit?.context),
-      output: positiveInt(model.limit?.output),
+      // The packed catalog stores these in u32 columns; values ≥ 2^31 would
+      // wrap modulo 2^32 — fail loudly instead of corrupting the limit.
+      context: checkedPackedLimit("context", positiveInt(model.limit?.context)),
+      output: checkedPackedLimit("output", positiveInt(model.limit?.output)),
       inMask: modalityMask(stringList(model.modalities?.input)),
       outMask: modalityMask(stringList(model.modalities?.output)),
       flags: (model.reasoning === true ? 1 : 0) | (model.tool_call === true ? 2 : 0),
@@ -166,8 +165,9 @@ function opencodeRows(providerKey: string, rawModels: Record<string, unknown>): 
     rows.push({
       provider: providerKey,
       id,
-      context: positiveInt(model.limit?.context),
-      output: positiveInt(model.limit?.output),
+      // See the models.dev path: 2^31+ would wrap in the packed u32 column.
+      context: checkedPackedLimit("context", positiveInt(model.limit?.context)),
+      output: checkedPackedLimit("output", positiveInt(model.limit?.output)),
       inMask: modalityMask(stringList(model.modalities?.input)),
       outMask: modalityMask(stringList(model.modalities?.output)),
       flags: (model.reasoning === true ? 1 : 0) | (model.tool_call === true ? 2 : 0),

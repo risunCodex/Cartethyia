@@ -207,7 +207,13 @@ class TraeAdapter implements ProviderAdapter {
      * hash) and thread it through.
      */
     const sessionId = request.session_id ?? resolvePromptCacheKey(request, context);
-    const body = buildTraeChatBody(modelId, request, this.realm, sessionId);
+    const body = buildTraeChatBody(
+      modelId,
+      request,
+      this.realm,
+      sessionId,
+      candidate.output_limit ?? undefined,
+    );
     // The cache estimator is scoped per (session, model): upstream cache keys
     // are model-specific, so two models sharing a conversation id must not
     // treat each other's identical prefixes as hits.

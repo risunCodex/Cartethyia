@@ -565,6 +565,7 @@ export function canonicalToClaudeMessagesPayload(
     maxBytesOverride?: number;
     dialectPolicy?: DialectPolicy;
     thinking?: ThinkingConfig;
+    maxOutputTokens?: number;
   } = {},
 ): ClaudeWireObject {
   const seen = new Map<string, number>();
@@ -662,7 +663,11 @@ export function canonicalToClaudeMessagesPayload(
   const normalizedControls = normalizeWireMaxTokens(request.generation_controls);
   const requestedMax = normalizedControls.max_tokens;
   const hasTools = (request.tools?.length ?? 0) > 0;
-  let maxTokens = resolveWireMaxTokens("messages", { max_tokens: requestedMax }, { hasTools, isOAuth }) ?? ANTHROPIC_DEFAULT_MAX_TOKENS;
+  let maxTokens = resolveWireMaxTokens("messages", { max_tokens: requestedMax }, {
+    hasTools,
+    isOAuth,
+    ...(options.maxOutputTokens === undefined ? {} : { maxOutputTokens: options.maxOutputTokens }),
+  }) ?? ANTHROPIC_DEFAULT_MAX_TOKENS;
   if (requestedMax === undefined) {
     log.warn("claude: max_tokens absent, defaulting", {
       max_tokens: maxTokens,
@@ -676,9 +681,12 @@ export function canonicalToClaudeMessagesPayload(
   const thinkingEnabled = isThinkingEnabled(request);
   // Real ceilings (P2-12): an impossible thinking budget surfaces as a typed
   // local 400 instead of an over-ceiling max_tokens that 400s opaquely upstream.
+  // Non-OAuth caps at the model's catalog output limit (when known) so the
+  // thinking guard can fire instead of shipping an over-catalog-limit
+  // `max_tokens`; OAuth keeps its own ceiling per the table.
   const maxAllowed = isOAuth
     ? WIRE_TOKEN_BOUNDS["messages"]?.oauthCeiling ?? Number.MAX_SAFE_INTEGER
-    : Number.MAX_SAFE_INTEGER;
+    : options.maxOutputTokens ?? Number.MAX_SAFE_INTEGER;
   if (thinkingEnabled && request.reasoning?.budget_tokens !== undefined) {
     maxTokens = ensureMaxTokensForThinking(
       maxTokens,
@@ -717,6 +725,12 @@ export function canonicalToClaudeMessagesPayload(
     // The upstream requires the budget to stay below `max_tokens`; raise
     // max_tokens to leave room for the answer rather than let it 400.
     maxTokens = ensureMaxTokensForThinking(maxTokens, effectiveBudgetTokens, maxAllowed);
+  }
+  // Final clamp to the model's catalog output limit: thinking may have raised
+  // `max_tokens` (e.g. under an OAuth ceiling wider than the catalog limit), so
+  // the value that ships must never exceed what the model can actually emit.
+  if (options.maxOutputTokens !== undefined && maxTokens > options.maxOutputTokens) {
+    maxTokens = options.maxOutputTokens;
   }
   const payload: ClaudeWireObject = {
     model: request.model,

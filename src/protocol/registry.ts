@@ -44,6 +44,7 @@ type CodecModule =
           readonly maxBytesOverride?: number;
           readonly dialectPolicy?: DialectPolicy;
           readonly thinking?: ThinkingConfig;
+          readonly maxOutputTokens?: number;
         },
       ) => Record<string, unknown>;
       readonly decodeWireResponse: (
@@ -89,6 +90,7 @@ type CodecModule =
           readonly promptCacheKey?: string;
           readonly dialectPolicy?: DialectPolicy;
           readonly thinking?: ThinkingConfig;
+          readonly maxOutputTokens?: number;
         },
       ) => Record<string, unknown>;
       readonly decodeWireResponse: (
@@ -163,6 +165,9 @@ export async function encodeWireRequest(
       ...(context?.maxBytesOverride === undefined
         ? {}
         : { maxBytesOverride: context.maxBytesOverride }),
+      ...(context?.maxOutputTokens === undefined
+        ? {}
+        : { maxOutputTokens: context.maxOutputTokens }),
       ...(context?.dialectPolicy === undefined ? {} : { dialectPolicy: context.dialectPolicy }),
       ...(context?.thinking === undefined ? {} : { thinking: context.thinking }),
     });
@@ -192,6 +197,9 @@ export async function encodeWireRequest(
     ...(context?.promptCacheKey === undefined
       ? {}
       : { promptCacheKey: context.promptCacheKey }),
+    ...(context?.maxOutputTokens === undefined
+      ? {}
+      : { maxOutputTokens: context.maxOutputTokens }),
     ...(context?.dialectPolicy === undefined ? {} : { dialectPolicy: context.dialectPolicy }),
     ...(context?.thinking === undefined ? {} : { thinking: context.thinking }),
   });

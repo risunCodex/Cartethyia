@@ -100,6 +100,39 @@ describe("Qoder model discovery wire", () => {
     expect(lite?.modalities.input).toContain("image");
   });
 
+  test("discovered rows inherit the roster's output ceiling instead of shrinking", async () => {
+    resetQoderDiscoveryCache("intl");
+    // No row carries `max_output_tokens` — upstream's model list reports none —
+    // so the discovered row's output limit must come from the static roster.
+    const payload = JSON.stringify({
+      chat: [
+        { key: "ultimate", display_name: "Ultimate", is_vl: true, is_reasoning: true, enable: true, max_input_tokens: 1000000 },
+        { key: "dmodel", display_name: "DeepSeek-V4-Pro", is_vl: true, is_reasoning: true, enable: true, max_input_tokens: 1000000 },
+      ],
+    });
+    const fetcher: typeof fetch = (async () =>
+      new Response(payload, { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
+    const models = await discoverQoderModels({
+      realm: "intl",
+      providerId: "qoder",
+      credential: "pt-test",
+      headers: () => Promise.resolve({}),
+      fetcher,
+      encode: (bytes: Uint8Array) => Buffer.from(bytes).toString("latin1"),
+    });
+    // `ultimate` has no virtual alias → published through `qoderCatalogModel`;
+    // its row must carry the roster's 128k ceiling, not a base-catalog/unfiled
+    // estimate (131k) and not the 65k floor.
+    const ultimate = models.find((m) => m.modelId === "ultimate");
+    expect(ultimate).toBeDefined();
+    expect(ultimate?.outputLimit).toBe(128_000);
+    // `dmodel` publishes under its virtual alias; same inheritance from the
+    // roster (384k).
+    const deepseek = models.find((m) => m.modelId === "deepseek-v4-pro");
+    expect(deepseek).toBeDefined();
+    expect(deepseek?.outputLimit).toBe(384_000);
+  });
+
   test("caches per realm and reuses within TTL", async () => {
     resetQoderDiscoveryCache("intl");
     let fetches = 0;
