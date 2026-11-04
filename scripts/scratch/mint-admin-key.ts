@@ -6,8 +6,8 @@
  */
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
-import { generateApiKeySecret } from "D:/MyGitRepository/Projects/HoneyC/ProxyRouter-Project/Cartethyia/src/console/api-keys/contracts";
-import { encryptCredential } from "D:/MyGitRepository/Projects/HoneyC/ProxyRouter-Project/Cartethyia/src/security/crypto";
+import { generateApiKeySecret } from "../../src/console/api-keys/contracts";
+import { encryptCredential } from "../../src/security/crypto";
 
 const DB_PATH = process.argv[2] ?? "C:/Users/Aria/AppData/Roaming/cartethyia/cartethyia.sqlite";
 const db = new Database(DB_PATH);

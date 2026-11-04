@@ -4,7 +4,7 @@
  */
 import { Database } from "bun:sqlite";
 import { writeFileSync } from "node:fs";
-import { decryptCredentialToString } from "D:/MyGitRepository/Projects/HoneyC/ProxyRouter-Project/Cartethyia/src/security/crypto";
+import { decryptCredentialToString } from "../../src/security/crypto";
 
 const DB_PATH = process.argv[2] ?? "C:/Users/Aria/AppData/Roaming/cartethyia/cartethyia.sqlite";
 const OUT_PATH = process.argv[3] ?? "C:/Users/Aria/AppData/Local/Temp/opencode/ag-accounts.json";
