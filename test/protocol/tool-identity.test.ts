@@ -172,15 +172,15 @@ describe("trackToolCall — index assignment", () => {
     expect(trackToolCall(tracker, { id: "c" }).index).toBe(6);
   });
 
-  test("an explicit index is ignored for a known id in favour of the pinned one", () => {
-    // MEASURED: the precedence is `explicit > pinned > fallback > counter`, so
-    // an explicit index DOES win even for a known id. This is deliberate — the
-    // wire index is authoritative when present — and it means a provider that
-    // sends a different index on a continuation frame moves the call. Pinned.
+  test("a known id keeps its pinned index when the wire index differs", () => {
+    // The wire index is honored for the FIRST sighting of an id; later frames
+    // for that id stay on the pinned index. A provider that sends a different
+    // index on a continuation frame does not move the call — moving it would
+    // make a streamed call jump positions mid-flight.
     const tracker = createToolCallTracker();
     trackToolCall(tracker, { id: "a", index: 3 });
-    expect(trackToolCall(tracker, { id: "a", index: 9 }).index).toBe(9);
-    expect(tracker.indexById.get("a")).toBe(9);
+    expect(trackToolCall(tracker, { id: "a", index: 9 }).index).toBe(3);
+    expect(tracker.indexById.get("a")).toBe(3);
   });
 
   test("a negative explicit index is rejected", () => {
@@ -199,10 +199,11 @@ describe("trackToolCall — index assignment", () => {
 
   test("a zero explicit index is accepted, not treated as absent", () => {
     // The discriminating case for the `!== undefined` check: 0 is a valid wire
-    // index and a truthiness test would drop it.
+    // index and a truthiness test would drop it. When 0 is already claimed by
+    // another call, the second call gets a fresh unique index instead.
     const tracker = createToolCallTracker();
     trackToolCall(tracker, { id: "a" });
-    expect(trackToolCall(tracker, { id: "b", index: 0 }).index).toBe(0);
+    expect(trackToolCall(tracker, { id: "b", index: 0 }).index).toBe(1);
   });
 
   test("the fallback index is used when there is no explicit index", () => {
@@ -254,15 +255,29 @@ describe("trackToolCall — index assignment", () => {
     expect(trackToolCall(tracker, { id: "a" }).index).toBe(0);
   });
 
-  test("two calls with the same explicit index both keep it", () => {
-    // MEASURED: nothing de-duplicates indexes. A provider that sends the same
-    // index for two ids gets two states on that index, and the client's
-    // accumulation merges them. Pinned: the tracker's contract is to honor the
-    // wire, not to repair it.
+  test("two calls sharing a wire index get unique indexes", () => {
+    // Upstream Qoder parallel calls repeat the same wire index (0,0) for two
+    // different ids. Previously that handed both calls the same index and the
+    // client's accumulation merged them into one glued call. The tracker now
+    // synthesizes a fresh index for the second call so every logical call keeps
+    // a distinct wire position.
     const tracker = createToolCallTracker();
     expect(trackToolCall(tracker, { id: "a", index: 1 }).index).toBe(1);
-    expect(trackToolCall(tracker, { id: "b", index: 1 }).index).toBe(1);
+    expect(trackToolCall(tracker, { id: "b", index: 1 }).index).toBe(2);
     expect(tracker.states.size).toBe(2);
+    expect(tracker.indexById.get("a")).toBe(1);
+    expect(tracker.indexById.get("b")).toBe(2);
+  });
+
+  test("a known id's continuation keeps its pinned index even when the wire repeats", () => {
+    // A continuation fragment of an established call must stay on the call's
+    // own index, never be bumped to a fresh one because another call claimed
+    // the same wire index.
+    const tracker = createToolCallTracker();
+    trackToolCall(tracker, { id: "a", index: 0 });
+    trackToolCall(tracker, { id: "b", index: 0 });
+    expect(trackToolCall(tracker, { id: "a", index: 0 }).index).toBe(0);
+    expect(trackToolCall(tracker, { id: "b", index: 0 }).index).toBe(1);
   });
 });
 

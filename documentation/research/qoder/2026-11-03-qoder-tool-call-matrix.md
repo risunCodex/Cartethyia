@@ -27,6 +27,14 @@ All combinations still emitted `tool_calls` with `arguments: ""`:
 - `tools` with/without `description`, with `strict:true`
 - stream and non-stream (non-stream: no `tool_calls` at all)
 
+> **Correction (2026-11-04):** the conclusion below ("upstream/model
+> behavior") was **wrong** — the empty arguments were gateway adapter bugs
+> (free-account routing, empty-`id` continuation handling, and, on the billed
+> gRPC path, a missing `tools` request + Struct-wrapped response decoding).
+> All are fixed; see `2026-11-04-qoder-grpc-tools.md` and
+> `2026-11-04-qoder-wire-delta-audit.md`. The matrix below is retained as the
+> historical record.
+
 The finish reason is correctly `tool_calls` and the tool name arrives — only
 the arguments are empty. This is an upstream/model behavior on those roster
 slots, not a request-shape or adapter bug: identical request shapes produce

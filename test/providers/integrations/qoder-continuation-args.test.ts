@@ -102,8 +102,8 @@ test("index-identified continuation fragments rejoin the pinned call id", async 
     frame({}, "stop"),
   ]);
   const deltas = calls(ev);
-  // The tail hold means the JSON fragments may arrive spread or joined; every
-  // delta must reference the real call id, not a per-chunk `call_0` synthetic.
+  // Every delta must reference the pinned id, not a per-chunk `call_0`
+  // synthetic (the donor pins the first id per wire index).
   for (const delta of deltas) expect(delta["call_id"]).toBe("call_00_full");
   const joined = deltas
     .map((delta) => (delta["arguments_delta"] as string) ?? "")
@@ -152,7 +152,7 @@ test("continuation fragments carrying an empty id rejoin the pinned call", async
   // (the first chunk carries the real id). Treating the empty string as a
   // fresh call id would orphan every argument fragment under `""` — the real
   // call is then emitted with empty arguments and the fragments are lost. An
-  // empty id must behave exactly like a missing one.
+  // empty id must behave exactly like a missing one and rejoin the pinned id.
   const ev = await collect([
     frame(CALL_START),
     frame({
@@ -177,9 +177,10 @@ test("continuation fragments carrying an empty id rejoin the pinned call", async
     }),
   ]);
   const deltas = calls(ev);
-  // The translator holds fragments per call id and flushes one complete delta
-  // per call at end of stream.
-  expect(deltas).toHaveLength(1);
+  // Donor mirror: fragments are forwarded as separate deltas under the pinned
+  // id — the client stitches them. The start frame (empty arguments) and each
+  // continuation are all separate deltas, every one on the pinned id.
+  expect(deltas.length).toBeGreaterThanOrEqual(2);
   for (const d of deltas) expect(d["call_id"]).toBe("call_00_full");
   expect(JSON.parse(deltas.map((d) => String(d["arguments_delta"])).join(""))).toEqual({
     text: "ab",

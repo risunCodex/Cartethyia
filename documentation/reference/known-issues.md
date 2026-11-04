@@ -6,113 +6,27 @@ from the field.
 
 ---
 
-## 1. Empty tool-call arguments (`{}`) on Anthropic wire via @ai-sdk/anthropic
+## 1. Empty tool-call arguments (`{}`) on Qoder — RESOLVED (adapter bug, not upstream)
 
-**Symptom.** Clients using `@ai-sdk/anthropic` (e.g. opencode with provider
-`CarteLocal` configured as `aisdk:@ai-sdk/anthropic`) sometimes receive a tool
-call with an empty `input: {}` and reject it with `Invalid arguments for tool
-"shell": command: Missing key` (or `Arguments provided: {}`). It is
-**intermittent**: simple tools (`read`, `echo hi`) usually work; complex
-commands or `edit` with a large payload sometimes fail.
+**Was:** intermittent empty `input: {}` on the Anthropic wire for Qoder models
+(`Invalid arguments for tool "shell": command: Missing key`), originally
+misattributed to upstream/model behavior.
 
-**Not a gateway bug.** The Qoder wire is verified to send structured
-`tool_calls` with full arguments (raw probes of `qfmodel`/`dfmodel` show a
-complete `joinedArgs`, `leaked=false`). The `MessagesStreamEncoder` (Anthropic
-Messages) is also correct and tested: arguments stream as `input_json_delta`,
-zero-arg calls become `input: {}`. So the `{}` arriving at the client is
-**model/upstream behavior** occasionally emitting a tool call without
-arguments — not an adapter fault.
+**Real root causes — all fixed in the gateway (2026-11-03/04):**
+- Free-tier account routing landed on an exhausted/free account (quota 0),
+  which emitted empty arguments on every slot.
+- Empty `id: ""` continuation fragments were treated as a fresh call id, so
+  argument fragments were orphaned (fixed in `qoder.ts`).
+- Billed gRPC path: the request never sent `tools`; response
+  `delta.tool_calls` arrived Struct-wrapped and was dropped; a `tool_use`
+  finish counted as failed → retry/reset (fixed in `qoder-grpc.ts`).
 
-**Why only aisdk anthropic?** The Anthropic wire requires `tool_use.input` to
-be an object; when the model sends no arguments, the aisdk client rejects a
-tool that requires keys (`command`, `oldString`, etc.). The OpenAI-compatible
-format is more tolerant of empty arguments, so the symptom does not appear
-there. **This is not a Claude Code CLI issue** — Claude Code uses the same
-Anthropic wire, but its parser/tolerance differs.
-
-**Workaround (recommended).** Configure the opencode provider as
-`@ai-sdk/openai-compatible`:
-
-```jsonc
-"CarteLocal": {
-  "name": "CarteLocal",
-  "package": "aisdk:@ai-sdk/openai-compatible",
-  "settings": {
-    "baseURL": "http://127.0.0.1:12800/v1",
-    "apiKey": "pn-carte-..."
-  }
-}
-```
-
-Verified: read, shell (including complex commands with `&&`/pipes), and edit
-all work with fully populated `input`.
-
-**Status.** Upstream/model known issue; not a Cartethyia bug. Monitor: if the
-model stops emitting `{}`, revisit the workaround.
-
-**Verification update (2026-11-02).** Re-tested with the `aisdk:` ai-sdk
-packages against `cb/deepseek-v4.1-flash` (cb/ds41) on the local gateway
-(`:12800`): a full 4-turn session on the **Anthropic wire**
-(`aisdk:@ai-sdk/anthropic`) ran native tools (`glob`, `read`, `write`) and
-shell (`dir`, `Get-Location; Write-Output; Get-Content`) — every call carried
-full arguments, no empty `input: {}` reproduced. Same result on the chat
-(`openai-compatible`) and Responses (`openai`) wires. The `{}` miss remains
-intermittent/upstream-specific rather than a stable property of this model.
-
-**Update (2026-11-03) — upstream slot matrix.** A controlled battery against
-the local gateway (chat completions, one `bash` function tool, stream +
-non-stream, 4 trials per combination, `tool_choice`/`parameters`/`strict`
-variants) shows the empty-arguments behavior is **stable per roster slot**, not
-intermittent:
-
-| Slot (virtual id) | Arguments |
-| --- | --- |
-| `dfmodel` (`deepseek-v4.1-flash`) | ✅ populated |
-| `lite` (`lite-qwen-3.7-plus`) | ✅ populated |
-| `qmodel` (`qwen3.7-plus`) | ✅ populated |
-| `qmodel_38max` (`qwen3.8-max`) | ✅ populated |
-| `qfmodel` (`qwen3.8-flash`) | ❌ always `""` |
-| `qmodel_latest` (`qwen3.7-max`) | ❌ always `""` |
-
-`qfmodel` and `qmodel_latest` always emit `tool_calls` with `arguments: ""`
-(with correct `finish_reason` and tool name) across every request shape tried —
-so the `{}` path is an upstream model/slot behavior, not the gateway. For tool
-execution, route to a populated slot (`dfmodel`, `lite`, `qmodel`,
-`qmodel_38max`). Full evidence: `documentation/research/qoder/2026-11-03-qoder-tool-call-matrix.md`.
-
-**Update (2026-11-03) — account routing is the real cause for the local
-gateway.** The local `CarteLocal` gateway only ever routed `qoder` requests to
-the single active account **Sunny Koding**, which is free-tier (`PLAN_TIER_FREE`,
-quota 0) and emits empty `arguments: ""` on every slot — including populated
-slots. Accounts with add-on quota (`Akun Ytprem`, id
-`7f9d9d0c-dbe6-4ee5-99f2-ec2457c568b5`, 100 credits) were `disabled`. After
-enabling Ytprem (and disabling the free Sunny account so round-robin cannot land
-on it), the gateway returns **populated arguments** for `qwen3.8-max` and
-`deepseek-v4.1-flash` (3/3 and 2/2 trials OK), and opencode runs the tool
-end-to-end (`tool_use` → `shell` → `{"command": "echo hello"}`).
-
-**Update (2026-11-03, later) — the remaining empty slots were an adapter bug,
-now fixed.** `qfmodel` (`qwen3.8-flash`) and `qmodel_latest` (`qwen3.7-max`)
-echo `id: ""` on every continuation chunk. The translator treated the empty
-string as a fresh call id, buffering every argument fragment under `""` and
-losing it — the real call was emitted with empty arguments. Fix in `qoder.ts`:
-an empty `id` now behaves like a missing one, so continuations re-join the
-pinned first-seen id per wire index (regression tests in
-`qoder-continuation-args.test.ts`). After the fix both slots return populated
-arguments (3/3 trials OK) through the gateway and end-to-end via opencode.
-
-**Update (2026-11-03, streaming) — streams were fully buffered before
-forwarding.** `fetchQoderIdeWithEmptyRecovery` drained the entire upstream body
-before returning a response, so every stream (Qwen and DeepSeek alike) appeared
-to complete in one burst at the end. It now sniffs only the first chunks (up to
-64 KiB) to decide whether to replay a thought-only/empty stream, then forwards
-the rest progressively. Measured: `qfmodel` reasoning deltas arrive 17–76 ms
-apart (previously all at `t=994ms`). Upstream behavior differs per slot —
-Qwen streams reasoning progressively; DeepSeek emits it in one late burst —
-which is not an adapter artifact.
-
-Full postmortem (symptoms → hypotheses → raw evidence → root causes → fixes →
-verification): `documentation/research/qoder/2026-11-03-qoder-tool-call-investigation.md`.
+**Status: RESOLVED.** Live-verified end-to-end — tool calls stream with full
+arguments, no retry, no reset. The workaround (routing to "populated" slots /
+`openai-compatible`) is no longer needed. Evidence:
+`documentation/research/qoder/2026-11-03-qoder-tool-call-investigation.md`,
+`documentation/research/qoder/2026-11-04-qoder-grpc-tools.md`,
+`documentation/research/qoder/2026-11-04-qoder-wire-delta-audit.md`.
 
 ---
 

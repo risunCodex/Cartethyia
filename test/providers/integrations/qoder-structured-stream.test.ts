@@ -57,20 +57,37 @@ test("a structured tool_calls delta is emitted as a tool call", async () => {
   expect(textOf(ev)).toBe("calling");
 });
 
-test("continuation fragments attach to the first call id by index", async () => {
-  // Upstream streaming fragments arrive as separate chunks; the translator
-  // buffers and stitches them into ONE complete call at end of stream, so the
-  // client never sees a half-built JSON blob.
+test("content after finish reason is dropped", async () => {
+  // Strict OpenAI clients reject content after the finish reason: once the
+  // terminal frame is seen, any later content/reasoning/tool-call fragments
+  // must be dropped, and only one terminal may be emitted.
+  const ev = await collect([
+    frame({ content: "A" }),
+    frame({}, "stop"),
+    frame({ content: "B" }),
+    frame({ tool_calls: [{ index: 0, id: "call_1", function: { name: "Read", arguments: "{}" } }] }),
+  ]);
+  expect(textOf(ev)).toBe("A");
+  expect(callsOf(ev)).toHaveLength(0);
+  const terminal = ev.find((e) => e["type"] === "terminal");
+  expect(terminal?.["stop_reason"]).toBe("stop");
+});
+
+test("continuation fragments are forwarded as separate deltas", async () => {
+  // Donor mirror: each `delta.tool_calls` fragment becomes its own
+  // `tool_call_delta` — the client stitches by index/id, exactly like the
+  // donor's `partial_json` stream. No buffering into one call.
   const ev = await collect([
     frame({ tool_calls: [{ index: 0, id: "call_1", function: { name: "Read", arguments: '{"file_path":' } }] }),
     frame({ tool_calls: [{ index: 0, function: { arguments: '"a.ts"}' } }] }),
     frame({}, "tool_calls"),
   ]);
   const calls = callsOf(ev);
-  expect(calls).toHaveLength(1);
+  expect(calls).toHaveLength(2);
   expect(calls[0]?.["call_id"]).toBe("call_1");
   expect(calls[0]?.["name"]).toBe("Read");
-  expect(JSON.parse((calls[0]?.["arguments_delta"] as string) ?? "{}")).toEqual({ file_path: "a.ts" });
+  expect((calls[0]?.["arguments_delta"] as string) ?? "").toBe('{"file_path":');
+  expect((calls[1]?.["arguments_delta"] as string) ?? "").toBe('"a.ts"}');
 });
 
 test("parallel tool calls keep distinct ids", async () => {
@@ -89,22 +106,70 @@ test("parallel tool calls keep distinct ids", async () => {
   expect(calls[1]?.["call_id"]).toBe("call_2");
 });
 
-test("malformed upstream argument fragments are repaired at flush", async () => {
-  // Upstream occasionally drops or mangles a byte between stream fragments
-  // (`{"command"ls -la"}` — missing `:`). The translator must not forward a
-  // half-built blob; it stitches fragments and emits one call. The repair is
-  // best-effort: when the stitched string is invalid JSON, the raw string
-  // still ships as the arguments delta (the caller can decide), but the call
-  // itself is never split across events.
+test("glued parallel arguments are forwarded verbatim (no split)", async () => {
+  // Donor mirror: the translator never splits or repairs glued JSON — each
+  // `delta.tool_calls` element is forwarded as-is, so the client decides. The
+  // second call's empty arguments arrive untouched too.
+  const ev = await collect([
+    frame({
+      tool_calls: [
+        {
+          index: 0,
+          id: "call_1",
+          function: { name: "kalkulator", arguments: '{"expression": "17*23"}{"zona": "Asia/Jakarta"}' },
+        },
+        { index: 1, id: "call_2", function: { name: "get_waktu", arguments: "" } },
+      ],
+    }),
+    frame({}, "tool_calls"),
+  ]);
+  const calls = callsOf(ev);
+  expect(calls).toHaveLength(2);
+  expect((calls[0]?.["arguments_delta"] as string) ?? "").toBe('{"expression": "17*23"}{"zona": "Asia/Jakarta"}');
+  expect(calls[1]?.["call_id"]).toBe("call_2");
+  expect((calls[1]?.["arguments_delta"] as string) ?? "").toBe("");
+});
+
+test("continuation fragments are forwarded as separate deltas", async () => {
+  // Donor mirror: each fragment becomes its own `tool_call_delta` — the
+  // client stitches by index/id, exactly like the donor's `partial_json`
+  // stream. No buffering into one call.
+  const ev = await collect([
+    frame({
+      tool_calls: [
+        {
+          index: 0,
+          id: "toolu_A",
+          function: { name: "kalkulator", arguments: '{"expression": "17*23"}{"zona": "Asia/Jakarta"}' },
+        },
+      ],
+    }),
+    frame({
+      tool_calls: [
+        { index: 1, id: "toolu_B", function: { name: "get_waktu", arguments: "" } },
+      ],
+    }),
+    frame({}, "tool_calls"),
+  ]);
+  const calls = callsOf(ev);
+  expect(calls).toHaveLength(2);
+  expect((calls[0]?.["arguments_delta"] as string) ?? "").toBe('{"expression": "17*23"}{"zona": "Asia/Jakarta"}');
+  expect(calls[1]?.["call_id"]).toBe("toolu_B");
+});
+
+test("fragment arguments are forwarded as-is without repair", async () => {
+  // Donor mirror: a half-built arguments string reaches the client exactly as
+  // received — no stitching, no repair, no JSON validation.
   const ev = await collect([
     frame({ tool_calls: [{ index: 0, id: "call_1", function: { name: "bash", arguments: '{"command"' } }] }),
     frame({ tool_calls: [{ index: 0, function: { arguments: 'ls -la"}' } }] }),
     frame({}, "tool_calls"),
   ]);
   const calls = callsOf(ev);
-  expect(calls).toHaveLength(1);
+  expect(calls).toHaveLength(2);
   expect(calls[0]?.["call_id"]).toBe("call_1");
-  expect((calls[0]?.["arguments_delta"] as string) ?? "").toBe('{"command"ls -la"}');
+  expect((calls[0]?.["arguments_delta"] as string) ?? "").toBe('{"command"');
+  expect((calls[1]?.["arguments_delta"] as string) ?? "").toBe('ls -la"}');
 });
 
 test("reasoning_content is surfaced as reasoning content", async () => {
@@ -198,17 +263,17 @@ test("a turn whose structured call ran reports tool_use", async () => {
   expect(terminal?.["stop_reason"]).toBe("tool_use");
 });
 
-test("an unrecoverable tool-style echo fails the turn instead of leaking", async () => {
-  // The model writes a tool call as prose with the marker + XML tags. No
-  // recovery exists for that shape — the turn must fail (502) so the harness
-  // retries, never surfacing the protocol text as visible content.
+test("tool-style prose passes through as plain text (no echo recovery)", async () => {
+  // Donor mirror: the translator never scans model text for tool calls — any
+  // prose, including something that looks like a tool echo, reaches the
+  // client as ordinary content.
   const echo =
     "assistant 请求调用工具\n" +
     "<tool_call>\n" +
     "<name>edit</name>\n" +
     "<arguments>{\"path\":\"D:/tmp/a.txt\",\"oldString\":\"x\",\"newString\":\"y\"}</arguments>\n" +
     "</tool_call>";
-  await expect(collect([frame({ content: echo }), frame({}, "stop")])).rejects.toThrow(
-    /unparseable tool-call echo/,
-  );
+  const ev = await collect([frame({ content: echo }), frame({}, "stop")]);
+  expect(textOf(ev)).toBe(echo);
+  expect(callsOf(ev)).toHaveLength(0);
 });

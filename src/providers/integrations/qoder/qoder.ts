@@ -29,7 +29,7 @@ import type { ModelDefinition } from "../../provider-model-definition";
 import { parseQoderOAuthState } from "./qoder-oauth";
 import { getQoderVersion } from "../../operations/client-versions";
 import { abortGatewayError, createUpstreamDeadlineLifecycle } from "../../operations/upstream-deadline";
-import { qoderMachineOs } from "../../operations/cli-platform";
+import { qoderMachineOs, qoderMachineHostname } from "../../operations/cli-platform";
 import { qoderInferenceCandidates, QODER_CHAT_PATH, QODER_REALMS, type QoderRealm } from "./qoder-realm";
 import { qoderIdeChatUrl } from "./qoder-realm";
 import {
@@ -40,63 +40,10 @@ import {
 } from "./qoder-catalog";
 import { isQoderVirtualModel, qoderDispatchModelId } from "./qoder-virtual";
 import {
-  LEAK_MARKER_ANY_RE,
-  LEAK_MARKER_LITERALS,
-  parseQoderTextToolCalls,
-  isQoderEchoAttempt,
-} from "./qoder-text-tools";
-import {
   buildQoderGrpcRequest,
   qoderGrpcMetadata,
   qoderGrpcToCanonicalEvents,
 } from "./qoder-grpc";
-
-/** How long a trailing partial marker may be before it is held for the next frame. */
-const LEAK_HOLD_WINDOW = 24;
-/** Fail-open caps so an endless lookalike cannot hold text forever. */
-const LEAK_HOLD_MAX_CHARS = 32_768;
-const LEAK_HOLD_MAX_FRAMES = 200;
-
-const BAD_ECHO_MESSAGE =
-  "Qoder returned an unparseable tool-call echo (request {requestId}); no tools were emitted. The upstream came back empty-handed — retry 🌙";
-
-function badEchoError(): GatewayError {
-  return new GatewayError(
-    "platform_unavailable",
-    502,
-    BAD_ECHO_MESSAGE,
-    { providerId: QODER_PROVIDER_ID },
-    "upstream",
-  );
-}
-
-/** True when `suffix` is a strict prefix of some marker literal. */
-function isLeakMarkerPrefix(suffix: string): boolean {
-  if (suffix.length === 0 || suffix.length >= LEAK_HOLD_WINDOW) return false;
-  return LEAK_MARKER_LITERALS.some((literal) => literal.startsWith(suffix));
-}
-
-/**
- * True when `text` is still plausibly the INTL marker echo block (marker +
- * JSON array/object, or a tool-style tag). Used to keep holding across frames;
- * false means it is ordinary prose and can be released.
- */
-function qoderStillLeakCandidate(text: string): boolean {
-  if (text.length === 0) return true;
-  const marker = LEAK_MARKER_ANY_RE.exec(text);
-  if (!marker) {
-    return isLeakMarkerPrefix(text) || LEAK_MARKER_ANY_RE.test(text);
-  }
-  const rest = text.slice(marker.index + marker[0].length).trim();
-  if (rest.length === 0) return true;
-  if (rest.startsWith("[") || rest.startsWith("{")) return true;
-  if (/^<[a-zA-Z0-9_.:-]+\b/.test(rest)) return true;
-  // Angle-wrapped JSON: `<{` / `<[` — candidate until a closing `>` appears.
-  if (rest.startsWith("<{") || rest.startsWith("<[")) {
-    return !rest.includes(">") || rest.endsWith(">");
-  }
-  return false;
-}
 
 interface QoderModeProfile {
   readonly chatUrl: string;
@@ -1027,6 +974,7 @@ export function buildQoderRequest(
     request_set_id: recordId,
     chat_record_id: recordId,
     session_id: sessionId,
+    source_session_id: "",
     stream: true,
     ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
     ...(MODERN_PROFILE.emptyAliyunUserType ? { aliyun_user_type: "" } : {}),
@@ -1336,19 +1284,15 @@ export async function* qoderBodyToCanonicalEvents(
   let rawUsage: Record<string, unknown> | undefined = undefined;
   const providerMetadata: Record<string, unknown> = {};
   let hasTerminal = false;
+  // Once a finish reason or `[DONE]` is seen the turn is over: delta content,
+  // reasoning, and tool-call fragments in later frames must be dropped —
+  // strict OpenAI clients reject content after the finish reason. Usage,
+  // errors, and the marker itself still flow.
+  let finishSeen = false;
   /** First-sighting id per wire tool-call index, for continuation chunks. */
   const indexIds = new Map<number, string>();
-  /** Last seen call id/name, for index-less continuation fragments. */
+  /** Last seen call id, for index-less continuation fragments. */
   let lastSeenToolId: string | undefined = undefined;
-  let lastSeenToolName: string | undefined = undefined;
-  // INTL leak-marker hold-back: text that may grow into the marker+JSON echo
-  // is withheld from the client until end of stream proves it is a tool call
-  // (recovered) or ordinary prose (released).
-  let leakBuf = "";
-  let leakFrames = 0;
-  // Tool-call argument fragments, keyed by call id, reconciled at end of
-  // stream (see the tool_calls handling in the loop).
-  const toolCallBuffer = new Map<string, { index: number; name: string | undefined; arguments: string }>();
 
   for await (const sse of decodeQoderSseEvents(body, signal)) {
     const sseData = sse.data;
@@ -1363,6 +1307,7 @@ export async function* qoderBodyToCanonicalEvents(
       if (!data) continue;
       if (data === "[DONE]") {
         hasTerminal = true;
+        finishSeen = true;
         if (!started) {
           yield { type: "response_start", sequence_number: seq++, model } as CanonicalEvent;
           started = true;
@@ -1422,191 +1367,88 @@ export async function* qoderBodyToCanonicalEvents(
         }
       }
       const choices = (json["choices"] as Array<Record<string, unknown>>) ?? [];
-      for (const choice of choices) {
-        const delta = choice["delta"] as Record<string, unknown> | undefined;
-        if (delta) {
-          if (typeof delta["content"] === "string" && (delta["content"] as string).length > 0) {
-            const piece = delta["content"] as string;
-            // Marker+JSON hold-back. A complete marker and everything after it is
-            // held until end of stream; prose before it is emitted now.
-            if (leakBuf.length > 0) {
-              leakBuf += piece;
-              leakFrames = piece.length === 0 ? leakFrames + 1 : 0;
-              if (
-                leakBuf.length > LEAK_HOLD_MAX_CHARS ||
-                leakFrames > LEAK_HOLD_MAX_FRAMES ||
-                !qoderStillLeakCandidate(leakBuf)
-              ) {
-                if (leakBuf.length > 0) {
-                  yield {
-                    type: "content_delta",
-                    sequence_number: seq++,
-                    content: { kind: "text", text: leakBuf },
-                  } as CanonicalEvent;
+      // After a finish was seen (per-choice or top-level finish_reason, or
+      // `[DONE]`) the turn is over: delta content, reasoning, and tool-call
+      // fragments in later frames are dropped — strict OpenAI clients reject
+      // content after the finish reason. Usage and errors still flow.
+      if (!finishSeen) {
+        for (const choice of choices) {
+          const delta = choice["delta"] as Record<string, unknown> | undefined;
+          if (delta) {
+            if (typeof delta["content"] === "string" && (delta["content"] as string).length > 0) {
+              const piece = delta["content"] as string;
+              yield {
+                type: "content_delta",
+                sequence_number: seq++,
+                content: { kind: "text", text: piece },
+              } as CanonicalEvent;
+              continue;
+            }
+            const reasoningText = readReasoningText(delta);
+            if (typeof reasoningText === "string" && reasoningText.length > 0) {
+              yield {
+                type: "content_delta",
+                sequence_number: seq++,
+                content: { kind: "reasoning", payload: null, summary: reasoningText },
+              } as CanonicalEvent;
+              continue;
+            }
+            const toolCalls = delta["tool_calls"] as Array<Record<string, unknown>> | undefined;
+            if (toolCalls) {
+              for (const tc of toolCalls) {
+                const fn = tc["function"] as Record<string, unknown> | undefined;
+                const index = typeof tc["index"] === "number" ? (tc["index"] as number) : undefined;
+                // The donor (StreamAdapter `vTe` / `$Dl`) forwards each tool-call
+                // delta exactly as received — `id`, `index`, `name`, and the raw
+                // `arguments` string fragment — with no buffering, splitting, or
+                // JSON repair. It does pin the first seen id per wire `index`
+                // and reuses it for continuation fragments, so the client's
+                // trackers keep one identity per call. Do the same here: each
+                // delta becomes its own `tool_call_delta` under the pinned id.
+                const declaredId =
+                  typeof tc["id"] === "string" && (tc["id"] as string).length > 0
+                    ? (tc["id"] as string)
+                    : undefined;
+                const fragName = typeof fn?.["name"] === "string" ? (fn["name"] as string).trim() : undefined;
+                const fragArgs =
+                  typeof fn?.["arguments"] === "string" ? (fn["arguments"] as string) : "";
+                if (declaredId !== undefined && index !== undefined && !indexIds.has(index)) {
+                  indexIds.set(index, declaredId);
                 }
-                leakBuf = "";
-                leakFrames = 0;
-              }
-              continue;
-            }
-            const marker = LEAK_MARKER_ANY_RE.exec(piece);
-            if (marker) {
-              const emit = piece.slice(0, marker.index);
-              if (emit.length > 0) {
+                if (declaredId !== undefined) lastSeenToolId = declaredId;
+                const callId =
+                  (index !== undefined ? indexIds.get(index) : undefined) ??
+                  declaredId ??
+                  lastSeenToolId ??
+                  `call_anon_${Date.now().toString(36)}_${seq}`;
                 yield {
-                  type: "content_delta",
+                  type: "tool_call_delta",
                   sequence_number: seq++,
-                  content: { kind: "text", text: emit },
-                } as CanonicalEvent;
-              }
-              leakBuf = piece.slice(marker.index);
-              leakFrames = 1;
-              continue;
-            }
-            // No marker: hold only a possible partial-marker suffix.
-            const tail = piece.slice(-LEAK_HOLD_WINDOW);
-            let heldFrom = -1;
-            for (let n = tail.length; n >= 1; n -= 1) {
-              if (isLeakMarkerPrefix(tail.slice(-n))) {
-                heldFrom = piece.length - n;
-                break;
-              }
-            }
-            if (heldFrom >= 0) {
-              const emit = piece.slice(0, heldFrom);
-              if (emit.length > 0) {
-                yield {
-                  type: "content_delta",
-                  sequence_number: seq++,
-                  content: { kind: "text", text: emit },
-                } as CanonicalEvent;
-              }
-              leakBuf = piece.slice(heldFrom);
-              leakFrames = 1;
-              continue;
-            }
-            yield {
-              type: "content_delta",
-              sequence_number: seq++,
-              content: { kind: "text", text: piece },
-            } as CanonicalEvent;
-            continue;
-          }
-          const reasoningText = readReasoningText(delta);
-          if (typeof reasoningText === "string" && reasoningText.length > 0) {
-            yield {
-              type: "content_delta",
-              sequence_number: seq++,
-              content: { kind: "reasoning", payload: null, summary: reasoningText },
-            } as CanonicalEvent;
-            continue;
-          }
-          const toolCalls = delta["tool_calls"] as Array<Record<string, unknown>> | undefined;
-          if (toolCalls) {
-            for (const tc of toolCalls) {
-              const fn = tc["function"] as Record<string, unknown> | undefined;
-              const index = typeof tc["index"] === "number" ? (tc["index"] as number) : undefined;
-              // `id` is only meaningful when non-empty: some Qoder slots echo
-              // `id: ""` on continuation chunks, and treating that as a fresh
-              // call id would orphan every argument fragment (the real call
-              // keeps its first-seen id, the fragments pile up under "").
-              const declaredId =
-                typeof tc["id"] === "string" && (tc["id"] as string).length > 0
-                  ? (tc["id"] as string)
-                  : undefined;
-              const fragName = typeof fn?.["name"] === "string" ? (fn["name"] as string) : undefined;
-              // OpenAI continuation chunks re-identify their call by wire
-              // `index` alone — the `id` appears only once, in the first chunk.
-              // Some bridges omit `index` too, so a fragment then falls back to
-              // the most recently seen call id (mirroring the generic chat
-              // parser's `lastSeenToolId`). Pinning the first id per index and
-              // reusing it for continuations is what keeps fragments attached
-              // to the right call; synthesizing a fresh `call_<index>` id per
-              // chunk instead made every continuation an unknown nameless call
-              // that encoders dropped, so the client saw a call whose arguments
-              // were always empty.
-              let callId: string;
-              if (declaredId !== undefined) {
-                callId = declaredId;
-                if (index !== undefined) indexIds.set(index, callId);
-                lastSeenToolId = callId;
-                if (fragName !== undefined) lastSeenToolName = fragName;
-              } else if (index !== undefined && indexIds.has(index)) {
-                callId = indexIds.get(index)!;
-              } else if (
-                lastSeenToolId !== undefined &&
-                (fragName === undefined || lastSeenToolName === fragName)
-              ) {
-                callId = lastSeenToolId;
-              } else {
-                callId = `call_${String(index ?? 0)}`;
-              }
-              // Buffer tool-call argument fragments per call id until the end of
-              // stream. Upstream streaming fragments occasionally drop or mangle
-              // a byte mid-arguments; forwarding each fragment as an
-              // `arguments_delta` would hand the client a malformed JSON blob to
-              // stitch. Holding and reconciling here yields one complete,
-              // parseable arguments string per call — flush happens at end of
-              // stream (or when a terminal frame arrives).
-              const existing = toolCallBuffer.get(callId);
-              if (existing) {
-                existing.index = index ?? existing.index;
-                if (fragName !== undefined) existing.name = fragName;
-                if (typeof fn?.["arguments"] === "string") {
-                  existing.arguments += (fn["arguments"] as string);
-                }
-              } else {
-                toolCallBuffer.set(callId, {
+                  call_id: callId,
                   index: index ?? 0,
                   name: fragName,
-                  arguments: typeof fn?.["arguments"] === "string" ? (fn["arguments"] as string) : "",
-                });
+                  arguments_delta: fragArgs,
+                } as CanonicalEvent;
               }
             }
           }
+          const fr = choice["finish_reason"];
+          // The IDE surface sends an empty string (`""`) for the per-delta finish
+          // reason, which is not a real stop signal — only a value that maps to a
+          // canonical stop reason (or the terminal `[DONE]` frame) ends the turn.
+          if (fr !== null && fr !== undefined && fr !== "") {
+            finishReason = fr;
+            finishSeen = true;
+          }
+          // Some providers send usage in choices[0].usage or top-level
+          if (choice["usage"] && typeof choice["usage"] === "object") rawUsage = choice["usage"] as Record<string, unknown>;
         }
-        const fr = choice["finish_reason"];
-        // The IDE surface sends an empty string (`""`) for the per-delta finish
-        // reason, which is not a real stop signal — only a value that maps to a
-        // canonical stop reason (or the terminal `[DONE]` frame) ends the turn.
-        if (fr !== null && fr !== undefined && fr !== "") finishReason = fr;
-        // Some providers send usage in choices[0].usage or top-level
-        if (choice["usage"] && typeof choice["usage"] === "object") rawUsage = choice["usage"] as Record<string, unknown>;
       }
       // Some Qoder chunks carry finish_reason at top level (empty string means
       // no stop signal, same as the per-delta field).
-      if (json["finish_reason"] !== undefined && json["finish_reason"] !== "") finishReason = json["finish_reason"];
-    }
-  }
-  // End of stream: recover a held-back marker+JSON echo. A valid echo becomes
-  // tool calls; anything else is released as ordinary prose (or fails closed
-  // when it is unmistakably an echo that cannot be parsed).
-  if (leakBuf.length > 0) {
-    const leaked = parseQoderTextToolCalls(leakBuf);
-    if (leaked.calls.length > 0) {
-      for (const call of leaked.calls) {
-        yield {
-          type: "tool_call_delta",
-          sequence_number: seq++,
-          call_id: call.id,
-          name: call.name,
-          arguments_delta: call.arguments,
-        } as CanonicalEvent;
-      }
-      finishReason = "tool_calls";
-    } else {
-      // An echo that could not be recovered must fail the turn (502) so the
-      // harness retries — never surface protocol text as visible content.
-      if (isQoderEchoAttempt(leakBuf)) {
-        throw badEchoError();
-      }
-      const visible = leaked.clean.trim();
-      if (visible.length > 0) {
-        yield {
-          type: "content_delta",
-          sequence_number: seq++,
-          content: { kind: "text", text: visible },
-        } as CanonicalEvent;
+      if (json["finish_reason"] !== undefined && json["finish_reason"] !== "") {
+        finishReason = json["finish_reason"];
+        finishSeen = true;
       }
     }
   }
@@ -1622,19 +1464,9 @@ export async function* qoderBodyToCanonicalEvents(
   const stopReason = mapQoderFinishReason(finishReason);
   const _providerStop = typeof finishReason === "string" ? finishReason : undefined;
   void hasTerminal;
-  // Flush buffered tool-call fragments as complete, stitched calls — one
-  // `arguments_delta` per call with the full JSON string, so the client never
-  // has to repair upstream frame-loss.
-  for (const [callId, buffered] of toolCallBuffer) {
-    yield {
-      type: "tool_call_delta",
-      sequence_number: seq++,
-      call_id: callId,
-      index: buffered.index,
-      name: buffered.name,
-      arguments_delta: buffered.arguments,
-    } as CanonicalEvent;
-  }
+  // No buffered tool-call flush: each `delta.tool_calls` fragment is emitted
+  // as its own `tool_call_delta` as it arrives (donor mirror), so the client
+  // stitches by `index`/`id` itself. Usage and terminal still flow here.
   yield {
     type: "terminal",
     sequence_number: seq++,
@@ -1790,16 +1622,22 @@ class QoderAdapter implements ProviderAdapter {
       if (candidate.probe_surface === "ide") {
         const ideUrl = qoderIdeChatUrl(this.realm);
         const ideBody = buildQoderIdeRequest(modelId, request, modelConfig, auth, this.realm, version);
+        // Header fingerprint mirrors the desktop client's IDE surface (`PFn` /
+        // `Hc`): X-Request-ID normalized to uppercase, Cosy-Version, real
+        // machine OS, and the sanitized hostname on infer SSE requests.
+        const ideHostname = qoderMachineHostname();
         const res = await fetcher(ideUrl, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${auth.securityOauthToken}`,
             "Content-Type": "application/json",
             Accept: "text/event-stream",
-            "X-Request-ID": crypto.randomUUID(),
+            "X-Request-ID": crypto.randomUUID().toUpperCase(),
             "X-Session-ID": crypto.randomUUID(),
             "Cosy-Version": version,
             "Cosy-ClientType": "5",
+            "Cosy-MachineOS": qoderMachineOs(),
+            ...(ideHostname.length > 0 ? { "Cosy-MachineHostname": ideHostname } : {}),
           },
           body: JSON.stringify(ideBody),
         });
@@ -1811,7 +1649,25 @@ class QoderAdapter implements ProviderAdapter {
       }
 
       if (useGrpc) {
-        const grpcRequest = buildQoderGrpcRequest(modelId, request, auth.userId, qoderMaxContextFor(modelId, modelConfig, this.realm));
+        // The gRPC request mirrors the HTTP surfaces' OpenAI-shaped body, so
+        // the shared builder supplies the messages, tool declarations, and
+        // tool-choice knobs both surfaces expect. Without the `tools` array
+        // the upstream sees no toolset and answers with a DSML text block (or
+        // claims no tool exists) instead of a structured `tool_calls`.
+        const legacy = buildQoderRequest(modelId, request, modelConfig, auth, this.realm);
+        const grpcRequest = buildQoderGrpcRequest(
+          modelId,
+          request,
+          auth.userId,
+          qoderMaxContextFor(modelId, modelConfig, this.realm),
+          {
+            messages: legacy.messages as Array<Record<string, unknown>>,
+            tools: legacy.tools as Array<Record<string, unknown>>,
+            ...(legacy.parameters === undefined
+              ? {}
+              : { parameters: legacy.parameters as Record<string, unknown> }),
+          },
+        );
         const grpcMetadata = qoderGrpcMetadata(auth);
         lifecycle.release();
         yield* qoderGrpcToCanonicalEvents(grpcRequest, grpcMetadata, this.realm, lifecycle.signal);

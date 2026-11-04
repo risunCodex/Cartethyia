@@ -58,6 +58,7 @@ test("a declared tool reaches the upstream as a function declaration", () => {
   expect(fn["name"]).toBe("Read");
   expect(fn["description"]).toBe("Read a file");
   expect(fn["parameters"]).toEqual(READ.jsonSchema);
+  expect(fn["strict"]).toBeUndefined();
 });
 
 test("a tool with no schema still declares an object schema", () => {
@@ -152,7 +153,9 @@ test("the IDE request carries the declared tools", () => {
   const fn = tools[0]?.["function"] as Record<string, unknown>;
   expect(fn["name"]).toBe("Read");
   expect(fn["description"]).toBe("Read a file");
+  // Donor mirror: the tool schema is forwarded as-is — no hardening.
   expect(fn["parameters"]).toEqual(READ.jsonSchema);
+  expect(fn["strict"]).toBeUndefined();
 });
 
 test("the IDE request omits tools when none are declared", () => {

@@ -73,9 +73,23 @@ export function trackToolCall(
   fallbackIndex?: number,
 ): { index: number; isFirst: boolean; state: ToolCallState } {
   const priorIndex = tracker.indexById.get(tool.id);
+  // A wire index is only honored when this id already owns it, or when it is
+  // not yet claimed by another call. Upstream Qoder parallel calls frequently
+  // repeat the same wire index (0,0) for different ids, which would otherwise
+  // collapse two calls into one at the encoder (`Map` keyed by index). When
+  // the wire index collides with another id, synthesize a fresh index so every
+  // logical call keeps a distinct wire position.
   const index =
     tool.index !== undefined && Number.isInteger(tool.index) && tool.index >= 0
-      ? tool.index
+      ? (() => {
+          if (priorIndex !== undefined) return priorIndex;
+          for (const [id, assigned] of tracker.indexById) {
+            if (id !== tool.id && assigned === tool.index) {
+              return tracker.nextIndex++;
+            }
+          }
+          return tool.index;
+        })()
       : (priorIndex ?? fallbackIndex ?? tracker.nextIndex++);
   tracker.indexById.set(tool.id, index);
   tracker.nextIndex = Math.max(tracker.nextIndex, index + 1);
