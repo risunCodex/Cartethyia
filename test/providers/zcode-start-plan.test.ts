@@ -133,6 +133,27 @@ test("ZCode Start Plan registry dispatch preserves caller instructions and model
   expect(blocks[2]?.text).toContain("fixture user instructions");
 });
 
+test("ZCode Start Plan rejects HTTP 200 business errors instead of completing empty", async () => {
+  const adapter = await createDefaultProviderRegistry().resolve(ID);
+  if (!adapter) throw new Error("Missing Start Plan adapter");
+  const request: CanonicalRequest = { model: "glm-5.3-flash", messages: [{ role: "user", content: [{ kind: "text", text: "hi" }] }], generation_controls: {}, stream: false, source_surface: "messages" };
+  const target: ProviderDispatchTarget = { provider_id: ID, model_id: request.model, wire_family: "messages", endpoint_path: "/v1/messages", capabilities: {} };
+  for (const code of [1005, 1113, 3009]) {
+    const events: CanonicalEvent[] = [];
+    let failure: unknown;
+    try {
+      for await (const event of adapter.dispatch(request, target, {
+        credential: { provider_id: ID, credential_kind: "api_key", secret: new TextEncoder().encode("fixture") },
+        deadline: Date.now() + 5000, abort_signal: new AbortController().signal,
+        outbound_fetch: async () => Response.json({ code, msg: "upstream business refusal" }),
+      })) events.push(event);
+    } catch (error) { failure = error; }
+    expect(failure).toBeDefined();
+    expect(events.some((event) => event.type === "terminal" && event.state === "complete")).toBe(false);
+    expect(failure).toMatchObject({ details: { providerCode: String(code) } });
+  }
+});
+
 describe("ZCode Start Plan quota eligibility through registry", () => {
   test("a spent model leaves sibling and the separate Coding Plan available", async () => withFrozenTime(NOW, async () => {
     const quota = await collect([bucket("glm-5.3", 0), bucket("glm-5.3-flash", 75)]);

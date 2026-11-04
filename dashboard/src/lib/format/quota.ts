@@ -49,7 +49,31 @@ export function formatResetDistance(value: string | null, recurring = true): str
   return `${prefix} ${totalDays}d${suffix}`;
 }
 
-export function formatQuotaWindowLabel(label: string): string {
+function shortStartPlanName(name: string): string {
+  if (/^(?:zcode\s+)?start plan$/i.test(name)) return "Start";
+  if (/^zcode global build$/i.test(name)) return "Global Build";
+  return name;
+}
+
+export function formatQuotaPlanLabel(plan: string, source: string | null): string {
+  if (source !== "zcode-start") return plan;
+  const names = plan.split(",").map((name) => name.trim()).filter(Boolean);
+  const first = names.find((name) => shortStartPlanName(name) === "Start") ?? names[0];
+  if (!first) return plan;
+  return `${shortStartPlanName(first)}${names.length > 1 ? ` +${names.length - 1}` : ""}`;
+}
+
+export function formatQuotaWindowLabel(label: string, source?: string | null, modelIds?: readonly string[]): string {
+  if (source === "zcode-start") {
+    const parts = label.split(" · ");
+    if (parts.length > 1 && modelIds?.some((model) => model.toLowerCase() === parts[0]?.replace(/-trial$/i, "").toLowerCase())) parts.shift();
+    return parts.map((part) => {
+      if (part === "daily") return "Daily";
+      if (part === "nightly") return "Nightly";
+      if (part === "one-time") return "One-time";
+      return shortStartPlanName(part);
+    }).join(" · ");
+  }
   const match = /^(\d+)\s*hour$/i.exec(label.trim());
   if (!match) return label;
   const hours = Number(match[1]);
