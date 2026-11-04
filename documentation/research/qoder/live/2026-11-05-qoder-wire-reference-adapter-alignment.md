@@ -1281,6 +1281,13 @@ Insight:
   Tidak ditemukan flag request yang memicu-nya. Metadata yang selalu ada per
   request: response headers (req-cost-time, x-envoy-upstream-service-time,
   x-request-id, alt-svc), model echo, dan `usage`.
+- **Observasi final (2026-11-05, malam):** setelah puluhan request (matrix
+  150 + probe), `raw_usage` **tidak muncul lagi** di 40+ attempt berturut-turut
+  (OAuth `dt-` maupun PAT `pt-`, cmodel & dfmodel, prompt bervariasi, session
+  tetap & fresh). Hanya 2 contoh yang tertangkap di awal sesi (flow 219, frame
+  24). Kemungkinan: server menahan metadata setelah aktivitas tinggi
+  (anti-scraping/stealth) atau fitur di-degradasi. Jangan mengandalkan
+  `raw_usage` sebagai kontrak — gunakan response headers + model echo.
 
 ### 9.3 Kesimpulan
 
