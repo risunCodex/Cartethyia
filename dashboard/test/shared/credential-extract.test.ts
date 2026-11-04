@@ -262,6 +262,39 @@ describe("parseCredentialBatch — single entries", () => {
     ]);
   });
 
+  test("a named `name|credential` line sets the label as identity", () => {
+    expect(parseCredentialBatch("onlybougieclan|pt-cJ25RalKyYVxpqQXLK5sDDkJ_01a15663")).toEqual([
+      {
+        value: "pt-cJ25RalKyYVxpqQXLK5sDDkJ_01a15663",
+        kind: "api_key",
+        identity: "onlybougieclan",
+      },
+    ]);
+  });
+
+  test("a named `name|credential` line keeps a legacy inside the credential intact", () => {
+    // Split on the FIRST pipe only: the credential may itself contain `|`.
+    expect(parseCredentialBatch("alice|a|b|c")).toEqual([
+      { value: "a|b|c", kind: "api_key", identity: "alice" },
+    ]);
+  });
+
+  test("a named line with an empty name or credential falls through to the bare-token path", () => {
+    expect(parseCredentialBatch("|sk-ant-EXAMPLE")).toEqual([
+      { value: "|sk-ant-EXAMPLE", kind: "api_key" },
+    ]);
+    expect(parseCredentialBatch("onlybougieclan|")).toEqual([
+      { value: "onlybougieclan|", kind: "api_key" },
+    ]);
+  });
+
+  test("named `name|credential` lines work per-line in a batch", () => {
+    expect(parseCredentialBatch("alice|sk-aaa\nbob|sk-bbb")).toEqual([
+      { value: "sk-aaa", kind: "api_key", identity: "alice" },
+      { value: "sk-bbb", kind: "api_key", identity: "bob" },
+    ]);
+  });
+
   test("a single JSON object is one entry", () => {
     const entries = parseCredentialBatch('{"apiKey":"sk-ant-EXAMPLE","email":"me@example.com"}');
     expect(entries).toHaveLength(1);

@@ -287,6 +287,9 @@ export function AddAccountModal({
           >
             <label className="text-caption font-semibold text-text-secondary">
               API key, OAuth token, or exported JSON — one or many
+              <span className="font-normal text-text-tertiary">
+                {" "}·{" "}also supports <code className="font-mono text-micro">name|credential</code> per line
+              </span>
             </label>
             {isBatch ? (
               <Badge tone="accent">Detected: {entries.length} accounts</Badge>
@@ -337,7 +340,7 @@ export function AddAccountModal({
             <textarea
               value={secret}
               onChange={(event) => setSecret(event.target.value)}
-              placeholder="Paste one credential, or many — one per line, a JSON array, or newline-delimited OAuth exports. Kind and account naming are detected automatically…"
+              placeholder="Paste one credential, or many — one per line, a JSON array, or newline-delimited OAuth exports. Prefix a line with name| to name that account (e.g. onlybougieclan|pt-…). Kind and account naming are detected automatically…"
               rows={6}
               spellCheck={false}
               className="font-mono tabular-nums w-full min-w-0 min-h-65 rounded-control border border-inner-border bg-input-bg px-6 py-5 text-caption text-text-primary resize-y box-border"

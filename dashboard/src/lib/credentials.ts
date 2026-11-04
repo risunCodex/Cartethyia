@@ -471,7 +471,28 @@ function parseSingleLine(line: string): ParsedCredentialEntry[] {
     if (rows) return rows.map(entryFromObject);
     return [entryFromObject(obj)];
   }
+  const named = parseNamedCredentialLine(line);
+  if (named.length > 0) return named;
   return [{ value: line, kind: detectCredentialKind(line) }];
+}
+
+/**
+ * Parses a `name|credential` line — one line that names the account and
+ * carries its credential after a pipe, e.g.
+ * `onlybougieclan|pt-cJ25RalKyYVxpqQXLK5sDDkJ_01a15663`.
+ *
+ * The left side becomes the account label (`identity`), the right side the
+ * credential value. Split on the FIRST pipe only, so a credential that itself
+ * contains a `|` survives whole; a missing name or credential returns nothing,
+ * and the line falls through to the plain-token path.
+ */
+function parseNamedCredentialLine(line: string): ParsedCredentialEntry[] {
+  const pipe = line.indexOf("|");
+  if (pipe <= 0) return [];
+  const name = line.slice(0, pipe).trim();
+  const cred = line.slice(pipe + 1).trim();
+  if (!name || !cred) return [];
+  return [{ value: cred, kind: detectCredentialKind(cred), identity: name }];
 }
 
 /**

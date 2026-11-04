@@ -11,18 +11,27 @@ import { applySqlMigrations, createPgHandle, getPool, isPgHandle } from "./db-pg
 import { applySqliteMigrations, buildSqliteHandle, createSqliteDatabase } from "./db-sqlite";
 
 /**
- * True when `error` is a Postgres unique-violation (SQLSTATE 23505).
+ * True when `error` is a unique-violation from either supported dialect:
+ *
+ * - Postgres: SQLSTATE 23505 (`code: "23505"`).
+ * - SQLite: `UNIQUE constraint failed: <index>` (message text) or the
+ *   driver's `SQLITE_CONSTRAINT_UNIQUE` code (19).
  *
  * Lives at the persistence boundary because it is a fact about the driver's
  * error shape, not about any one domain. It walks a bounded `cause` chain
- * because Drizzle wraps driver errors, so the SQLSTATE is not always on the
- * error the caller catches.
+ * because Drizzle wraps driver errors, so the code/message is not always on
+ * the error the caller catches.
  */
 export function isUniqueViolation(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; depth < 3; depth += 1) {
     if (typeof current !== "object" || current === null) return false;
-    if ("code" in current && current.code === "23505") return true;
+    const record = current as { code?: unknown; message?: unknown };
+    const code = typeof record.code === "string" ? record.code : "";
+    const message = typeof record.message === "string" ? record.message : "";
+    if (code === "23505" || code === "SQLITE_CONSTRAINT_UNIQUE") return true;
+    if (message.includes("UNIQUE constraint failed:")) return true;
+    if (code === "19" && message.includes("constraint")) return true;
     if (!("cause" in current)) return false;
     current = current.cause;
   }
