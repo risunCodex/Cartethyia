@@ -1288,6 +1288,10 @@ Insight:
   24). Kemungkinan: server menahan metadata setelah aktivitas tinggi
   (anti-scraping/stealth) atau fitur di-degradasi. Jangan mengandalkan
   `raw_usage` sebagai kontrak — gunakan response headers + model echo.
+- Bukti wire (mitmproxy): flow 219 (21:34) response **2793B** + `raw_usage`;
+  flow 222 (22:37, setelah matrix 150+probe) response **1136B**, frame terakhir
+  hanya `usage` (tanpa `raw_usage`). Dengan demikian `raw_usage` benar-benar
+  absen dari wire — bukan kegagalan parser.
 
 ### 9.3 Kesimpulan
 
