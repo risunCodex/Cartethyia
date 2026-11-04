@@ -59,6 +59,17 @@ export function qoderIdeChatUrl(realm: QoderRealm): string {
 }
 
 /**
+ * The gRPC model-server host for one realm.
+ *
+ * Matches the desktop client's prod host (`wYA` in `qoder-worker-runtime.mjs`:
+ * intl `api2-v2.qoder.sh`, CN `gateway.qoder.com.cn`). The gRPC service path
+ * is `/model.chat.ChatService/ChatCompletionStream` on port 443.
+ */
+export function qoderGrpcHost(realm: QoderRealm): string {
+  return realm === "cn" ? "gateway.qoder.com.cn" : "api2-v2.qoder.sh";
+}
+
+/**
  * Realm → deployment.
  *
  * `intl` carries two gateway fallbacks (`api2`, `api3`); `cn` has exactly one

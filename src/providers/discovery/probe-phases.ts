@@ -150,6 +150,27 @@ export function extractSample(events: readonly CanonicalEvent[]): string | undef
   return trimmed.length > 0 ? trimmed.slice(0, 200) : undefined;
 }
 
+/**
+ * Reads the model an adapter reported in its canonical events.
+ *
+ * The HTTP-only `readReportedModel` inspects the raw response body, so it
+ * cannot see the model on non-HTTP transports (Qoder gRPC). Adapters surface
+ * the upstream echo as `response_start`/`message_start` with a `model` field;
+ * this reads that as a fallback.
+ */
+export function modelFromEvents(events: readonly CanonicalEvent[]): string | undefined {
+  for (const event of events) {
+    if (
+      (event.type === "response_start" || event.type === "message_start") &&
+      typeof event.model === "string" &&
+      event.model.trim().length > 0
+    ) {
+      return event.model.trim();
+    }
+  }
+  return undefined;
+}
+
 export function hasMeaningfulOutput(events: readonly CanonicalEvent[]): boolean {
   return events.some((event) => {
     if (event.type === "tool_call_delta") return true;
@@ -579,6 +600,30 @@ export async function loadProbePreferences(args: {
     }
   }
   return { probeReasoning, payloadCapture };
+}
+
+/**
+ * The probe's default identity prompt (`What model are you...`) works for
+ * every Qoder roster row except `cmodel` (virtual id `cantus`): that row's
+ * gRPC surface answers the identity question with `406 Upstream error [stream]`
+ * from the upstream proxy (verified live 2026-11-04; dmodel/qmodel/smodel all
+ * accept it). Returns the neutral replacement prompt when the probe targets
+ * that row with no explicit prompt, `undefined` otherwise.
+ *
+ * The replacement prompt must never *ask* an identity question: the upstream
+ * guardrail is content-based and swallows the reply (empty sample) for any
+ * phrasing that interrogates identity — even indirect ones (`what would you
+ * call yourself`, `which model are you`, `perkenalkan dirimu`). A plain
+ * greeting that *asserts* the wrong identity (`halo gpt`) makes the model
+ * correct us on its own, and returns a sample 3/3 runs (verified live
+ * 2026-11-04). We keep that phrasing — it is 100% consistent and the model
+ * names itself ("saya Claude... buatan Anthropic") without us ever asking.
+ */
+export function qoderCmodelProbePrompt(providerId: string, modelId: string, prompt: string | undefined): string | undefined {
+  if (prompt !== undefined) return undefined;
+  if (providerId !== "qoder" && providerId !== "qodercn") return undefined;
+  if (modelId !== "cmodel" && modelId !== "cantus") return undefined;
+  return "halo gpt";
 }
 
 /**

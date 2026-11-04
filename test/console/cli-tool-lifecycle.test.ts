@@ -640,6 +640,52 @@ describe("every file injector round-trips apply → status → reset", () => {
     }
   });
 
+  test("opencode websearch apply writes the cartethyia-websearch plugin and follows the provider name", async () => {
+    const injector = INJECTORS["opencode"];
+    const websearchInput = { ...INPUT, websearch: "Cartethyia" };
+    const applied = await injector.apply(websearchInput);
+    const path = applied.settingsPath;
+    expect(path).toBeDefined();
+
+    // Config: provider key follows the websearch provider name, and
+    // `websearch.provider` is set.
+    const body = (await readTextFile(path!)) ?? "";
+    const parsed = JSON.parse(body) as {
+      provider: Record<string, unknown>;
+      websearch?: { provider?: string };
+      model?: string;
+    };
+    expect(parsed.provider.Cartethyia).toBeDefined();
+    expect(parsed.websearch?.provider).toBe("Cartethyia");
+    expect(parsed.model).toStartWith("Cartethyia/");
+
+    // Plugin file exists in the sandbox config dir and registers the provider id.
+    const pluginPath = join(home, ".config", "opencode", "plugins", "Cartethyia-websearch.js");
+    const plugin = (await readTextFile(pluginPath)) ?? "";
+    expect(plugin.length).toBeGreaterThan(0);
+    expect(plugin).toContain('id: "Cartethyia-websearch"');
+    expect(plugin).toContain('editor.default.set("Cartethyia")');
+    expect(plugin).toContain('"Cartethyia"');
+  });
+
+  test("opencode websearch reset removes the plugin and the provider key", async () => {
+    const injector = INJECTORS["opencode"];
+    const websearchInput = { ...INPUT, websearch: "Cartethyia" };
+    await injector.apply(websearchInput);
+
+    const pluginPath = join(home, ".config", "opencode", "plugins", "Cartethyia-websearch.js");
+    expect(await Bun.file(pluginPath).exists()).toBe(true);
+
+    await injector.reset();
+
+    expect(await Bun.file(pluginPath).exists()).toBe(false);
+    const path = (await injector.getStatus()).settingsPath ?? join(home, ".config", "opencode", "opencode.json");
+    const body = (await readTextFile(path)) ?? "";
+    const parsed = JSON.parse(body) as { provider?: Record<string, unknown>; websearch?: unknown };
+    expect(parsed.provider?.Cartethyia).toBeUndefined();
+    expect(parsed.websearch).toBeUndefined();
+  });
+
   test("no written config gains a doubled //v1 from a trailing-slash endpoint", async () => {
     // `ensureV1Suffix` used to append to the slash, so an endpoint typed as
     // `http://host:12800/` — what a browser address bar and the dashboard's own

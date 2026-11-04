@@ -74,6 +74,17 @@ export interface ProbeModelRequest {
   reasoningEffort?: ProbeReasoningEffort;
   maxOutputTokens?: number;
   stream?: boolean;
+  /**
+   * Provider-specific transport override for the probe.
+   *
+   * `undefined` (default) probes through the same transport live traffic
+   * uses. A provider may expose extra surfaces that only a probe can force —
+   * Qoder's IDE surface (`/model/v1`) is the only one that echoes strategy
+   * metadata (`provider_model`, `target`, …) alongside the answer, while the
+   * production transports (gRPC / COSY) do not. Forcing it makes the probe
+   * result the richest available source of truth.
+   */
+  surface?: "default" | "cosy" | "grpc" | "ide";
 }
 export interface ProbeModelResult {
   accountId?: string;
@@ -93,6 +104,13 @@ export interface ProbeModelResult {
   reportedModel?: string;
   statusCode?: number;
   error?: string;
+  /**
+   * Provider-specific upstream metadata about the model that actually served
+   * the turn (native model id, supply target, tier). Filled when the probed
+   * transport exposes it — Qoder's IDE surface reports it in `raw_usage`;
+   * the production transports do not.
+   */
+  providerMetadata?: Readonly<Record<string, unknown>>;
   /** Normalized hits a `websearch` probe returned, so the console can show them. */
   searchResults?: ReadonlyArray<{
     readonly title: string;

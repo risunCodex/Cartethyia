@@ -2,6 +2,7 @@ import type {} from "../contracts";
 import { ensureV1Suffix, homeDir, join, readJsonFile, writeJsonFileWithBackup } from "../fs-ops";
 import type { InjectorSpec } from "../contracts";
 import { DEFAULT_SDK } from "../contracts";
+import { writeWebsearchPlugin, removeWebsearchPlugin } from "../cartethyia-websearch-plugin";
 
 
 // OpenCode injector spec.
@@ -19,6 +20,7 @@ interface OpencodeProvider {
 interface OpencodeConfig {
   provider?: Record<string, OpencodeProvider>;
   model?: string;
+  websearch?: { provider?: string };
   agent?: {
     explorer?: {
       description?: string;
@@ -51,11 +53,14 @@ export const opencodeSpec: InjectorSpec = {
     if (!config) {
       return { configured: false, currentEndpoint: null, rawApiKey: null, currentModels: null };
     }
-    const provider = config.provider?.cartethyia;
+    // The provider key written by this injector is the websearch provider name
+    // when one is configured, otherwise the default `cartethyia`.
+    const providerId = config.websearch?.provider ?? "cartethyia";
+    const provider = config.provider?.[providerId];
     const endpoint = provider?.options?.baseURL ?? null;
     const models = provider?.models ? Object.keys(provider.models) : null;
     const active =
-      typeof config.model === "string" && config.model.startsWith("cartethyia/")
+      typeof config.model === "string" && config.model.startsWith(`${providerId}/`)
         ? config.model.split("/").slice(1).join("/")
         : null;
     return {
@@ -70,10 +75,15 @@ export const opencodeSpec: InjectorSpec = {
     const existing = (await readJsonFile(path)) as OpencodeConfig | null;
     const config: OpencodeConfig = (existing ?? {}) as OpencodeConfig;
 
+    // The provider key written into opencode.jsonc follows the websearch
+    // provider name when one is chosen, which keeps the websearch plugin and
+    // the provider block pointing at the same entry.
+    const providerId = input.websearch ?? "cartethyia";
+
     if (!config.provider) config.provider = {};
-    const prior = config.provider.cartethyia;
-    const otherProviders = Object.keys(config.provider).filter((id) => id !== "cartethyia");
-    config.provider.cartethyia = {
+    const prior = config.provider[providerId];
+    const otherProviders = Object.keys(config.provider).filter((id) => id !== providerId);
+    config.provider[providerId] = {
       npm: input.sdk ?? prior?.npm ?? DEFAULT_SDK,
       options: {
         ...(prior?.options ?? {}),
@@ -84,7 +94,7 @@ export const opencodeSpec: InjectorSpec = {
     };
 
     const activeModel = input.activeModel ?? input.modelIds[0] ?? "";
-    config.model = activeModel === "" ? "" : `cartethyia/${activeModel}`;
+    config.model = activeModel === "" ? "" : `${providerId}/${activeModel}`;
 
     if (input.websearch !== undefined) {
       config.websearch = { provider: input.websearch };
@@ -107,13 +117,20 @@ export const opencodeSpec: InjectorSpec = {
     config.agent.explorer = {
       description: "Fast explorer subagent",
       mode: "subagent",
-      model: `cartethyia/${subagentModel}`,
+      model: `${providerId}/${subagentModel}`,
     };
 
     await writeJsonFileWithBackup(path, config);
+
+    // Write (or refresh) the websearch provider plugin when web search is
+    // routed through the gateway. The plugin id follows the provider name.
+    if (input.websearch !== undefined) {
+      await writeWebsearchPlugin(opencodeSpec.resolveDir?.() ?? join(homeDir(), ".config", "opencode"), providerId);
+    }
+
     return otherProviders.length > 0
       ? [
-          `Config already has other provider(s): ${otherProviders.join(", ")}. They were kept as-is — only cartethyia was written/updated.`,
+          `Config already has other provider(s): ${otherProviders.join(", ")}. They were kept as-is — only ${providerId} was written/updated.`,
         ]
       : undefined;
   },
@@ -122,29 +139,39 @@ export const opencodeSpec: InjectorSpec = {
     const config = (await readJsonFile(path)) as OpencodeConfig | null;
     if (!config) return false;
 
+    const providerId = config.websearch?.provider ?? "cartethyia";
+
     if (config.provider) {
-      delete config.provider.cartethyia;
+      delete config.provider[providerId];
       if (Object.keys(config.provider).length === 0) delete config.provider;
     }
 
-    if (typeof config.model === "string" && config.model.startsWith("cartethyia/")) {
+    if (typeof config.model === "string" && config.model.startsWith(`${providerId}/`)) {
       delete config.model;
     }
 
-    if (config.agent?.explorer?.model?.startsWith("cartethyia/")) {
+    if (config.agent?.explorer?.model?.startsWith(`${providerId}/`)) {
       delete config.agent.explorer;
       if (Object.keys(config.agent).length === 0) delete config.agent;
     }
 
+    if (config.websearch) {
+      delete config.websearch;
+    }
+
     await writeJsonFileWithBackup(path, config);
+
+    // Remove the generated websearch plugin when present.
+    await removeWebsearchPlugin(opencodeSpec.resolveDir?.() ?? join(homeDir(), ".config", "opencode"), providerId);
   },
 
   download(input) {
     const activeModel = input.activeModel ?? input.modelIds[0] ?? "";
     const subagentModel = input.subagentModel ?? input.modelIds[0] ?? activeModel;
+    const providerId = input.websearch ?? "cartethyia";
     const config: OpencodeConfig = {
       provider: {
-        cartethyia: {
+        [providerId]: {
           npm: input.sdk ?? DEFAULT_SDK,
           options: {
             baseURL: ensureV1Suffix(input.endpoint),
@@ -153,12 +180,13 @@ export const opencodeSpec: InjectorSpec = {
           models: buildOpencodeModels(input.modelIds),
         },
       },
-      model: activeModel === "" ? "" : `cartethyia/${activeModel}`,
+      model: activeModel === "" ? "" : `${providerId}/${activeModel}`,
+      ...(input.websearch !== undefined ? { websearch: { provider: input.websearch } } : {}),
       agent: {
         explorer: {
           description: "Fast explorer subagent",
           mode: "subagent",
-          model: `cartethyia/${subagentModel}`,
+          model: `${providerId}/${subagentModel}`,
         },
       },
     };

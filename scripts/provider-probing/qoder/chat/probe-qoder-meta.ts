@@ -12,7 +12,7 @@
  * Tokens are never printed. Account credentials come from an exported accounts
  * file (see `qoder-export-accounts.ts`).
  *
- *   bun run scripts/provider-probing/qoder/probe-qoder-meta.ts \
+ *   bun run scripts/provider-probing/qoder/chat/probe-qoder-meta.ts \
  *     --creds D:\tmp\scratch\qoder-accounts.json \
  *     --model auto --model fast --model lite --model smodel
  */
@@ -21,18 +21,18 @@ import {
   pickAccount,
   readAccountsFile,
   requireAccountToken,
-} from "../lib/accounts";
+} from "../../lib/accounts";
 import {
   buildQoderIdeRequest,
   isQoderPat,
   resolveQoderAuth,
   qoderEnvelopeToFrames,
-} from "../../../src/providers/integrations/qoder/qoder";
+} from "../../../../src/providers/integrations/qoder/qoder";
 import {
   QODER_INTL_MODEL_CONFIGS,
-} from "../../../src/providers/integrations/qoder/qoder-catalog";
-import { qoderIdeChatUrl } from "../../../src/providers/integrations/qoder/qoder-realm";
-import { decodeQoderSseEvents } from "../../../src/providers/integrations/qoder/qoder-sse";
+} from "../../../../src/providers/integrations/qoder/qoder-catalog";
+import { qoderIdeChatUrl } from "../../../../src/providers/integrations/qoder/qoder-realm";
+import { decodeQoderSseEvents } from "../../../../src/providers/integrations/qoder/qoder-sse";
 
 const args = parseArgs({
   options: {
@@ -155,7 +155,7 @@ async function probeModel(modelKey: string): Promise<void> {
     for (const frame of framesArray) {
       const payload = frame.data.trim();
       if (payload.length === 0 || payload === "[DONE]") continue;
-      let json: any = null;
+      let json: { model?: string; body?: unknown; usage?: unknown; choices?: Array<{ delta?: { content?: string; reasoning_content?: string } }> } | null = null;
       try {
         json = JSON.parse(payload);
       } catch {
@@ -166,7 +166,7 @@ async function probeModel(modelKey: string): Promise<void> {
       const delta = json?.choices?.[0]?.delta ?? {};
       if (typeof delta.content === "string") answer += delta.content;
       if (typeof delta.reasoning_content === "string") reasoning += delta.reasoning_content;
-      if (json?.usage && typeof json.usage === "object") usage = json.usage;
+      if (json?.usage && typeof json.usage === "object") usage = json.usage as Record<string, unknown>;
       const rec = json?.body ?? json;
       if (rec && typeof rec === "object" && !Array.isArray(rec)) {
         Object.assign(metadata, extractMetadata(rec as Record<string, unknown>));

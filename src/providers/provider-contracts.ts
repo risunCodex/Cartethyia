@@ -270,6 +270,13 @@ export interface ProviderDispatchTarget {
   readonly capabilities: Readonly<Record<string, boolean>>;
   /** Explicit wire dialect (from `models.dialect`), when set. Absent = resolver fallback. */
   readonly dialect?: string;
+  /**
+   * Transport override for a one-shot probe, when the operator explicitly
+   * asked for one. Live dispatch never sets this — it is a probe-only knob
+   * that lets a provider expose a surface the production transports do not
+   * use (Qoder's IDE surface is the only one that echoes strategy metadata).
+   */
+  readonly probe_surface?: "cosy" | "grpc" | "ide";
 }
 
 /** Provider adapter boundary: canonical request/events in, no public HTTP routes. */

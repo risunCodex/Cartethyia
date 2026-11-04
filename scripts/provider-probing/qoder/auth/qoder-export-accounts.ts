@@ -4,7 +4,7 @@
  *
  * Usage (from repo root, with CARTETHYIA_ENCRYPTION_KEY set):
  *
- *   bun run scripts/provider-probing/qoder/qoder-export-accounts.ts \
+ *   bun run scripts/provider-probing/qoder/auth/qoder-export-accounts.ts \
  *     "C:\Users\...\AppData\Roaming\cartethyia\cartethyia.sqlite" \
  *     "D:\tmp\scratch\qoder-accounts-probe.json"
  *
@@ -14,7 +14,7 @@
  */
 import { Database } from "bun:sqlite";
 import { writeFileSync } from "node:fs";
-import { decryptCredentialToString } from "../../../src/security/crypto";
+import { decryptCredentialToString } from "../../../../src/security/crypto";
 
 const dbPath = process.argv[2];
 const outPath = process.argv[3];

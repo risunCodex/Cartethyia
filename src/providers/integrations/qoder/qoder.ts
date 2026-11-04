@@ -29,8 +29,9 @@ import type { ModelDefinition } from "../../provider-model-definition";
 import { parseQoderOAuthState } from "./qoder-oauth";
 import { getQoderVersion } from "../../operations/client-versions";
 import { abortGatewayError, createUpstreamDeadlineLifecycle } from "../../operations/upstream-deadline";
-import { qoderMachineOs, qoderMachineHostname } from "../../operations/cli-platform";
-import { qoderIdeChatUrl, qoderInferenceCandidates, QODER_CHAT_PATH, QODER_REALMS, type QoderRealm } from "./qoder-realm";
+import { qoderMachineOs } from "../../operations/cli-platform";
+import { qoderInferenceCandidates, QODER_CHAT_PATH, QODER_REALMS, type QoderRealm } from "./qoder-realm";
+import { qoderIdeChatUrl } from "./qoder-realm";
 import {
   QODER_CN_MODEL_CONFIGS,
   QODER_INTL_MODEL_CONFIGS,
@@ -44,6 +45,11 @@ import {
   parseQoderTextToolCalls,
   isQoderEchoAttempt,
 } from "./qoder-text-tools";
+import {
+  buildQoderGrpcRequest,
+  qoderGrpcMetadata,
+  qoderGrpcToCanonicalEvents,
+} from "./qoder-grpc";
 
 /** How long a trailing partial marker may be before it is held for the next frame. */
 const LEAK_HOLD_WINDOW = 24;
@@ -1160,66 +1166,7 @@ export function buildQoderIdeRequest(
   };
 }
 
-/**
- * Identity headers for the modern model-server surface (plain bearer).
- *
- * Mirrors the desktop IDE's `openResponse` exactly: the IDE sends the five
- * OpenAI-surface headers (Authorization, Content-Type, Accept, X-Request-ID,
- * X-Session-ID) and the global client-identity interceptor adds Cosy-Version,
- * Cosy-ClientType, Cosy-MachineOS, and Cosy-MachineHostname (for infer-sse
- * requests). It does NOT send Cosy-MachineId / Cosy-MachineToken /
- * Cosy-MachineType on this surface, so neither do we.
- */
-function qoderIdeHeaders(auth: QoderAuth, version: string): Record<string, string> {
-  return {
-    Authorization: `Bearer ${auth.securityOauthToken}`,
-    "Content-Type": "application/json",
-    Accept: "text/event-stream",
-    "X-Request-ID": randomUUID(),
-    "X-Session-ID": randomUUID(),
-    "Cosy-Version": version,
-    "Cosy-ClientType": "5",
-    "Cosy-MachineOS": qoderMachineOs(),
-    "Cosy-MachineHostname": qoderMachineHostname(),
-  };
-}
 
-async function callQoderIde(
-  url: string,
-  body: Record<string, unknown>,
-  auth: QoderAuth,
-  signal: AbortSignal,
-  fetcher: QoderFetcher,
-  version = getQoderVersion(),
-): Promise<Response> {
-  return fetcher(url, {
-    method: "POST",
-    headers: qoderIdeHeaders(auth, version),
-    body: JSON.stringify(body),
-    signal,
-  });
-}
-
-/**
- * True when the modern model-server surface refused the request on entitlement
- * grounds. This only detects the refusal — whether a legacy fallback is worth
- * trying is the caller's decision, and it is gated on the model being free-tier
- * (see `dispatch`).
- *
- * The upstream's refusal envelope is `{"code":116,"error":"quota exceeded"}`
- * on HTTP 402. The IDE's own error set classifies 116 as a quota/entitlement
- * failure (not an auth error), and the gRPC surface reports the same code as
- * status 13. For a free-tier model this is an entitlement refusal the legacy
- * COSY surface will serve with the same credential; for a billed model the
- * same code is genuine quota exhaustion (Qoder's daily exhaustion and cooldown
- * run on a 1-day cycle) and must surface as-is so the quota/cooldown path can
- * see it. A 401/403 or a model-level error is never fallback-class either way.
- */
-function qoderIdeEntitlementRefused(response: Response): boolean {
-  // Status alone is the signal; the body is left intact for
-  // `mapUpstreamHttpError` to surface if the fallback also fails.
-  return response.status === 402;
-}
 
 /**
  * Qoder upstream streams are flaky: the IDE surface sometimes answers a full
@@ -1339,6 +1286,45 @@ function mapQoderFinishReason(raw: unknown): CanonicalStopReason | undefined {
   return undefined;
 }
 
+/**
+ * Keys the IDE surface's `raw_usage` (and top-level frame) carries that
+ * describe the model that *actually* served the turn. The production
+ * transports (gRPC / COSY) only echo an opaque roster key, so this metadata is
+ * the one place the upstream names its real supply model/target.
+ */
+const QODER_PROVIDER_META_KEYS = [
+  "provider_model",
+  "from_model",
+  "supply_model",
+  "supply_account",
+  "supply_region",
+  "model_level",
+  "router_strategy_name",
+  "router_strategy_type",
+  "scheduler_times",
+  "target",
+  "target_id",
+] as const;
+
+/** Collects provider metadata from a raw_usage object and its `data` child. */
+function collectQoderProviderMeta(
+  target: Record<string, unknown>,
+  rawUsageObj: Record<string, unknown>,
+): void {
+  const data = rawUsageObj["data"];
+  const candidates: unknown[] = [rawUsageObj, data];
+  for (const src of candidates) {
+    if (!src || typeof src !== "object" || Array.isArray(src)) continue;
+    const s = src as Record<string, unknown>;
+    for (const key of QODER_PROVIDER_META_KEYS) {
+      const value = s[key];
+      if (value !== undefined && value !== null && target[key] === undefined) {
+        target[key] = value;
+      }
+    }
+  }
+}
+
 export async function* qoderBodyToCanonicalEvents(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal,
@@ -1348,6 +1334,7 @@ export async function* qoderBodyToCanonicalEvents(
   let started = false;
   let finishReason: unknown = undefined;
   let rawUsage: Record<string, unknown> | undefined = undefined;
+  const providerMetadata: Record<string, unknown> = {};
   let hasTerminal = false;
   /** First-sighting id per wire tool-call index, for continuation chunks. */
   const indexIds = new Map<number, string>();
@@ -1428,6 +1415,7 @@ export async function* qoderBodyToCanonicalEvents(
       // stop reason — the terminal event has no `choices[].finish_reason`.
       if (json["raw_usage"] && typeof json["raw_usage"] === "object") {
         const rawUsageObj = json["raw_usage"] as Record<string, unknown>;
+        collectQoderProviderMeta(providerMetadata, rawUsageObj);
         rawUsage = (rawUsageObj["data"] as Record<string, unknown> | undefined) ?? rawUsageObj;
         if (json["choices"] === undefined || (json["choices"] as unknown[]).length === 0) {
           finishReason = finishReason ?? "stop";
@@ -1654,6 +1642,7 @@ export async function* qoderBodyToCanonicalEvents(
     ...(stopReason === undefined ? {} : { stop_reason: stopReason }),
     ...(_providerStop === undefined ? {} : { provider_stop_reason: _providerStop }),
     usage: usageFromProvider(rawUsage),
+    ...(Object.keys(providerMetadata).length > 0 ? { provider_metadata: providerMetadata } : {}),
   } as CanonicalEvent;
 }
 
@@ -1676,37 +1665,42 @@ interface QoderAdapterOptions {
   /** Bundled provider id, so the adapter's own id matches the route's. */
   readonly providerId?: string;
   /**
-   * Which chat surface to dispatch on.
+   * Which chat transport to dispatch on.
    *
-   * `ide` (default) uses the modern model-server surface
-   * (`/model/v1/chat/completions`) — the wire the IDE/QoderWake actually
-   * speaks, echoes the real model key, and carries 1M context + xhigh
-   * reasoning. When that surface answers an entitlement refusal (HTTP 402 /
-   * `{"code":116,"error":"quota exceeded"}`, seen on free-tier accounts),
-   * dispatch falls back to the legacy COSY surface
-   * (`/algo/.../agent_chat_generation`) — but only for a free-tier model
-   * row (`is_free: true`). A billed model answering 402/116 is genuine quota
-   * exhaustion (Qoder's daily exhaustion / cooldown run on a 1-day cycle) and
-   * surfaces as-is, so the exhausted state is never masked by a fallback.
-   * Live verification (2026-11-02): the modern surface answers 116 for
-   * free-tier accounts that stream fine over COSY, while entitled accounts
-   * stream on the modern surface with the real model echoed.
+   * `grpc` (default) uses the gRPC model-server surface
+   * (`model.chat.ChatService/ChatCompletionStream`) — the only proven carrier
+   * of real 1M-token context (the HTTP IDE surface caps at ~256 KiB). gRPC
+   * serves billed models; a free-tier row (`lite`) is refused there
+   * (`quota exceeded` 116) and must use the legacy COSY surface.
    *
-   * `cosy` forces only the legacy surface (the pre-fallback behavior).
+   * `cosy` forces only the legacy surface (`/algo/.../agent_chat_generation`)
+   * — the free-tier path and the pre-gRPC behavior.
    */
-  readonly surface?: "ide" | "cosy";
+  readonly surface?: "grpc" | "cosy";
+}
+
+/** Resolves the transport for one dispatch. Exported for tests. */
+export function resolveQoderTransport(
+  surface: "grpc" | "cosy" | undefined,
+  modelConfig: QoderModelConfig,
+): "grpc" | "cosy" {
+  const chosen = surface ?? "grpc";
+  // Free-tier rows (`lite`) are refused on gRPC with `quota exceeded` (116);
+  // they must use the legacy COSY surface.
+  if (chosen === "grpc" && modelConfig.is_free === true) return "cosy";
+  return chosen;
 }
 
 class QoderAdapter implements ProviderAdapter {
   readonly provider_id: ProviderId;
   private readonly realm: QoderRealm;
-  private readonly surface: "ide" | "cosy";
+  private readonly surface: "grpc" | "cosy";
   private readonly fetchFn: typeof fetch;
 
   constructor(options: QoderAdapterOptions = {}) {
     this.provider_id = (options.providerId ?? QODER_PROVIDER_ID) as ProviderId;
     this.realm = options.realm ?? "intl";
-    this.surface = options.surface ?? "ide";
+    this.surface = options.surface ?? "grpc";
     this.fetchFn = options.fetch ?? globalThis.fetch;
   }
 
@@ -1776,42 +1770,57 @@ class QoderAdapter implements ProviderAdapter {
       const auth = isQoderPat(secret)
         ? await exchangeQoderPat(secret, lifecycle.signal, fetcher, version, this.realm)
         : qoderOAuthAuth(secret, context.credential.auth_state, context.credential.account_id);
-      // A full URL from the route wins, but the fallback is this realm's
-      // gateway — not the intl host hardcoded into `MODERN_PROFILE`. Dispatching
-      // a CN credential to `*.qoder.sh` is refused outright. The host order
-      // follows the token kind: job tokens (`jt-...`) belong on `api2`, which
-      // is the only intl host that serves them (`api3` answers "Login expired").
 
-      // The modern `ide` surface streams immediately, needs no COSY signing,
-      // and echoes the real model key — it is the default. Fall back to the
-      // legacy COSY surface only when BOTH hold: the modern surface refused on
-      // entitlement grounds (HTTP 402 / code 116) AND the dispatched model is a
-      // free-tier row (`is_free: true`). For a free-tier model this is the
-      // entitlement refusal the legacy surface serves with the same credential;
-      // for a billed model the same code is genuine quota exhaustion (Qoder's
-      // daily exhaustion / cooldown run on a 1-day cycle), so it must surface
-      // as-is — falling back would hide the exhausted state and starve the
-      // quota/cooldown signal. A 401/403/model error never triggers fallback.
-      const ideUrl = candidate.endpoint_path?.startsWith("http") ? candidate.endpoint_path : qoderIdeChatUrl(this.realm);
+      // Transport selection:
+      // - Probe-forced `ide` surface: the modern /model/v1 model-server. It is
+      //   the only Qoder surface that echoes strategy metadata (provider_model,
+      //   target, …) in its raw_usage, so a probe that asks for it reports the
+      //   real serving model instead of an opaque roster key.
+      // - Free-tier rows (`is_free: true` → `lite`) use the legacy COSY
+      //   surface exclusively — gRPC refuses them with `quota exceeded` (116).
+      // - Billed rows use gRPC (default) — the only proven carrier of real
+      //   1M-token context. The HTTP IDE surface is no longer a candidate:
+      //   its ~256 KiB body cap cannot carry the window the roster declares.
+      // - `surface: "cosy"` forces legacy for every row (compat/override).
       const cosyUrl = candidate.endpoint_path?.startsWith("http")
         ? candidate.endpoint_path
         : `${qoderInferenceCandidates(this.realm, auth.securityOauthToken)[0] ?? ""}${QODER_CHAT_PATH}`;
-      const ideRequest = () =>
-        callQoderIde(ideUrl, buildQoderIdeRequest(modelId, request, modelConfig, auth, this.realm, version), auth, lifecycle.signal, fetcher, version);
+      const useGrpc = resolveQoderTransport(this.surface, modelConfig) === "grpc" && candidate.probe_surface !== "ide";
+
+      if (candidate.probe_surface === "ide") {
+        const ideUrl = qoderIdeChatUrl(this.realm);
+        const ideBody = buildQoderIdeRequest(modelId, request, modelConfig, auth, this.realm, version);
+        const res = await fetcher(ideUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${auth.securityOauthToken}`,
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+            "X-Request-ID": crypto.randomUUID(),
+            "X-Session-ID": crypto.randomUUID(),
+            "Cosy-Version": version,
+            "Cosy-ClientType": "5",
+          },
+          body: JSON.stringify(ideBody),
+        });
+        if (!res.ok) throw await mapUpstreamHttpError(res, "qoder");
+        if (!res.body) throw new GatewayError("platform_unavailable", 502, "Qoder returned empty body (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
+        lifecycle.release();
+        yield* qoderBodyToCanonicalEvents(res.body as ReadableStream<Uint8Array>, lifecycle.signal, modelId);
+        return;
+      }
+
+      if (useGrpc) {
+        const grpcRequest = buildQoderGrpcRequest(modelId, request, auth.userId, qoderMaxContextFor(modelId, modelConfig, this.realm));
+        const grpcMetadata = qoderGrpcMetadata(auth);
+        lifecycle.release();
+        yield* qoderGrpcToCanonicalEvents(grpcRequest, grpcMetadata, this.realm, lifecycle.signal);
+        return;
+      }
+
       const cosyRequest = () =>
         callQoder(cosyUrl, buildQoderRequest(modelId, request, modelConfig, auth, this.realm), modelId, auth, lifecycle.signal, fetcher, version);
-      let response =
-        this.surface === "ide"
-          ? await fetchQoderIdeWithEmptyRecovery(ideRequest, lifecycle.signal)
-          : await cosyRequest();
-      if (
-        !response.ok &&
-        this.surface === "ide" &&
-        qoderIdeEntitlementRefused(response) &&
-        modelConfig.is_free === true
-      ) {
-        response = await cosyRequest();
-      }
+      const response = await cosyRequest();
       if (!response.ok) throw await mapUpstreamHttpError(response, "qoder");
       if (!response.body) throw new GatewayError("platform_unavailable", 502, "Qoder returned empty body (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
       // Headers arrived: the pre-stream deadline has served its purpose.

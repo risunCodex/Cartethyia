@@ -153,7 +153,8 @@ function telemetryEventRow(event: TelemetryEventInput) {
       event.usage?.estimated_cost === null || event.usage === undefined
         ? null
         : String(event.usage.estimated_cost),
-    // Buddy-meter credit; NULL when the upstream reported no credit field.
+    // Provider-billed credit (Tencent buddy-meter `credit`, Qoder `credits`);
+    // NULL when the upstream reported no credit field.
     // Numeric columns are string-typed in Drizzle, like `estimatedCostUsd`.
     creditUsed: event.usage?.credit_used != null ? String(event.usage.credit_used) : null,
     resolveMs: event.resolveMs ?? null,

@@ -1,21 +1,18 @@
 /**
- * Qoder dispatch surface: modern `/model/v1` by default, legacy COSY fallback
- * only when the modern surface refuses the account on entitlement grounds AND
- * the dispatched model is a free-tier row.
+ * Qoder dispatch transport: gRPC by default for billed models, legacy COSY
+ * for free-tier rows (`lite`), and `cosy` override.
  *
- * Live verification (2026-11-02): the modern surface answers HTTP 402 +
- * `{"code":116,"error":"quota exceeded"}` for free-tier accounts that stream
- * fine over the legacy COSY surface, while entitled accounts stream on the
- * modern surface with the real model echoed. Dispatch therefore tries `ide`
- * first (default) and falls back to `cosy` on that entitlement refusal — but
- * only for a free-tier model (`is_free: true`). For a billed model the same
- * 402/116 is genuine quota exhaustion (Qoder's daily exhaustion / cooldown
- * run on a 1-day cycle) and must surface as-is, so the exhausted state is
- * never masked by a legacy retry. A 401/403/model error is surfaced as-is so
- * a real auth failure is not masked either.
+ * Live verification (2026-11-04): the gRPC surface
+ * (`model.chat.ChatService/ChatCompletionStream`) is the only proven carrier
+ * of real 1M-token context, but it refuses free-tier rows with `quota
+ * exceeded` (116) — free-tier dispatch must use the legacy COSY surface
+ * (`/algo/.../agent_chat_generation`).
  */
 import { describe, expect, test } from "bun:test";
-import { createQoderAdapter } from "../../../src/providers/integrations/qoder/qoder";
+import {
+  createQoderAdapter,
+  resolveQoderTransport,
+} from "../../../src/providers/integrations/qoder/qoder";
 import type { CanonicalRequest } from "../../../src/protocol/canonical-model";
 import type {
   ProviderDispatchContext,
@@ -78,81 +75,40 @@ async function collect(
   }
 }
 
-describe("Qoder dispatch surface", () => {
-  test("default surface is the modern `/model/v1` (ide), not legacy", async () => {
-    const urls: string[] = [];
-    let calls = 0;
-    const fetcher = (async (input: unknown, _init?: RequestInit): Promise<Response> => {
-      calls++;
-      urls.push(String(input));
-      return streamOk();
-    }) as typeof fetch;
-    const adapter = createQoderAdapter();
-    await collect(adapter, fetcher);
-    expect(calls).toBe(1);
-    expect(urls[0]).toContain("/model/v1/chat/completions");
+describe("Qoder transport selection", () => {
+  test("defaults to gRPC for a billed model", () => {
+    expect(resolveQoderTransport(undefined, { id: "dmodel", display_name: "DeepSeek", max_input_tokens: 1_000_000, is_vl: true, is_reasoning: true })).toBe("grpc");
   });
 
-  test("falls back to legacy COSY for a free-tier model when modern answers 402/116", async () => {
+  test("free-tier row (`lite`) uses legacy COSY even when surface defaults to gRPC", () => {
+    expect(resolveQoderTransport(undefined, { id: "lite", display_name: "Lite-Qwen-3.7-Plus", max_input_tokens: 1_000_000, is_vl: true, is_reasoning: false, is_free: true })).toBe("cosy");
+  });
+
+  test("explicit `cosy` override forces legacy for any model", () => {
+    expect(resolveQoderTransport("cosy", { id: "dmodel", display_name: "DeepSeek", max_input_tokens: 1_000_000, is_vl: true, is_reasoning: true })).toBe("cosy");
+  });
+
+  test("explicit `grpc` override is honored for a billed model", () => {
+    expect(resolveQoderTransport("grpc", { id: "dmodel", display_name: "DeepSeek", max_input_tokens: 1_000_000, is_vl: true, is_reasoning: true })).toBe("grpc");
+  });
+});
+
+describe("Qoder dispatch surface (COSY)", () => {
+  test("free-tier `lite` dispatch goes straight to legacy COSY, no modern attempt", async () => {
     const urls: string[] = [];
     let calls = 0;
     const fetcher = (async (input: unknown, _init?: RequestInit): Promise<Response> => {
       calls++;
       urls.push(String(input));
-      if (calls === 1) {
-        return new Response(JSON.stringify({ code: 116, error: "quota exceeded" }), {
-          status: 402,
-          headers: { "content-type": "application/json" },
-        });
-      }
       return streamOk();
     }) as typeof fetch;
     const adapter = createQoderAdapter();
-    // `lite` is the only free tier row (`is_free: true`); a free-tier account
-    // that the modern surface refuses on 402/116 streams on legacy COSY.
     await collect(adapter, fetcher, "lite");
-    expect(calls).toBe(2);
-    expect(urls[0]).toContain("/model/v1/chat/completions");
-    expect(urls[1]).toContain("/algo/api/v2/service/pro/sse/agent_chat_generation");
-  });
-
-  test("does not fall back on a 402/116 for a billed model (quota exhaustion surfaces as-is)", async () => {
-    const urls: string[] = [];
-    let calls = 0;
-    const fetcher = (async (input: unknown, _init?: RequestInit): Promise<Response> => {
-      calls++;
-      urls.push(String(input));
-      return new Response(JSON.stringify({ code: 116, error: "quota exceeded" }), {
-        status: 402,
-        headers: { "content-type": "application/json" },
-      });
-    }) as typeof fetch;
-    const adapter = createQoderAdapter();
-    // `smodel` is a billed row (`is_free: false`): 116 is real quota
-    // exhaustion, so no legacy fallback — the modern error surfaces.
-    await expect(collect(adapter, fetcher, "smodel")).rejects.toThrow();
     expect(calls).toBe(1);
-    expect(urls[0]).toContain("/model/v1/chat/completions");
+    expect(urls[0]).toContain("/algo/api/v2/service/pro/sse/agent_chat_generation");
   });
 
-  test("does not fall back on a 401 (auth failure surfaces as-is)", async () => {
-    const urls: string[] = [];
-    let calls = 0;
-    const fetcher = (async (input: unknown, _init?: RequestInit): Promise<Response> => {
-      calls++;
-      urls.push(String(input));
-      return new Response(JSON.stringify({ code: 401, error: "unauthorized" }), {
-        status: 401,
-        headers: { "content-type": "application/json" },
-      });
-    }) as typeof fetch;
-    const adapter = createQoderAdapter();
-    await expect(collect(adapter, fetcher)).rejects.toThrow();
-    expect(calls).toBe(1);
-    expect(urls[0]).toContain("/model/v1/chat/completions");
-  });
-
-  test("explicit `cosy` surface uses legacy directly, no modern attempt", async () => {
+  test("explicit `cosy` surface uses legacy directly", async () => {
     const urls: string[] = [];
     let calls = 0;
     const fetcher = (async (input: unknown, _init?: RequestInit): Promise<Response> => {
@@ -164,5 +120,72 @@ describe("Qoder dispatch surface", () => {
     await collect(adapter, fetcher);
     expect(calls).toBe(1);
     expect(urls[0]).toContain("/algo/api/v2/service/pro/sse/agent_chat_generation");
+  });
+
+  test("legacy surface surfaces an upstream 402/116 error as-is for a billed model", async () => {
+    const urls: string[] = [];
+    let calls = 0;
+    const fetcher = (async (input: unknown, _init?: RequestInit): Promise<Response> => {
+      calls++;
+      urls.push(String(input));
+      return new Response(JSON.stringify({ code: 116, error: "quota exceeded" }), {
+        status: 402,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    const adapter = createQoderAdapter({ surface: "cosy" });
+    await expect(collect(adapter, fetcher, "smodel")).rejects.toThrow();
+    expect(calls).toBe(1);
+    expect(urls[0]).toContain("/algo/api/v2/service/pro/sse/agent_chat_generation");
+  });
+
+  test("probe-forced `ide` surface uses the modern /model/v1 endpoint and surfaces provider metadata", async () => {
+    const urls: string[] = [];
+    let calls = 0;
+    const rawUsage = {
+      data: {
+        completion_tokens: 37,
+        provider_model: "qwen3.7-plus",
+        supply_model: "qwen3.7-plus",
+        supply_region: "global",
+        model_level: "lite",
+        target: "bailian-qwen3.7-plus-free-260401",
+      },
+    };
+    const ideStream = new Response(
+      "data: " +
+        JSON.stringify({
+          choices: [],
+          model: "lite",
+          raw_usage: rawUsage,
+        }) +
+        "\n\n",
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    );
+    const fetcher = (async (input: unknown, _init?: RequestInit): Promise<Response> => {
+      calls++;
+      urls.push(String(input));
+      return ideStream;
+    }) as typeof fetch;
+    const adapter = createQoderAdapter();
+    const target: ProviderDispatchTarget = {
+      ...TARGET,
+      model_id: "lite",
+      probe_surface: "ide",
+    };
+    const events: Array<Record<string, unknown>> = [];
+    for await (const event of adapter.dispatch(request(), target, context(fetcher))) {
+      events.push(event as unknown as Record<string, unknown>);
+    }
+    expect(calls).toBe(1);
+    expect(urls[0]).toContain("/model/v1/chat/completions");
+    const terminal = events.find((e) => e["type"] === "terminal");
+    expect(terminal?.["provider_metadata"]).toEqual({
+      provider_model: "qwen3.7-plus",
+      supply_model: "qwen3.7-plus",
+      supply_region: "global",
+      model_level: "lite",
+      target: "bailian-qwen3.7-plus-free-260401",
+    });
   });
 });

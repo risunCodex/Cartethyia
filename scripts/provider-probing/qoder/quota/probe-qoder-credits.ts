@@ -6,21 +6,21 @@
  * — only when `--claim` is passed — attempts to claim campaigns that are
  * explicitly `CLAIMABLE` with a CREDITS benefit. Tokens are never printed.
  *
- *   bun run scripts/provider-probing/qoder/probe-qoder-credits.ts \
+ *   bun run scripts/provider-probing/qoder/quota/probe-qoder-credits.ts \
  *     --creds "C:\Users\...\qoder-accounts-<ts>.json"
  *
  *   # Also attempt the claim for CLAIMABLE CREDITS campaigns:
- *   bun run scripts/provider-probing/qoder/probe-qoder-credits.ts \
+ *   bun run scripts/provider-probing/qoder/quota/probe-qoder-credits.ts \
  *     --creds <file> --claim
  *
  *   # Probe the /reward grant endpoint for each campaign too:
- *   bun run scripts/provider-probing/qoder/probe-qoder-credits.ts \
+ *   bun run scripts/provider-probing/qoder/quota/probe-qoder-credits.ts \
  *     --creds <file> --reward
  *
  *   # Hunt: re-poll the campaign list until a CLAIMABLE CREDITS campaign
  *   # appears, then claim it immediately (list visibility flutters).
  *   # --wait is the max seconds to hunt (default 0 = single pass).
- *   bun run scripts/provider-probing/qoder/probe-qoder-credits.ts \
+ *   bun run scripts/provider-probing/qoder/quota/probe-qoder-credits.ts \
  *     --creds <file> --claim --wait 300
  */
 import { parseArgs } from "node:util";
@@ -31,9 +31,9 @@ import {
   readAccountsFile,
   requireAccountToken,
   type ExportedAccount,
-} from "../lib/accounts";
-import { formatProbe, probeGet, probePost } from "../lib/http";
-import { buildCosyHeaders, type QoderProbeAuth } from "./cosy-signer";
+} from "../../lib/accounts";
+import { formatProbe, probeGet, probePost } from "../../lib/http";
+import { buildCosyHeaders, type QoderProbeAuth } from "../cosy-signer";
 
 const VERSION = "1.1.81";
 const BASE = "https://openapi.qoder.sh";

@@ -24,7 +24,7 @@ Probes are plain scripts — there are deliberately no `probe:*` npm scripts.
 Run them straight through `bun run scripts/...` (or `bun scripts/...`):
 
 ```sh
-bun run scripts/provider-probing/qoder/probe-qoder.ts --creds "C:\path\to\qoder-accounts-<ts>.json"
+bun run scripts/provider-probing/qoder/chat/probe-qoder.ts --creds "C:\path\to\qoder-accounts-<ts>.json"
 ```
 
 Options (per probe, see the script header):
@@ -37,8 +37,8 @@ Options (per probe, see the script header):
 | `--models` | list models from the live `/algo/api/v2/model/list` endpoint (signed GET) |
 | `--json` | print (or `--out`-write) the full model array as pretty JSON |
 | `--out <path>` | write the model list JSON to a file |
-| `--ctx <n>` | request context window in tokens (default 180000) for the chat probe |
-| `--ide-only` | skip the plugin surface, only the IDE `/model/v1` path |
+| `--ctx <n>` | request context window in tokens (`model_config.max_input_tokens`; unset by default) for the IDE surface |
+| `--ide-only` | skip the legacy surface; only the IDE `/model/v1` path (shorthand for `--surface ide`) |
 | `--label <name>` / `--index <n>` | select a specific account |
 
 Kiro-specific flags (`probe-kiro.ts` / `probe-kiro-oauth.ts`):
@@ -66,8 +66,25 @@ provider-probing/
     github-auto-multiturn-probe.ts   # live multiturn chat probe
     github-wire-audit-probe.ts       # request-shape audit
   qoder/
-    cosy-signer.ts     # COSY Bearer signer (plugin surface)
-    probe-qoder.ts     # plugin COSY vs IDE /model/v1 probe
+    main.ts                    # dispatcher: `bun run .../qoder/main.ts <probe> [args...]`
+    cosy-signer.ts             # COSY Bearer signer (plugin surface)
+    lib/
+      shared.ts                # machine identity, headers, body builders, SSE reader, account loader
+      grpc.ts                  # gRPC client factory (proto materialization + stream probe)
+    chat/
+      probe-qoder.ts           # canonical chat probe: IDE /model/v1 + legacy COSY (flags: --surface, --reply, --model-echo, --cross, --headers, --lite)
+      probe-qoder-meta.ts      # per-model probe with strategy metadata (raw_usage provider metadata)
+      qoder-capacity-probe.ts  # context acceptance + session-retention experiments (--mode context|retention)
+    grpc/
+      qoder-grpc-meta.ts       # gRPC per-model probe: metadata/trailers/usage/extras (+ --echo-only)
+    quota/
+      qoder-entitlement-probe.ts # userinfo + quota + roster (--header-mode, --full, --roster-key)
+      probe-qoder-credits.ts     # sash campaign list / claim / reward (--claim, --wait)
+    auth/
+      qoder-device-login.ts    # device-code login (desktop IDE flow)
+      qoder-export-accounts.ts # extract Qoder accounts from local SQLite store
+    inspect/
+      qoder-body-inspect.ts    # inspect the legacy request body builder output
   kiro/
     probe-kiro.ts      # management (models) + runtime (generation) probe
     probe-kiro-oauth.ts # IdC/Builder-ID browser PKCE + social OAuth probe
@@ -101,7 +118,7 @@ client never sees a conversation capped at the currently active 180k window.
 Probe with `--ctx 1000000` to ask for the largest window explicitly:
 
 ```sh
-bun run scripts/provider-probing/qoder/probe-qoder.ts --creds <file> --model dmodel --ctx 1000000
+bun run scripts/provider-probing/qoder/chat/probe-qoder.ts --creds <file> --model dmodel --ctx 1000000
 ```
 
 ### Why `--models --ide` returns 403
@@ -192,12 +209,27 @@ The Qoder **HTTP** model-server surface caps request bodies at ~256 KiB
 context. Full evidence:
 `documentation/research/qoder/2026-11-04-qoder-grpc-1m-context.md`.
 
-The gRPC probe is standalone in scratch (it needs `@grpc/grpc-js` +
-`@grpc/proto-loader` + `protobufjs`, not present in this repo):
-`D:\tmp\grpc-test\qoder-grpc-probe.ts`, with the schema at
-`D:\tmp\unpacked\qoder\Qoder-unpacked\npm-package\package\bundle\proto\chat.proto`.
-Related repo probes: `qoder-context-probe.ts` (HTTP cap) and
-`qoder-session-retention-probe.ts` (no per-session history retention).
+`qoder-grpc-meta.ts` probes the gRPC surface per model and captures everything
+the server returns — chunk fields (`model` echo, `usage`, `extras`) plus the
+gRPC initial metadata and trailers:
+
+```sh
+bun run scripts/provider-probing/qoder/grpc/qoder-grpc-meta.ts \
+  --creds <accounts.json> --label "Akun Ytprem" --model dmodel --model ultimate
+```
+
+**Metadata findings (2026-11-04):** the gRPC surface returns **no** strategy
+metadata — the IDE SSE surface's `raw_usage` keys (`provider_model`,
+`from_model`, `supply_model`, `model_level`, `router_strategy_name`, `target`)
+are absent; `extras` is empty. What the server does return is infra timing in
+the gRPC initial metadata: `req-cost-time`, `req-arrive-time`,
+`resp-start-time`, `x-envoy-upstream-service-time`, plus `x-request-id` in
+both metadata and trailers. Intermittent `429 Upstream error` can occur on
+rate-limited slots (e.g. `ultimate`); retrying succeeds.
+
+Related repo probes: `chat/qoder-capacity-probe.ts` (context cap + session
+retention modes), and `chat/probe-qoder.ts --lite` (free-tier `lite` via
+legacy COSY at 1M).
 
 ## OpenCode
 

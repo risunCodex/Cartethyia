@@ -287,7 +287,26 @@ export function buildGeminiPayload(
     });
   const payload: Record<string, unknown> = { contents };
   if (systemParts.length > 0) payload["systemInstruction"] = { role: "user", parts: systemParts };
-  const functionTools = (request.tools ?? []).filter((t) => t.name);
+  // Gemini's native hosted tools are declared as bare object keys, not
+  // function declarations: `{ googleSearch: {} }` (and codeExecution/urlContext)
+  // enable Google-backed grounding. Accept both spellings the gateway's search
+  // adapters use (`web_search` tool_type and `googleSearch` name) and map them
+  // to the native declaration so the upstream actually grounds the query.
+  const HOSTED_TOOL_NAMES = new Set(["googleSearch", "codeExecution", "urlContext"]);
+  const hostedTools: Record<string, Record<string, unknown>>[] = [];
+  for (const tool of request.tools ?? []) {
+    if (tool.name === "googleSearch" || tool.tool_type === "web_search") {
+      hostedTools.push({ googleSearch: {} });
+    } else if (tool.name === "codeExecution") {
+      hostedTools.push({ codeExecution: {} });
+    } else if (tool.name === "urlContext") {
+      hostedTools.push({ urlContext: {} });
+    }
+  }
+  const functionTools = (request.tools ?? []).filter(
+    (t) => t.name && !HOSTED_TOOL_NAMES.has(t.name) && t.tool_type !== "web_search",
+  );
+  if (hostedTools.length > 0) payload["tools"] = hostedTools;
   if (functionTools.length > 0) {
     payload["tools"] = [
       {

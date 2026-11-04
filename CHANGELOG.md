@@ -8,6 +8,81 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- **Qoder gRPC transport as the default billed surface.** The gateway now
+  dispatches Qoder chat through `model.chat.ChatService/ChatCompletionStream`
+  — the only proven carrier of real 1M-token context (the HTTP IDE surface
+  caps at ~256 KiB). The proto is embedded as a generated TS source, so it
+  works from source, dist, and the standalone binary. Free-tier rows (`lite`)
+  keep routing to the legacy COSY surface, which serves them without credits.
+- **Antigravity & Codex web search.** `antigravity/gemini-2.5-flash` and
+  `codex/gpt-5.6-luna` are registered as `websearch` routes. The Gemini/CCA
+  `googleSearch` hosted tool is now emitted for `web_search` tool requests —
+  upstream answers with real grounding chunks (previously empty).
+- **OpenCode websearch plugin injection.** The OpenCode injector writes a
+  `plugins/<provider>-websearch.js` plugin that routes OpenCode's websearch
+  tool through the gateway's `/v1/search`, reading the provider block from
+  opencode.jsonc as the single source of truth; apply writes it, reset removes
+  it, and the provider key follows the selected websearch provider name.
+- **Higher server body ceiling.** `CARTETHYIA_SERVER_MAX_BODY_BYTES` defaults
+  to 16 MB so a 1M-token request fits the gateway's own ingress.
+- **Qoder probe reports the real serving model metadata.** Provider tests for
+  Qoder default to the modern `/model/v1` surface, whose `raw_usage` names the
+  model that actually served the turn (`provider_model`, `supply_model`,
+  `target`, …) — the production transports (gRPC/COSY) echo only opaque roster
+  keys. Test Model now shows e.g. `qwen3.7-plus` / `bailian-qwen3.7-plus-free-260401`
+  instead of the roster key, and a probe can still pin a specific surface via
+  the `surface` override.
+- **Qoder cmodel probe prompt workaround.** The gRPC surface refuses one
+  roster row (`cmodel` / Cantus) with an upstream 406 when probed with the
+  identity prompt; its probe uses `halo gpt` instead — a greeting that
+  *asserts* the wrong identity, which the upstream guardrail allows (it only
+  blocks identity *questions*), and the model corrects it on its own
+  (*"saya Claude, asisten AI buatan Anthropic"*). Verified consistent 3/3
+  live probes. Other models and providers are unaffected.
+- **Qoder probe metadata research.** `documentation/research/qoder/2026-11-04-qoder-probe-provider-metadata.md`
+  captures the IDE surface's `raw_usage` provider metadata for every roster key
+  (real supply model, region, target) — verified live across multiple probes.
+  Documents that `raw_usage` is intermittent (re-probe to capture), that slots
+  like `fast`/`performance` rotate their backing model, and that routed
+  profiles (`ultimate`, `smodel`, `cantus`, `performance`) expose
+  `supply_account` / `supply_region`.
+- **Qoder credit usage in the Requests table.** COSY terminal frames report
+  `credits`; they are now normalized into `credit_used`, so Qoder requests
+  show their credit spend (Coins column) like buddy already did.
+- **Qoder probe tooling reorganized and deduplicated.** The 22 probe scripts
+  under `scripts/provider-probing/qoder/` were consolidated to 13: one
+  canonical chat probe (`chat/probe-qoder.ts`) absorbs the transport,
+  response-shape, cross-model, business-header, legacy-reply, and lite-1M
+  probes via flags (`--surface`, `--model-echo`, `--cross`, `--headers`,
+  `--lite`); entitlement/roster/account-info merge into
+  `quota/qoder-entitlement-probe.ts` (`--header-mode`, `--full`, `--roster-key`);
+  gRPC meta absorbs the modelname probe (`--echo-only`); context and
+  session-retention merge into `chat/qoder-capacity-probe.ts` (`--mode`).
+  New shared helpers `lib/shared.ts` (machine identity, headers, body
+  builders, SSE reader, account loader, redacting printer) and
+  `lib/grpc.ts` (gRPC client factory) eliminate the duplicated code — no
+  `any` casts, one version constant, verified typecheck and runtime.
+
+### Fixed
+
+- **Qoder roster: only `lite` is free.** `qfmodel` is billed — upstream's live
+  `is_free` flag for it is a plan-tier marker, not a zero-cost tier (a free
+  account gets `quota exceeded` 116). The static roster no longer marks it
+  free; live discovery still honors upstream's own flag.
+- **Qoder probe reports the upstream model echo.** The gRPC surface has no
+  HTTP body for `readReportedModel`, so provider Test Model returned no
+  `reportedModel` for Qoder. The adapter now emits a `response_start` event
+  with the echoed model, and the probe falls back to reading it from the
+  canonical events — Test Model now shows the real model the upstream ran
+  (e.g. `smodel` → `azure-gpt6-astra`).
+- **Qoder gRPC proto path on Windows.** The proto is materialized from the
+  embedded source (no `file:` URL path issues), fixing `no such file or
+  directory` at runtime.
+
 ## [2.7.6] - 2026-11-04
 
 ### Added
@@ -306,12 +381,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   normalized to the IDE's header-safe form, and the COSY version pins the IDE's
   `1.1.80` (not the newer CLI's).
 - **Qoder browser-session PAT claimer.** New probe
-  `scripts/provider-probing/qoder/qoder-browser-pat-claimer.ts` lists, creates,
-  and revokes Personal Access Tokens (`pt-…`) from the Qoder web console using
-  an exported browser session cookie (Netscape cookies.txt). It handles the
+  `scripts/provider-probing/qoder/qoder-browser-pat-claimer.ts` (removed in the
+  2.7.7 probe-tooling reorg — browser/cookie tooling retired) listed, created,
+  and revoked Personal Access Tokens (`pt-…`) from the Qoder web console using
+  an exported browser session cookie (Netscape cookies.txt). It handled the
   console's CSRF double-submit pair (`window.csrfToken` + the
-  `qoder_csrf_token` cookie), caps expiry at the console's 1-year maximum, and
-  writes the minted PAT only to `--out` — never to stdout. This provides the
+  `qoder_csrf_token` cookie), capped expiry at the console's 1-year maximum, and
+  wrote the minted PAT only to `--out` — never to stdout. This provides the
   durable identity path: a PAT is exchanged by the adapter into a per-request
   job token, versus the device token the OAuth flow issues.
 - **Routing prefers accounts with remaining credit, free tier to any account.**

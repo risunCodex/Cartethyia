@@ -89,11 +89,12 @@ export const CONFIG_SPEC = {
   CARTETHYIA_API_KEY: { kind: "optional-text" },
   CARTETHYIA_SERVER_MAX_BODY_BYTES: {
     kind: "int",
-    // A 500K-token context is roughly 2 MB of text, so 4 MB admits every real
-    // request while halving the worst-case hold. How many may be in flight is
-    // admission's job, so an operator with larger payloads raises this and
-    // sets the ceiling in Settings.
-    default: 4 * 1024 * 1024,
+    // A 1M-token context is roughly 4+ MB of text (Qoder gRPC/legacy paths
+    // accept it), so 16 MB admits every real request while bounding the
+    // worst-case hold. How many may be in flight is admission's job, so an
+    // operator with even larger payloads raises this and sets the ceiling in
+    // Settings.
+    default: 16 * 1024 * 1024,
     min: 1024,
     max: Number.MAX_SAFE_INTEGER,
   },

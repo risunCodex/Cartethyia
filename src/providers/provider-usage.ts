@@ -299,6 +299,14 @@ export function normalizeUsage(input: Record<string, unknown>): UsageRecord {
     },
     rawCost,
   ) ?? null;
+  // Provider-billed credits: an explicit `credit_used` wins, then Qoder's
+  // `credits` (COSY terminal frame), then Tencent buddy-meter `credit`.
+  // Negative/NaN values are dropped, never clamped.
+  const creditRaw = input.credit_used ?? input.credits ?? input.credit;
+  const creditUsed =
+    typeof creditRaw === "number" && Number.isFinite(creditRaw) && creditRaw >= 0
+      ? { credit_used: creditRaw }
+      : {};
   return {
     input_tokens,
     cached_input_tokens,
@@ -307,12 +315,7 @@ export function normalizeUsage(input: Record<string, unknown>): UsageRecord {
     output_tokens,
     reasoning_tokens,
     estimated_cost,
-    // Tencent buddy-meter credit: top-level `credit` in the Chat usage frame
-    // (probed live on cb/deepseek-v4.1-flash-sg: 0 on a 29-token turn, 1.01
-    // on a 72k-token turn). Negative/NaN values are dropped, never clamped.
-    ...(typeof input.credit === "number" && Number.isFinite(input.credit) && input.credit >= 0
-      ? { credit_used: input.credit }
-      : {}),
+    ...creditUsed,
     ...(Object.keys(details).length > 0 ? { details } : {}),
   };
 }

@@ -116,6 +116,30 @@ export const ANTIGRAVITY_MODELS: readonly ModelDefinition[] = [
   antigravityModel("gpt-oss-120b", 131_072, 32_768, true),
 ];
 
+/**
+ * Web-search rows served by `/v1/search`. Antigravity grounds search through a
+ * Gemini chat call with a `web_search` tool (see `websearch`); the cheap flash
+ * SKU is the default search model.
+ */
+export const ANTIGRAVITY_SEARCH_MODELS: readonly ModelDefinition[] = [
+  defineModel({
+    id: "gemini-2.5-flash",
+    providerId: "antigravity",
+    serviceKind: "websearch",
+    wireFamily: "chat",
+    // Empty endpoint: the adapter resolves the URL from the request stream flag
+    // (`GENERATE_PATH`), so the row only needs to exist as a websearch route.
+    // An empty value also keeps it distinct from the llm row (the unique key is
+    // provider+model+endpoint).
+    endpoint: "",
+    ctx: 1_000_000,
+    out: 65_535,
+    vision: true,
+    reasoning: true,
+    toolCall: false,
+  }),
+];
+
 function normalizeAntigravityGrounding(data: unknown, maxResults: number): readonly WebSearchResult[] {
   if (!isRecord(data)) return [];
   const chunks = Array.isArray(data.groundingChunks) ? data.groundingChunks : [];

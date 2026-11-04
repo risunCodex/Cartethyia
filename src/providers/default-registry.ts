@@ -202,7 +202,10 @@ export const PROVIDER_CAPABILITIES = {
   },
   codex: {
     loadAdapter: async () => (await import("./integrations/codex/codex")).createCodexAdapter({ provider_id: "codex" }),
-    loadModels: async () => (await import("./integrations/codex/codex")).CODEX_MODELS,
+    loadModels: async () => {
+      const { CODEX_MODELS, CODEX_SEARCH_MODELS } = await import("./integrations/codex/codex");
+      return [...CODEX_MODELS, ...CODEX_SEARCH_MODELS];
+    },
     loadAuthentication: oauthCapability(() => import("./integrations/codex/codex-oauth"), "codexOAuthClient", { withRefresher: true }),
     loadQuotaCollector: quotaCapability(() => import("./integrations/codex/codex-quota"), "fetchCodexQuota"),
     loadModelDiscovery: async () => async ({ credential, fetcher }) =>
@@ -235,7 +238,10 @@ export const PROVIDER_CAPABILITIES = {
   },
   antigravity: {
     loadAdapter: async () => (await import("./integrations/antigravity/antigravity")).antigravityAdapter,
-    loadModels: async () => (await import("./integrations/antigravity/antigravity")).ANTIGRAVITY_MODELS,
+    loadModels: async () => {
+      const { ANTIGRAVITY_MODELS, ANTIGRAVITY_SEARCH_MODELS } = await import("./integrations/antigravity/antigravity");
+      return [...ANTIGRAVITY_MODELS, ...ANTIGRAVITY_SEARCH_MODELS];
+    },
     loadAuthentication: oauthCapability(() => import("./integrations/antigravity/antigravity-oauth"), "antigravityOAuthClient", { withRefresher: true }),
     loadQuotaCollector: quotaCapability(() => import("./integrations/antigravity/antigravity-quota"), "fetchAntigravityQuota"),
     loadModelDiscovery: async () => async ({ baseUrl, credential, fetcher }) => {

@@ -69,6 +69,8 @@
     "check:migrations": "bun run scripts/test/check-migrations.ts"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.7",
+    "@grpc/proto-loader": "^0.8.1",
     "drizzle-orm": "0.45.2",
     "elysia": "2.0.0-beta.16",
     "enquirer": "^2.4.1",

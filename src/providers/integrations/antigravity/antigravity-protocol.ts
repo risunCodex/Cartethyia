@@ -17,7 +17,7 @@
  */
 import { createHash } from "node:crypto";
 import { providerBaseUrl } from "../../provider-metadata";
-import type { ModelDefinition } from "../../provider-model-definition";
+import { defineModel, type ModelDefinition } from "../../provider-model-definition";
 import { isRecord } from "../../../protocol/codecs";
 import { modelsDevCatalog } from "../../discovery/models-dev-catalog";
 import type { CanonicalRequest, ReasoningIntent } from "../../../protocol/canonical-model";
@@ -485,7 +485,25 @@ export async function discoverAntigravityModels(
         (await response.json()) as unknown,
       );
       if (models === null) continue;
-      return models;
+      // Keep the static websearch row on top of discovered rows: the live
+      // catalog does not publish search SKUs, and `/v1/search` needs a
+      // `service_kind: "websearch"` row to route.
+      return [
+        ...models,
+        defineModel({
+          id: "gemini-2.5-flash",
+          providerId: "antigravity",
+          serviceKind: "websearch",
+          wireFamily: "chat",
+          // Empty endpoint — see `ANTIGRAVITY_SEARCH_MODELS`.
+          endpoint: "",
+          ctx: 1_000_000,
+          out: 65_535,
+          vision: true,
+          reasoning: true,
+          toolCall: false,
+        }),
+      ];
     } catch {
       // Best-effort: a failed live catalog must never break static routing.
     }

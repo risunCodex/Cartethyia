@@ -145,6 +145,30 @@ export const CODEX_MODELS: readonly ModelDefinition[] = [
 ];
 const CODEX_SEARCH_DEFAULT_MODEL = "gpt-5.6-luna";
 
+/**
+ * Web-search rows served by `/v1/search`. Codex grounds search through a
+ * Responses call with a `web_search` tool (see `websearch`); the cheap 5.6
+ * SKU is the default search model.
+ */
+export const CODEX_SEARCH_MODELS: readonly ModelDefinition[] = [
+  defineModel({
+    id: "gpt-5.6-luna",
+    providerId: "codex",
+    serviceKind: "websearch",
+    wireFamily: "responses",
+    // Empty endpoint: the adapter falls back to
+    // `/backend-api/codex/responses` when the candidate path is empty (see
+    // `dispatch`), and an empty value keeps the row distinct from the llm row
+    // in the (provider, model, endpoint) unique key.
+    endpoint: "",
+    ctx: 1_000_000,
+    out: 128_000,
+    vision: true,
+    reasoning: true,
+    toolCall: false,
+  }),
+];
+
 function normalizeCodexSearchCitations(
   citations: readonly unknown[],
   answerText: string,
@@ -528,7 +552,10 @@ export async function discoverCodexModels(input: {
       ),
     );
   }
-  return [...byId.values()].sort((a, b) => a.modelId.localeCompare(b.modelId));
+  // Keep the static websearch rows on top of discovered llm rows: the codex
+  // registry does not publish search SKUs, and `/v1/search` needs a
+  // `service_kind: "websearch"` row to route.
+  return [...byId.values(), ...CODEX_SEARCH_MODELS].sort((a, b) => a.modelId.localeCompare(b.modelId));
 }
 
 /** Reads just enough of an untyped body to tell SSE from JSON, then replays it. */

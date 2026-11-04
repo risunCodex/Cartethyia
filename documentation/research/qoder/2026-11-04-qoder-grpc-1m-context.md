@@ -55,7 +55,7 @@ tokens) — comfortably above 1M tokens.
 ## The gRPC surface
 
 From the unpacked Qoder desktop client (worker runtime
-`qoder-worker-runtime.mjs`, v1.1.81, bundled `proto/chat.proto`):
+`qoder-worker-runtime.mjs`, v1.1.81, bundled `vendor/qoder/chat.proto`):
 
 ```
 service model.chat.ChatService {
@@ -90,10 +90,10 @@ service model.chat.ChatService {
 
 ## Evidence artifacts
 
-- Unpacked client: `D:\tmp\unpacked\qoder\Qoder-unpacked\npm-package\package\bundle\qoder-worker-runtime.mjs` (35 MB) and `proto/chat.proto`.
+- Unpacked client: `D:\tmp\unpacked\qoder\Qoder-unpacked\npm-package\package\bundle\qoder-worker-runtime.mjs` (35 MB) and `vendor/qoder/chat.proto`.
 - Probe scripts (scratch):
   - `D:\tmp\grpc-test\qoder-grpc-probe.ts` (gRPC live probe)
-  - `scripts/provider-probing/qoder/qoder-context-probe.ts` (HTTP live probe)
-  - `scripts/provider-probing/qoder/qoder-session-retention-probe.ts` (retention check)
+  - `scripts/provider-probing/qoder/chat/qoder-capacity-probe.ts` (HTTP live probe:
+    context acceptance + session retention)
 - Roster source of truth (live): `GET /algo/api/v2/model/list?Encode=1` — every
   lite-plan slot carries `context_config: {1M, 400K, 200K}`.

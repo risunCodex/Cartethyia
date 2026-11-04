@@ -280,6 +280,7 @@ export function AddModelModal({
   const [thinking, setThinking] = useState<ProbeReasoningEffort>("auto");
   const [testState, setTestState] = useState<"idle" | "testing" | "passed" | "failed">("idle");
   const [testError, setTestError] = useState("");
+  const [testMeta, setTestMeta] = useState<Readonly<Record<string, unknown>> | null>(null);
   const [draft, setDraft] = useState<ModelMetadataDraft>(newModelDraft);
 
   const trimmed = modelId.trim();
@@ -296,12 +297,27 @@ export function AddModelModal({
     if (!normalized) return;
     setTestState("testing");
     setTestError("");
+    setTestMeta(null);
+    // Qoder's IDE surface is the only transport that echoes the real serving
+    // model (provider_model/target) in its raw_usage, so a probe against it
+    // reports what actually ran instead of the opaque roster key.
+    const qoderIde = providerId === "qoder" || providerId === "qodercn";
     probe.mutate(
-      { providerId, request: { modelId: normalized, wireFamily, reasoningEffort: thinking, serviceKind: "llm" } },
+      {
+        providerId,
+        request: {
+          modelId: normalized,
+          wireFamily,
+          reasoningEffort: thinking,
+          serviceKind: "llm",
+          ...(qoderIde ? { surface: "ide" } : {}),
+        },
+      },
       {
         onSuccess: (result) => {
           if (result.ok) {
             setTestState("passed");
+            setTestMeta(result.providerMetadata ?? null);
           } else {
             setTestState("failed");
             setTestError(result.error ?? "Model probe failed");
@@ -450,6 +466,23 @@ export function AddModelModal({
         {testState === "passed" && (
           <Banner tone="success" live="status">
             Model test passed — ready to add.
+            {testMeta !== null && (
+              <span className="grid gap-1 mt-2 min-w-0">
+                {Object.entries(testMeta)
+                  .filter(([, value]) => value !== undefined && value !== null && value !== "")
+                  .map(([key, value]) => (
+                    <span key={key} className="flex items-center gap-2 min-w-0">
+                      <span className="shrink-0 text-micro text-text-tertiary">{key}</span>
+                      <span
+                        className="truncate font-mono text-micro text-text-secondary"
+                        title={String(value)}
+                      >
+                        {String(value)}
+                      </span>
+                    </span>
+                  ))}
+              </span>
+            )}
           </Banner>
         )}
         {testState === "failed" && (
@@ -736,9 +769,12 @@ function ModelCard({
   readonly deletePending: boolean;
 }): ReactNode {
   const gatewayTest = useGatewaySignedModelTest();
+  const probeConsole = useProbeModel();
   const setEnabled = useSetModelEnabled();
   const [copied, setCopied] = useState(false);
   const [probeResult, setProbeResult] = useState<{ ok: boolean; latencyMs: number } | null>(null);
+  const [probeMeta, setProbeMeta] = useState<Readonly<Record<string, unknown>> | null>(null);
+  const [showMetaDetails, setShowMetaDetails] = useState(false);
   const scheduleCopyReset = useTrackedTimeout();
 
   // The routable id for this model under the section's thinking setting. The
@@ -753,8 +789,78 @@ function ModelCard({
   const copyId = `${providerId}/${qualifiedId}`;
   const pendingLabel = serviceKind === "websearch" ? "Searching…" : "Thinking…";
   const runProbe = () => {
+    // Qoder's probe console path defaults to the IDE surface, which echoes the
+    // real serving model metadata (provider_model/target); the gateway test
+    // path only sees the opaque roster echo (`auto`/`lite`). For Qoder the
+    // console probe is the trusted source, so use it directly.
+    setShowMetaDetails(false);
+    const qoder = providerId === "qoder" || providerId === "qodercn";
+    if (qoder) {
+      probeConsole.mutate(
+        { providerId, request: { modelId: model.modelId, serviceKind: "llm" } },
+        {
+          onSuccess: (result) => {
+            setProbeResult({ ok: result.ok, latencyMs: result.latencyMs });
+            setProbeMeta(result.providerMetadata ?? null);
+            if (!result.ok) {
+              toast.error(
+                `${providerId}/${qualifiedId} test failed`,
+                result.error ?? "Unknown error",
+              );
+              return;
+            }
+            const sample = result.sample ?? "";
+            const reported = result.reportedModel?.trim() ?? "";
+            const meta = result.providerMetadata;
+            const metaEntries = meta
+              ? Object.entries(meta).filter(([, value]) => value !== undefined && value !== null && value !== "")
+              : [];
+            toast.successRich(
+              `${qualifiedId} · END ${formatProbeDuration(result.latencyMs)}`,
+              <span className="grid gap-2 min-w-0">
+                {reported ? (
+                  <Inline gap="6px" align="center" className="min-w-0">
+                    <Cog size={12} aria-hidden="true" className="shrink-0 text-text-tertiary" />
+                    <span className="truncate font-mono text-badge text-text-secondary" title={reported}>
+                      {reported}
+                    </span>
+                  </Inline>
+                ) : null}
+                {metaEntries.length > 0 ? (
+                  <span className="grid gap-1 min-w-0">
+                    {metaEntries.map(([key, value]) => (
+                      <Inline key={key} gap="6px" align="center" className="min-w-0">
+                        <span className="shrink-0 text-micro text-text-tertiary">{key}</span>
+                        <span
+                          className="truncate font-mono text-micro text-text-secondary"
+                          title={String(value)}
+                        >
+                          {String(value)}
+                        </span>
+                      </Inline>
+                    ))}
+                  </span>
+                ) : null}
+                <span>{sample || "No sample text in the response."}</span>
+              </span>,
+              [reported, sample].filter(Boolean).join("\n") || "No sample text in the response.",
+            );
+          },
+          onError: (err) => {
+            setProbeResult({ ok: false, latencyMs: 0 });
+            setProbeMeta(null);
+            toast.error(
+              `${providerId}/${qualifiedId} test failed`,
+              (err as { message?: string }).message ?? "Model probe failed",
+            );
+          },
+        },
+      );
+      return;
+    }
     void gatewayTest.test(copyId, model.outputLimit ?? undefined).then((result) => {
       setProbeResult({ ok: result.ok, latencyMs: result.latencyMs });
+      setProbeMeta(null);
       if (!result.ok) {
         toast.error(
           `${providerId}/${qualifiedId} test failed`,
@@ -960,21 +1066,21 @@ function ModelCard({
           <Button
             variant="secondary"
             size="sm"
-            disabled={gatewayTest.testing}
+            disabled={gatewayTest.testing || probeConsole.isPending}
             onClick={runProbe}
             aria-label={`Test ${qualifiedId}`}
             title={
-              gatewayTest.testing
+              gatewayTest.testing || probeConsole.isPending
                 ? `Probing ${qualifiedId}…`
                 : probeResult?.ok
-                  ? `Last probe OK in ${formatProbeDuration(probeResult.latencyMs)} — click to re-test`
+                  ? `Last probe OK in ${formatProbeDuration(probeResult.latencyMs)} — click to re-test${probeMeta ? `\n${Object.entries(probeMeta).filter(([, v]) => v !== undefined && v !== null && v !== "").map(([k, v]) => `${k}: ${String(v)}`).join("\n")}` : ""}`
                   : probeResult
                     ? "Last probe failed — click to retry"
                     : `Test ${qualifiedId}`
             }
             className="flex-1 justify-center"
             icon={
-              gatewayTest.testing ? (
+              gatewayTest.testing || probeConsole.isPending ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : probeResult ? (
                 probeResult.ok ? (
@@ -991,7 +1097,7 @@ function ModelCard({
               )
             }
           >
-            {gatewayTest.testing
+            {gatewayTest.testing || probeConsole.isPending
               ? pendingLabel
               : probeResult?.ok
                 ? formatProbeDuration(probeResult.latencyMs)
@@ -1025,6 +1131,42 @@ function ModelCard({
             />
           )}
         </div>
+        {probeMeta !== null && (
+          <div className="grid gap-1 pt-1 min-w-0">
+            {(() => {
+              const entries = Object.entries(probeMeta).filter(
+                ([, value]) => value !== undefined && value !== null && value !== "",
+              );
+              if (entries.length === 0) return null;
+              const visible = showMetaDetails ? entries : entries.slice(0, 1);
+              return (
+                <>
+                  {visible.map(([key, value]) => (
+                    <div key={key} className="flex items-center gap-2 min-w-0">
+                      <span className="shrink-0 text-micro text-text-tertiary">{key}</span>
+                      <span
+                        className="truncate font-mono text-micro text-text-secondary"
+                        title={String(value)}
+                      >
+                        {String(value)}
+                      </span>
+                    </div>
+                  ))}
+                  {entries.length > 1 ? (
+                    <button
+                      type="button"
+                      className="mt-0.5 w-fit text-micro font-semibold text-text-tertiary hover:text-text-primary cursor-pointer bg-transparent border-0 p-0"
+                      aria-expanded={showMetaDetails}
+                      onClick={() => setShowMetaDetails((open) => !open)}
+                    >
+                      {showMetaDetails ? "(close)" : `(show more · ${entries.length - 1} more)`}
+                    </button>
+                  ) : null}
+                </>
+              );
+            })()}
+          </div>
+        )}
       </div>
     </>
   );

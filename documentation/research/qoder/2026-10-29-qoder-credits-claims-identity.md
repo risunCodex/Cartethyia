@@ -536,6 +536,6 @@ exhausted for the active campaign.
   `/home/risun/.config/.locale_cfg`
 - Official bundle: `D:/tmp/qodercli/npm-package/package/bundle/qoder-worker-runtime.mjs`
 - Windows PE identity: `D:/tmp/qodercli/cli-state/.bin/umid-win32-x64-48d1294f147c9d89/`
-- Probe tooling: `scripts/provider-probing/qoder/probe-qoder-credits.ts`
+- Probe tooling: `scripts/provider-probing/qoder/quota/probe-qoder-credits.ts`
   (campaign list / reward / claim / activity family)
 - Proxies: `http://{altaria,ballast,caboose,…}.proxy.rlwy.net:<port>` (40 endpoints)

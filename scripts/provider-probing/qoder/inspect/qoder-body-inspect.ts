@@ -2,15 +2,15 @@
  * Inspects the exact legacy request body buildQoderRequest produces for qfmodel
  * with 1M context + xhigh reasoning + max_tokens, printing only non-secret
  * fields. This shows what actually goes on the wire.
- *   bun run scripts/provider-probing/qoder/qoder-body-inspect.ts
+ *   bun run scripts/provider-probing/qoder/inspect/qoder-body-inspect.ts
  */
 import {
   buildQoderRequest,
-} from "../../../src/providers/integrations/qoder/qoder";
+} from "../../../../src/providers/integrations/qoder/qoder";
 import type {
   CanonicalRequest,
   ContentPart,
-} from "../../../src/protocol/canonical-model";
+} from "../../../../src/protocol/canonical-model";
 
 const modelId = "qfmodel";
 const AUTH = {

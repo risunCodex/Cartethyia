@@ -299,6 +299,18 @@ describe("normalizeUsage: credit", () => {
   test("a non-numeric credit is dropped", () => {
     expect(normalizeUsage({ credit: "1.01" })).not.toHaveProperty("credit_used");
   });
+
+  test("Qoder credits shape is carried through", () => {
+    // Qoder's COSY terminal frame reports `credits` (e.g. 0.0055 on a lite
+    // turn), not buddy-meter `credit`.
+    expect(normalizeUsage({ credits: 0.0055 }).credit_used).toBe(0.0055);
+    expect(normalizeUsage({ credits: 0 }).credit_used).toBe(0);
+    expect(normalizeUsage({ credits: -2 })).not.toHaveProperty("credit_used");
+  });
+
+  test("explicit credit_used wins over the provider-specific aliases", () => {
+    expect(normalizeUsage({ credit: 1, credits: 2, credit_used: 3 }).credit_used).toBe(3);
+  });
 });
 
 describe("usageFromProvider: absence is not zero", () => {

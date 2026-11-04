@@ -146,6 +146,40 @@ test("a raw_usage terminal frame with literal newlines inside its JSON is salvag
   expect(terminal?.["provider_stop_reason"]).toBe("stop");
 });
 
+test("a raw_usage terminal frame carries provider metadata", async () => {
+  // The IDE surface's raw_usage names the model that actually served the
+  // turn (provider_model/target) — the production transports echo only an
+  // opaque roster key. The translator must surface it on the terminal event
+  // so probes can report it.
+  const chunk = {
+    choices: [] as unknown[],
+    created: 1793589918,
+    id: "chatcmpl-x",
+    model: "lite",
+    object: "chat.completion.chunk",
+    raw_usage: {
+      data: {
+        completion_tokens: 37,
+        provider_model: "qwen3.7-plus",
+        supply_model: "qwen3.7-plus",
+        supply_region: "global",
+        model_level: "lite",
+        target: "bailian-qwen3.7-plus-free-260401",
+      },
+    },
+  };
+  const ev = await collect(["data: " + JSON.stringify(chunk) + "\n\n"]);
+  const terminal = ev.find((e) => e["type"] === "terminal");
+  expect(terminal).toBeDefined();
+  expect(terminal?.["provider_metadata"]).toEqual({
+    provider_model: "qwen3.7-plus",
+    supply_model: "qwen3.7-plus",
+    supply_region: "global",
+    model_level: "lite",
+    target: "bailian-qwen3.7-plus-free-260401",
+  });
+});
+
 test("plain text passes through untouched", async () => {
   const ev = await collect([
     frame({ content: "Answer is 42." }),

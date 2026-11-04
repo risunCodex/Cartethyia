@@ -107,7 +107,7 @@ Variables read outside the spec are therefore **not** listed below:
 | --- | --- | --- | --- |
 | `DASHBOARD_DIST` | string | `./dist/dashboard` | — |
 | `CARTETHYIA_API_KEY` | string, optional | unset | — |
-| `CARTETHYIA_SERVER_MAX_BODY_BYTES` | integer | 4194304 | 1024 – 9007199254740991 |
+| `CARTETHYIA_SERVER_MAX_BODY_BYTES` | integer | 16777216 | 1024 – 9007199254740991 |
 | `CARTETHYIA_SERVER_IDLE_TIMEOUT` | integer | 60 | 0 – 86400 |
 | `CARTETHYIA_CONCURRENCY_TOLERANCE` | integer, optional | unset | 0 – 1024 when set |
 | `CARTETHYIA_PROCESS_COUNT` | integer | 1 | 1 – 16 |

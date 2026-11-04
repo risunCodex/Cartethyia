@@ -371,6 +371,13 @@ export interface CanonicalTerminalEvent {
   /** Event timestamp in milliseconds since epoch (optional for profiling). */
   readonly timestamp?: number;
   /**
+   * Provider-specific upstream metadata about the model that actually served
+   * the turn — its native model id, supply target, tier, etc. Not a client
+   * surface: probes read it to report what the upstream really ran when the
+   * transport's model echo is an opaque id.
+   */
+  readonly provider_metadata?: Record<string, unknown>;
+  /**
    * Set by an adapter whose turn is not finished: the stream ended because the
    * model asked for a tool the client must answer, and the provider's
    * authoritative usage arrives with the *later* request that continues the

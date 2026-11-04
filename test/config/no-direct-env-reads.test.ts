@@ -99,6 +99,15 @@ const ALLOW_LIST: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     // operator is debugging the cursor transport.
     CARTETHYIA_CURSOR_HEARTBEAT_MS: "cursor transport heartbeat override",
   },
+  "src/console/cli-tools/cartethyia-websearch-plugin.ts": {
+    // OpenCode websearch plugin generation: operator overrides for the
+    // generated plugin's gateway URL/key/backend. Only read at plugin-write
+    // time (CLI-tools apply), not by gateway request paths — they live next to
+    // the plugin generator so the generated file stays self-contained.
+    CARTETHYIA_SEARCH_URL: "opencode websearch plugin gateway URL override",
+    CARTETHYIA_SEARCH_API_KEY: "opencode websearch plugin API key override",
+    CARTETHYIA_SEARCH_BACKEND: "opencode websearch plugin backend override (exa/parallel)",
+  },
 };
 
 /** Walk a directory, yielding every .ts/.tsx file path relative to repo root. */

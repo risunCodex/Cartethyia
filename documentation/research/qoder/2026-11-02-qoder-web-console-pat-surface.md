@@ -64,4 +64,6 @@ legacy COSY for free-tier models.
 `scripts/provider-probing/qoder/qoder-browser-pat-claimer.ts` implements the
 full flow: reads the Netscape cookies.txt, fetches the CSRF pair fresh, and
 supports `--list`, `--create --name … --days N --out <path>`, and
-`--revoke <token_id>`. The minted PAT is written only to `--out`.
+`--revoke <token_id>`. The minted PAT is written only to `--out`. (Script
+removed in the 2.7.7 probe-tooling reorg — browser/cookie tooling was
+retired; this page documents the flow for historical reference.)

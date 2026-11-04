@@ -288,6 +288,38 @@ describe("6. parametersJsonSchema normalization", () => {
       required: ["query"],
     });
   });
+
+  test("web_search tool maps to Gemini's native googleSearch hosted tool", () => {
+    // Gemini grounds Google search through a *hosted* tool declaration
+    // (`{ googleSearch: {} }`), not a function declaration — sending the
+    // gateway's `web_search` tool as a function is why upstream answered with
+    // no grounding chunks (2026-11-04).
+    const request = {
+      model: "gemini-2.5-flash",
+      messages: [{ role: "user", content: [{ kind: "text", text: "hi" }] }],
+      stream: false,
+      generation_controls: {},
+      source_surface: "chat",
+      tools: [{ name: "web_search", tool_type: "web_search", jsonSchema: {} }],
+    } as unknown as CanonicalRequest;
+
+    const tools = buildGeminiPayload(request)["tools"] as unknown;
+    expect(tools).toEqual([{ googleSearch: {} }]);
+  });
+
+  test("googleSearch named tool also maps to the native hosted declaration", () => {
+    const request = {
+      model: "gemini-2.5-flash",
+      messages: [{ role: "user", content: [{ kind: "text", text: "hi" }] }],
+      stream: false,
+      generation_controls: {},
+      source_surface: "chat",
+      tools: [{ name: "googleSearch", jsonSchema: {} }],
+    } as unknown as CanonicalRequest;
+
+    const tools = buildGeminiPayload(request)["tools"] as unknown;
+    expect(tools).toEqual([{ googleSearch: {} }]);
+  });
 });
 
 // ─── 3. Last-good-endpoint stickiness ──────────────────────────────────────

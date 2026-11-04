@@ -1458,7 +1458,7 @@ export const telemetryEvents = pgTable(
     outputTokens: integer("output_tokens"),
     reasoningTokens: integer("reasoning_tokens"),
     estimatedCostUsd: numeric("estimated_cost_usd", { precision: 12, scale: 6 }),
-    /** Provider-billed credits (Tencent buddy-meter `credit`); NULL when unreported. */
+    /** Provider-billed credits (Tencent buddy-meter `credit`, Qoder `credits`); NULL when unreported. */
     creditUsed: numeric("credit_used", { precision: 12, scale: 4 }),
     /**
      * Gateway-side time before the upstream dispatch began: routing,

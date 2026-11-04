@@ -6,7 +6,7 @@
  * operator approves. The resulting account (access token, refresh token,
  * identity) is written to the requested JSON file — tokens are never printed.
  *
- *   bun run scripts/provider-probing/qoder/qoder-device-login.ts \
+ *   bun run scripts/provider-probing/qoder/auth/qoder-device-login.ts \
  *     --out D:\tmp\scratch\qoder-new.json [--label "my account"] \
  *     [--realm intl|cn] [--open]
  *
@@ -19,8 +19,8 @@ import { spawn } from "node:child_process";
 import {
   QoderOAuthClient,
   qoderHardwareMachineId,
-} from "../../../src/providers/integrations/qoder/qoder-oauth";
-import type { QoderRealm } from "../../../src/providers/integrations/qoder/qoder-realm";
+} from "../../../../src/providers/integrations/qoder/qoder-oauth";
+import type { QoderRealm } from "../../../../src/providers/integrations/qoder/qoder-realm";
 
 const args = parseArgs({
   options: {
@@ -134,7 +134,7 @@ while (Date.now() < deadline) {
   console.log(`  Saved to: ${outPath}`);
   console.log("");
   console.log("Next: probe it with");
-  console.log(`  bun run scripts/provider-probing/qoder/probe-qoder.ts --creds "${outPath}" --model qfmodel --ide-only`);
+  console.log(`  bun run scripts/provider-probing/qoder/chat/probe-qoder.ts --creds "${outPath}" --model qfmodel`);
   process.exit(0);
 }
 
