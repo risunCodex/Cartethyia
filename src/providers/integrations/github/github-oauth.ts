@@ -40,6 +40,20 @@ export const GITHUB_OPENCODE_CLIENT_ID = "Ov23li8tweQw6odWQebz" as const;
 export const GITHUB_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token" as const;
 /** Default API host when a token carries no `proxy-ep` claim. */
 export const GITHUB_DEFAULT_API_HOST = "api.individual.githubcopilot.com" as const;
+/**
+ * The Copilot API host OpenCode's integration uses. The reference plugin always
+ * dials `api.githubcopilot.com` for GitHub.com (never the per-claim
+ * `api.individual.*` host the VS Code minted tokens carry), so an OpenCode
+ * login pins this host rather than falling back to the VS Code default.
+ */
+export const GITHUB_OPENCODE_API_HOST = "api.githubcopilot.com" as const;
+/**
+ * How long an OpenCode login's credential is treated as valid before the
+ * refresh sweep revisits it. The raw GitHub OAuth token has no Copilot token
+ * expiry (there is no minted token), so this is a far-future safeguard, not a
+ * real lifetime: a re-login or upstream expiry is what actually rotates it.
+ */
+const GITHUB_OPENCODE_TOKEN_LIFETIME_MS = 365 * 24 * 60 * 60 * 1000;
 
 /**
  * Headers every Copilot inference and policy request must carry.
@@ -428,12 +442,12 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
           : `GitHub device polling failed (${response.status})`;
       return { status: "failed", reason };
     }
-    let minted;
+    let minted: Awaited<ReturnType<typeof mintGithubToken>> | undefined;
     try {
       // OAuth succeeds for any GitHub account; the entitlement profile is the
       // only signal that the account can actually chat. An explicit denial is
-      // surfaced as a failed verdict before any token is minted, mirroring the
-      // reference OpenCode provider.
+      // surfaced as a failed verdict before any token is minted or stored,
+      // mirroring the reference OpenCode provider.
       const entitlement = await fetchGitHubCopilotEntitlement(
         githubToken,
         domain,
@@ -443,19 +457,33 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
       if (entitlement.denied !== undefined) {
         return { status: "failed", reason: entitlement.denied };
       }
-      minted = await mintGithubToken(githubToken, domain, this.fetchFn);
+      // OpenCode's OAuth app is the client the `opencode-copilot` wire mode
+      // presents upstream, and that mode uses the raw GitHub token directly —
+      // no minted Copilot token. The VS Code mint endpoint
+      // (`/copilot_internal/v2/token`) rejects non-VS-Code client ids with 403
+      // (GitHub's anti-scraping gate), so an OpenCode login must not mint.
+      if (this.clientId !== GITHUB_OPENCODE_CLIENT_ID) {
+        minted = await mintGithubToken(githubToken, domain, this.fetchFn);
+      }
     } catch (error) {
       // The mint runs after approval: surface its reason as a failed verdict,
       // not an exception that escapes the dashboard's poll request.
       return { status: "failed", reason: error instanceof Error ? error.message : "GitHub Copilot token mint failed" };
     }
     const label = await fetchGitHubLogin(githubToken, domain, this.fetchFn, AbortSignal.timeout(10_000));
+    const access = minted === undefined ? githubToken : minted.access;
+    const apiHost = minted === undefined ? GITHUB_OPENCODE_API_HOST : minted.apiHost;
+    const expiresAt =
+      minted === undefined
+        ? new Date(Date.now() + GITHUB_OPENCODE_TOKEN_LIFETIME_MS)
+        : minted.expiresAt;
     const result: OAuthExchangeResult = {
-      access: encodeGithubCredential(minted.access, minted.apiHost, githubToken),
+      access: encodeGithubCredential(access, apiHost, githubToken),
       // The GitHub token is the refresh value: it is what re-mints the Copilot
-      // token, which expires on its own much shorter clock.
+      // token (VS Code app) or is the raw credential itself (OpenCode app),
+      // depending on which app the flow presented.
       refresh: githubToken,
-      expiresAt: minted.expiresAt,
+      expiresAt,
       ...(label === undefined ? {} : { accountLabel: label }),
     };
     return { status: "complete", result };
@@ -463,6 +491,21 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
 
 
   override async refresh(refreshToken: string, signal?: AbortSignal): Promise<OAuthTokenRefreshResult> {
+    // OpenCode's app uses the raw GitHub token directly — there is no minted
+    // Copilot token to re-mint, and the VS Code mint endpoint rejects the
+    // OpenCode client id. Refresh is then a no-op that keeps the credential
+    // valid on its far-future lifetime.
+    if (this.clientId === GITHUB_OPENCODE_CLIENT_ID) {
+      return {
+        access: encodeGithubCredential(
+          refreshToken,
+          GITHUB_OPENCODE_API_HOST,
+          refreshToken,
+        ),
+        refresh: refreshToken,
+        expiresAt: new Date(Date.now() + GITHUB_OPENCODE_TOKEN_LIFETIME_MS),
+      };
+    }
     const minted = await mintGithubToken(
       refreshToken,
       copilotGitHubDomain(),

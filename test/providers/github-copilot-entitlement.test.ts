@@ -7,7 +7,11 @@
  * token is minted, while a valid account still completes.
  */
 import { describe, expect, test } from "bun:test";
-import { GithubOAuthClient } from "../../src/providers/integrations/github/github-oauth";
+import {
+  GithubOAuthClient,
+  GITHUB_OPENCODE_CLIENT_ID,
+  GITHUB_OPENCODE_API_HOST,
+} from "../../src/providers/integrations/github/github-oauth";
 
 interface StubCall {
   readonly url: string;
@@ -144,5 +148,62 @@ describe("GitHub Copilot device-login entitlement gate", () => {
     expect(poll.status).toBe("complete");
     if (poll.status !== "complete") throw new Error("unreachable");
     expect(calls.some((call) => call.url.includes("copilot_internal/v2/token"))).toBe(true);
+  });
+
+  test("OpenCode client id completes without minting a Copilot token", async () => {
+    const { fetch: fetcher, calls } = stubFetch((call) => {
+      if (call.url.includes("/login/oauth/access_token")) {
+        return Response.json({ access_token: "github-token" });
+      }
+      if (call.url.includes("/copilot_internal/user")) {
+        return userProfile(true);
+      }
+      if (call.url.includes("/user")) {
+        return Response.json({ login: "octocat" });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const client = new GithubOAuthClient(fetcher, GITHUB_OPENCODE_CLIENT_ID);
+
+    const poll = await client.pollDeviceAuth("device-code-5", {
+      providerState: "github.com",
+      providerId: "github",
+      tenantId: "tenant-1",
+      accountLabel: "account",
+    });
+    expect(poll.status).toBe("complete");
+    if (poll.status !== "complete") throw new Error("unreachable");
+    // The OpenCode flow must never hit the VS Code mint endpoint (it rejects
+    // the OpenCode client id with 403) — the raw GitHub token is the credential.
+    expect(calls.some((call) => call.url.includes("copilot_internal/v2/token"))).toBe(false);
+    const parsed = JSON.parse(poll.result.access as string) as {
+      access?: string;
+      apiHost?: string;
+      github?: string;
+    };
+    expect(parsed.access).toBe("github-token");
+    expect(parsed.apiHost).toBe(GITHUB_OPENCODE_API_HOST);
+    expect(parsed.github).toBe("github-token");
+    expect(poll.result.refresh).toBe("github-token");
+    expect(poll.result.accountLabel).toBe("octocat");
+  });
+
+  test("OpenCode refresh keeps the raw token without minting", async () => {
+    const { fetch: fetcher, calls } = stubFetch(() => {
+      return new Response("not found", { status: 404 });
+    });
+    const client = new GithubOAuthClient(fetcher, GITHUB_OPENCODE_CLIENT_ID);
+
+    const refreshed = await client.refresh("github-token");
+    expect(calls.some((call) => call.url.includes("copilot_internal/v2/token"))).toBe(false);
+    const parsed = JSON.parse(refreshed.access as string) as {
+      access?: string;
+      apiHost?: string;
+      github?: string;
+    };
+    expect(parsed.access).toBe("github-token");
+    expect(parsed.apiHost).toBe(GITHUB_OPENCODE_API_HOST);
+    expect(parsed.github).toBe("github-token");
+    expect(refreshed.refresh).toBe("github-token");
   });
 });
