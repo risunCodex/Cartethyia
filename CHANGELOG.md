@@ -68,6 +68,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   grant/period headings without model captions. Preserve upstream names in
   titles and keep future quota windows visible. Manual gift claims remain in
   provider account details rather than quota cards.
+  *(contributed by @TuruGasik in PR #13)*
 - **Qoder tool-call arguments are stitched even when continuation chunks echo
   an empty `id`.** Some Qoder roster slots (`qfmodel`/`qmodel_latest`)
   re-identify every continuation fragment with `id: ""` (the first chunk
