@@ -25,6 +25,15 @@ describe("accountErrorLabel", () => {
     expect(accountErrorLabel("auth_invalidated")).not.toMatch(/login/i);
   });
 
+  test("a GitHub Copilot license refusal reads as no access, not a ban", () => {
+    expect(accountErrorLabel("policy_blocked_banned", "oauth", "github")).toBe("No Copilot access");
+  });
+
+  test("a ban on other providers still reads as a ban", () => {
+    expect(accountErrorLabel("policy_blocked_banned", "oauth", "buddy")).toBe("Account banned");
+    expect(accountErrorLabel("policy_blocked_banned", "oauth")).toBe("Account banned");
+  });
+
   test("an unknown category is shown as-is rather than hidden", () => {
     expect(accountErrorLabel("something_new")).toBe("something_new");
   });

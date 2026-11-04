@@ -61,8 +61,18 @@ export function authInvalidatedLabel(credentialKind: string | undefined): string
   return credentialKind === "oauth" ? "Re-login required" : "Replace API key";
 }
 
-export function accountErrorLabel(category: string, credentialKind?: CredentialKind): string {
+export function accountErrorLabel(
+  category: string,
+  credentialKind?: CredentialKind,
+  providerId?: string,
+): string {
   if (category === "auth_invalidated") return authInvalidatedLabel(credentialKind);
+  // A Copilot license refusal is a verdict about the subscription, not a ban:
+  // the account cannot serve because the upstream says it has no Copilot
+  // access, and the remedy is a plan/seat change, not an appeal.
+  if (category === "policy_blocked_banned" && providerId === "github") {
+    return "No Copilot access";
+  }
   return ACCOUNT_ERROR_LABELS[category] ?? category;
 }
 

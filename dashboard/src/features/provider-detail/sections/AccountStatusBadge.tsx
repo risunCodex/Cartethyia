@@ -53,8 +53,18 @@ function credentialFamily(account: ProviderAccountResponse): string | undefined 
 function renderErrorPill(account: ProviderAccountResponse): ReactNode {
   if (!showsErrorPill(account.lastErrorCategory)) return null;
   if (account.lastErrorCategory === "quota_exhausted" && activeModelCooldowns(account)) return null;
-  const label = accountErrorLabel(account.lastErrorCategory, account.credentialKind);
+  const label = accountErrorLabel(account.lastErrorCategory, account.credentialKind, account.providerId);
   const title = account.lastError ?? account.lastErrorCategory;
+  // A Copilot license refusal gets its own tone + a tooltip that says the
+  // remedy: the account is parked because the upstream reports no Copilot
+  // access, and the fix is a plan/seat change, not a re-login.
+  if (account.lastErrorCategory === "policy_blocked_banned" && account.providerId === "github") {
+    return (
+      <Badge tone="err" dot title={title}>
+        {label}
+      </Badge>
+    );
+  }
   if (account.lastErrorCategory === "validation_required") {
     const url = validationTargetUrl(account.lastError);
     if (url !== undefined) {

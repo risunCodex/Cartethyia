@@ -35,6 +35,8 @@ import { getOrCreateInstallId } from "../shared/install-id";
 
 /** Public GitHub OAuth app id the Copilot clients use; not a secret. */
 export const GITHUB_CLIENT_ID = "Iv1.b507a08c87ecfe98" as const;
+/** The OpenCode desktop client's own GitHub OAuth app id (used by its Copilot integration). */
+export const GITHUB_OPENCODE_CLIENT_ID = "Ov23li8tweQw6odWQebz" as const;
 export const GITHUB_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token" as const;
 /** Default API host when a token carries no `proxy-ep` claim. */
 export const GITHUB_DEFAULT_API_HOST = "api.individual.githubcopilot.com" as const;
@@ -305,12 +307,19 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
   override readonly supportsBrowserCode = false;
 
   protected override readonly providerLabel = "GitHub Copilot";
-  protected override readonly clientId = GITHUB_CLIENT_ID;
   protected override readonly tokenUrl = GITHUB_ACCESS_TOKEN_URL;
   protected override readonly scopes = "read:user";
 
-  constructor(fetchFn: FetchLike = globalThis.fetch) {
+  /** Which GitHub OAuth app this flow presents. Defaults to the Copilot Chat
+   *  extension's app; OpenCode's own app differs (`GITHUB_OPENCODE_CLIENT_ID`). */
+  protected override readonly clientId: string;
+
+  constructor(
+    fetchFn: FetchLike = globalThis.fetch,
+    clientId: string = GITHUB_CLIENT_ID,
+  ) {
     super(fetchFn);
+    this.clientId = clientId;
   }
 
   override async startDeviceAuth(_context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
@@ -322,7 +331,7 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
         "content-type": "application/x-www-form-urlencoded",
         "user-agent": GITHUB_REQUEST_HEADERS["user-agent"]!,
       },
-      body: new URLSearchParams({ client_id: GITHUB_CLIENT_ID, scope: "read:user" }),
+      body: new URLSearchParams({ client_id: this.clientId, scope: "read:user" }),
     });
     const body = record(await readJsonResponse(response, "GitHub device authorization"));
     const deviceCode = nonEmptyTrimmedString(body?.device_code);
@@ -376,7 +385,7 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
         "user-agent": GITHUB_REQUEST_HEADERS["user-agent"]!,
       },
       body: new URLSearchParams({
-        client_id: GITHUB_CLIENT_ID,
+        client_id: this.clientId,
         device_code: deviceAuthId,
         grant_type: "urn:ietf:params:oauth:grant-type:device_code",
       }),

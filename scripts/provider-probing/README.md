@@ -60,6 +60,11 @@ provider-probing/
   lib/
     accounts.ts        # account-file reading + masking
     http.ts            # POST probe helper (timeout, first-bytes head)
+  github/
+    github-opencode-login.ts # device login with OpenCode's OAuth app
+    github-plan-entitlement-probe.ts # plan/SKU + gpt-6-luna entitlement
+    github-auto-multiturn-probe.ts   # live multiturn chat probe
+    github-wire-audit-probe.ts       # request-shape audit
   qoder/
     cosy-signer.ts     # COSY Bearer signer (plugin surface)
     probe-qoder.ts     # plugin COSY vs IDE /model/v1 probe
@@ -158,6 +163,25 @@ The OAuth probe (`probe-kiro-oauth.ts`) walks the browser PKCE flow live:
 register client, print authorize URL, wait for the pasted callback, exchange via
 `CreateToken`, and refresh via `CreateToken`. Social (Google/GitHub) uses the
 vendor's sign-in service. Nothing is printed except masked token prefixes.
+
+## GitHub Copilot
+
+`github-opencode-login.ts` runs a device-code login with **OpenCode's** GitHub
+OAuth app (`Ov23li8tweQw6odWQebz` — distinct from the Copilot Chat extension's
+app the console's normal GitHub login uses, and the app the `opencode-copilot`
+wire mode presents upstream). It prints the verification URL, polls until the
+operator approves, runs the same entitlement check as the console login (an
+account without Copilot access is rejected before any token is stored), and
+writes the account to a JSON file matching the `ExportedAccount` shape the
+probes read:
+
+```sh
+bun run scripts/provider-probing/github/github-opencode-login.ts \
+  --out "D:\tmp\scratch\github-opencode.json" [--label "my account"] [--open]
+```
+
+The account file can be probed directly with
+`github-auto-multiturn-probe.ts --creds <file>`.
 
 ## OpenCode
 
