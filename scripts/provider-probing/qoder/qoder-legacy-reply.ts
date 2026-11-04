@@ -17,13 +17,16 @@ import { buildCosyHeaders, transformQoderBody } from "./cosy-signer";
 const args = parseArgs({
   options: {
     creds: { type: "string", required: true },
+    label: { type: "string" },
     model: { type: "string", default: "qfmodel" },
     timeout: { type: "string", default: "30000" },
   },
 });
 
 const j = readAccountsFile(args.values.creds!);
-const account = pickAccount(j);
+const account = pickAccount(j, {
+  ...(args.values.label !== undefined ? { label: args.values.label } : {}),
+});
 const token = requireAccountToken(account);
 const userId = account.authState?.userId ?? "";
 const model = args.values.model!;

@@ -183,6 +183,22 @@ bun run scripts/provider-probing/github/github-opencode-login.ts \
 The account file can be probed directly with
 `github-auto-multiturn-probe.ts --creds <file>`.
 
+## Qoder gRPC (1M context)
+
+The Qoder **HTTP** model-server surface caps request bodies at ~256 KiB
+(~60K tokens) — verified live (`500 internal server error` above it). The
+**gRPC** surface (`model.chat.ChatService/ChatCompletionStream`) accepts up to
+~8M chars (~1.9M tokens), so it is the only proven path for real 1M-token
+context. Full evidence:
+`documentation/research/qoder/2026-11-04-qoder-grpc-1m-context.md`.
+
+The gRPC probe is standalone in scratch (it needs `@grpc/grpc-js` +
+`@grpc/proto-loader` + `protobufjs`, not present in this repo):
+`D:\tmp\grpc-test\qoder-grpc-probe.ts`, with the schema at
+`D:\tmp\unpacked\qoder\Qoder-unpacked\npm-package\package\bundle\proto\chat.proto`.
+Related repo probes: `qoder-context-probe.ts` (HTTP cap) and
+`qoder-session-retention-probe.ts` (no per-session history retention).
+
 ## OpenCode
 
 `probe-opencode.ts` is a raw wire probe for OpenCode's free tier. It hits the
