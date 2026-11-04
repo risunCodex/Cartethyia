@@ -57,6 +57,12 @@ export interface TelemetryEventRecord {
   readonly lastEventAtMs: number | null;
   /** Why the drawer payloads are empty, or `captured`; absent when unrecorded. */
   readonly payloadCaptureState?: string | null;
+  /**
+   * True for a completed request whose output was far smaller than the model's
+   * ceiling and which ended with an ordinary `stop` (a "degenerate stop").
+   * NULL/unset for everything else.
+   */
+  readonly degenerateStop?: boolean;
 }
 
 function asString(value: unknown): string | null {
@@ -109,6 +115,7 @@ function normalize(raw: Record<string, unknown>): TelemetryEventRecord | undefin
     tokensPerSec: asNumber(raw["tokensPerSec"]),
     firstContentDeltaAtMs: asNumber(raw["firstContentDeltaAtMs"]),
     lastEventAtMs: asNumber(raw["lastEventAtMs"]),
+    ...(raw["degenerateStop"] === true ? { degenerateStop: true } : {}),
   };
 }
 

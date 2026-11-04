@@ -753,7 +753,7 @@ function ModelCard({
   const copyId = `${providerId}/${qualifiedId}`;
   const pendingLabel = serviceKind === "websearch" ? "Searching…" : "Thinking…";
   const runProbe = () => {
-    void gatewayTest.test(copyId).then((result) => {
+    void gatewayTest.test(copyId, model.outputLimit ?? undefined).then((result) => {
       setProbeResult({ ok: result.ok, latencyMs: result.latencyMs });
       if (!result.ok) {
         toast.error(

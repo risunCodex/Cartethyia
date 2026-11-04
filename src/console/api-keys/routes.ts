@@ -96,8 +96,13 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
             if (record.keyMode !== "share") return response;
             return response;
           }),
-        );
-      },
+      );
+    },
+    async listActiveBannedKeys(access: AccessDecision | undefined): Promise<ApiKeyResponse[]> {
+      const authorized = requireTenantScope(access, "dashboard:read");
+      const records = await config.store.listActiveBanned(authorized.tenantId);
+      return records.map(sanitizeApiKeyResponse);
+    },
     /** Persists a new credential order. `keyIds` must name every top-level key
         the tenant has, so a partial list cannot silently renumber rows. */
     async reorderKeys(access: AccessDecision | undefined, keyIds: readonly string[]): Promise<void> {
@@ -919,6 +924,13 @@ export function createApiKeyRoutes(config: ApiKeyConfig): AnyElysia {
     .get("/", async ({ request, set }) => {
       try {
         return await factory.listKeys(config.accessResolver(request));
+      } catch (error) {
+        return errorResponse(error, set, "API-key operation failed");
+      }
+    })
+    .get("/banned", async ({ request, set }) => {
+      try {
+        return await factory.listActiveBannedKeys(config.accessResolver(request));
       } catch (error) {
         return errorResponse(error, set, "API-key operation failed");
       }

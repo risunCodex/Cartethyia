@@ -63,6 +63,43 @@ export async function probePost(
 }
 
 /**
+ * POSTs `body` to `url` with `headers` and returns the full response text
+ * (capped to `bodyCap`), for probes that need to parse the complete body
+ * (model lists, JSON control-plane responses). Never returns stream bytes
+ * beyond the cap.
+ */
+export async function probePostText(
+  url: string,
+  headers: Record<string, string>,
+  body: BodyInit,
+  opts: ProbeOptions = {},
+): Promise<ProbeResponse & { readonly body: string }> {
+  const timeoutMs = opts.timeoutMs ?? 20_000;
+  const bodyCap = opts.bodyCap ?? 4000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { method: "POST", headers, body, signal: controller.signal });
+    const contentType = response.headers.get("content-type") ?? "";
+    const text = await response.text();
+    return {
+      status: response.status,
+      ok: response.ok,
+      contentType,
+      head: text.replace(/\s+/g, " ").slice(0, HEAD_CAP),
+      body: text.slice(0, bodyCap),
+    };
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`request timed out after ${timeoutMs}ms (${url})`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Sends a request with an optional body via node's http(s) client.
  *
  * Some upstreams validate a signature over the body on a GET (Qoder's model

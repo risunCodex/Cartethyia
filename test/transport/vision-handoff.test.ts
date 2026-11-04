@@ -170,7 +170,7 @@ dbDescribe("vision handoff", () => {
     expect(allParts.some((part) => part.kind === "image")).toBe(true);
   });
 
-  test("older image-carrying history turns are dropped; only the active turn is described", async () => {
+  test("older image-carrying history turns are dropped from the image set, but trailing context is carried", async () => {
     await writeVisionHandoffModels(world.tenantId, [`${vision.providerId}/${vision.modelId}`]);
     const visionBefore = gateway.adapters.get(vision.providerId)!.dispatches.length;
     const response = await gateway.json(
@@ -200,12 +200,14 @@ dbDescribe("vision handoff", () => {
     );
     expect(response.status).toBe(200);
 
-    // The vision sub-request only carries the ACTIVE turn (the last one).
+    // The vision sub-request carries the ACTIVE image turn plus the trailing
+    // conversation context (so the vision model knows what the chat is about),
+    // but the OLD image itself must not be re-sent.
     const visionAdapter = gateway.adapters.get(vision.providerId)!;
     expect(visionAdapter.dispatches.length).toBe(visionBefore + 1);
     const visionCall = visionAdapter.dispatches[visionAdapter.dispatches.length - 1]!;
-    expect(visionCall.request.messages).toHaveLength(1);
-    const visionContent = visionCall.request.messages[0]!.content;
+    expect(visionCall.request.messages.length).toBeGreaterThan(0);
+    const visionContent = visionCall.request.messages[visionCall.request.messages.length - 1]!.content;
     expect(visionContent.some((part) => part.kind === "image" && String((part as { payload: unknown }).payload).includes("active.png"))).toBe(true);
     expect(visionContent.some((part) => part.kind === "image" && String((part as { payload: unknown }).payload).includes("old.png"))).toBe(false);
 

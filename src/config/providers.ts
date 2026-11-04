@@ -90,3 +90,21 @@ export function resolveGithubEnterpriseDomain(): string {
     return "";
   }
 }
+
+export type GithubCopilotMode = "opencode-copilot" | "vscode-client-real";
+
+/**
+ * Which GitHub Copilot wire identity the adapter uses. Defaults to
+ * `opencode-copilot` (raw GitHub OAuth token + minimal OpenCode headers),
+ * which is the proven-most-stable path (one token, no mint expiry). The
+ * `vscode-client-real` mode matches the VS Code reference client exactly but
+ * requires a freshly minted Copilot token.
+ */
+export function resolveGithubCopilotMode(): GithubCopilotMode {
+  const raw = readText(
+    "CARTETHYIA_GITHUB_COPILOT_MODE",
+    CONFIG_SPEC.CARTETHYIA_GITHUB_COPILOT_MODE,
+  ).trim().toLowerCase();
+  if (raw === "vscode-client-real") return "vscode-client-real";
+  return "opencode-copilot";
+}

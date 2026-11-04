@@ -142,6 +142,13 @@ function belowUsageFloor(state: RoutedCandidate): boolean {
   if (credit === null && percent !== null && percent <= 0) return true;
   const floor = state.usage_floor;
   if (floor === undefined) return false;
+  // Free-tier models are not credit-funded, so the operator's configured floor
+  // threshold does not apply to them — a free model may use any remaining
+  // balance. This mirrors `creditPriority` (free tier skips credit preference).
+  // It deliberately comes AFTER the exhausted-window checks above: a free-tier
+  // account whose own quota window is spent (0 left) is still excluded, because
+  // that is the provider's own limit, not the credit floor.
+  if (state.free_tier === true) return false;
   const remaining = state.usage_floor_unit === "credit" ? credit : percent;
   return remaining !== null && remaining <= floor;
 }

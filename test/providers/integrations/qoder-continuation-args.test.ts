@@ -147,6 +147,84 @@ test("a chunk carrying both id and arguments pins AND emits in one pass", async 
   expect(JSON.parse(calls(ev).map((d) => String(d["arguments_delta"])).join(""))).toEqual({ a: 1 });
 });
 
+test("continuation fragments carrying an empty id rejoin the pinned call", async () => {
+  // The qfmodel/qmodel_latest slots echo `id: ""` on every continuation chunk
+  // (the first chunk carries the real id). Treating the empty string as a
+  // fresh call id would orphan every argument fragment under `""` — the real
+  // call is then emitted with empty arguments and the fragments are lost. An
+  // empty id must behave exactly like a missing one.
+  const ev = await collect([
+    frame(CALL_START),
+    frame({
+      tool_calls: [
+        {
+          function: { arguments: '{"text":"a' },
+          id: "",
+          index: 0,
+          type: "function",
+        },
+      ],
+    }),
+    frame({
+      tool_calls: [
+        {
+          function: { arguments: 'b"}' },
+          id: "",
+          index: 0,
+          type: "function",
+        },
+      ],
+    }),
+  ]);
+  const deltas = calls(ev);
+  // The translator holds fragments per call id and flushes one complete delta
+  // per call at end of stream.
+  expect(deltas).toHaveLength(1);
+  for (const d of deltas) expect(d["call_id"]).toBe("call_00_full");
+  expect(JSON.parse(deltas.map((d) => String(d["arguments_delta"])).join(""))).toEqual({
+    text: "ab",
+  });
+});
+
+test("parallel calls with empty-id continuations keep distinct identities", async () => {
+  const secondStart: Record<string, unknown> = {
+    tool_calls: [
+      { function: { arguments: "", name: "write" }, id: "call_01_full", index: 1, type: "function" },
+    ],
+  };
+  const ev = await collect([
+    frame(CALL_START),
+    frame({
+      tool_calls: [
+        {
+          function: { arguments: '{"text":"a"}' },
+          id: "",
+          index: 0,
+          type: "function",
+        },
+      ],
+    }),
+    frame(secondStart),
+    frame({
+      tool_calls: [
+        {
+          function: { arguments: '{"path":"b"}' },
+          id: "",
+          index: 1,
+          type: "function",
+        },
+      ],
+    }),
+  ]);
+  const byId = new Map<string, string>();
+  for (const d of calls(ev)) {
+    const id = String(d["call_id"]);
+    byId.set(id, (byId.get(id) ?? "") + String(d["arguments_delta"]));
+  }
+  expect(byId.get("call_00_full")).toBe('{"text":"a"}');
+  expect(byId.get("call_01_full")).toBe('{"path":"b"}');
+});
+
 test("an empty-argument call is forwarded verbatim, not dropped", async () => {
   // Qoder's DeepSeek occasionally emits a native call with empty arguments and
   // never continues it. The translator must still forward it unchanged: the

@@ -99,6 +99,7 @@ Variables read outside the spec are therefore **not** listed below:
 | `CARTETHYIA_KIMI_OAUTH_HOST` | string | `https://auth.kimi.com` | — |
 | `CARTETHYIA_KIMI_QUOTA_BASE_URL` | string | `https://api.kimi.com/coding/v1` | — |
 | `CARTETHYIA_GITHUB_ENTERPRISE_DOMAIN` | string | `` | — |
+| `CARTETHYIA_GITHUB_COPILOT_MODE` | string | `opencode-copilot` | — |
 
 ## Other
 

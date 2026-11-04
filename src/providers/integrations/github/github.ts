@@ -23,14 +23,16 @@ import { allParts, type CanonicalEvent, type CanonicalRequest, type ContentPart 
 import { OpenAICompatibleAdapter, withBearerAuthentication } from "../../adapters/compatible-adapter";
 import { postUpstreamJson } from "../../../protocol/upstream/post-json";
 import { providerBaseUrl } from "../../provider-metadata";
-import { getOrCreateInstallId } from "../shared/install-id";
 import { resolveRedisClient } from "../../../persistence/redis";
 import { applyParamQuirks } from "../../../protocol/translation/quirks";
 import { resolveInboundSessionId } from "../../operations/session-resolution";
 import {
   GITHUB_REQUEST_HEADERS,
+  githubCopilotClientIds,
   parseGithubCredential,
+  type GithubCredential,
 } from "./github-oauth";
+import { resolveGithubCopilotMode } from "../../../config/providers";
 
 export const GITHUB_PROVIDER_ID = "github" as const;
 
@@ -502,6 +504,36 @@ class GithubAdapter extends OpenAICompatibleAdapter {
     );
   }
 
+  /**
+   * Minimal OpenCode-style Copilot headers using the long-lived GitHub OAuth
+   * token directly (no minted Copilot token, no VS Code identity). This is
+   * the shape the official OpenCode plugin sends; proven live (2026-11-03):
+   *
+   * - POST /auto with these headers + the raw GitHub token -> 200, returns the
+   *   session token and selects gpt-6-luna;
+   * - POST /responses with `Copilot-Session-Token` + GitHub token -> 200 stream.
+   */
+  async #opencodeStyleHeaders(
+    context: ProviderDispatchContext,
+    request: CanonicalRequest,
+    credential: GithubCredential,
+  ): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "user-agent": "opencode/0.1.0",
+      "openai-intent": "conversation-edits",
+      "x-github-api-version": "2026-08-01",
+      "x-interaction-type": "conversation-agent",
+      "x-interaction-id": randomUUID(),
+      "x-initiator": isAgentInitiated(request) ? "agent" : "user",
+      "x-request-id": context.request_id ?? randomUUID(),
+    };
+    if (credential.github !== undefined && credential.github.length > 0) {
+      headers.authorization = `Bearer ${credential.github}`;
+    }
+    return headers;
+  }
+
   async #selectAutoModel(
     prompt: string,
     tier: "efficiency" | "balance" | "intelligence",
@@ -510,13 +542,24 @@ class GithubAdapter extends OpenAICompatibleAdapter {
     candidate: ProviderDispatchTarget,
     context: ProviderDispatchContext,
   ): Promise<GithubAutoDecision> {
-    const headers = await this.prepareHeaders(context, request, candidate);
     const credential = context.credential.secret === undefined
       ? undefined
       : parseGithubCredential(new TextDecoder().decode(context.credential.secret));
     if (credential === undefined) {
       throw new GatewayError("authentication_failed", 401, "GitHub Copilot credential is missing (request {requestId}). Wrong key, right door — check the credential 🔑");
     }
+    // `opencode-copilot` mode (default): raw GitHub token + minimal headers,
+    // proven the most stable (single token, no mint expiry). The reference
+    // mode (`vscode-client-real`) uses the minted Copilot token + full VS Code
+    // headers — but a stale/expired minted token fails with 403 and the
+    // reference headers on /auto can answer 400 "invalid apiVersion" unless the
+    // minted token is fresh, so the default stays opencode.
+    const headers =
+      resolveGithubCopilotMode() === "opencode-copilot" &&
+      credential.github !== undefined &&
+      credential.github.length > 0
+        ? await this.#opencodeStyleHeaders(context, request, credential)
+        : await this.prepareHeaders(context, request, candidate);
     const payload: Record<string, unknown> = { prompt, tier };
     if (hasImage) payload.has_image = true;
     const outboundFetch = context.outbound_fetch ?? this.#fetch ?? globalThis.fetch;
@@ -648,20 +691,64 @@ class GithubAdapter extends OpenAICompatibleAdapter {
     // it and wins — the route-level User-Agent is for generic OpenAI-compatible
     // hosts and would be rejected here.
     Object.assign(headers, GITHUB_REQUEST_HEADERS);
+    const secret = context.credential.secret;
+    let parsedCredential: ReturnType<typeof parseGithubCredential> | undefined;
+    if (secret !== undefined && secret.length > 0) {
+      try {
+        parsedCredential = parseGithubCredential(new TextDecoder().decode(secret));
+      } catch {
+        // Unparseable credential; fall back to the reference identity below.
+      }
+    }
     const autoSessionToken = this.#autoSessionTokens.get(request);
-    if (autoSessionToken !== undefined) {
+    // Auto-selected requests stream behind the session token. In the default
+    // `opencode-copilot` mode (raw GitHub token + minimal headers, proven 200
+    // on /auto and /responses), the whole request uses the OpenCode shape. The
+    // reference mode (`vscode-client-real`) keeps the reference identity and
+    // the minted Copilot token.
+    if (autoSessionToken !== undefined && parsedCredential?.github !== undefined) {
+      if (resolveGithubCopilotMode() === "opencode-copilot") {
+        const opencode = await this.#opencodeStyleHeaders(context, request, parsedCredential);
+        for (const key of Object.keys(headers)) delete headers[key];
+        Object.assign(headers, opencode);
+        headers["Copilot-Session-Token"] = autoSessionToken;
+        return headers;
+      }
+      headers["Copilot-Session-Token"] = autoSessionToken;
+    } else if (autoSessionToken !== undefined) {
       headers["Copilot-Session-Token"] = autoSessionToken;
     }
     const requestId = context.request_id ?? randomUUID();
+    // Reference (`_mixinHeaders` + request path): the interaction id is a
+    // separate value from the request id (`X-Request-Id`), and the Copilot
+    // client identity is stamped as `VScode-SessionId`/`VScode-MachineId`.
+    // The library version header carries the fetcher library id (`node-http`
+    // etc.), not the extension version — we previously sent the extension
+    // version there, which the upstream reads as a different client fingerprint.
+    const interactionId = randomUUID();
+    // Machine id is per-account (stable derive from install id + account
+    // fingerprint), so a pooled gateway does not make every account look like
+    // one device.
+    const accountKey =
+      parsedCredential === undefined
+        ? undefined
+        : createHash("sha256")
+            .update(`${parsedCredential.apiHost}:${parsedCredential.access}`)
+            .digest("hex");
+    const { sessionId, machineId } = await githubCopilotClientIds(accountKey);
     Object.assign(headers, {
-      "editor-device-id": await getOrCreateInstallId("github"),
+      "editor-device-id": machineId,
+      "VScode-MachineId": machineId,
+      "VScode-SessionId": sessionId,
       "openai-intent": "conversation-agent",
+      // Reference stamps `Openai-Organization` on HTTP chat requests.
+      ...(candidate?.wire_family === "chat" ? { "Openai-Organization": "github-copilot" } : {}),
       "x-agent-task-id": requestId,
-      "x-interaction-id": requestId,
+      "x-interaction-id": interactionId,
       "x-initiator": isAgentInitiated(request) ? "agent" : "user",
       "x-interaction-type": "conversation-agent",
       "x-request-id": requestId,
-      "x-vscode-user-agent-library-version": "vscode-chat/0.72.0",
+      "x-vscode-user-agent-library-version": "node-http",
     });
     // The copy Claude family is served on the native Anthropic Messages wire,
     // which gates feature betas behind `anthropic-beta` (mirroring the
@@ -676,14 +763,8 @@ class GithubAdapter extends OpenAICompatibleAdapter {
     } else {
       delete headers["copilot-vision-request"];
     }
-    const secret = context.credential.secret;
-    if (secret === undefined || secret.length === 0) return headers;
-    try {
-      const { access } = parseGithubCredential(new TextDecoder().decode(secret));
-      headers.authorization = `Bearer ${access}`;
-    } catch {
-      // Left as the factory sent it: the request fails closed at the upstream
-      // auth boundary, and the parse error belongs to the credential boundary.
+    if (parsedCredential !== undefined) {
+      headers.authorization = `Bearer ${parsedCredential.access}`;
     }
     return headers;
   }

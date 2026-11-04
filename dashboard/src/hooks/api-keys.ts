@@ -101,6 +101,7 @@ export function useBanApiKey() {
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.banned });
     },
   });
 }
@@ -115,6 +116,7 @@ export function useUnbanApiKey() {
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.banned });
     },
   });
 }
@@ -198,6 +200,18 @@ export function useApiKeys() {
     queryKey: queryKeys.apiKeys.all,
     queryFn: (context) =>
       consoleRequest<unknown>("/api-keys", { signal: querySignal(context) }).then(assertApiKeys),
+    ...DASHBOARD_QUERY_OPTIONS,
+  });
+}
+
+/** Loads active banned keys, including share recipients omitted from the main key list. */
+export function useBannedApiKeys() {
+  return useQuery({
+    queryKey: queryKeys.apiKeys.banned,
+    queryFn: (context) =>
+      consoleRequest<unknown>("/api-keys/banned", { signal: querySignal(context) }).then(
+        assertApiKeys,
+      ),
     ...DASHBOARD_QUERY_OPTIONS,
   });
 }
@@ -295,4 +309,3 @@ export function useRevokeSharedKey() {
     },
   });
 }
-

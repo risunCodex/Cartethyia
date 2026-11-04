@@ -13,6 +13,8 @@ const ACCOUNT_ERROR_LABELS: Readonly<Record<string, string>> = {
   quota_fetch_failed: "Quota unreachable",
   quota_exhausted: "Quota exhausted",
   policy_blocked: "Policy blocked",
+  policy_blocked_banned: "Account banned",
+  policy_blocked_invalid_request: "Request refused",
   rate_limit_transient: "Rate limited",
   missing_credential: "No credential",
   validation_required: "Verification required",

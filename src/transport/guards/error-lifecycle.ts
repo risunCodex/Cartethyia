@@ -312,6 +312,7 @@ function requestLogMetadata(
             cachedInputTokens: state.outcome.usage.cached_input_tokens,
             reasoningTokens: state.outcome.usage.reasoning_tokens,
             estimatedCost: state.outcome.usage.estimated_cost,
+            ...(state.outcome.degenerateStop ? { degenerateStop: true } : {}),
           },
         }
       : {}),
@@ -385,6 +386,9 @@ function requestTelemetryEvent(
     ...(state.payloadCaptureState === undefined
       ? {}
       : { payloadCaptureState: state.payloadCaptureState }),
+    // Degenerate stop (short output ended by an ordinary `stop`) — measured
+    // so a remote operator can spot the pattern in the request list.
+    ...(state.outcome?.degenerateStop ? { degenerateStop: true } : {}),
   };
 }
 

@@ -40,6 +40,16 @@ const DEEPMODEL_CONFIG = {
   is_reasoning: true,
 };
 
+const LITE_CONFIG = {
+  id: "lite",
+  display_name: "Lite-Qwen-3.7-Plus",
+  max_input_tokens: 1_000_000,
+  max_output_tokens: 65_536,
+  is_vl: true,
+  is_free: true,
+  is_reasoning: false,
+};
+
 function requestFor(overrides: Partial<CanonicalRequest> = {}): CanonicalRequest {
   return {
     model: "qoder/sonus",
@@ -101,5 +111,30 @@ describe("Qoder default reasoning effort", () => {
     expect(req.reasoningEffort).toBeUndefined();
     const ide = buildQoderIdeRequest("dfmodel", requestFor(), DEEPMODEL_CONFIG, AUTH, "intl");
     expect(ide.reasoningEffort).toBeUndefined();
+  });
+
+  test("a non-reasoning model never carries an effort, even when asked", () => {
+    // `lite` rejects the request with 500 when `reasoningEffort` rides along
+    // `model_config.is_reasoning: false` (measured live). The model cannot
+    // think, so the effort must be dropped regardless of caller intent.
+    const req = buildQoderRequest(
+      "lite",
+      requestFor({ reasoning: { effort: "low" } }),
+      LITE_CONFIG,
+      AUTH,
+      "intl",
+    );
+    expect(req.reasoningEffort).toBeUndefined();
+    expect((req.model_config as Record<string, unknown>).is_reasoning).toBe(false);
+
+    const ide = buildQoderIdeRequest(
+      "lite",
+      requestFor({ reasoning: { effort: "low" } }),
+      LITE_CONFIG,
+      AUTH,
+      "intl",
+    );
+    expect(ide.reasoningEffort).toBeUndefined();
+    expect((ide.model_config as Record<string, unknown>).is_reasoning).toBe(false);
   });
 });

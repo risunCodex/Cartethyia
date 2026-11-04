@@ -172,6 +172,13 @@ describe("GitHub Copilot Auto routing", () => {
       tier: "efficiency",
     });
     expect(requests[0]?.headers.get("x-github-api-version")).toBe("2026-08-01");
+    // Default opencode-copilot mode: raw GitHub token + minimal headers.
+    expect(requests[0]?.headers.get("authorization")).toBe("Bearer account-auto");
+    expect(requests[0]?.headers.get("user-agent")).toBe("opencode/0.1.0");
+    expect(requests[0]?.headers.get("VScode-SessionId")).toBeNull();
+    expect(requests[0]?.headers.get("x-vscode-user-agent-library-version")).toBeNull();
+    expect(requests[1]?.headers.get("authorization")).toBe("Bearer account-auto");
+    expect(requests[1]?.headers.get("copilot-session-token")).toBe("auto-session-token");
     expect(requests[1]?.body.model).toBe("routed-model");
     expect(requests[1]?.body.temperature).toBeUndefined();
     expect(requests[1]?.body.reasoning).toBeUndefined();
@@ -205,6 +212,20 @@ describe("GitHub Copilot Auto routing", () => {
       {
         type: "response.created",
         response: { id: "response-stream-1", model: "gpt-6-luna", status: "in_progress" },
+      },
+      {
+        type: "response.reasoning_summary_text.delta",
+        item_id: "reasoning-item-1",
+        output_index: 0,
+        summary_index: 0,
+        delta: "When it reaches",
+      },
+      {
+        type: "response.reasoning_summary_text.delta",
+        item_id: "reasoning-item-2",
+        output_index: 1,
+        summary_index: 0,
+        delta: "GitHub Copilot's parser",
       },
       { type: "response.output_text.delta", delta: "routed answer" },
       {
@@ -267,13 +288,20 @@ describe("GitHub Copilot Auto routing", () => {
     expect(events.map((event) => event.type)).toEqual([
       "response_start",
       "content_delta",
+      "content_delta",
+      "content_delta",
       "terminal",
     ]);
-    expect(events[1]).toMatchObject({
+    expect(events[3]).toMatchObject({
       type: "content_delta",
       content: { kind: "text", text: "routed answer" },
     });
+    const clientResponse = JSON.parse(
+      new TextDecoder().decode(chatAdapter.encode(events).bytes),
+    ) as { choices: Array<{ message: { reasoning_content?: string } }> };
+    expect(clientResponse.choices[0]?.message.reasoning_content)
+      .toBe("When it reaches GitHub Copilot's parser");
     expect(JSON.stringify(events)).not.toContain("Auto selected GPT-6 Luna.");
-    expect(events[2]).toMatchObject({ type: "terminal", state: "complete" });
+    expect(events[4]).toMatchObject({ type: "terminal", state: "complete" });
   });
 });

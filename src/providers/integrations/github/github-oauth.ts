@@ -29,6 +29,8 @@ import type { OAuthTokenRefreshResult } from "../../authentication/oauth-refresh
 import { OAuthDeviceFlow } from "../../authentication/oauth-device-flow";
 import type { FetchLike } from "../../authentication/oauth-client";
 import { resolveGithubEnterpriseDomain } from "../../../config/providers";
+import { randomUUID, createHash } from "node:crypto";
+import { getOrCreateInstallId } from "../shared/install-id";
 
 
 /** Public GitHub OAuth app id the Copilot clients use; not a secret. */
@@ -54,6 +56,52 @@ export const GITHUB_REQUEST_HEADERS: Readonly<Record<string, string>> = Object.f
   "copilot-integration-id": "vscode-chat",
   "x-github-api-version": "2026-08-01",
 });
+
+/**
+ * Stable per-process Copilot session id.
+ *
+ * The reference extension (`_mixinHeaders`) stamps `VScode-SessionId` with the
+ * VS Code window session and `VScode-MachineId` with the machine id. There is
+ * no VS Code window here, so the closest 1:1 shapes are: a session id minted
+ * once per gateway process (a new window = a new process in the reference), and
+ * a stable per-installation identity for the machine id.
+ */
+export const GITHUB_COPILOT_SESSION_ID = randomUUID();
+
+/**
+ * Resolves the Copilot client identity headers shared by chat/auto/discovery.
+ *
+ * The machine id is derived deterministically from the persisted install id and
+ * an account fingerprint when one is provided. The reference extension uses one
+ * machine id per VS Code installation for every account, but this gateway pools
+ * many accounts on one host — sharing one id across all of them makes every
+ * account look like a single device (an easy clustering/abuse signal). A
+ * per-account machine id keeps each account looking like its own device while
+ * staying stable across restarts for the same account. Without an account key
+ * (e.g. credential could not be parsed) the raw install id is used.
+ */
+export async function githubCopilotClientIds(
+  accountKey?: string,
+): Promise<{
+  readonly sessionId: string;
+  readonly machineId: string;
+}> {
+  const installId = await getOrCreateInstallId("github");
+  const machineId =
+    accountKey === undefined || accountKey.length === 0
+      ? installId
+      : deterministicMachineId(installId, accountKey);
+  return {
+    sessionId: GITHUB_COPILOT_SESSION_ID,
+    machineId,
+  };
+}
+
+/** Stable UUID-shaped machine id derived from the install id and an account key. */
+export function deterministicMachineId(installId: string, accountKey: string): string {
+  const digest = createHash("sha256").update(`${installId}:${accountKey}`).digest("hex");
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20, 32)}`;
+}
 
 const DEVICE_INTERVAL_SECONDS = 5;
 const DEVICE_EXPIRY_SECONDS = 900;

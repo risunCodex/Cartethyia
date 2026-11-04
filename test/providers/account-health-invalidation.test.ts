@@ -469,3 +469,75 @@ describe("a reset window the upstream stated in structured fields", () => {
     expect(classification.cooldownMs).toBe(900_000);
   });
 });
+
+describe("GitHub Copilot not-licensed verdict", () => {
+  const githubUpstream = (message: string): GatewayError =>
+    new GatewayError(
+      "authentication_failed" as never,
+      403,
+      message,
+      { providerId: "github", providerStatus: 403, credentialEvidence: true } as never,
+      "upstream" as never,
+    );
+
+  test("disables the account instead of cycling a cooldown", () => {
+    // The health log showed exactly this: `unauthorized: not licensed to use
+    // Copilot` on `gpt-6-luna`, cycling active → cooldown → active forever.
+    const classification = classifyAccountError(githubUpstream("unauthorized: not licensed to use Copilot"), {
+      origin: "upstream",
+      scope: "account",
+      providerId: "github",
+      statusCode: 403,
+      credentialEvidence: true,
+    });
+    expect(classification.category).toBe("policy_blocked_banned");
+    expect(classification.status).toBe("disabled");
+    expect(classification.cooldownMs).toBe(0);
+    expect(classification.mutatesAccount).toBe(true);
+    expect(classification.routesVisible).toBe(true);
+  });
+
+  test("a bare forbidden on the Copilot surface is the same verdict", () => {
+    const classification = classifyAccountError(githubUpstream("forbidden"), {
+      origin: "upstream",
+      scope: "provider",
+      providerId: "github",
+      statusCode: 403,
+    });
+    expect(classification.category).toBe("policy_blocked_banned");
+    expect(classification.status).toBe("disabled");
+    expect(classification.mutatesAccount).toBe(true);
+  });
+
+  test("does not claim a non-GitHub license refusal", () => {
+    // Antigravity's model-entitlement refusal stays model-scoped; the GitHub
+    // rule is scoped to the github provider and must not swallow it.
+    const classification = classifyAccountError(
+      new GatewayError("authentication_failed" as never, 403, "You do not have a valid license of this product", {
+        providerId: "antigravity",
+        providerStatus: 403,
+        credentialEvidence: true,
+      } as never, "upstream" as never),
+      {
+        origin: "upstream",
+        scope: "account",
+        providerId: "antigravity",
+        statusCode: 403,
+        credentialEvidence: true,
+      },
+    );
+    expect(classification.category).not.toBe("policy_blocked_banned");
+  });
+
+  test("a GitHub auth rejection without license wording still cools", () => {
+    const classification = classifyAccountError(githubUpstream("invalid api key"), {
+      origin: "upstream",
+      scope: "account",
+      providerId: "github",
+      statusCode: 401,
+      credentialEvidence: true,
+    });
+    expect(classification.category).toBe("auth_invalidated");
+    expect(classification.status).toBe("cooldown");
+  });
+});

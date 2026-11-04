@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildQoderRequest } from "../../../src/providers/integrations/qoder/qoder";
+import { buildQoderRequest, buildQoderIdeRequest } from "../../../src/providers/integrations/qoder/qoder";
 import type { CanonicalRequest, ToolDefinition } from "../../../src/protocol/canonical-model";
 
 /**
@@ -132,4 +132,42 @@ test("allowed_tools collapses to its direction", () => {
 test("parallel calls are stated explicitly", () => {
   const body = bodyOf(request({ tools: [READ] }));
   expect(body["parallel_tool_calls"]).toBe(true);
+});
+
+// ── IDE surface (`model/v1/chat/completions`) ───────────────────────────────
+// The unpacked desktop client (worker `PFn`) injects `tools` into the modern
+// surface; without it the upstream sees no toolset and answers with a DSML
+// text block instead of a structured `tool_calls`. These pin that the IDE
+// request carries the same declarations as the legacy one.
+
+function ideBodyOf(req: CanonicalRequest): Record<string, unknown> {
+  return buildQoderIdeRequest("m", req, CONFIG, AUTH);
+}
+
+test("the IDE request carries the declared tools", () => {
+  const body = ideBodyOf(request({ tools: [READ] }));
+  const tools = body["tools"] as Array<Record<string, unknown>>;
+  expect(tools).toHaveLength(1);
+  expect(tools[0]?.["type"]).toBe("function");
+  const fn = tools[0]?.["function"] as Record<string, unknown>;
+  expect(fn["name"]).toBe("Read");
+  expect(fn["description"]).toBe("Read a file");
+  expect(fn["parameters"]).toEqual(READ.jsonSchema);
+});
+
+test("the IDE request omits tools when none are declared", () => {
+  // Unlike the legacy surface — which sends `tools: []` to suppress the
+  // desktop agent's own toolset — the modern surface only injects `tools`
+  // when there is something to declare (worker `PFn`: `n.length>0 &&`).
+  const body = ideBodyOf(request());
+  expect(body["tools"]).toBeUndefined();
+});
+
+test("the IDE request preserves tool_choice via the parameters passthrough", () => {
+  // The modern surface reads `tool_choice` through `parameters` (worker
+  // `vyl`), not at the top level like the legacy builder.
+  const body = ideBodyOf(request({ tools: [READ], tool_choice: "required" }));
+  const parameters = body["parameters"] as Record<string, unknown> | undefined;
+  expect(parameters?.["tool_choice"]).toBe("required");
+  expect(body["tool_choice"]).toBeUndefined();
 });

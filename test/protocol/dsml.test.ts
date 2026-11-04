@@ -21,7 +21,7 @@ const BAR = "|";
 
 type StrictResult = { text: string; calls: readonly DsmlToolCall[] };
 
-/** Non-fuzzy parse: the strict dialect's `{ text, calls }` shape. */
+/** Strict parse: the CodeBuddy dialect's `{ text, calls }` shape. */
 function strictParse(text: string, options: DsmlParseOptions = {}): StrictResult | undefined {
   const recovered = parseDsmlToolCalls(text, options);
   if (recovered === undefined) return undefined;

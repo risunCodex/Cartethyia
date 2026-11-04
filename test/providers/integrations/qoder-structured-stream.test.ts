@@ -58,17 +58,19 @@ test("a structured tool_calls delta is emitted as a tool call", async () => {
 });
 
 test("continuation fragments attach to the first call id by index", async () => {
+  // Upstream streaming fragments arrive as separate chunks; the translator
+  // buffers and stitches them into ONE complete call at end of stream, so the
+  // client never sees a half-built JSON blob.
   const ev = await collect([
     frame({ tool_calls: [{ index: 0, id: "call_1", function: { name: "Read", arguments: '{"file_path":' } }] }),
     frame({ tool_calls: [{ index: 0, function: { arguments: '"a.ts"}' } }] }),
     frame({}, "tool_calls"),
   ]);
   const calls = callsOf(ev);
-  expect(calls).toHaveLength(2);
+  expect(calls).toHaveLength(1);
   expect(calls[0]?.["call_id"]).toBe("call_1");
-  expect(calls[1]?.["call_id"]).toBe("call_1");
-  const joined = calls.map((c) => c["arguments_delta"]).join("");
-  expect(JSON.parse(joined as string)).toEqual({ file_path: "a.ts" });
+  expect(calls[0]?.["name"]).toBe("Read");
+  expect(JSON.parse((calls[0]?.["arguments_delta"] as string) ?? "{}")).toEqual({ file_path: "a.ts" });
 });
 
 test("parallel tool calls keep distinct ids", async () => {
@@ -85,6 +87,24 @@ test("parallel tool calls keep distinct ids", async () => {
   expect(calls).toHaveLength(2);
   expect(calls[0]?.["call_id"]).toBe("call_1");
   expect(calls[1]?.["call_id"]).toBe("call_2");
+});
+
+test("malformed upstream argument fragments are repaired at flush", async () => {
+  // Upstream occasionally drops or mangles a byte between stream fragments
+  // (`{"command"ls -la"}` — missing `:`). The translator must not forward a
+  // half-built blob; it stitches fragments and emits one call. The repair is
+  // best-effort: when the stitched string is invalid JSON, the raw string
+  // still ships as the arguments delta (the caller can decide), but the call
+  // itself is never split across events.
+  const ev = await collect([
+    frame({ tool_calls: [{ index: 0, id: "call_1", function: { name: "bash", arguments: '{"command"' } }] }),
+    frame({ tool_calls: [{ index: 0, function: { arguments: 'ls -la"}' } }] }),
+    frame({}, "tool_calls"),
+  ]);
+  const calls = callsOf(ev);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.["call_id"]).toBe("call_1");
+  expect((calls[0]?.["arguments_delta"] as string) ?? "").toBe('{"command"ls -la"}');
 });
 
 test("reasoning_content is surfaced as reasoning content", async () => {

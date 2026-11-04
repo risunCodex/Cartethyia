@@ -27,7 +27,11 @@ interface CapturedRequest {
   readonly body: Record<string, unknown>;
 }
 
-async function capture(request: CanonicalRequest, credential = "account-a"): Promise<CapturedRequest> {
+async function capture(
+  request: CanonicalRequest,
+  credential = "account-a",
+  envelope?: { access?: string; apiHost?: string; github?: string },
+): Promise<CapturedRequest> {
   let captured: CapturedRequest | undefined;
   const outboundFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     captured = {
@@ -43,8 +47,8 @@ async function capture(request: CanonicalRequest, credential = "account-a"): Pro
       provider_id: "github",
       credential_kind: "oauth",
       secret: new TextEncoder().encode(JSON.stringify({
-        access: "copilot-access",
-        apiHost: "copilot.example",
+        access: envelope?.access ?? "copilot-access",
+        apiHost: envelope?.apiHost ?? "copilot.example",
         github: credential,
       })),
     },
@@ -75,10 +79,17 @@ describe("GitHub Copilot request context", () => {
     expect(userRequest.headers.get("copilot-vision-request")).toBeNull();
     expect(userRequest.headers.get("x-request-id")).toBe("gateway-request-123");
     expect(userRequest.headers.get("x-agent-task-id")).toBe("gateway-request-123");
-    expect(userRequest.headers.get("x-interaction-id")).toBe("gateway-request-123");
-    expect(userRequest.headers.get("x-vscode-user-agent-library-version")).toBe("vscode-chat/0.72.0");
+    expect(userRequest.headers.get("x-interaction-id")).not.toBe("gateway-request-123");
+    expect(userRequest.headers.get("x-vscode-user-agent-library-version")).toBe("node-http");
+    expect(userRequest.headers.get("VScode-SessionId")).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    expect(userRequest.headers.get("VScode-MachineId")).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
     expect(userRequest.headers.get("openai-intent")).toBe("conversation-agent");
     expect(userRequest.headers.get("x-interaction-type")).toBe("conversation-agent");
+    expect(userRequest.headers.get("Openai-Organization")).toBe("github-copilot");
     // anthropic-beta is scoped to the Messages wire only.
     expect(userRequest.headers.get("anthropic-beta")).toBeNull();
 
@@ -118,6 +129,28 @@ describe("GitHub Copilot request context", () => {
   test("does not invent a context tier on the chat body", async () => {
     const captured = await capture(baseRequest);
     expect(captured.body.contextTier).toBeUndefined();
+  });
+
+  test("machine id is per-account and stable, not shared across accounts", async () => {
+    const firstAccount = await capture(baseRequest, "account-a", {
+      access: "copilot-access-1",
+      apiHost: "copilot.example",
+    });
+    const secondAccount = await capture(baseRequest, "account-b", {
+      access: "copilot-access-2",
+      apiHost: "copilot.example",
+    });
+    const firstAgain = await capture(baseRequest, "account-a", {
+      access: "copilot-access-1",
+      apiHost: "copilot.example",
+    });
+    const machineA = firstAccount.headers.get("VScode-MachineId");
+    const machineB = secondAccount.headers.get("VScode-MachineId");
+    const machineAAgain = firstAgain.headers.get("VScode-MachineId");
+    expect(machineA).not.toBeNull();
+    expect(machineA).not.toBe(machineB);
+    expect(machineA).toBe(machineAAgain);
+    expect(firstAccount.headers.get("editor-device-id")).toBe(machineA);
   });
 
   test("adds anthropic-beta only on the Messages wire", async () => {
@@ -168,7 +201,7 @@ describe("GitHub Copilot request context", () => {
     expect(capturedMessages!.headers.get("anthropic-beta")).toBe(
       "interleaved-thinking-2025-05-14",
     );
-    expect(capturedMessages!.headers.get("x-interaction-id")).toBe("gateway-request-456");
+    expect(capturedMessages!.headers.get("x-interaction-id")).not.toBe("gateway-request-456");
   });
 
   test("caps a reasoning effort above high at high", async () => {

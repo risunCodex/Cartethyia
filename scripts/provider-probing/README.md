@@ -69,6 +69,9 @@ provider-probing/
     probe-kiro-chat.ts # direct chat dispatch probe (probe-kiro helpers)
   opencode/
     probe-opencode.ts  # raw OpenCode free-tier wire probe (models + chat)
+  antigravity/
+    probe-antigravity.ts       # control-plane + models + chat + image probe
+    probe-antigravity-oauth.ts # Google OAuth PKCE browser flow + refresh probe
 ```
 
 The Qoder probe covers two surfaces:
@@ -225,3 +228,67 @@ Replaying the captured real-CLI flow (Bearer `st_…` account token) answered
 **200 `text/event-stream`** with a real `chat.completion.chunk` for
 `glm-5.3-flash-free` on 2026-11-02 — proving the captured wire is valid and
 the earlier 429s were quota state, not request shape.
+
+## Antigravity
+
+`probe-antigravity.ts` hits Google's Cloud Code Assist backend raw — no
+adapter involved — so the **reference client's** wire shape (from the
+unpacked IDE 2.6.0) can be compared 1:1 against the gateway's current shape.
+The probe defaults to the reference wiring; pass `--ua adapter` (and, for
+chat, `--mode adapter`) to mirror the Cartethyia adapter instead.
+
+```sh
+bun run scripts/provider-probing/antigravity/probe-antigravity.ts \
+  --creds "C:\path\to\antigravity-accounts-<ts>.json"
+# control-plane (ref UA): loadCodeAssist → fetchAvailableModels → quota summary
+
+# Adapter UA shape (for comparison)
+bun run ... --creds <file> --ua adapter
+# ...with the adapter's client-metadata shape (control-plane)
+bun run ... --creds <file> --ua adapter --metadata adapter
+
+# List models (full JSON → --out)
+bun run ... --creds <file> --models --out models.json
+
+# Chat stream probe (minimal agent envelope)
+bun run ... --creds <file> --chat gemini-2.5-flash
+
+# Chat with the adapter's exact production envelope
+bun run ... --creds <file> --chat gemini-2.5-flash --mode current
+
+# Chat with the LEGACY adapter envelope (baseline 0482e934)
+bun run ... --creds <file> --chat gemini-2.5-flash --mode legacy
+
+# Run all three envelope modes (legacy / current / minimal) in one go
+bun run ... --creds <file> --chat gemini-2.5-flash --diff
+
+# Image generation probe
+bun run ... --creds <file> --image "a cat drawing" --size 1024x1024
+
+# Force a base URL (reference list or custom)
+bun run ... --creds <file> --base-url https://cloudcode-pa.googleapis.com
+```
+
+OAuth probe (PKCE browser flow): prints a Google authorize URL, waits for the
+pasted callback, exchanges `code` → tokens, and can refresh an existing
+refresh token. Uses the adapter's client id/secret/redirect so a successful
+flow validates the exact credential set the gateway uses:
+
+```sh
+bun run scripts/provider-probing/antigravity/probe-antigravity-oauth.ts \
+  --creds "C:\path\to\antigravity-accounts-<ts>.json" --authorize
+bun run ... --creds <file> --refresh
+```
+
+Probes never print tokens — only masked prefixes. Key evidence
+(unpacked IDE 2.6.0): control-plane UA is `antigravity/<version> <os> <arch>`
+(not the chat `antigravity/hub/... (aidev_client; ...)`), clientMetadata sends
+`ideName` + `ideVersion` too, `onboardUser` includes `cloudaicompanionProject`,
+and `fetchAvailableModels` sends `{project}` in the body.
+
+Chat envelope modes: `--mode current` builds the adapter's production
+envelope; `--mode legacy` rebuilds the adapter at baseline `0482e934` (the
+old wire — no tool-schema normalization, no forced-tool restatement, and
+`used_claude` derived only from the model-id substring); `--mode minimal` is
+a small raw agent envelope. Comparing the same model across the three modes
+against the live backend shows exactly which shape the upstream accepts.

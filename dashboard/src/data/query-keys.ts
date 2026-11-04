@@ -58,6 +58,7 @@ export const queryKeys = {
   },
   apiKeys: {
     all: ["console", "api-keys"] as const,
+    banned: ["console", "api-keys", "banned"] as const,
     shareLink: (keyId: string) => ["console", "api-keys", keyId, "share"] as const,
     sharedKeys: (keyId: string) => ["console", "api-keys", keyId, "shared-keys"] as const,
     sharedKeyActivity: (parentKeyId: string, childKeyId: string) =>

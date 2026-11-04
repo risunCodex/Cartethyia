@@ -459,6 +459,26 @@ function banWording(lower: string): boolean {
 }
 
 /**
+ * Whether GitHub Copilot stated the account lacks a license — a ban-shaped
+ * verdict on the account, not a refreshable auth rejection.
+ *
+ * Observed live (2026-11-03): the health log showed
+ * `unauthorized: not licensed to use Copilot` and `forbidden` on
+ * `gpt-6-luna`. Copilot answers 401 for a bad credential and 403 for a
+ * license/entitlement refusal, so `forbidden`/`unauthorized` on this surface
+ * is the same verdict. No amount of waiting or refreshing changes it — the
+ * subscription cannot serve this credential.
+ */
+function copilotNotLicensed(lower: string): boolean {
+  return (
+    lower.includes("not licensed") ||
+    lower.includes("forbidden") ||
+    lower.includes("unauthorized") ||
+    lower.includes("license")
+  );
+}
+
+/**
  * Bounded to a day, matching `MAX_COOLDOWN_MS` in the failure policy: a stated
  * window longer than that is a monthly or plan-level limit, and parking an
  * account for a month on one upstream field is a decision for the operator,
@@ -1260,6 +1280,33 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
           : s.reason("Google account verification required"),
         // The upstream named the verdict; the account cannot serve until the
         // operator completes verification.
+        true,
+      ),
+  },
+  {
+    // GitHub Copilot answers a license/entitlement refusal with 403 and
+    // "not licensed to use Copilot" / "forbidden" / "unauthorized". That is a
+    // verdict on the account: the subscription cannot serve this credential,
+    // and no amount of waiting or refreshing changes it. Cooldown cycling
+    // (auth_invalidated + 5m backoff) kept a dead account in rotation where a
+    // client's retry budget burned sibling accounts — the same failure the
+    // buddy ban exists to prevent. Disable immediately. Must run before
+    // `credential-rejected`, which would claim the bare 403 as a refreshable
+    // auth rejection.
+    name: "github-copilot-not-licensed",
+    match: (s) =>
+      s.origin === "upstream" &&
+      s.providerId === "github" &&
+      copilotNotLicensed(s.lower),
+    decide: (s) =>
+      s.result(
+        "policy_blocked_banned",
+        "disabled",
+        0,
+        null,
+        s.reason("GitHub Copilot account not licensed"),
+        // A license refusal is evidence about the account even at provider
+        // scope, for the same reason a named revocation or a buddy ban is.
         true,
       ),
   },

@@ -154,9 +154,17 @@ describe("5. Antigravity usageLabel", () => {
   });
 
   test("returns profile for known Gemini wire id", () => {
-    const profile = getAntigravityModelWireProfile("gemini-3-flash-agent");
+    const profile = getAntigravityModelWireProfile("gemini-3.8-flash-medium");
     expect(profile).toBeDefined();
-    expect(profile?.modelEnum).toBe("MODEL_PLACEHOLDER_M132");
+    expect(profile?.modelEnum).toBe("MODEL_PLACEHOLDER_M319");
+    expect(profile?.maxOutputTokens).toBe(65536);
+  });
+
+  test("returns Claude modelEnum from the live roster", () => {
+    const sonnet = getAntigravityModelWireProfile("claude-sonnet-4-6");
+    expect(sonnet?.modelEnum).toBe("MODEL_PLACEHOLDER_M35");
+    const opus = getAntigravityModelWireProfile("claude-opus-4-6-thinking");
+    expect(opus?.modelEnum).toBe("MODEL_PLACEHOLDER_M26");
   });
 });
 

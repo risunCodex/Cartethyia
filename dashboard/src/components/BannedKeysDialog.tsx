@@ -4,12 +4,12 @@ import { Button } from "./ui/button";
 import { Dialog } from "./ui/dialog";
 import { DataTable } from "./ui/layout";
 import { Inline } from "./ui/inline";
-import { EmptyState } from "./ui/state";
+import { EmptyState, ErrorState, LoadingState } from "./ui/state";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { toast } from "../lib/toast";
 import { getErrorMessage } from "../data/api";
 import type { ApiKeyResponse } from "../data/contracts";
-import { useUnbanApiKey } from "../hooks/api-keys";
+import { useBannedApiKeys, useUnbanApiKey } from "../hooks/api-keys";
 
 /**
  * The banned API-key list, opened from the API Credentials header.
@@ -33,16 +33,15 @@ function lapseLabel(key: ApiKeyResponse): string {
 }
 
 export function BannedKeysDialog({
-  keys,
   onClose,
 }: {
-  readonly keys: readonly ApiKeyResponse[];
   readonly onClose: () => void;
 }): ReactNode {
+  const keysQuery = useBannedApiKeys();
   const unban = useUnbanApiKey();
   const [unbanTarget, setUnbanTarget] = useState<ApiKeyResponse | null>(null);
   const now = Date.now();
-  const bans = keys.filter((key) => {
+  const bans = (keysQuery.data ?? []).filter((key) => {
     if (!key.bannedAt) return false;
     if (!key.bannedUntil) return true;
     return new Date(key.bannedUntil).getTime() > now;
@@ -62,7 +61,14 @@ export function BannedKeysDialog({
             <h4 className="text-caption font-semibold text-text-secondary mb-4">
               Active bans ({bans.length})
             </h4>
-            {bans.length === 0 ? (
+            {keysQuery.isPending && !keysQuery.data ? (
+              <LoadingState label="Loading active bans…" />
+            ) : keysQuery.isError && !keysQuery.data ? (
+              <ErrorState
+                message={getErrorMessage(keysQuery.error, "Could not load active bans.")}
+                onRetry={() => void keysQuery.refetch()}
+              />
+            ) : bans.length === 0 ? (
               <EmptyState
                 compact
                 title="No banned keys"

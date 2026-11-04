@@ -59,6 +59,61 @@ full arguments, no empty `input: {}` reproduced. Same result on the chat
 (`openai-compatible`) and Responses (`openai`) wires. The `{}` miss remains
 intermittent/upstream-specific rather than a stable property of this model.
 
+**Update (2026-11-03) — upstream slot matrix.** A controlled battery against
+the local gateway (chat completions, one `bash` function tool, stream +
+non-stream, 4 trials per combination, `tool_choice`/`parameters`/`strict`
+variants) shows the empty-arguments behavior is **stable per roster slot**, not
+intermittent:
+
+| Slot (virtual id) | Arguments |
+| --- | --- |
+| `dfmodel` (`deepseek-v4.1-flash`) | ✅ populated |
+| `lite` (`lite-qwen-3.7-plus`) | ✅ populated |
+| `qmodel` (`qwen3.7-plus`) | ✅ populated |
+| `qmodel_38max` (`qwen3.8-max`) | ✅ populated |
+| `qfmodel` (`qwen3.8-flash`) | ❌ always `""` |
+| `qmodel_latest` (`qwen3.7-max`) | ❌ always `""` |
+
+`qfmodel` and `qmodel_latest` always emit `tool_calls` with `arguments: ""`
+(with correct `finish_reason` and tool name) across every request shape tried —
+so the `{}` path is an upstream model/slot behavior, not the gateway. For tool
+execution, route to a populated slot (`dfmodel`, `lite`, `qmodel`,
+`qmodel_38max`). Full evidence: `documentation/research/qoder/2026-11-03-qoder-tool-call-matrix.md`.
+
+**Update (2026-11-03) — account routing is the real cause for the local
+gateway.** The local `CarteLocal` gateway only ever routed `qoder` requests to
+the single active account **Sunny Koding**, which is free-tier (`PLAN_TIER_FREE`,
+quota 0) and emits empty `arguments: ""` on every slot — including populated
+slots. Accounts with add-on quota (`Akun Ytprem`, id
+`7f9d9d0c-dbe6-4ee5-99f2-ec2457c568b5`, 100 credits) were `disabled`. After
+enabling Ytprem (and disabling the free Sunny account so round-robin cannot land
+on it), the gateway returns **populated arguments** for `qwen3.8-max` and
+`deepseek-v4.1-flash` (3/3 and 2/2 trials OK), and opencode runs the tool
+end-to-end (`tool_use` → `shell` → `{"command": "echo hello"}`).
+
+**Update (2026-11-03, later) — the remaining empty slots were an adapter bug,
+now fixed.** `qfmodel` (`qwen3.8-flash`) and `qmodel_latest` (`qwen3.7-max`)
+echo `id: ""` on every continuation chunk. The translator treated the empty
+string as a fresh call id, buffering every argument fragment under `""` and
+losing it — the real call was emitted with empty arguments. Fix in `qoder.ts`:
+an empty `id` now behaves like a missing one, so continuations re-join the
+pinned first-seen id per wire index (regression tests in
+`qoder-continuation-args.test.ts`). After the fix both slots return populated
+arguments (3/3 trials OK) through the gateway and end-to-end via opencode.
+
+**Update (2026-11-03, streaming) — streams were fully buffered before
+forwarding.** `fetchQoderIdeWithEmptyRecovery` drained the entire upstream body
+before returning a response, so every stream (Qwen and DeepSeek alike) appeared
+to complete in one burst at the end. It now sniffs only the first chunks (up to
+64 KiB) to decide whether to replay a thought-only/empty stream, then forwards
+the rest progressively. Measured: `qfmodel` reasoning deltas arrive 17–76 ms
+apart (previously all at `t=994ms`). Upstream behavior differs per slot —
+Qwen streams reasoning progressively; DeepSeek emits it in one late burst —
+which is not an adapter artifact.
+
+Full postmortem (symptoms → hypotheses → raw evidence → root causes → fixes →
+verification): `documentation/research/qoder/2026-11-03-qoder-tool-call-investigation.md`.
+
 ---
 
 ## 2. Intermittent "Encrypted reasoning must remain a string artifact" on Responses surface

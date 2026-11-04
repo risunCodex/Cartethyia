@@ -96,7 +96,8 @@ interface AntigravityModelWireProfile {
 
 /**
  * `maxOutputTokens` the backend enforces per wire id (captured from the real
- * `antigravity/hub` client). Claude on `daily-cloudcode-pa` rejects
+ * `antigravity/hub` client and verified live against `fetchAvailableModels`
+ * on 2026-11-03). Claude on `daily-cloudcode-pa` rejects
  * `maxOutputTokens > 64000` with a `400 Request contains an invalid argument`
  * regardless of the thinking budget; Gemini SKUs accept their discovered
  * output ceiling. Keyed by the routed upstream wire id (post effort-routing),
@@ -106,21 +107,74 @@ interface AntigravityModelWireProfile {
 const ANTIGRAVITY_MODEL_WIRE_PROFILES: Readonly<
   Record<string, AntigravityModelWireProfile>
 > = Object.freeze({
-  // Anthropic on Antigravity caps at 64000 output tokens.
-  "claude-opus-4-6-thinking": { maxOutputTokens: 64000 },
-  "claude-sonnet-4-6": { maxOutputTokens: 64000 },
-  // Gemini effort-routed wire ids (real deployment names).
-  "gemini-3-flash-agent": {
-    modelEnum: "MODEL_PLACEHOLDER_M132",
+  // Anthropic on Antigravity caps at 64000 output tokens (verified live).
+  "claude-opus-4-6-thinking": {
+    modelEnum: "MODEL_PLACEHOLDER_M26",
+    maxOutputTokens: 64000,
+  },
+  "claude-sonnet-4-6": {
+    modelEnum: "MODEL_PLACEHOLDER_M35",
+    maxOutputTokens: 64000,
+  },
+  // Gemini SKUs, as the live roster publishes them (2026-11-03).
+  "gemini-2.5-flash": {
+    modelEnum: "MODEL_GOOGLE_GEMINI_2_5_FLASH",
+    maxOutputTokens: 65535,
+  },
+  "gemini-2.5-flash-thinking": {
+    modelEnum: "MODEL_GOOGLE_GEMINI_2_5_FLASH_THINKING",
+    maxOutputTokens: 65535,
+  },
+  "gemini-2.5-flash-lite": {
+    modelEnum: "MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE",
+    maxOutputTokens: 65535,
+  },
+  "gemini-2.5-pro": {
+    modelEnum: "MODEL_GOOGLE_GEMINI_2_5_PRO",
+    maxOutputTokens: 65535,
+  },
+  "gemini-3-flash": {
+    modelEnum: "MODEL_PLACEHOLDER_M18",
     maxOutputTokens: 65536,
   },
-  "gemini-3.1-pro-low": {
-    modelEnum: "MODEL_PLACEHOLDER_M36",
+  "gemini-3.1-flash-lite": {
+    modelEnum: "MODEL_PLACEHOLDER_M50",
     maxOutputTokens: 65535,
   },
-  "gemini-pro-agent": {
-    modelEnum: "MODEL_PLACEHOLDER_M16",
+  "gemini-3.1-flash-image": {
+    modelEnum: "MODEL_PLACEHOLDER_M21",
+    maxOutputTokens: 65536,
+  },
+  "gemini-3.5-flash-lite": {
+    modelEnum: "MODEL_PLACEHOLDER_M198",
     maxOutputTokens: 65535,
+  },
+  // Gemini 3.8 Flash effort tiers (real deployment names).
+  "gemini-3.8-flash-low": {
+    modelEnum: "MODEL_PLACEHOLDER_M320",
+    maxOutputTokens: 65536,
+  },
+  "gemini-3.8-flash-medium": {
+    modelEnum: "MODEL_PLACEHOLDER_M319",
+    maxOutputTokens: 65536,
+  },
+  "gemini-3.8-flash-high": {
+    modelEnum: "MODEL_PLACEHOLDER_M318",
+    maxOutputTokens: 65536,
+  },
+  "gemini-3.8-flash-tiered": {
+    modelEnum: "MODEL_PLACEHOLDER_M322",
+    maxOutputTokens: 65536,
+  },
+  // GPT-OSS via Antigravity (verified live).
+  "gpt-oss-120b-medium": {
+    modelEnum: "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
+    maxOutputTokens: 32768,
+  },
+  // Tab (laptop-class) preview SKU.
+  "tab_flash_lite_preview": {
+    modelEnum: "MODEL_PLACEHOLDER_M19",
+    maxOutputTokens: 4096,
   },
 });
 
@@ -398,6 +452,7 @@ export async function discoverAntigravityModels(
     readonly baseUrl?: string;
     readonly fetcher?: typeof fetch;
     readonly signal?: AbortSignal;
+    readonly projectId?: string;
   } = {},
 ): Promise<readonly ModelDefinition[] | null> {
   const fetcher = options.fetcher ?? fetch;
@@ -419,7 +474,10 @@ export async function discoverAntigravityModels(
           "content-type": "application/json",
           "user-agent": getAntigravityUserAgent(),
         },
-        body: "{}",
+        // The reference client always sends the resolved project
+        // (`cloudCodeMainService.js`); the live backend accepts both, but the
+        // project is required for billing-gated endpoints.
+        body: JSON.stringify(options.projectId === undefined ? {} : { project: options.projectId }),
         signal,
       });
       if (!response.ok) continue;
@@ -489,9 +547,16 @@ export function applySkipThoughtSignatureBypass(
  * Sending the Gemini shape makes the backend treat the call as a different
  * client and refuse to enroll the account, which the operator sees as
  * "You do not have a valid license of this product".
+ *
+ * The reference client (`cloudCodeMainService.js`) sends the full product
+ * identity: `ideName`, `ideType`, and `ideVersion`. `ideType` alone was
+ * accepted live, but the full shape is the captured wire and avoids any
+ * client-class gating on the control plane.
  */
 export const ANTIGRAVITY_LOAD_CODE_ASSIST_METADATA = Object.freeze({
+  ideName: "antigravity",
   ideType: "ANTIGRAVITY",
+  ideVersion: getAntigravityVersion(),
 });
 
 const projectIdCache = new Map<string, string>();
@@ -570,7 +635,9 @@ const FREE_TIER_ID = "free-tier";
 const ONBOARD_USER_PATH = "/v1internal:onboardUser";
 const ONBOARD_OPERATIONS_PATH = "/v1internal";
 const ONBOARD_TIMEOUT_MS = 30_000;
-const ONBOARD_POLL_INTERVAL_MS = 1_000;
+// Reference client (`cloudCodeMainService.js`) polls the operation every
+// 500ms (`gXa = 500`).
+const ONBOARD_POLL_INTERVAL_MS = 500;
 
 /** Thrown when an account cannot be enrolled in the Antigravity free tier. */
 export class AntigravityProvisioningError extends Error {
@@ -699,6 +766,9 @@ async function onboardUser(
     if (left <= 0) throw new AntigravityProvisioningError("onboardUser timed out");
     return left;
   };
+  const projectId = extractProjectId(
+    await loadCodeAssist(fetcher, base, accessToken, signal),
+  );
   let operation = await cloudCodeAssistCall(
     fetcher,
     base,
@@ -706,7 +776,11 @@ async function onboardUser(
     ONBOARD_USER_PATH,
     {
       method: "POST",
-      body: { tierId: FREE_TIER_ID, metadata: ANTIGRAVITY_LOAD_CODE_ASSIST_METADATA },
+      body: {
+        tierId: FREE_TIER_ID,
+        ...(projectId === undefined ? {} : { cloudaicompanionProject: projectId }),
+        metadata: ANTIGRAVITY_LOAD_CODE_ASSIST_METADATA,
+      },
     },
     signal,
   );
