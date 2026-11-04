@@ -8,8 +8,6 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
-
 ## [2.7.6] - 2026-11-04
 
 ### Added
