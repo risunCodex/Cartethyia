@@ -1276,6 +1276,11 @@ Insight:
 - `account_discount` bervariasi (0.9 / 0.95) — diskon akun.
 - **`raw_usage` tidak selalu dikirim** — observasi live: muncul pada sebagian
   run, tidak pada run lain (opsional/probabilistik). Parser harus toleran.
+- Verifikasi lanjutan (2026-11-05, dfmodel): 3× attempt dengan session tetap
+  dan 3× attempt dengan `--fresh-session` — `raw_usage` tetap TIDAK muncul.
+  Tidak ditemukan flag request yang memicu-nya. Metadata yang selalu ada per
+  request: response headers (req-cost-time, x-envoy-upstream-service-time,
+  x-request-id, alt-svc), model echo, dan `usage`.
 
 ### 9.3 Kesimpulan
 
