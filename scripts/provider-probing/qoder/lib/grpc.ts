@@ -20,7 +20,13 @@ export interface GrpcChatChunk {
   readonly extras?: Record<string, unknown>;
   readonly usage?: Record<string, unknown>;
   readonly choices?: readonly {
-    readonly delta?: { readonly content?: string; readonly reasoning_content?: string };
+    readonly delta?: {
+      readonly content?: string;
+      readonly reasoning_content?: string;
+      readonly role?: string;
+      readonly tool_calls?: readonly unknown[];
+    };
+    readonly finish_reason?: string;
   }[];
 }
 
@@ -63,10 +69,20 @@ export function createChatService(realm: QoderRealm): { readonly service: ChatSe
     oneofs: true,
   });
   const proto = grpc.loadPackageDefinition(packageDefinition) as unknown as {
-    model: { chat: { ChatService: new (address: string, credentials: grpc.ChannelCredentials) => ChatServiceLike } };
+    model: { chat: { ChatService: new (address: string, credentials: grpc.ChannelCredentials, options?: Partial<grpc.ChannelOptions>) => ChatServiceLike } };
   };
   const host = qoderGrpcHost(realm);
-  return { service: new proto.model.chat.ChatService(`${host}:443`, grpc.credentials.createSsl()), host };
+  // Channel options mirror the worker (`yyl` in qoder-worker-runtime.obf.mjs)
+  // and the adapter `qoderGrpcChannelOptions`: disable HTTP proxy, pin the
+  // authority/SSL target name to the model-server host, raise message limits.
+  const channelOptions: Record<string, number | string> = {
+    "grpc.enable_http_proxy": 0,
+    "grpc.default_authority": host,
+    "grpc.ssl_target_name_override": host,
+    "grpc.max_receive_message_length": 32 * 1024 * 1024,
+    "grpc.max_send_message_length": 32 * 1024 * 1024,
+  };
+  return { service: new proto.model.chat.ChatService(`${host}:443`, grpc.credentials.createSsl(), channelOptions), host };
 }
 
 export interface GrpcProbeResult {

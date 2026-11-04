@@ -21,7 +21,7 @@ or foundational notes stay at this root.
 
 | Folder      | Topic                                                                                                                                                      | Notes      |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| `qoder/`    | Qoder wire, identity, credits, IDE surface, plugin endpoint map                                                                                            | 3 findings |
+| `qoder/`    | Qoder research (root: audit statis artifact + COSY signing; `live/`: wire reference, payload limits, model matrix, tool-calling, credits — hasil nyata) | 10 files   |
 | `copilot/`  | Copilot capability/context/auto routing                                                                                                                    | 4 findings |
 | `kiro/`     | Kiro 1.4.62 wire protocol + live verification + IDE/CLI unpack                                                                                             | 3 files    |
 | `opencode/` | OpenCode free-tier wire/gate/sentinel + egress/TLS measurements (merged), desktop 2.2.5 binary evidence                                                    | 2 files    |
@@ -43,13 +43,24 @@ or foundational notes stay at this root.
 
 ## Qoder findings (`qoder/`)
 
+### Live — hasil nyata (`qoder/live/`)
 
 | Date       | Note                                                                                                        |
 | ---------- | ----------------------------------------------------------------------------------------------------------- |
-| 2026-10-29 | [Credits, claims &amp; identity (incl. 1 Nov deep-dive)](qoder/2026-10-29-qoder-credits-claims-identity.md) |
-| 2026-11-01 | [Chat wire verification (plugin + IDE surface)](qoder/2026-11-01-qoder-chat-wire-verification.md)           |
-| 2026-11-01 | [JetBrains plugin endpoint &amp; service map](qoder/2026-11-01-qoder-jetbrains-plugin-endpoint-map.md)      |
-| 2026-11-02 | [Web-console PAT surface (browser session, CSRF)](qoder/2026-11-02-qoder-web-console-pat-surface.md)        |
+| 2026-11-05 | [Wire Reference &amp; Adapter Alignment](qoder/live/2026-11-05-qoder-wire-reference-adapter-alignment.md) — header per permukaan + live capture (CLI/IDE/gRPC/OAuth) + delta audit |
+| 2026-11-05 | [Payload Limits per Surface](qoder/live/2026-11-05-qoder-payload-limits.md) — HTTP ~256K, gRPC ~5.5M–6M |
+| 2026-11-05 | [Model Matrix &amp; Roster Metadata](qoder/live/2026-11-05-qoder-model-matrix.md) — 150/150 pass + roster raw_usage |
+| 2026-11-05 | [Tool-Calling: Probe, Postmortem &amp; Matrix](qoder/live/2026-11-05-qoder-tool-calling.md) |
+| 2026-11-05 | [Credits, claims &amp; identity (incl. 1 Nov deep-dive)](qoder/live/2026-11-05-qoder-credits-claims-identity.md) |
+
+### Research — audit statis (root)
+
+| Date       | Note                                                                                                        |
+| ---------- | ----------------------------------------------------------------------------------------------------------- |
+| 2026-11-05 | [COSY Signing &amp; Machine Identity](qoder/2026-11-05-qoder-cosy-signing-machine-identity.md) |
+| 2026-11-05 | [Audit — IDE 1.38](qoder/2026-11-05-qoder-ide-1.38-audit.md) |
+| 2026-11-05 | [Audit — CLI 1.1.83](qoder/2026-11-05-qoder-cli-windows-1.1.83-audit.md) |
+| 2026-11-05 | [Audit — NSIS 0.5.3](qoder/2026-11-05-qoder-win-nsis-0.5.3-audit.md) |
 
 
 ## Copilot findings (`copilot/`)

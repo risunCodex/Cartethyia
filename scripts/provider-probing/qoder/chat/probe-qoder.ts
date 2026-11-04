@@ -109,10 +109,10 @@ async function listModels(
 ): Promise<void> {
   const rawBody = "{}";
   const encoded = transformQoderBody(rawBody);
+  // Live capture (v1.1.83): the model-list GET carries the signed `{}` body
+  // plus `X-Model-Key`/`X-Model-Source` headers.
   const headers = {
-    ...buildCosyHeaders(QODER_MODEL_LIST_URL, rawBody, auth, QODER_VERSION),
-    "x-model-key": "auto",
-    "x-model-source": "system",
+    ...buildCosyHeaders(QODER_MODEL_LIST_URL, rawBody, auth, QODER_VERSION, undefined, { key: "auto", source: "system" }),
   };
   const res = await probeGet(QODER_MODEL_LIST_URL, headers, { body: encoded, bodyCap: 100_000 });
   console.log(formatProbe("model/list (signed)", res));
@@ -334,7 +334,11 @@ async function probeLegacy(
   const headers =
     opts.surface === "plain-bearer"
       ? ideChatHeaders({ token: loaded.token, requestId: req.rid, sessionId: req.rid })
-      : buildCosyHeaders(QODER_LEGACY_CHAT_URL, req.raw, loaded.auth, QODER_VERSION);
+      : buildCosyHeaders(QODER_LEGACY_CHAT_URL, req.raw, loaded.auth, QODER_VERSION, {
+          id: loaded.machineId,
+          token: loaded.machineId,
+          type: "5",
+        }, { key: model, source: "system" });
   if (opts.reply || opts.echo) {
     await streamProbe({
       label,
@@ -381,7 +385,11 @@ async function probeLite(
 ): Promise<void> {
   const payload = "x".repeat(opts.chars);
   const req = buildLegacyRequest(opts.model, loaded.userId, payload, true);
-  const headers = buildCosyHeaders(QODER_LEGACY_CHAT_URL, req.raw, loaded.auth, QODER_VERSION);
+  const headers = buildCosyHeaders(QODER_LEGACY_CHAT_URL, req.raw, loaded.auth, QODER_VERSION, {
+    id: loaded.machineId,
+    token: loaded.machineId,
+    type: "5",
+  }, { key: opts.model, source: "system" });
   console.log("=== Qoder LITE legacy COSY probe ===");
   console.log(`model=${opts.model} chars=${opts.chars.toLocaleString()}`);
   console.log(`rawBytes=${req.raw.length.toLocaleString()} encodedBytes=${req.encoded.byteLength.toLocaleString()}`);

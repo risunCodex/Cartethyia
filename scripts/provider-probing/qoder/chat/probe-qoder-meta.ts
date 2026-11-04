@@ -29,6 +29,11 @@ import {
   qoderEnvelopeToFrames,
 } from "../../../../src/providers/integrations/qoder/qoder";
 import {
+  QODER_VERSION,
+  machineOs,
+  machineHostname,
+} from "../lib/shared";
+import {
   QODER_INTL_MODEL_CONFIGS,
 } from "../../../../src/providers/integrations/qoder/qoder-catalog";
 import { qoderIdeChatUrl } from "../../../../src/providers/integrations/qoder/qoder-realm";
@@ -119,10 +124,10 @@ async function probeModel(modelKey: string): Promise<void> {
       Accept: "text/event-stream",
       "X-Request-ID": crypto.randomUUID(),
       "X-Session-ID": crypto.randomUUID(),
-      "Cosy-Version": "1.1.81",
+      "Cosy-Version": QODER_VERSION,
       "Cosy-ClientType": "5",
-      "Cosy-MachineOS": "aarch64_macos",
-      "Cosy-MachineHostname": "DESKTOP-QODER",
+      "Cosy-MachineOS": machineOs(),
+      "Cosy-MachineHostname": machineHostname(),
     },
     body: JSON.stringify(body),
   });

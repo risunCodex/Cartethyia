@@ -43,6 +43,12 @@ const PROBES: Record<string, string> = {
   "device-login": "auth/qoder-device-login.ts",
   "export-accounts": "auth/qoder-export-accounts.ts",
   "body-inspect": "inspect/qoder-body-inspect.ts",
+  // direct hit via the unpacked CLI binary (PAT env)
+  "direct": "direct/direct-hit.ts",
+  "direct-ide": "direct/direct-ide-http.ts",
+  "direct-grpc": "direct/direct-grpc.ts",
+  // tool-calling probe across surfaces (IDE/HTTP + gRPC)
+  "toolcall": "direct/direct-toolcall.ts",
 };
 
 const alias = process.argv[2];

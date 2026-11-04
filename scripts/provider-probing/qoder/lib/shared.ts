@@ -25,12 +25,16 @@ import {
 import type { QoderProbeAuth } from "../cosy-signer";
 
 /** Single source for the probe client version (was 9 literals, 2 values). */
-export const QODER_VERSION = "1.1.81";
+export const QODER_VERSION = "1.1.79-hotfix.11";
 
 export const QODER_IDE_CHAT_URL = "https://api2-v2.qoder.sh/model/v1/chat/completions";
 export const QODER_LEGACY_CHAT_URL =
   "https://api2.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1";
-export const QODER_MODEL_LIST_URL = "https://api2.qoder.sh/algo/api/v2/model/list?Encode=1";
+// Worker runtime (qoder-worker-runtime.obf.mjs v1.1.79-hotfix.11) builds the
+// model list on the gateway without the legacy `/algo` prefix
+// (`Jxt="/api/v2/model/list?Encode=1"`). The legacy `/algo` prefixed path is
+// also reachable, but the canonical worker path is the non-prefixed one.
+export const QODER_MODEL_LIST_URL = "https://api2.qoder.sh/api/v2/model/list?Encode=1";
 export const QODER_OPENAPI_BASE = "https://openapi.qoder.sh";
 
 /** Machine OS token as the upstream expects it (`aarch64_macos`, `x86_64_linux`, …). */

@@ -17,7 +17,7 @@
 import { parseArgs } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
 import * as grpc from "@grpc/grpc-js";
-import { loadProbeAccount, QODER_VERSION, machineOs } from "../lib/shared";
+import { loadProbeAccount, QODER_VERSION, machineOs, machineHostname } from "../lib/shared";
 import { probeChatStream } from "../lib/grpc";
 import { maskSecret, maskUuid } from "../../lib/accounts";
 import { qoderGrpcHost, type QoderRealm } from "../../../../src/providers/integrations/qoder/qoder-realm";
@@ -77,10 +77,14 @@ async function probeModel(modelKey: string): Promise<void> {
   metadata.set("authorization", `Bearer ${token}`);
   metadata.set("x-request-id", randomUUID());
   metadata.set("x-session-id", sessionId);
+  // Worker mirror (`Qyl` in qoder-worker-runtime.obf.mjs): gRPC metadata sends
+  // cosy-version/clienttype/machineos/machinehostname — NOT machinetype/token
+  // (those are HTTP-only identity headers).
+  metadata.set("cosy-version", QODER_VERSION);
   metadata.set("cosy-clienttype", "5");
   metadata.set("cosy-machineos", machineOs());
-  metadata.set("cosy-machinetype", "5");
-  metadata.set("cosy-machinetoken", randomUUID().replaceAll("-", ""));
+  const hostname = machineHostname();
+  if (hostname.length > 0) metadata.set("cosy-machinehostname", hostname);
 
   if (echoOnly) {
     let firstEcho: string | undefined;

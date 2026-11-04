@@ -25,7 +25,7 @@ Grok); per-provider findings live in `documentation/research/` (see below).
 | `.exe` (Inno Setup) | `innoextract` (use a recent fork for Setup ≥6.4; 1.9 errors on 6.4.0.1). **`innoextract 1.13.0` extracts 6.4 fine** (proven on Qoder IDE 1.38 — no manual LZMA needed). For 6.4+ when 1.13 is unavailable use the manual LZMA recovery below — `7z x` only yields the compressed container `[0]` (not a bare LZMA stream) |
 | `.msi` | `7z x` → unpacked payload (may contain a single-file executable) |
 | `app.asar` (Electron) | `bun scripts/tools/asar-unpack.mjs <app.asar> <outdir>`. Nativev2 header: `[u32 @0]=4`, `[u32 @4]=header+8`, `[u32 @8]=header+4`, `[u32 @12]=header JSON length`, JSON begins at offset 16. **Offsets are relative to the data section start (`16 + headerSize`), not absolute** — reading them absolute yields garbage (verified) |
-| Single-file Bun/Rust executables | `7z x` often extracts embedded bundles; otherwise string-scan the binary directly (see §2) |
+| Single-file Bun/Rust executables | Bun compiled: use `unbuned` (Python, zero-dep, GitHub `vibheksoni/unbuned`) — `python unbuned.py -a -o <outdir> <exe>` extracts modules (JS per chunk), assets (decompressed), bytecode (`.jsc`), and a `manifest.json`. **`7z x` does NOT see the embedded FS** — the Bun bundle lives in a custom section (PE `.bun` / Mach-O `__BUN.__bun`), not a standard archive. Fallback for manual section slicing: parse PE section table (off `fileHeader+20+optSize`, 40B entries: `Name[8] VirtualSize[4]@8 VirtualAddress@12 SizeOfRawData@16 PointerToRawData@20`) or Mach-O `section_64` (`addr@24 size@32 offset@40` — offset is **@40**, not @44). Rust: `7z x` often extracts embedded bundles; else string-scan (see §2) —
 
 ### Inno Setup ≥6.4 (e.g. Antigravity IDE 2.6.0)
 
@@ -115,7 +115,44 @@ Wire takeaways (Qoder IDE 1.38):
   the 1.38 bundles — chat now goes through the region-resolved inference
   endpoint. The Cartethyia adapter still defaults to `/model/v1/chat/completions`
   on `api2-v2.qoder.sh` with COSY fallback; see
-  `documentation/research/qoder/2026-11-01-qoder-chat-wire-verification.md`.
+  `documentation/research/qoder/live/2026-11-05-qoder-wire-reference-adapter-alignment.md`.
+
+### Bun-compiled CLI (Qoder `qodercli`, v1.1.83, Windows x64)
+
+Distro: `https://qoder-ide.oss-accelerate.aliyuncs.com/qodercli/channels/manifest.json`
+→ `files[]` per OS/arch; Windows `standard` = runtime `bun`, `legacy` =
+runtime `node-sea`. Manual: `curl -sL <url> -o qodercli-windows-x64.zip` +
+verify SHA256 from the manifest.
+
+Unpack with `unbuned` (Python, zero-dep):
+
+```
+python unbuned.py -a -o <outdir> qodercli.exe
+```
+
+Result (proven 2026-11-05):
+
+- `qodercli.js` — main bundle (509 KB), footprint only: start `// @bun @bytecode`.
+- `modules/` — 428 files (one per chunk, `0000-chunk-….js`, `0007-qodercli.js`,
+  `0009-worker.js` …) — **also bytecode stubs**, not the real logic.
+- `assets/` — 244 decompressed assets: native (`sharp-win32-x64.node`,
+  `libvips-*.dll`, `conpty.node`), wasm (`photon_rs_bg.wasm`), binaries
+  (`rg.exe`), and everything else (`.mjs`, `.html`, `.md`, `.ts`).
+- `bytecode/` — 431 `.jsc` blobs (JSC bytecode, 40 MB).
+- `manifest.json` — entry `B:/~BUN/root/qodercli`, flags include
+  `cross_compiled_bytecode`, `bytecode_module_count 427/428`.
+
+**Pitfall — JSC bytecode.** `bytecode_compiled: true` + `cross_compiled_bytecode`
+flag: 427 of 428 modules run bytecode, not source. Extracted `.js` files are
+stubs; the real logic is in the `.jsc` blobs (hard to decode, needs JS Core
+internals; no sourcemaps — `with_sourcemap: 0`). Plan static analysis around
+assets, entry behavior, and string/edge scanning instead of full source.
+
+**Using bun.bin directly.** Section export: custom PE/Mach-O section parser (see
+table above). Inside `.bun`, the file-name table lists every module as
+`B:/~BUN/root/<name>` (Windows) or `$bunfs/root/<name>` (POSIX) — grep it to
+enumerate embedded file names without decoding the container. `7z` cannot open
+the section.
 
 ## 2. String scanning
 
@@ -242,7 +279,7 @@ The evidence ledgers produced with these techniques are consolidated in
 | OpenCode | `documentation/research/opencode/` — `2026-11-02-desktop-2.2.5-binary-evidence.md` (unpack + capture + replay), `2026-11-02-opencode-free-tier.md` |
 | Cursor | `documentation/research/cursor/2026-10-20-cursor-run-protocol.md` |
 | CodeBuddy | `documentation/research/buddy/2026-10-19-codebuddy-chat-dispatch-headers.md` — plus `2026-11-02-codebuddy-cli-2.179.2-unpack-wire-audit.md` and `2026-11-02-workbuddy-desktop-unpack-wire-audit.md` |
-| Qoder | `documentation/research/qoder/` — `2026-10-29-qoder-credits-claims-identity.md`, `2026-11-01-qoder-chat-wire-verification.md` (+ newer dated files in the same dir). Qoder IDE desktop 1.38.0 unpack: `D:\tmp\unpacked\qoder\qoder-ide-inno\` — `code$GetDestDir` (Electron), `out/lingma` (agent), 1.13.0 innoextract. 2026-11-04: daily-credits claim flow is the IDE's plain `Bearer` + machine headers (no WASM needed); COSY/WASM signing is universal but `machineId` is platform-specific (serial-hex on macOS/ELF, cached UUID on Windows) and a placeholder yields `403`; reference reimplementation repo `Public/qoder2api-hub` confirms the sash campaign flow |
+| Qoder | `documentation/research/qoder/` — konsolidasi 2026-11-05: **live** (hasil nyata) di `qoder/live/` (`2026-11-05-qoder-wire-reference-adapter-alignment.md`, `2026-11-05-qoder-payload-limits.md`, `2026-11-05-qoder-model-matrix.md`, `2026-11-05-qoder-tool-calling.md`, `2026-11-05-qoder-credits-claims-identity.md`); **research statis** di root (`2026-11-05-qoder-cosy-signing-machine-identity.md`, `2026-11-05-qoder-ide-1.38-audit.md`, `2026-11-05-qoder-cli-windows-1.1.83-audit.md`, `2026-11-05-qoder-win-nsis-0.5.3-audit.md`). Qoder IDE desktop 1.38.0 unpack: `D:\tmp\unpacked\qoder\qoder-ide-inno\` — `code$GetDestDir` (Electron), `out/lingma` (agent), 1.13.0 innoextract. Qoder CLI 1.1.83 (Windows x64, Bun compiled) unpack: `D:\tmp\unpacked\qoder\qoder-cli-windows-x64\unpacked\` — via `unbuned` (`modules/`, `assets/`, `bytecode/`, `manifest.json`); JSC bytecode = 427/428 modules (source stubs only). 2026-11-04: daily-credits claim flow is the IDE's plain `Bearer` + machine headers (no WASM needed); COSY/WASM signing is universal but `machineId` is platform-specific (serial-hex on macOS/ELF, cached UUID on Windows) and a placeholder yields `403`; reference reimplementation repo `Public/qoder2api-hub` confirms the sash campaign flow |
 | Grok | `documentation/research/grok/2026-11-02-grok-build-1.0.70-unpack.md` |
 | Copilot | `documentation/research/copilot/` — `2026-10-15-copilot-chat-capability-map.md`, `-context-probe`, `-auto-routing`, `-auto-responses-500-repair-throw` |
 | Antigravity | unpack complete (Inno Setup 6.4 manual two-payload recovery, §1; `product.json` 44,752B carved; extension `google-antigravity` v0.0.1 located; OAuth endpoints `accounts.google.com`/`oauth2.googleapis.com` found). Wire-protocol research → `documentation/research/antigravity/` when written |

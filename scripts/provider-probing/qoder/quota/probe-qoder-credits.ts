@@ -34,8 +34,9 @@ import {
 } from "../../lib/accounts";
 import { formatProbe, probeGet, probePost } from "../../lib/http";
 import { buildCosyHeaders, type QoderProbeAuth } from "../cosy-signer";
+import { machineOs, machineHostname } from "../lib/shared";
 
-const VERSION = "1.1.81";
+const VERSION = "1.1.79-hotfix.11";
 const BASE = "https://openapi.qoder.sh";
 const INFER = "https://api2.qoder.sh";
 const CAMPAIGNS_PATH = "/sash/api/v1/me/campaigns";
@@ -56,7 +57,8 @@ interface Campaign {
  * Desktop identity headers for the sash surface. Later same-account controls
  * showed the daily CREDITS campaign does not gate on machine identity, but the
  * sash surface still expects the desktop header set; we send a stable
- * per-account derived machineId (no tokens, no SG bridge).
+ * per-account derived machineId (no tokens, no SG bridge). Machine OS /
+ * hostname are dynamic (worker mirror: `machineOs()` / `machineHostname()`).
  */
 function sashHeaders(account: ExportedAccount): Record<string, string> {
   const machineId = account.authState?.machineId ?? randomUUID();
@@ -67,12 +69,12 @@ function sashHeaders(account: ExportedAccount): Record<string, string> {
     Accept: "application/json",
     "Cosy-ClientType": "10",
     "Cosy-Version": VERSION,
-    "cosy-machineid": machineId,
-    "cosy-machinetoken": machineId,
-    "cosy-machinetype": "18",
-    "cosy-machinecode": "machine",
-    "cosy-machineos": "x86_64_linux",
-    "cosy-machinehostname": "desktop",
+    "Cosy-MachineId": machineId,
+    "Cosy-MachineToken": machineId,
+    "Cosy-MachineType": "5",
+    "Cosy-MachineCode": "machine",
+    "Cosy-MachineOS": machineOs(),
+    "Cosy-MachineHostname": machineHostname(),
   };
 }
 
