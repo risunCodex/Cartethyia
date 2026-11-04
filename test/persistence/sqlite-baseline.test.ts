@@ -88,6 +88,7 @@ test("each backend has matching baseline and incremental migrations", () => {
     "0040_add_models_dialect.sql",
     "0041_add_daily_checkin_ledger_account_fk.sql",
     "0042_add_telemetry_degenerate_stop.sql",
+    "0043_add_provider_custom_user_agent.sql",
   ];
   expect(postgres).toEqual(expected);
   expect(sqlite).toEqual(expected);

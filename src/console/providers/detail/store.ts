@@ -41,6 +41,7 @@ function mapRow(row: typeof providerRoutingSettings.$inferSelect): ProviderRouti
     enabled: row.enabled,
     skipProxy: row.skipProxy,
     userAgent: row.userAgent,
+    customUserAgent: row.customUserAgent,
   };
 }
 
@@ -94,6 +95,7 @@ export class DrizzleProviderDetailStore implements ProviderDetailStore {
       enabled: false,
       skipProxy: defaultSkipProxy(providerId),
       userAgent: buildClaudeCliUserAgent(),
+      customUserAgent: null,
     };
   }
   async updateRouting(
@@ -116,6 +118,7 @@ export class DrizzleProviderDetailStore implements ProviderDetailStore {
       enabled: patch.enabled ?? false,
       skipProxy: patch.skipProxy ?? defaultSkipProxy(providerId),
       userAgent: patch.userAgent ?? buildClaudeCliUserAgent(),
+      customUserAgent: patch.customUserAgent ?? null,
     };
     const setClause: Record<string, unknown> = {};
     if (patch.strategy !== undefined) setClause.strategy = patch.strategy;
@@ -128,6 +131,7 @@ export class DrizzleProviderDetailStore implements ProviderDetailStore {
     if (patch.enabled !== undefined) setClause.enabled = patch.enabled;
     if (patch.skipProxy !== undefined) setClause.skipProxy = patch.skipProxy;
     if (patch.userAgent !== undefined) setClause.userAgent = patch.userAgent;
+    if (patch.customUserAgent !== undefined) setClause.customUserAgent = patch.customUserAgent;
     const upserted = await this.db
       .insert(providerRoutingSettings)
       .values(values)

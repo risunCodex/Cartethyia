@@ -1,15 +1,15 @@
-import { Cable, Fingerprint, Gauge, Info, Layers, Minus, Plus, Repeat, Shuffle, Waypoints } from "lucide-react";
+import { Cable, ChevronDown, Fingerprint, Gauge, Info, Layers, Minus, Plus, Repeat, Settings2, Shuffle, Waypoints } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Card, CardBody, CardHeader } from "../../../components/ui/card";
 import { Dialog } from "../../../components/ui/dialog";
 import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
 import { Inline } from "../../../components/ui/inline";
 import { ListRow } from "../../../components/ui/list-row";
 import { Select } from "../../../components/ui/select";
 import { ErrorState, LoadingState } from "../../../components/ui/state";
 import { Switch } from "../../../components/ui/switch";
-import { toast } from "../../../lib/toast";
-import { DASHBOARD_VERSION } from "../../../lib/version";
+import { cn } from "../../../lib/classnames";
 import {
   PROXY_SKIP_HINT_PROVIDERS,
   ROUTING_ACTIVE_LABEL,
@@ -29,14 +29,6 @@ const POOL_STRATEGY_OPTIONS: readonly { value: PoolStrategySetting["strategy"]; 
 const SLIDER_MAX = 50;
 /** A typed number may go past the slider, but not past this. */
 const MANUAL_MAX = 100;
-function userAgentPresets(cartethyiaVersion: string, codexVersion: string, claudeVersion: string) {
-  return [
-    { value: "", label: "None" },
-    { value: `Cartethyia/${cartethyiaVersion}`, label: `Cartethyia ${cartethyiaVersion}` },
-    { value: `codex_cli_rs/${codexVersion}`, label: "Codex" },
-    { value: `claude-cli/${claudeVersion} (external, cli)`, label: "Claude Code" },
-  ] as const;
-}
 
 /** Shared shell for the grouped settings rows. */
 function Row({ children, action }: { readonly children: ReactNode; readonly action: ReactNode }): ReactNode {
@@ -46,13 +38,11 @@ function Row({ children, action }: { readonly children: ReactNode; readonly acti
 export function RoutingStrategyCard({
   providerId,
   clientVersion,
-  routeIdentityVersions,
   userAgentEditable,
 }: {
   readonly providerId: string;
   /** The provider's own discovered client, shown when its identity is fixed. */
   readonly clientVersion?: { readonly client: string; readonly version: string };
-  readonly routeIdentityVersions: { readonly codex: string; readonly claude: string };
   /** False when the provider stamps its own identity, so the shown value cannot be changed. */
   readonly userAgentEditable: boolean;
 }): ReactNode {
@@ -61,15 +51,11 @@ export function RoutingStrategyCard({
   const updatePoolStrategy = useUpdatePoolStrategy();
   const [limitsHelpOpen, setLimitsHelpOpen] = useState(false);
   const [poolHelpOpen, setPoolHelpOpen] = useState(false);
+  // Advanced section (max inflight / proxy) is collapsed by default. While it
+  // is open it "takes over" the routing surface: the Client identity box above
+  // greys out until Advanced is collapsed again.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const showUnsupportedHint = PROXY_SKIP_HINT_PROVIDERS.has(providerId);
-  const presets = userAgentPresets(
-    DASHBOARD_VERSION,
-    routeIdentityVersions.codex,
-    routeIdentityVersions.claude,
-  );
-  const userAgentOptions = presets.some((option) => option.value === routing.userAgent)
-    ? presets
-    : [...presets, { value: routing.userAgent, label: "Custom" }];
 
   if (routing.isLoading) return <LoadingState label="Loading routing..." />;
   if (routing.isError)
@@ -113,12 +99,6 @@ export function RoutingStrategyCard({
   const proxyLimitInactive = routing.skipProxy;
   const adjustRotateCount = (delta: number) => {
     routing.setRotateCount(Math.min(1000, Math.max(1, routing.rotateCount + delta)));
-  };
-  const handleUserAgentChange = (next: string) => {
-    if (next === routing.userAgent) return;
-    routing.setUserAgent(next);
-    const label = userAgentOptions.find((option) => option.value === next)?.label ?? next;
-    toast.success("Client identity updated", label);
   };
 
   const handlePoolStrategyChange = (next: string) => {
@@ -339,7 +319,7 @@ export function RoutingStrategyCard({
               and stacking when the card cannot fit two readable tracks. */}
           <div className="routing-controls-grid grid gap-5 min-w-0 w-full">
             <div
-              className="px-6 py-5 rounded-control border border-inner-border bg-surface-2 min-w-0"
+              className={`px-6 py-5 rounded-control border border-inner-border bg-surface-2 min-w-0${advancedOpen ? " opacity-60" : ""}`}
             >
               <Inline gap="6px" className="text-body font-semibold mb-3">
                 <Fingerprint
@@ -349,31 +329,56 @@ export function RoutingStrategyCard({
                 />
                 Client identity
               </Inline>
-              {userAgentEditable ? (
-                <Select
-                  id="routing-user-agent-preset"
-                  aria-label="Client identity"
-                  value={routing.userAgent}
-                  options={userAgentOptions}
-                  onValueChange={handleUserAgentChange}
-                />
-              ) : (
-                // A real disabled `Select`, not a hand-built trigger. The fake one
-                // carried the `radix-select-trigger` marker with none of the
-                // utilities the real trigger owns, so the value and its chevron
-                // stacked as loose text instead of reading as a control.
-                <Select
-                  id="routing-user-agent-fixed"
-                  aria-label="Client identity"
-                  disabled
-                  value={fixedIdentity}
-                  options={[{ value: fixedIdentity, label: fixedIdentity }]}
-                />
-              )}
-              <div className="text-badge text-text-tertiary mt-2">
-                {userAgentEditable
-                  ? "None sends the request as-is — whatever the runtime or egress sets, with no identity stamped by the gateway. A chosen value overrides it."
-                  : "Set by the provider. It cannot be changed."}
+              <div className="flex flex-col gap-2">
+                {userAgentEditable ? (
+                  <>
+                    <Input
+                      id="routing-user-agent-custom"
+                      aria-label="Custom User-Agent override"
+                      disabled={advancedOpen}
+                      value={routing.customUserAgent ?? ""}
+                      placeholder={fixedIdentity}
+                      spellCheck={false}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        routing.setCustomUserAgent(value.trim() === "" ? null : value);
+                      }}
+                    />
+                    <div className="flex items-center gap-2">
+                      <span className="text-micro text-text-tertiary">
+                        Custom User-Agent — leave empty to use the native identity below
+                      </span>
+                      {routing.customUserAgent !== null ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => routing.setCustomUserAgent(null)}
+                          title="Reset to the provider's native identity"
+                        >
+                          Reset
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="text-micro text-text-tertiary">
+                      Native identity: <code className="font-mono">{fixedIdentity}</code>,{" "}
+                      {routing.customUserAgent !== null ? "overridden by the custom value above" : "used as-is"}
+                    </div>
+                  </>
+                ) : (
+                  <Input
+                    id="routing-user-agent-fixed"
+                    aria-label="Client identity"
+                    disabled
+                    value={fixedIdentity}
+                  />
+                )}
+                <div className="text-badge text-text-tertiary mt-1">
+                  {advancedOpen
+                    ? "Locked while Advanced is open — collapse Advanced to edit."
+                    : userAgentEditable
+                      ? "Type a custom User-Agent to override the provider's identity (saved automatically); Reset clears it back to native."
+                      : "Set by the provider. It cannot be changed."}
+                </div>
               </div>
             </div>
 
@@ -434,9 +439,28 @@ export function RoutingStrategyCard({
             </div>
           </div>
 
-          <div
-            className={`px-6 py-5 rounded-control border border-inner-border bg-surface-2 min-w-0${proxyLimitInactive ? " opacity-60" : ""}`}
-          >
+          <div className="rounded-control border border-inner-border bg-surface-2">
+            <button
+              type="button"
+              aria-expanded={advancedOpen}
+              aria-label={advancedOpen ? "Collapse Advanced" : "Expand Advanced"}
+              onClick={() => setAdvancedOpen((current) => !current)}
+              className="flex w-full items-center gap-2 border-0 bg-transparent px-4 py-3 text-left text-inherit"
+            >
+              <ChevronDown
+                size={15}
+                aria-hidden="true"
+                className={cn("shrink-0 transition-transform", !advancedOpen && "-rotate-90")}
+              />
+              <Settings2 size={15} aria-hidden="true" className="text-text-tertiary shrink-0" />
+              <span className="text-body font-semibold">Advanced</span>
+              <span className="ml-auto text-micro text-text-tertiary">Max inflight / proxy</span>
+            </button>
+            {advancedOpen ? (
+              <div className="px-4 pb-4">
+            <div
+              className="px-6 py-5 rounded-control border border-inner-border bg-surface-2 min-w-0"
+            >
             <div className="flex items-start justify-between gap-4">
               <label htmlFor="routing-max-inflight-per-proxy" className="min-w-0">
                 <Inline gap="6px" className="text-body font-semibold">
@@ -507,6 +531,9 @@ export function RoutingStrategyCard({
                 ? "Always direct is on, so this provider never dials a pool. The limit is kept for when a pool is used again."
                 : `One step past ${SLIDER_MAX} is unlimited.`}
             </div>
+            </div>
+              </div>
+            ) : null}
           </div>
 
           <Dialog

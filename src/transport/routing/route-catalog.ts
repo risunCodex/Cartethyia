@@ -354,6 +354,7 @@ const ROUTING_COLUMNS = {
   enabled: providerRoutingSettings.enabled,
   skipProxy: providerRoutingSettings.skipProxy,
   userAgent: providerRoutingSettings.userAgent,
+  customUserAgent: providerRoutingSettings.customUserAgent,
 } as const;
 
 const POOL_COLUMNS = {
@@ -553,6 +554,7 @@ class RouteCatalogRepository {
         enabled: row.enabled,
         skipProxy: row.skipProxy,
         userAgent: row.userAgent,
+        customUserAgent: row.customUserAgent,
       };
     }
     /** Tenant-specific setting wins over global; an unconfigured provider
@@ -573,6 +575,12 @@ class RouteCatalogRepository {
     function resolveUserAgent(providerId: string, rowTenantId: string | null): string | undefined {
       const tenantSetting = rowTenantId ? providerRouting[rowTenantId]?.[providerId]?.userAgent : undefined;
       const globalSetting = providerRouting.__global__?.[providerId]?.userAgent;
+      const tenantCustom = rowTenantId ? providerRouting[rowTenantId]?.[providerId]?.customUserAgent : undefined;
+      const globalCustom = providerRouting.__global__?.[providerId]?.customUserAgent;
+      // An operator-set custom User-Agent overrides the native identity when it
+      // is non-empty; absent custom falls back to the native route identity.
+      const custom = resolveTenantOverride(tenantCustom, globalCustom, undefined);
+      if (custom !== undefined && custom !== null && custom.trim() !== "") return custom.trim();
       return resolveRouteUserAgent(providerId, tenantSetting, globalSetting);
     }
 

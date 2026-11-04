@@ -1,0 +1,141 @@
+════════════════════════════════════════════════════════════════════
+  Cartethyia 2.7.7 — Release Notes (2026-11-04)
+════════════════════════════════════════════════════════════════════
+
+Branch: dev → main (fast-forward) · Build: Bun 1.4.0+
+Full changelog: CHANGELOG.md · Research: documentation/research/qoder/
+
+────────────────────────────────────────────────────────────────────
+ 1. QODER — REAL SERVING-MODEL METADATA
+────────────────────────────────────────────────────────────────────
+FIXED
+- Provider Test Model for Qoder now reports the real upstream model echo
+  (gRPC surface has no HTTP body; adapter emits `response_start` with the
+  echoed model, probe falls back to canonical events). e.g. smodel →
+  azure-gpt6-astra.
+- Probe default surface is now the modern /model/v1 IDE surface; `raw_usage`
+  provider metadata (provider_model, supply_model, target, …) flows into
+  probe results and dashboard Model cards (one-line + show more/close), so
+  "which model really served the turn" is visible and trustworthy.
+
+ADDED
+- `provider_metadata` capture: terminal event carries raw_usage keys →
+  ProbeModelResult.providerMetadata → dashboard card.
+- cmodel probe prompt workaround: "halo gpt" (assertion, not question) — the
+  model corrects itself ("saya Claude, asisten AI buatan Anthropic") 3/3
+  verified live.
+- Research doc: 2026-11-04-qoder-probe-provider-metadata.md (full roster
+  matrix + quick reference + fallback/target explanation).
+
+────────────────────────────────────────────────────────────────────
+ 2. QODER — CREDIT USAGE & DAILY-CREDITS CLAIM ENGINE
+────────────────────────────────────────────────────────────────────
+ADDED
+- COSY terminal frames report credits → normalized into `credit_used`
+  (Requests table / Coins column), like buddy.
+- Manual claim endpoint `POST /accounts/:id/claim-qoder-credits`
+  (dashboard:write): mints/binds native UMID, lists sash campaigns with UMID
+  headers, claims CREDITS CLAIM_BENEFIT by campaignId, invalidates quota
+  cache/snapshot on success.
+- Console "Claim credits" button on qoder/qodercn account rows (new hook +
+  component): states claimed / already_claimed / nothing / error.
+- PAT (`pt-…`) accounts exchanged to a job token first — exchange binds
+  machine identity (machine_id + machine_token) like the real client; platform
+  machine id (APPDATA/Qoder/cache/machine_token.json) used in Cosy headers.
+
+FIXED
+- Generated (SHA-256) UMID tokens are NOT sufficient for CREDITS campaign
+  visibility — real bridge token required (research Part F). Unverified claim
+  paths removed/hardened.
+- Universal claim flow confirmed as IDE-style Bearer JT + machine headers
+  (no WASM needed); donor hub qoder2api-hub cross-check documented
+  (research Part G).
+
+────────────────────────────────────────────────────────────────────
+ 3. QODER — GPRPC TRANSPORT & PROTO VENDORING
+────────────────────────────────────────────────────────────────────
+ADDED
+- gRPC transport (model.chat.ChatService/ChatCompletionStream) is the default
+  billed surface — only proven carrier of real 1M-token context.
+- Embedded proto source (`vendor/qoder-proto/chat.proto` → chat-proto.ts)
+  works from source, dist, and standalone binary.
+
+FIXED
+- Windows proto path: materialized from embedded source (no file: URL issue).
+- Vendor rename `vendor/qoder/` → `vendor/qoder-proto/`; Dockerfile updated.
+
+────────────────────────────────────────────────────────────────────
+ 4. QODER — UMID BRIDGE (VENDOR + CONTAINER)
+────────────────────────────────────────────────────────────────────
+ADDED
+- Linux containers now prefer the vendored mini-ELF bundle
+  (`qoder-umid-mini.tar.gz`, static glibc, mints isVm:false) via container
+  auto-detection (/.dockerenv, cgroup). Env override:
+  CARTETHYIA_QODER_UMID_MINI=1/0. Non-container Linux keeps native ELF.
+- macOS prefers re-signed `.clean` binary (DYLD-spoofable).
+- Removed non-working harness assets (wasm_sign, spoof dylib, gen_p1g) and
+  untested macho-arm64 binary — only verified-working umidpack binaries kept.
+
+────────────────────────────────────────────────────────────────────
+ 5. ROUTING — QUOTA POLICY & PER-IP ABUSE
+────────────────────────────────────────────────────────────────────
+FIXED
+- Quota and usage floor are no longer eligibility exclusions: exhausted /
+  below-floor accounts stay routed (upstream decides) and are only ordered
+  behind unknown/positive accounts (creditPriority). Removed belowUsageFloor /
+  earliestWindowResetMs; docs + tests updated. Fixes qoder/qwen3.8-flash
+  being unreachable ("No account in the pool…").
+- Per-IP abuse ceiling default 240 → 540 requests/min (ban 480 → 1080).
+  API keys remain unlimited by default (requestsPerMinute null when unset).
+
+────────────────────────────────────────────────────────────────────
+ 6. DASHBOARD — ADD ACCOUNT, INFERHUB, ROUTING STRATEGY
+────────────────────────────────────────────────────────────────────
+ADDED
+- Add Account modal accepts `name|credential` per line (label + credential
+  split on first pipe; pipe-in-credential survives). UI hints the format.
+- SQLite duplicate-account guard: isUniqueViolation now detects SQLite
+  constraint errors (message/code 19), not just Postgres 23505 → friendly
+  provider_account_duplicate 409 instead of raw UNIQUE error.
+- InferHub: backlink to inferhub.dev in the provider header actions (left of
+  Enable/Disable) + near config_read key delete area; market card styling
+  fixed; "Collapse all" button added before "Show all".
+- Routing Strategy: custom User-Agent free-text input overrides provider's
+  native identity (persisted via migration 0043); native identity shown as
+  default; Reset clears. Advanced section (collapsed) holds per-proxy max
+  inflight and locks Client identity while open.
+
+────────────────────────────────────────────────────────────────────
+ 7. TEST RUNNER & TOOLING
+────────────────────────────────────────────────────────────────────
+ADDED
+- Test runner parallelism capped at min(cpu, 4) workers
+  (CARTETHYIA_TEST_JOBS override) — no longer pins every core.
+- Probe tooling reorganized/deduplicated (22 → 13 scripts) with shared libs:
+  lib/shared.ts + lib/grpc.ts; zero `any`; one version constant.
+- scripts/scratch/ dev helpers kept (export-provider-accounts,
+  gen-chat-proto, mint-admin-key).
+
+────────────────────────────────────────────────────────────────────
+ 8. SKILLS / PROCESS / DOCS
+────────────────────────────────────────────────────────────────────
+- Reverse-engineering skill updated with 2026-11-04 principles (mechanism
+  universal ≠ value platform-specific; prefer the shipping client's request;
+  donor/reimplementation repos are primary evidence).
+- Provider-catalog Qoder reference corrected: real UMID required for
+  CREDITS visibility; verification order updated.
+- README: everyday commands table (carte, doctor, update, telemetry
+  reconcile, admin reset-lockout, …); test commands + parallel cap.
+- Research ledgers: Qoder credits/claims Part F/G, tooling reorg proposal,
+  gRPC 1M context, configuration reference regenerated.
+
+════════════════════════════════════════════════════════════════════
+  VALIDATION (at release time)
+════════════════════════════════════════════════════════════════════
+- bun run typecheck / bun run dashboard:typecheck — clean
+- bun run test — backend 4442 pass · dashboard 656 pass · 0 fail
+- bun run dashboard:build — success
+- Live Qoder claims verified: papa mama (+100, CLAIMED),
+  Suni Kontak/papa mama usage proof via /sash/api/v2/me/usage
+- SQLite baseline + migration parity tests green
+════════════════════════════════════════════════════════════════════

@@ -85,8 +85,10 @@ export function buildUpstreamDispatchContext(input: {
           const requestHeaders =
             init?.headers ?? (request instanceof Request ? request.headers : undefined);
           const headers = new Headers(requestHeaders);
-          // Provider identity is authoritative; route identity fills only a missing header.
-          if (!headers.has("user-agent")) headers.set("user-agent", userAgent);
+          // A route-level user agent is an explicit operator override: it
+          // replaces whatever identity the provider would otherwise send.
+          // Absent route identity leaves the provider's own header untouched.
+          if (userAgent) headers.set("user-agent", userAgent);
           return sourceFetch(request, { ...init, headers });
         }
       : sourceFetch;

@@ -1,0 +1,14 @@
+-- Adds `provider_routing_settings.custom_user_agent` (text, nullable) — an
+-- operator-set custom User-Agent that is stored separately from the provider's
+-- native client identity (`user_agent`). This is the column the dashboard's
+-- custom User-Agent control writes to.
+--
+-- NULL (default) means no custom override: dispatch uses the provider's native
+-- identity. A non-NULL value is an explicit override and is applied at the
+-- request edge (it replaces the User-Agent header even when the provider would
+-- otherwise stamp its own).
+--
+-- Idempotency comes from the migration ledger plus `ADD COLUMN IF NOT EXISTS`:
+-- a database built from a newer baseline that already carries the column must
+-- not fail startup.
+ALTER TABLE "provider_routing_settings" ADD COLUMN IF NOT EXISTS "custom_user_agent" text;

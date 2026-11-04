@@ -98,6 +98,23 @@ These hold across every reverse-engineering session (proven on real vendors):
   what is still unknown). Turn only the verified rows into a Cartethyia
   change, and exercise it with a fake transport. A diff against another
   client's source is a hypothesis, not evidence.
+- **A label is not a wire identity — and neither is the presence of a
+  mechanism.** The same signing mechanism can be universal while its key
+  *value* is platform-specific (proven on Qoder 2026-11-04: WASM/IDSY
+  signing exists everywhere, but `machineId` is serial-hex on macOS/ELF and a
+  cached UUID on Windows; using a placeholder machineId yields `403 Signature
+  invalid`). When a flow is "universal", pin the exact per-platform input
+  values, not just the shape.
+- **Before a "works someday" recipe, check for a simpler shipping path.**
+  Qoder's daily-credits claim succeeded with plain `Bearer` + machine headers
+  (the IDE's own variant) while a WASM-signed request still 403'd — the
+  "fancier" path is not automatically the right one. Prefer the shipping
+  client's actual request over a reconstructed one.
+- **A repository that reimplements the protocol is primary evidence.** A
+  donor/reimplementation repo (e.g. the Qoder `qoder2api-hub` Python hub) can
+  confirm or correct a wire guess faster than another bundle scan — its code
+  is explicit, searchable, and often documents the very edge cases the bundle
+  hides.
 
 ## Techniques & tools
 

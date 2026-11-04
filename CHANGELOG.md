@@ -8,7 +8,7 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [2.7.7] - 2026-11-04
 
 ### Added
 
@@ -95,6 +95,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   builders, SSE reader, account loader, redacting printer) and
   `lib/grpc.ts` (gRPC client factory) eliminate the duplicated code — no
   `any` casts, one version constant, verified typecheck and runtime.
+- **Custom User-Agent override in Routing Strategy.** The Client identity box
+  now has a free-text custom User-Agent input that overrides the provider's
+  native identity (persisted to new `provider_routing_settings.custom_user_agent`
+  — migration `0043`). Empty uses the native identity (shown as the default);
+  "Reset" clears the override. Dispatch applies the custom value even when the
+  provider would otherwise stamp its own header. Routing only sees it when
+  set — otherwise native/route identity applies. The Advanced section
+  (collapsed by default) keeps the per-proxy max inflight control and locks
+  the Client identity box while open.
 
 ### Fixed
 

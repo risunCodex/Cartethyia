@@ -935,6 +935,8 @@ export interface ProviderRoutingResponse {
   readonly skipProxy: boolean;
   /** Built-in API-key upstream User-Agent; OAuth and custom providers retain their own identity. */
   readonly userAgent: string;
+  /** Operator-set custom User-Agent override; `null` = no override (native identity is used). */
+  readonly customUserAgent: string | null;
 }
 
 /**
@@ -966,4 +968,6 @@ export interface UpdateProviderRoutingRequest {
   readonly skipProxy?: boolean;
   /** Built-in API-key upstream User-Agent. */
   readonly userAgent?: string;
+  /** Operator-set custom User-Agent override; `null` clears it back to native. */
+  readonly customUserAgent?: string | null;
 }

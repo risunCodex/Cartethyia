@@ -170,6 +170,10 @@ export interface ProviderRoutingSetting {
   readonly enabled: boolean;
   /** Built-in API-key User-Agent; OAuth and custom providers retain their identities. */
   readonly userAgent?: string;
+  /** Operator-set custom User-Agent override; non-empty overrides `userAgent`
+   * (and any provider-native identity) at the request edge. `null`/empty
+   * means no custom override. */
+  readonly customUserAgent?: string | null;
   /** When true, this (tenant, provider) dispatches direct — candidates
    * never carry `network_pool_ids` regardless of pool availability. */
   readonly skipProxy: boolean;

@@ -39,6 +39,9 @@ export interface RoutingStrategyState {
   readonly skipProxy: boolean;
   readonly userAgent: string;
   readonly setUserAgent: (next: string) => void;
+  /** Operator-set custom User-Agent override; `null` = no override (native identity). */
+  readonly customUserAgent: string | null;
+  readonly setCustomUserAgent: (next: string | null) => void;
   readonly isLoading: boolean;
   readonly isError: boolean;
   readonly isSaving: boolean;
@@ -64,6 +67,8 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
   // would make the card show one identity and save another if the server ever
   // answered with a different one.
   const [userAgent, setUserAgentState] = useState("");
+  // Operator-set custom User-Agent override; `null` = native identity.
+  const [customUserAgent, setCustomUserAgentState] = useState<string | null>(null);
 
   useEffect(() => {
     if (!query.data) return;
@@ -75,6 +80,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
     setUsageFloorUnitState(query.data.usageFloorUnit);
     setSkipProxyState(query.data.skipProxy);
     setUserAgentState(query.data.userAgent);
+    setCustomUserAgentState(query.data.customUserAgent ?? null);
   }, [query.data]);
 
   const save = (next: {
@@ -86,6 +92,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
     usageFloorUnit: "credit" | "percent";
     skipProxy: boolean;
     userAgent: string;
+    customUserAgent: string | null;
   }) => {
     mutation.mutate(
       {
@@ -100,6 +107,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
           usageFloorUnit: next.usageFloorUnit,
           skipProxy: next.skipProxy,
           ...(allowUserAgent ? { userAgent: next.userAgent } : {}),
+          customUserAgent: next.customUserAgent,
         },
       },
       {
@@ -113,6 +121,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
           setUsageFloorUnitState(query.data.usageFloorUnit);
           setSkipProxyState(query.data.skipProxy);
           setUserAgentState(query.data.userAgent);
+          setCustomUserAgentState(query.data.customUserAgent ?? null);
         },
       },
     );
@@ -127,6 +136,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       usageFloorUnit,
       skipProxy,
       userAgent,
+      customUserAgent,
     }),
   );
   const scheduleMaxInflightPerProxySave = useDebouncedSave((next: number | null) =>
@@ -139,6 +149,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       usageFloorUnit,
       skipProxy,
       userAgent,
+      customUserAgent,
     }),
   );
   const scheduleRotateCountSave = useDebouncedSave((next: number) =>
@@ -151,6 +162,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       usageFloorUnit,
       skipProxy,
       userAgent,
+      customUserAgent,
     }),
   );
   const scheduleUserAgentSave = useDebouncedSave((next: string) =>
@@ -163,6 +175,20 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       usageFloorUnit,
       skipProxy,
       userAgent: next,
+      customUserAgent,
+    }),
+  );
+  const scheduleCustomUserAgentSave = useDebouncedSave((next: string | null) =>
+    save({
+      strategy,
+      rotateCount,
+      maxInflight,
+      maxInflightPerProxy,
+      usageFloor,
+      usageFloorUnit,
+      skipProxy,
+      userAgent,
+      customUserAgent: next,
     }),
   );
 
@@ -175,10 +201,11 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
     setUsageFloor: (floor, unit) => {
       setUsageFloorState(floor);
       setUsageFloorUnitState(unit);
-      save({ strategy, rotateCount, maxInflight, maxInflightPerProxy, usageFloor: floor, usageFloorUnit: unit, skipProxy, userAgent });
+      save({ strategy, rotateCount, maxInflight, maxInflightPerProxy, usageFloor: floor, usageFloorUnit: unit, skipProxy, userAgent, customUserAgent });
     },
     skipProxy,
     userAgent,
+    customUserAgent,
     isLoading: query.isPending,
     isError: query.isError,
     isSaving: mutation.isPending,
@@ -196,17 +223,22 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       setUserAgentState(next);
       scheduleUserAgentSave(next);
     },
+    setCustomUserAgent: (next) => {
+      setCustomUserAgentState(next);
+      scheduleCustomUserAgentSave(next);
+    },
     setSkipProxy: (next) => {
       setSkipProxyState(next);
       save({
         strategy,
         rotateCount,
         maxInflight,
-      maxInflightPerProxy,
+        maxInflightPerProxy,
         usageFloor,
         usageFloorUnit,
         skipProxy: next,
         userAgent,
+        customUserAgent,
       });
     },
     roundRobinEnabled: strategy === "round_robin",
@@ -217,11 +249,12 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
         strategy: resolved,
         rotateCount,
         maxInflight,
-      maxInflightPerProxy,
+        maxInflightPerProxy,
         usageFloor,
         usageFloorUnit,
         skipProxy,
         userAgent,
+        customUserAgent,
       });
     },
     rotateCount,

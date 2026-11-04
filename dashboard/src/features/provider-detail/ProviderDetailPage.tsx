@@ -19,7 +19,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 import { consoleRequest } from "../../data/api";
 import { ProviderIcon } from "../../components/ProviderIcon";
-import { Button } from "../../components/ui/button";
+import { Button, buttonClass } from "../../components/ui/button";
 import { Card, CardBody, CardHeader } from "../../components/ui/card";
 import { BackLink, PageHeader } from "../../components/ui/page-header";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -445,6 +445,18 @@ export default function ProviderDetail(): ReactNode {
         back={{ to: "/providers", label: "Back to Providers" }}
         actions={
           <Inline gap="8px" className="flex-wrap w-full max-w-full min-w-0">
+            {id === "inferhub" ? (
+              <a
+                href="https://inferhub.dev/"
+                target="_blank"
+                rel="noreferrer"
+                className={buttonClass({ size: "sm", variant: "secondary", className: "no-underline" })}
+                title="Open InferHub — create a config_read key"
+              >
+                <ExternalLink size={13} aria-hidden="true" />
+                inferhub.dev
+              </a>
+            ) : null}
             {provider.isBuiltIn ? (
               <Button
                 variant={provider.enabled ? "danger" : "secondary"}
@@ -484,7 +496,6 @@ export default function ProviderDetail(): ReactNode {
         <RoutingStrategyCard
           providerId={id}
           clientVersion={provider.clientVersion}
-          routeIdentityVersions={provider.routeIdentityVersions}
           userAgentEditable={providerCanConfigureUserAgent(provider)}
         />
       ) : null}

@@ -22,15 +22,25 @@ fixed 64 chars from `randomBytes` (CSPRNG, RFC 7636).
 - **Native identity** (`P1gA…` machineToken, hex `machineType`/`machineOs`) is
   minted by the vendor bridge. Keep it in
   `src/providers/integrations/qoder/qoder-umid.ts` (`umidpack` binaries in
-  `vendor/qoder-umid/umidpack/`, seeds replayed there). Same-account controls
-  found that generated, random, empty, and omitted machine headers all expose
-  an existing daily CREDITS grant. Identity does not create a missing grant.
+  `vendor/qoder-umid/umidpack/`, seeds replayed there). **CORRECTED
+  2026-11-04:** the real bridge token IS required for CREDITS campaign
+  visibility — earlier same-account controls that suggested generated/random/
+  empty machine headers expose the grant were wrong for the current campaign.
+  A generated SHA-256 token keeps the CREDITS `CLAIM_BENEFIT` campaign hidden;
+  the genuine `runtime-info` token (Windows PE / ELF / mini-ELF) surfaces it.
+  Identity does not create a missing grant.
+- The daily-credits claim is the IDE's plain `Bearer` (device token, or a
+  PAT↔job token) + machine headers — **no WASM signing needed**. `machineId`
+  is platform-specific: serial-hex on macOS/ELF, a cached UUID on Windows
+  (`%APPDATA%/Qoder/cache/machine_token.json` → `id`), and a placeholder
+  machineId yields `403 Signature invalid`.
 - Device-login `dt-…`/`drt-…` tokens carry neither user id nor machine id;
   both travel in `auth_state` and every COSY-signed dispatch needs both.
 - A PAT (`pt-…`) is exchanged for a job token (`jt-…`) before COSY signing:
   `resolveQoderAuth` (`qoder.ts`) is the only exchange authority; re-exchange
   invalidates the previous `jt-…`, so reuse one identity per process, not one
-  per request.
+  per request. The exchange binds machine identity (`machine_id` +
+  `machine_token`) like the real client.
 
 ## Claim surfaces
 
@@ -71,15 +81,19 @@ same-account header controls are recorded in the research note.
 
 ## Order of verification for a claim question
 
-1. `GET /sash/api/v1/me/campaigns` (bearer `dt-…`, machine headers optional
-   for the tested CREDITS surface) — is the
-   CREDITS campaign visible, and what is `claimStatus`? Probe-style safety
+1. `GET /sash/api/v1/me/campaigns` (bearer `dt-…` or exchanged `jt-…`, with
+   the **real UMID machine headers** — required for CREDITS visibility) — is
+   the CREDITS campaign visible, and what is `claimStatus`? Probe-style safety
    applies: never claim without an explicit `CLAIMABLE`.
-2. Only shapes with `CLAIM_BENEFIT`/`CREDITS` proceed to `POST …/claim`.
+2. Only shapes with `CLAIM_BENEFIT`/`CREDITS` proceed to `POST …/claim`
+   (body `{}`, `campaignId` UUID — `campaignKey` alone returns 400).
 3. `GET /algo/api/v2/activity` (COSY, empty-signed GET) + `claim/eligibility`
    only when a NEW activity id has to be found.
 4. Persist refreshed tokens and identity back to the account file after every
    exchange; never report a claim without the persisted state.
+5. When a wire guess 403s or the campaign is hidden, cross-check the donor
+   reimplementation repo `Public/qoder2api-hub` (`qoder_accounts.py`,
+   `qoder_sign.py`) before more live probing.
 
 ## When touching this code
 

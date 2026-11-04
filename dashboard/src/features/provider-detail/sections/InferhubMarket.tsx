@@ -11,7 +11,7 @@
  */
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { ChevronDown, ExternalLink, RefreshCw } from "lucide-react";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Card, CardBody, CardHeader } from "../../../components/ui/card";
@@ -139,6 +139,9 @@ export function InferhubMarket(): ReactNode {
   // upstream answers is not a usable signal.
   const [showUpstreams, setShowUpstreams] = useState(true);
   const [sort, setSort] = useState<SortKey>("provider");
+  // Collapse-all toggle: flips every provider group shut (or back open). The
+  // groups keep their own local open state; this is an operator-wide override.
+  const [collapsedAll, setCollapsedAll] = useState(false);
 
   // Every hook runs before any early return. The memo used to sit below the
   // "no data yet" returns, so a render that had summary ran one more hook than
@@ -212,7 +215,7 @@ export function InferhubMarket(): ReactNode {
 
   return (
     <Card>
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3 px-4 py-3">
         {/* Only the header row toggles. The body is content, not a hit target —
             a card-wide toggle meant clicking a table row or the key field
             collapsed the section. */}
@@ -221,12 +224,12 @@ export function InferhubMarket(): ReactNode {
           aria-expanded={expanded}
           aria-label={expanded ? "Collapse InferHub market" : "Expand InferHub market"}
           onClick={() => setExpanded((current) => !current)}
-          className="flex min-w-0 flex-1 items-start gap-3 border-0 bg-transparent p-0 text-left text-inherit"
+          className="flex min-w-0 flex-1 items-center gap-3 border-0 bg-transparent p-0 text-left text-inherit"
         >
           <ChevronDown
             size={15}
             aria-hidden="true"
-            className={cn("mt-1 shrink-0 transition-transform", !expanded && "-rotate-90")}
+            className={cn("shrink-0 transition-transform", !expanded && "-rotate-90")}
           />
           <Stack gap="1px">
             {/* No arbitrary utility: this file has no styling-debt allowance,
@@ -242,36 +245,36 @@ export function InferhubMarket(): ReactNode {
         <div className="flex items-center gap-2">{expanded ? refreshButton : null}</div>
       </div>
       {expanded ? (
-      <CardBody>
-        <div className="flex flex-col gap-3">
-        <InferhubKeyField onSaved={() => void query.refetch()} />
+        <CardBody>
+          <div className="flex flex-col gap-3">
+            <InferhubKeyField onSaved={() => void query.refetch()} />
 
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-caption text-text-secondary">
-            Sort
-            <Select
-              value={sort}
-              onValueChange={(next) => setSort(next as SortKey)}
-              options={(Object.keys(SORT_LABELS) as SortKey[]).map((key) => ({
-                value: key,
-                label: SORT_LABELS[key],
-              }))}
-              aria-label="Sort InferHub models"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-caption text-text-secondary cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showUpstreams}
-              onChange={(event) => setShowUpstreams(event.target.checked)}
-              className="cursor-pointer"
-            />
-            Show availability
-          </label>
-        </div>
-        </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-caption text-text-secondary">
+                Sort
+                <Select
+                  value={sort}
+                  onValueChange={(next) => setSort(next as SortKey)}
+                  options={(Object.keys(SORT_LABELS) as SortKey[]).map((key) => ({
+                    value: key,
+                    label: SORT_LABELS[key],
+                  }))}
+                  aria-label="Sort InferHub models"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-caption text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showUpstreams}
+                  onChange={(event) => setShowUpstreams(event.target.checked)}
+                  className="cursor-pointer"
+                />
+                Show availability
+              </label>
+            </div>
+          </div>
 
-        {summary.error === "no_config_key" ? (
+          {summary.error === "no_config_key" ? (
           <Banner tone="warning" surface="raised" live="none">
             No InferHub <code>config_read</code> key is configured, so the marketplace catalog
             cannot be read. Add one above.
@@ -294,20 +297,30 @@ export function InferhubMarket(): ReactNode {
           <p className="text-micro text-text-tertiary">
             {shownCount} of {models.length} models
           </p>
-          <label className="flex items-center gap-2 text-caption text-text-secondary cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showAll}
-              onChange={(event) => setShowAll(event.target.checked)}
-              className="cursor-pointer"
-            />
-            Show all
-            {hiddenCount > 0 ? (
-              <span className="text-micro text-text-tertiary">
-                (includes {hiddenCount} hidden)
-              </span>
-            ) : null}
-          </label>
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setCollapsedAll((current) => !current)}
+              title={collapsedAll ? "Expand all provider groups" : "Collapse all provider groups"}
+            >
+              {collapsedAll ? "Expand all" : "Collapse all"}
+            </Button>
+            <label className="flex items-center gap-2 text-caption text-text-secondary cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showAll}
+                onChange={(event) => setShowAll(event.target.checked)}
+                className="cursor-pointer"
+              />
+              Show all
+              {hiddenCount > 0 ? (
+                <span className="text-micro text-text-tertiary">
+                  (includes {hiddenCount} hidden)
+                </span>
+              ) : null}
+            </label>
+          </div>
         </div>
 
         {/* One card per provider, each with its own models. Grouped rather than
@@ -323,6 +336,7 @@ export function InferhubMarket(): ReactNode {
                 group={group}
                 showUpstreams={showUpstreams}
                 summary={summary}
+                collapsedAll={collapsedAll}
               />
             ))}
           </div>
@@ -346,13 +360,16 @@ function ProviderGroup({
   group,
   showUpstreams,
   summary,
+  collapsedAll,
 }: {
   group: { readonly prefix: string; readonly family: string; readonly models: readonly InferhubModel[] };
   showUpstreams: boolean;
   summary: InferhubSummary;
+  collapsedAll: boolean;
 }): ReactNode {
   // Expanded by default; only a provider the operator collapsed stays shut.
   const [open, setOpen] = useState(true);
+  const effectiveOpen = collapsedAll ? false : open;
   const family = familyOf(summary, group.prefix);
   const state = family?.familyState ?? null;
   const note = group.models.find((model) => model.systemPromptNote !== null)?.systemPromptNote ?? null;
@@ -361,15 +378,15 @@ function ProviderGroup({
     <div className="rounded-card border border-inner-border bg-surface-2">
       <button
         type="button"
-        aria-expanded={open}
-        aria-label={`${open ? "Collapse" : "Expand"} ${group.family} models`}
+        aria-expanded={effectiveOpen}
+        aria-label={`${effectiveOpen ? "Collapse" : "Expand"} ${group.family} models`}
         onClick={() => setOpen((current) => !current)}
         className="flex w-full items-center gap-2 border-0 bg-transparent px-3 py-2 text-left text-inherit"
       >
         <ChevronDown
           size={14}
           aria-hidden="true"
-          className={cn("shrink-0 transition-transform", !open && "-rotate-90")}
+          className={cn("shrink-0 transition-transform", !effectiveOpen && "-rotate-90")}
         />
         <span className="text-caption font-bold">{group.family}</span>
         <span className="font-mono text-micro text-text-tertiary">{group.prefix}/</span>
@@ -388,7 +405,7 @@ function ProviderGroup({
           {group.models.length} model{group.models.length === 1 ? "" : "s"}
         </span>
       </button>
-      {open ? (
+      {effectiveOpen ? (
         <div className="px-3 pb-3">
           {/* The note is an upstream-level behaviour, so it sits on the group,
               not on every row of it. */}
@@ -527,6 +544,17 @@ function InferhubKeyField({ onSaved }: { onSaved: () => void }): ReactNode {
       <p className="text-micro text-text-tertiary">
         Stored encrypted beside the market settings, never in this provider&apos;s accounts. Must be a{" "}
         <code>config_read</code> key — never an inference key.
+      </p>
+      <p className="text-micro text-text-tertiary">
+        <a
+          href="https://inferhub.dev/"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 text-accent hover:underline"
+        >
+          <ExternalLink size={12} aria-hidden="true" />
+          inferhub.dev — create a <code>config_read</code> key
+        </a>
       </p>
       {error !== null ? (
         <Banner tone="danger" surface="raised" live="alert">
