@@ -55,7 +55,7 @@ tokens) — comfortably above 1M tokens.
 ## The gRPC surface
 
 From the unpacked Qoder desktop client (worker runtime
-`qoder-worker-runtime.mjs`, v1.1.81, bundled `vendor/qoder/chat.proto`):
+`qoder-worker-runtime.mjs`, v1.1.81, bundled `vendor/qoder-proto/chat.proto`):
 
 ```
 service model.chat.ChatService {
@@ -90,7 +90,7 @@ service model.chat.ChatService {
 
 ## Evidence artifacts
 
-- Unpacked client: `D:\tmp\unpacked\qoder\Qoder-unpacked\npm-package\package\bundle\qoder-worker-runtime.mjs` (35 MB) and `vendor/qoder/chat.proto`.
+- Unpacked client: `D:\tmp\unpacked\qoder\Qoder-unpacked\npm-package\package\bundle\qoder-worker-runtime.mjs` (35 MB) and `vendor/qoder-proto/chat.proto`.
 - Probe scripts (scratch):
   - `D:\tmp\grpc-test\qoder-grpc-probe.ts` (gRPC live probe)
   - `scripts/provider-probing/qoder/chat/qoder-capacity-probe.ts` (HTTP live probe:

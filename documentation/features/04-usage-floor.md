@@ -1,10 +1,13 @@
 # Usage floor
 
 Usage floor is a per-provider routing threshold. When one account's remaining
-allowance reaches or falls below its configured floor, the router excludes that
-account and continues with the next eligible account for the requested model.
-The request is not sent to the below-floor account merely to discover that it
-has run out.
+allowance reaches or falls below its configured floor, the router **orders**
+that account behind accounts with more allowance — it does **not** exclude it
+from routing. The request may still be sent to a below-floor account; the
+upstream is the one that answers, and its refusal is then classified (e.g.
+into a cooldown). This changed from an exclusion to an ordering-only signal so
+that free-tier and exhausted accounts remain reachable when the operator wants
+them tried.
 
 ## Setting and scope
 
@@ -18,31 +21,28 @@ The UI also shows combined pooled credits across active accounts when the quota
 data supports that calculation. This is an overview only: the floor is still
 evaluated separately against each account's quota windows.
 
-## Eligibility
+## Ordering (not eligibility)
 
-`EligibilityEvaluator` applies the floor to each matching route candidate
-before selection and admission:
+`creditPriority` uses the floor and quota windows to order candidates inside the
+same rank group:
 
 - `credit` compares the candidate's remaining pooled credit against the
   configured credit amount.
 - `percent` compares the aggregate pooled-credit percentage and the lowest
   independent percentage-only window against the configured percentage.
-- Equality crosses the floor: remaining allowance `<=` the threshold is
-  ineligible.
-- A known exhausted pooled balance or independent quota window is ineligible
-  even when the threshold is disabled.
-- No usable quota reading is unknown, not zero. It does not cross a configured
-  floor, so the account remains eligible rather than being rejected on missing
-  data.
-- A model-scoped grant only gates its listed model IDs. Alternative grants for
-  that model are usable when any live grant exceeds the floor; a spent sibling
-  model's grant does not exclude this candidate. Future or expired grants do
-  not fund requests. Account-wide windows still constrain every candidate.
+- A known exhausted pooled balance or independent quota window orders the
+  account behind unknown/positive accounts — it does not exclude it.
+- No usable quota reading is unknown, not zero. It is treated neutrally.
+- A model-scoped grant only gates its listed model IDs for ordering.
+  Alternative grants for that model are usable when any live grant exceeds the
+  floor; a spent sibling model's grant does not affect this candidate. Future
+  or expired grants do not fund requests. Account-wide windows still constrain
+  every candidate.
 
-When a candidate is excluded, the router can try another account that serves
-the same model. If no candidate remains, the normal routing failure path
-applies. This is a routing policy, not account health state: it does not itself
-write a cooldown.
+A candidate is only excluded by health state (`disabled`, hard cooldown, model
+cooldown). Quota never excludes. The router still orders eligible candidates,
+and if no candidate remains the normal routing failure path applies. This is a
+routing policy, not account health state: it does not itself write a cooldown.
 
 ## Quota freshness and recovery
 

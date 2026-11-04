@@ -120,13 +120,12 @@ test("cold cache falls back to persisted quota snapshot for ordering", async () 
     });
 
     // No Redis, empty in-memory cache => the only quota evidence is the
-    // persisted snapshot. The account with remaining credit is chosen; the
-    // exhausted account is excluded entirely (below floor), not just ordered
-    // behind.
+    // persisted snapshot. The account with remaining credit is ordered first;
+    // the exhausted account is NOT excluded — quota only affects ordering now.
     const engine = new RoutingEngine(undefined, undefined, fx.db);
     const plan = await engine.plan("qoder-model", snapshot([candidate("a-credit"), candidate("a-zero")]));
     const order = plan.candidates.map((c) => c.provider_account_id);
-    expect(order).toEqual(["a-credit"]);
+    expect(order).toEqual(["a-credit", "a-zero"]);
   } finally {
     fx.cleanup();
     clearQuotaCacheForTests();

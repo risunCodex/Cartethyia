@@ -111,10 +111,14 @@ for the per-key slot table that merges into the same resolver.
 | model cooldown | no | `model_cooldown` |
 | hard cooldown | no | `cooldown_hard` |
 | soft cooldown | yes | `cooldown` |
-| quota exhausted | no | `quota_exhausted` |
-| usage floor | no | `quota_exhausted` |
+| quota exhausted | yes (ordered behind) | `healthy` |
+| usage floor | yes (ordered behind) | `healthy` |
 | slow lane | yes | `slow` |
 | otherwise | yes | `healthy` |
+
+Quota and usage floor are ordering-only signals, never eligibility exclusions:
+the account is still routed and upstream decides. See
+[Usage floor](../features/04-usage-floor.md).
 
 Admission is separate from eligibility. Eligibility says the account may be tried.
 Admission says a concurrency slot is free. Redis holds the slot when `REDIS_URL`

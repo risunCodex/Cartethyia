@@ -31,7 +31,7 @@ Evidence: `documentation/research/qoder/2026-11-04-qoder-grpc-1m-context.md`
 - Auth = same bearer token, delivered as gRPC metadata:
   `authorization`, `x-request-id`, `x-session-id`, `cosy-clienttype`,
   `cosy-machineos`, `cosy-machinetype`, `cosy-machinetoken`.
-- Proto is bundled in the unpacked client (`vendor/qoder/chat.proto`); the repo has
+- Proto is bundled in the unpacked client (`vendor/qoder-proto/chat.proto`); the repo has
   no `.proto` yet — we may either vendor it or generate TS from it.
 - The desktop client builds the gRPC request via `QFn()`: OpenAI-shaped body
   mapped onto the proto, `metadata.context.context_length` set from the
@@ -69,7 +69,7 @@ src/providers/integrations/qoder/
   qoder-virtual.ts           # virtual-model mapping (unchanged)
   qoder-oauth.ts            # device login (unchanged)
   qoder-quota.ts / qoder-checkin.ts / qoder-realm.ts / qoder-umid.ts  # unchanged
-  vendor/qoder/chat.proto    # vendored gRPC schema (+ generated client if TS-safe)
+  vendor/qoder-proto/chat.proto    # vendored gRPC schema (+ generated client if TS-safe)
 ```
 
 `QoderAdapter` lives in `qoder.ts` and selects transport by policy:

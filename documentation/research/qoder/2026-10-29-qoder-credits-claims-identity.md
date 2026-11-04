@@ -417,6 +417,9 @@ Observed on multiple accounts: without machine headers the CREDITS campaign was
 absent; with the minted UMID headers it appeared as `CLAIM_BENEFIT`,
 `CLAIMABLE`, `benefit.kind=CREDITS, amount=100, ALL_MODELS, 30 days`.
 
+Re-confirmed 2026-11-04 with the **real Windows UMID** (`runtime-info.exe`)
+on campaign `act-20261102-503` — see [Part F](#part-f--revalidation-2026-11-04-campaign-act-20261102-503--real-umid-on-windows).
+
 ### E.3 "Same person" is per-account (uid) + per-campaign — IP/device do NOT matter
 
 For the 8 accounts holding a 100-credit grant (quota `addOnQuota.total=100`),
@@ -526,15 +529,191 @@ Every no-grant account and every blocked account surfaces only the promo
 banner — no CREDITS campaign is provisioned for them. The roster is fully
 exhausted for the active campaign.
 
+## Part F — Revalidation 2026-11-04: campaign `act-20261102-503` + real UMID on Windows
+
+Re-validated the claim flow with a **real UMID** (`runtime-info.exe`, Windows
+PE) instead of the generated identity, on a fresh campaign. Key results:
+
+### F.1 Campaign key changed
+
+The daily CREDITS campaign is now `act-20261102-503` (was
+`act-20261027-489`). Claim response names it with `campaignVersion: 1`:
+
+```
+campaignId:   01a199dd-c0ea-721e-8751-ea0379af700e
+campaignKey:  act-20261102-503
+status:       CLAIMED
+benefit:      { kind: CREDITS, amount: 100, modelScope: { modelSeries: { key: ALL_MODELS } },
+                validity: { mode: RELATIVE_DAYS, days: 30 } }
+```
+
+### F.2 Real UMID vs generated — the CREDITS campaign is only visible with the real UMID
+
+| | Generated `mintQoderGeneratedIdentity` | Real UMID (`runtime-info.exe`) |
+|---|---|---|
+| Campaign list | promo-only (`VIEW_DETAILS`) — CREDITS hidden | **CREDITS `CLAIM_BENEFIT` + `CLAIMABLE` appears** |
+| Claim | impossible (no campaignId visible) | **SUCCESS → `CLAIMED` +100** |
+| Usage after | unchanged | `addOnQuota.total` 100 → **200** |
+
+This confirms `requireMachineIdentity()` in the IDE bundle genuinely gates the
+CREDITS campaign: a generated (non-SG) identity is not enough to surface it.
+The Windows `runtime-info.exe` bridge works even under Hyper-V
+(`vmInfo.isVm: true`, `vmTypeCode: 14`) — the server still accepted it.
+
+### F.3 Live run (single account, `papa mama`)
+
+- Campaign list (real UMID): `act-20261102-503` (`CLAIM_BENEFIT` /
+  `CLAIMABLE` / CREDITS 100) + `act-20261020-944` (promo).
+- Claim `POST /sash/api/v1/me/campaigns/{campaignId}/claim` (body `{}`) →
+  `200` with the `CLAIMED` grant above.
+- Proof `GET /sash/api/v2/me/usage` → `qoderUsage.addOnQuota`:
+  `{ total: 200, used: 0, remaining: 200 }` (100 pre-existing + 100 new).
+
+### F.4 Endpoint notes (confirmed against the unpacked IDE bundle)
+
+- Sash host is **`openapi.qoder.sh`** (prod `$ba.prod.openapi`), not
+  `qoder.com` — `qoder.com` answers 401 on API paths (web origin only).
+- Campaigns response shape is `{ showCampaign, claimable, campaigns: [...] }`
+  **directly** — not `.data.campaigns` (the earlier probe parsed the latter;
+  the real response has no `.data` wrapper).
+- Claim path needs the **campaignId UUID** — `campaignKey` alone returns
+  `400 FIELD_VALIDATION_FAILED`.
+- Header set that works: `Authorization: Bearer <dt-…>`,
+  `User-Agent: Qoder`, `Cosy-ClientType: 10`, `Cosy-Version: 1.1.81`,
+  plus the six `cosy-machine*` UMID headers.
+
+### F.5 Open item
+
+The 16-account roster (`qoder-accounts-2026-11-04T08-59-46-438Z.json`)
+was not fully re-run. Only `papa mama` was claimed on this campaign; other
+accounts may be eligible for `act-20261102-503` even if they were blocked on
+the previous campaign.
+
+### F.6 Roster exhausted for campaign `act-20261102-503` (2026-11-04)
+
+Full sweep of the 16-account roster with every variant tried — native UMID
+(`runtime-info.exe` fresh and cached machine identity from `machine_token.json`),
+desktop headers (hub-style `cosy-clienttype: 10`), PAT→JT exchange, WASM
+signing — against `/sash` campaigns. Result: **only `papa mama` (already
+claimed on this campaign) shows the CREDITS campaign**. All other accounts
+show only the promo `VIEW_DETAILS` banner, including fresh grants
+(`addOnQuota.total=100, used=0`). The daily-credits campaign is per-account
+server-side eligibility; this roster is exhausted.
+
+## Part G — Worker fix + manual claim button (2026-11-04)
+
+### G.1 UMID bridge priority (containers)
+
+The vendored mini-ELF bundle (`vendor/qoder-umid/qoder-umid-mini.tar.gz`,
+static glibc tree: `opt/umid/runtime-info` + `lib/x86_64-linux-gnu`, +64K
+ELF) now serves as the Linux fallback bridge when the native vendored ELF is
+absent (slim containers). `qoder-umid.ts` extracts it once to
+`$XDG_CACHE_HOME/cartethyia/umid-mini` (or `~/.cache/...`) and runs it with
+`LD_LIBRARY_PATH` pointing at the staged libs. Verified live under WSL: the
+mini ELF mints a `P1gA…` token (`isVm:false`, `vmTypeCode:91`).
+
+Bridge priority after the change:
+
+| Platform | Order |
+|---|---|
+| Linux | native `elf-*` → mini-ELF (container) → generated |
+| macOS | native `macho-*` → generated |
+| Windows | WSL `wsl-elf` (if staged elf exists) → `runtime-info.exe` (PE) → mini-ELF via WSL → generated |
+
+### G.2 Manual claim endpoint + console button
+
+- New console endpoint `POST /accounts/:id/claim-qoder-credits` (dashboard:write)
+  mirrors the ZCode `claim-gifts` flow: resolves the credential, ensures a
+  bound native UMID identity (`DrizzleQoderNativeIdentityStore` +
+  `allocateQoderNativeIdentity`), lists `/sash/api/v1/me/campaigns` with the
+  UMID headers, filters `CLAIM_BENEFIT` + `CREDITS` + not-`CLAIMED`, claims by
+  `campaignId` UUID, then invalidates quota cache/snapshot on success.
+- Implementation: `src/providers/integrations/qoder/claim-qoder-credits.ts`
+  (`claimQoderCredits`), wired in `src/console/quota/account-quota-tenant.ts`.
+- Console: `ClaimQoderCreditsButton` (`dashboard/src/components/`) renders on
+  qoder/qodercn account rows alongside the ZCode gift button; uses
+  `useClaimQoderCredits` hook. Result states: `claimed` / `already_claimed` /
+  `nothing` / `error`.
+- Unit tests: `test/console/qoder-credits-claim.test.ts` (claimed /
+  already_claimed / nothing / error / credential-error + tenant isolation).
+
+### G.3 PAT accounts: exchange binds the machine identity (2026-11-04)
+
+A PAT (`pt-…`) is rejected by the sash surface with 401 unless it is first
+exchanged to a job token (`jt-…`). The exchange **binds the machine identity**
+like the real client (`getMachineIdentityRequestFields`): `machine_id` +
+`machine_token` are sent in the exchange body. Verified live: raw PAT → 401;
+after exchange with machine binding → 200.
+
+### G.4 The universal flow (Variant A — IDE-style, no WASM)
+
+Deep audit of the unpacked client (35MB worker bundle + SDK + IDE shared
+process) showed the COSY signature is bound to the **platform machine id**
+(hex of hardware serial on macOS/ELF; a stable UUID on Windows from
+`%APPDATA%/Qoder/cache/machine_token.json` → `id`). The WASM signing bridge
+also signs this machineId, so a hardcoded/mismatched machineId always yields
+`403 Signature invalid`.
+
+The working universal flow (verified live on Windows, 2026-11-04):
+
+```
+PAT → exchange (with machine_id + machine_token) → JT
+→ request with Bearer JT + Cosy machine headers (Id/Token/Type/Code/OS/Version)
+```
+
+This is exactly what the IDE does — no WASM required for the daily-credits
+claim or the activity claim. `POST /api/v2/activity/claim?activityId=…`
+returned `200 {"code":-1,"msg":"Activity not found"}` (accepted signature;
+the activityId just did not exist for that account). `/algo/api/v2/activity`
+list additionally requires `Cosy-ClientType: "5"` in the workspace JSON.
+
+The backend `claimQoderCredits` now reads the platform machineId from the real
+client cache (`readPlatformMachineId`) and sends it in both the PAT exchange
+and the Cosy headers (`qoderMachineHeaders(identity, machineId)`).
+
+### G.5 Donor hub (`qoder2api-hub`) confirmation (2026-11-04)
+
+The donor hub repo (`Public/qoder2api-hub`) independently confirms the correct
+daily-credits flow and the COSY signing details:
+
+- **The daily-credits path is the `/sash` campaign platform**, not
+  `/api/v2/activity/claim` (the latter is the legacy/harness flow). List:
+  `GET /sash/api/v1/me/campaigns` with `desktop_headers()` →
+  `cosy-clienttype: 10`, `User-Agent: Qoder`, `Authorization: Bearer <token>`.
+- **`cosy-machineid` is a stable UUID-shaped machine id** — the desktop
+  client caches it (`%APPDATA%/Qoder/cache/machine_token.json` → `id`), and
+  the hub derives a UUIDv4 from the account uid. The native
+  machineToken/Type/Code come from `runtime-info` and fill the other
+  `cosy-machine*` headers. Sending a derived/fake machine header set gets the
+  CREDITS campaign filtered entirely (issue #10 in the hub).
+- **Claim**: `POST .../campaigns/{campaignId}/claim` with body `{}` +
+  `Content-Type: application/json`; idempotent (409 / ALREADY_CLAIMED /
+  REPLAYED → success; BLOCKED / SAME_PERSON_ALREADY_CLAIMED → blocked).
+- **COSY signature** = `md5(payload\ncosyKey\ndate\nbody\npath)` where
+  `path` excludes `/algo` and the query; the transmitted body must match the
+  signed body (GETs on `/algo` send `qoder_encode("{}")` as body, else 403).
+- `/algo/api/v2/activity` list additionally requires `cosy-clienttype: "5"`
+  (inference/CLI), and a bare GET without the signed body → 403.
+- **Upstream**: `origin/main` advanced `449e0da → 2611b71`
+  (v1.7.20/21/22) — feature/dashboard changes, no signing/campaign-claim
+  logic changes.
+
 ## Evidence files
 
 - Account exports (merged): `C:/Users/Aria/Desktop/qoder-accounts-2026-11-01-merged-all.json`
   (141 unique qoder accounts; the 7 per-file exports they replaced were deleted after merging)
 - Original exports: `C:/Users/Aria/Desktop/qoder-accounts-2026-10-29T12-53-38-453Z.json`,
   `qoder-accounts-2026-10-29T15-37-01-530Z.json`
+- Revalidation export (2026-11-04): `C:/Users/Aria/Desktop/qoder-accounts-2026-11-04T08-59-46-438Z.json`
+  (16 accounts, all `dt-` device tokens; used for the `papa mama` real-UMID claim)
 - UMID bridge: `vendor/qoder-umid/runtime-info` (Linux ELF), seed
   `/home/risun/.config/.locale_cfg`
+- UMID bridge (Windows PE): `vendor/qoder-umid/umidpack/runtime-info.exe` +
+  `sgsdk.dll` (used for the 2026-11-04 claim)
 - Official bundle: `D:/tmp/qodercli/npm-package/package/bundle/qoder-worker-runtime.mjs`
+- Unpacked IDE (2026-11-04 inspection): `D:/tmp/unpacked/qoder/Qoder-unpacked/npm-package/package/bundle/qoder-worker-runtime.mjs`
+  (35 MB) — endpoint table: `$ba.prod.openapi = openapi.qoder.sh`, campaigns
+  `requireMachineIdentity()`, usage `GET /sash/api/v2/me/usage`
 - Windows PE identity: `D:/tmp/qodercli/cli-state/.bin/umid-win32-x64-48d1294f147c9d89/`
 - Probe tooling: `scripts/provider-probing/qoder/quota/probe-qoder-credits.ts`
   (campaign list / reward / claim / activity family)

@@ -174,6 +174,12 @@ export const CONFIG_SPEC = {
   CARTETHYIA_DISABLED_TASKS: { kind: "list" },
 
   /**
+   * Force the Qoder UMID bridge to the mini-ELF bundle on Linux
+   * (`1` = always mini, `0` = never mini; absent = auto-detect containers).
+   */
+  CARTETHYIA_QODER_UMID_MINI: { kind: "int", default: 0, min: 0, max: 1 },
+
+  /**
    * How long a day's telemetry is kept, in days.
    *
    * Whole raw event files past this age are removed. No summary or compacted
@@ -270,7 +276,7 @@ export const CONFIG_SPEC = {
   CARTETHYIA_PROXY_MAX_FREE_SOCKETS: { kind: "int", default: 20, min: 0, max: 100_000 },
 
   // Security (encryption key, public origin, abuse ceiling)
-  IP_RATE_MAX_PER_WINDOW: { kind: "int", default: 240, min: 1, max: Number.MAX_SAFE_INTEGER },
+  IP_RATE_MAX_PER_WINDOW: { kind: "int", default: 540, min: 1, max: Number.MAX_SAFE_INTEGER },
   CARTETHYIA_ENCRYPTION_KEY: {
     kind: "required",
     error:

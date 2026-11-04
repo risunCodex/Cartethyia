@@ -74,6 +74,8 @@ const ENV_EXAMPLE_ONLY_KEYS: Readonly<Record<string, true>> = {
   CARTETHYIA_CONFIG_DIR: true,
   DASHBOARD_PORT: true,
   VITE_BACKEND_URL: true,
+  // Read by scripts/test/run.ts (test-only runner knob), not src/config.
+  CARTETHYIA_TEST_JOBS: true,
 };
 
 const envExamplePath = resolve(process.cwd(), ".env.example");

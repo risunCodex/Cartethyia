@@ -1,5 +1,5 @@
 /**
- * Generated from `vendor/qoder/chat.proto` (Qoder desktop client v1.1.81,
+ * Generated from `vendor/qoder-proto/chat.proto` (Qoder desktop client v1.1.81,
  * `qoder-worker-runtime.mjs`). Do not edit by hand — regenerate from the
  * proto file via `scripts/scratch/gen-chat-proto.ts`.
  */

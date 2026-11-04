@@ -231,7 +231,9 @@ describe("Command Code quota", () => {
       };
       const evaluator = new EligibilityEvaluator();
       expect(evaluator.evaluate(candidate)).toMatchObject({ eligible: true, reason: "healthy" });
-      expect(evaluator.evaluate({ ...candidate, usage_floor: 25 })).toMatchObject({ eligible: false, reason: "quota_exhausted" });
+      // Usage floor is not an eligibility exclusion: the account is still routed
+      // and upstream decides. Quota only affects ordering.
+      expect(evaluator.evaluate({ ...candidate, usage_floor: 25 })).toMatchObject({ eligible: true, reason: "healthy" });
     });
   }
 });

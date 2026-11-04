@@ -54,9 +54,10 @@ describe("slow-lane eligibility", () => {
     expect(decision.reason).toBe("cooldown_hard");
   });
 
-  test("a lane-stamped but exhausted account is still excluded", () => {
-    // The floor gate precedes the lane branch: an account with no usable
-    // allowance is not rescued by the lane.
+  test("a lane-stamped exhausted account stays eligible (quota no longer excludes)", () => {
+    // Quota is deliberately not an eligibility exclusion anymore: an exhausted
+    // account is still routed (upstream decides) and a lane stamp only orders
+    // it behind fresh siblings.
     const decision = new EligibilityEvaluator().evaluate(
       candidate("a1", {
         lane: "slow",
@@ -69,8 +70,8 @@ describe("slow-lane eligibility", () => {
         ],
       }),
     );
-    expect(decision.reason).toBe("quota_exhausted");
-    expect(decision.eligible).toBe(false);
+    expect(decision.eligible).toBe(true);
+    expect(decision.reason).toBe("slow");
   });
 });
 

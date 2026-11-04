@@ -10,7 +10,7 @@
  * `quota exceeded` (116) on this surface, so free-tier dispatch must use the
  * legacy COSY surface instead (see `qoder.ts` transport selection).
  *
- * The proto is vendored at `vendor/qoder/chat.proto` (from the unpacked
+ * The proto is vendored at `vendor/qoder-proto/chat.proto` (from the unpacked
  * desktop client, version 1.1.81, `qoder-worker-runtime.mjs`).
  */
 import { createHash, randomUUID } from "node:crypto";

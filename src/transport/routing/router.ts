@@ -33,7 +33,7 @@ import {
   parseModelReference,
   routeCandidateIndex,
 } from "./candidate-index";
-import { totalRemainingCredit, totalRemainingPercent, type ProviderQuotaWindow } from "../../providers/quota/quota-contracts";
+import { totalRemainingCredit, type ProviderQuotaWindow } from "../../providers/quota/quota-contracts";
 import { getCachedQuotaEntry, quotaLens } from "../../providers/quota/cache";
 import { readQuotaSnapshot } from "../../providers/quota/snapshot";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
@@ -86,71 +86,6 @@ export function filterCandidateQuotaWindows(
   }
 
   return windows;
-}
-
-/**
- * True when the account's remaining allowance is at or below its provider's
- * floor. Credit mode sums the absolute remaining credit; percent mode uses the
- * aggregate credit percentage and the lowest independent percentage window.
- * No reading means unknown, which is not below the floor.
- */
-function belowUsageFloor(state: RoutedCandidate): boolean {
-  const rawWindows = state.quota_windows;
-  // A successful Start Plan balance (`quota_entitlements_known`) authoritatively
-  // lists its model grants: when the provider is zcode-start and no window
-  // matches the requested model, the account is below the floor even with an
-  // empty/absent window list — there is no grant to fund the model.
-  if (state.provider_id === "zcode-start" && state.quota_entitlements_known === true) {
-    if (rawWindows === undefined || rawWindows.length === 0) return true;
-    const knownGrants = rawWindows.some((window) => window.modelIds !== undefined);
-    if (!knownGrants) return true;
-  }
-  if (rawWindows === undefined || rawWindows.length === 0) return false;
-  const relevant = filterCandidateQuotaWindows(rawWindows, state);
-  // Model-scoped grants (Start Plan) are checked separately: a grant that has
-  // not started, has expired, or is exhausted cannot fund the requested model,
-  // so it must not count as credit.
-  const now = Date.now();
-  const grants = relevant.filter((window) => window.modelIds !== undefined);
-  if (state.provider_id === "zcode-start" && grants.length === 0 && rawWindows.some((window) => window.modelIds !== undefined)) {
-    return true;
-  }
-  if (
-    grants.length > 0 &&
-    !grants.some((window) => {
-      if (window.startsAt && Date.parse(window.startsAt) > now) return false;
-      if (window.resetsAt && Date.parse(window.resetsAt) <= now) return false;
-      if (typeof window.remaining === "number" && window.remaining <= 0) return false;
-      if (typeof window.remainingPercent === "number" && window.remainingPercent <= 0) return false;
-      const remaining = state.usage_floor_unit === "credit" ? window.remaining : window.remainingPercent;
-      return state.usage_floor === undefined || remaining == null || remaining > state.usage_floor;
-    })
-  ) {
-    return true;
-  }
-  const windows = relevant.filter((window) => window.modelIds === undefined);
-  const credit = totalRemainingCredit(windows);
-  const percent = totalRemainingPercent(windows);
-  const exhaustedIndependentWindow = windows.some(
-    (window) =>
-      window.accounting !== "pooled" &&
-      typeof window.remainingPercent === "number" &&
-      Number.isFinite(window.remainingPercent) &&
-      window.remainingPercent <= 0,
-  );
-  if ((credit !== null && credit <= 0) || exhaustedIndependentWindow) return true;
-  if (credit === null && percent !== null && percent <= 0) return true;
-  const floor = state.usage_floor;
-  if (floor === undefined) return false;
-  // Free-tier models are not credit-funded, so the operator's configured floor
-  // threshold does not apply to them — a free model may use any remaining
-  // balance. This mirrors `creditPriority` (free tier skips credit preference).
-  // It deliberately comes AFTER the exhausted-window checks above: a free-tier
-  // account whose own quota window is spent (0 left) is still excluded, because
-  // that is the provider's own limit, not the credit floor.
-  if (state.free_tier === true) return false;
-  const remaining = state.usage_floor_unit === "credit" ? credit : percent;
-  return remaining !== null && remaining <= floor;
 }
 
 /**
@@ -318,42 +253,6 @@ function spreadDeadline(cooldownUntil: number | undefined): { cooldown_until?: n
 }
 
 /**
- * The soonest moment a quota window the caller is blocked on refills.
- *
- * A usage-floor exclusion is time-bounded by construction — the floor compares
- * the *remaining* allowance, and the window states when that allowance resets.
- * The exclusion carries a deadline so `plan()` can tell a client how long to
- * wait and `earliestResetMs` reports a value. The minimum across windows, for
- * the same reason `earliestResetMs` takes it: the account
- * can serve again as soon as its first window refills, so quoting the slowest
- * would hold the client off longer than necessary.
- *
- * `undefined` when no window states a reset, which is the honest answer and
- * keeps the reason a plain 503 rather than a 429 with an unknown retry-after.
- */
-function earliestWindowResetMs(
-  windows: readonly ProviderQuotaWindow[] | undefined,
-  nowMs: number,
-  candidate: RouteCandidate,
-): number | undefined {
-  if (windows === undefined) return undefined;
-  windows = filterCandidateQuotaWindows(windows, candidate);
-  let earliest: number | undefined;
-  for (const window of windows) {
-    if (window.startsAt && Date.parse(window.startsAt) > nowMs) {
-      const at = Date.parse(window.startsAt);
-      if (earliest === undefined || at < earliest) earliest = at;
-      continue;
-    }
-    if (typeof window.resetsAt !== "string" || window.resetsAt.length === 0) continue;
-    const at = Date.parse(window.resetsAt);
-    if (!Number.isFinite(at) || at <= nowMs) continue;
-    if (earliest === undefined || at < earliest) earliest = at;
-  }
-  return earliest;
-}
-
-/**
  * The earliest instant any cooling candidate recovers, in epoch ms.
  *
  * `undefined` when no decision carries a deadline — which is the honest answer
@@ -383,25 +282,17 @@ export class EligibilityEvaluator {
       return { eligible: false, reason: "model_cooldown", candidate, ...spreadDeadline(candidate.cooldown_until) };
     if (candidate.health_status === "cooldown" && candidate.cooldown_kind === "hard")
       return { eligible: false, reason: "cooldown_hard", candidate, ...spreadDeadline(candidate.cooldown_until) };
-    // The floor is checked here, not after selection: an account below its
-    // floor must not win the route. An account with no reading is left
-    // eligible — a missing quota fetch is not proof the allowance is gone.
-    if (belowUsageFloor(candidate))
-      return {
-        eligible: false,
-        reason: "quota_exhausted",
-        candidate,
-        ...spreadDeadline(earliestWindowResetMs(candidate.quota_windows, Date.now(), candidate)),
-      };
+    // Quota/usage-floor is deliberately NOT an exclusion: an account whose
+    // window is spent or below its configured floor is still routed, and the
+    // upstream is the one that answers (its refusal is classified into a
+    // cooldown then). Blocking here made free-tier and exhausted accounts
+    // unreachable even when the operator wanted them tried — "don't follow
+    // quota, route whether or not it has any."
+    //
     // A slow lane is orthogonal to cooldown, never a member of it: the account
     // still serves on spare capacity when the request carries the slow usage
     // limit, so excluding it would park a serving credential. It stays eligible
     // and only orders behind fresh siblings (see the ordering below).
-    //
-    // Deliberately AFTER the floor gate: orthogonal means it does not add an
-    // exclusion, not that it overrides one. An account with no usable allowance
-    // is not rescued by the lane — the lane is a latency budget against spare
-    // capacity, and an account below its floor has none.
     if (candidate.lane === "slow")
       return { eligible: true, reason: "slow", candidate };
     if (candidate.health_status === "cooldown")

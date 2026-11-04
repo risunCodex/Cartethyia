@@ -49,6 +49,11 @@ import {
   isQoderCheckinProvider,
 } from "../../providers/integrations/qoder/qoder-checkin";
 import {
+  claimQoderCredits,
+  QODER_CREDIT_PROVIDER_IDS,
+  type QoderCreditClaimResult,
+} from "../../providers/integrations/qoder/claim-qoder-credits";
+import {
   DrizzleQoderNativeIdentityStore,
   type QoderNativeIdentityStore,
 } from "../../providers/integrations/qoder/qoder-native-identity-store";
@@ -1134,6 +1139,75 @@ export function registerAccountQuotaTenantRoutes(
               : result.state === "already_claimed"
                 ? "Every gift plan was claimed before"
                 : (result.detail ?? "Claim it in the ZCode app"),
+      };
+    })
+    // Qoder daily-credits claim is likewise an explicit operator action: the
+    // CREDITS campaign only surfaces with the real UMID headers, so the claim
+    // mints/binds a native identity first (same store the check-in worker uses).
+    .post("/accounts/:id/claim-qoder-credits", async ({ request, params, set }) => {
+      const access = requireTenantScope(accessResolver(request), "dashboard:write");
+      const rows = await db
+        .select()
+        .from(providerAccounts)
+        .where(
+          and(eq(providerAccounts.id, params.id), eq(providerAccounts.tenantId, access.tenantId)),
+        )
+        .limit(1);
+      const account = rows[0];
+      if (!account) {
+        set.status = 404;
+        return { error: `Account ${params.id} not found`, code: "not_found" };
+      }
+      if (!QODER_CREDIT_PROVIDER_IDS.includes(account.providerId as (typeof QODER_CREDIT_PROVIDER_IDS)[number])) {
+        set.status = 400;
+        return {
+          error: "Daily credits are only claimable for qoder accounts",
+          code: "qoder_credits_unsupported",
+        };
+      }
+      let result: QoderCreditClaimResult;
+      try {
+        const credential = await refreshDeps.resolveCredential(account.providerId as ProviderId, account.id);
+        const fetcher = networkBindingFactory
+          ? await dailyCheckinEgressForPass({ db, networkBindingFactory })(account.id, access.tenantId)
+          : globalThis.fetch;
+        result = await claimQoderCredits({ db, providerId: account.providerId, accountId: account.id, credential, fetcher });
+      } catch {
+        set.status = 502;
+        return {
+          ok: false, status: 502,
+          data: { id: account.id, state: "error", amount: 0, detail: "Qoder credit claim request failed" },
+          message: "Qoder credit claim request failed", code: "qoder_credit_claim_failed",
+        };
+      }
+      if (result.state === "claimed") {
+        // Cold readers must not resurrect the balance from before the grant.
+        await db.update(providerAccounts).set({ quotaSnapshot: null }).where(
+          and(eq(providerAccounts.id, account.id), eq(providerAccounts.tenantId, access.tenantId)),
+        );
+        await invalidateQuotaCacheForAccount(account.id, redis);
+        await snapshotInvalidator?.invalidate();
+      }
+      if (result.state === "error") {
+        set.status = 502;
+        return {
+          ok: false,
+          status: 502,
+          data: { id: account.id, ...result },
+          message: result.detail ?? "Qoder credit claim failed",
+          code: "qoder_credit_claim_failed",
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        data: { id: account.id, ...result },
+        message:
+          result.state === "nothing"
+            ? "No CREDITS campaign to claim"
+            : result.state === "claimed"
+              ? `Claimed ${result.amount} credits`
+              : "CREDITS campaign already claimed",
       };
     })
     .post("/accounts/:id/activity-report", async ({ request, params, set }) => {

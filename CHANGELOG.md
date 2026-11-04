@@ -53,6 +53,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Qoder credit usage in the Requests table.** COSY terminal frames report
   `credits`; they are now normalized into `credit_used`, so Qoder requests
   show their credit spend (Coins column) like buddy already did.
+- **Qoder daily-credits claim revalidated with the real UMID.** The daily
+  CREDITS campaign is now `act-20261102-503` (was `act-20261027-489`). A
+  claim with the **real Windows UMID** (`vendor/qoder-umid/umidpack/runtime-info.exe`)
+  succeeded (`CLAIMED` +100, ALL_MODELS, 30 days) on an account that was
+  previously same-person blocked on the old campaign — `addOnQuota` went 100 →
+  200. Confirmed the CREDITS campaign only surfaces with the genuine UMID
+  headers (generated identity keeps it hidden) and that the sash API host is
+  `openapi.qoder.sh` (not `qoder.com`), with response shape
+  `{ showCampaign, claimable, campaigns }` and claim by `campaignId` UUID.
+  Documented in `documentation/research/qoder/2026-10-29-qoder-credits-claims-identity.md`
+  (Part F).
+- **Qoder UMID bridge fallback via the vendored mini-ELF.** When the native
+  vendored ELF is absent (slim Docker containers), `qoder-umid.ts` now
+  extracts `vendor/qoder-umid/qoder-umid-mini.tar.gz` (static glibc bundle) to
+  `$XDG_CACHE_HOME/cartethyia/umid-mini` and runs it with the staged
+  `LD_LIBRARY_PATH` — so containers get a genuine UMID instead of falling back
+  to the generated identity. Bridge priority: native ELF/Mach-O → mini-ELF →
+  WSL/PE (Windows) → generated.
+- **Manual Qoder credits claim in the console.** New `POST /accounts/:id/claim-qoder-credits`
+  endpoint (mirrors ZCode's `claim-gifts`) mints/binds a native UMID, lists
+  the sash campaigns with UMID headers, and claims the CREDITS
+  `CLAIM_BENEFIT` campaign by `campaignId`. The provider-detail account row
+  gets a "Claim credits" button for qoder/qodercn accounts. Result states:
+  claimed / already_claimed / nothing / error; quota cache/snapshot invalidated
+  on a successful grant. PAT (`pt-…`) accounts are exchanged to a job token
+  first — the exchange now binds the machine identity (`machine_id` +
+  `machine_token`) like the real client, and the platform machine id
+  (`%APPDATA%/Qoder/cache/machine_token.json`) is used in the Cosy headers, so
+  the request matches the signature the server expects.
 - **Qoder probe tooling reorganized and deduplicated.** The 22 probe scripts
   under `scripts/provider-probing/qoder/` were consolidated to 13: one
   canonical chat probe (`chat/probe-qoder.ts`) absorbs the transport,
@@ -82,6 +111,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Qoder gRPC proto path on Windows.** The proto is materialized from the
   embedded source (no `file:` URL path issues), fixing `no such file or
   directory` at runtime.
+- **Quota and usage floor no longer exclude accounts from routing.** The
+  router previously dropped candidates whose quota window was exhausted or
+  below the configured floor (`quota_exhausted`), which could make a model
+  unreachable even when the operator wanted it tried — including free-tier
+  models and Qoder `qwen3.8-flash`. Quota is now an ordering-only signal
+  (`creditPriority`): exhausted/below-floor accounts stay eligible and are
+  ordered behind unknown/positive accounts, and the upstream is the one that
+  answers (its refusal is then classified into a cooldown as before). Removed
+  `belowUsageFloor`/`earliestWindowResetMs` and the floor branch from
+  `EligibilityEvaluator`; updated docs (`04-usage-floor.md`, architecture) and
+  routing tests accordingly.
+- **Per-IP abuse ceiling tuned to 540 requests/minute.** The default
+  `IP_RATE_MAX_PER_WINDOW` and the service fallback were 240 requests per
+  60 s window (4 RPS/IP), which internal/gateway-originated traffic could hit
+  and lock out legitimate requests with `rate_limited` 429. Raised to 540
+  (9 RPS/IP); ban threshold follows (1080). `.env.example`,
+  `documentation/reference/configuration.md`, and comments updated. API keys
+  remain unlimited by default (`requestsPerMinute` null when unset).
+- **Qoder UMID mini-ELF preferred in containers.** `qoder-umid.ts` now
+  detects containers (`/.dockerenv`, `/.containerenv`, or cgroup matches) and
+  uses the `qoder-umid-mini.tar.gz` bundle (static glibc, mints `isVm:false`)
+  instead of the native ELF, so a containerized deployment is not flagged as a
+  VM. `CARTETHYIA_QODER_UMID_MINI=1` forces mini on any Linux host; `=0`
+  disables the auto-detection. Non-container Linux hosts keep the native ELF.
+- **Test runner parallelism capped.** `scripts/test/run.ts` now passes
+  `--parallel=<n>` where `n = min(availableParallelism(), 4)` (override with
+  `CARTETHYIA_TEST_JOBS`), so the suite no longer pins every core (Bun 1.4+
+  defaults to all CPUs). Verified: 16-core host runs at 4x PARALLEL; env
+  override honored.
 
 ## [2.7.6] - 2026-11-04
 

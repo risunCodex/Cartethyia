@@ -15,10 +15,11 @@
  *   any legitimate test in this suite; it exists so a deadlocked test fails
  *   with a name instead of stalling CI. A test that needs to wait is written
  *   against `helpers/clock.ts` instead of sleeping.
- * - **`--parallel` is default.** Files are isolated per worker, so the database
+ * - **`--parallel` is default, capped.** Files are isolated per worker, so the database
  *   suites must scope their rows — which `helpers/fixtures.ts` does by
  *   construction. Serializing the run instead would hide a leak that the
- *   parallel run catches.
+ *   parallel run catches. Worker count is capped at 4 (or
+ *   `CARTETHYIA_TEST_JOBS`) so the suite does not pin every core.
  *
  * `--scope` picks a tree: `backend` (`test/`), `dashboard` (`dashboard/test/`),
  * `scripts` (`test/cli/`), or `all`. Integration is a separate opt-in scope.
@@ -32,7 +33,7 @@
  * the single definition of what each scope covers.
  */
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateCartethyiaEncryptionKey } from "../cli/env";
 
@@ -167,7 +168,22 @@ if (!sharedEnv.CARTETHYIA_ENCRYPTION_KEY?.trim()) {
  * scopes disjoint; see the header comment. `cwd` still matters because each tree
  * has its own `tsconfig.json` and dependency resolution (the dashboard has its
  * own `package.json`).
+ *
+ * Parallelism is capped so the suite does not pin every core (Bun 1.4+ uses
+ * all CPUs by default). We use at most `TEST_MAX_JOBS` (4) regardless of the
+ * machine, and `CARTETHYIA_TEST_JOBS` overrides it. The runner stays responsive
+ * while tests run.
  */
+const TEST_MAX_JOBS = 4;
+const testJobs = (() => {
+  const raw = process.env.CARTETHYIA_TEST_JOBS?.trim();
+  if (raw !== undefined && raw !== "") {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 1) return Math.floor(parsed);
+  }
+  return Math.min(availableParallelism(), TEST_MAX_JOBS);
+})();
+
 function runTests(cwd: string, label: string, paths: readonly string[]): Promise<number> {
   const proc = Bun.spawn(
     [
@@ -176,7 +192,7 @@ function runTests(cwd: string, label: string, paths: readonly string[]): Promise
       ...(watch ? ["--watch"] : []),
       "--timeout",
       "15000",
-      "--parallel",
+      `--parallel=${testJobs}`,
       ...paths,
       ...testArgs,
     ],

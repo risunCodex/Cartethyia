@@ -3,8 +3,8 @@
  * pooled credit are ordered ahead of unknown-quota accounts. Free-tier models
  * skip the preference — a free model routes to any account. The rank
  * (fresh → slow → cooling → saturated) stays the primary sort key; credit only
- * breaks ties inside one rank. Known-zero credit accounts are already excluded
- * by the usage-floor gate, so they never reach the ordering.
+ * breaks ties inside one rank. Quota is not an eligibility exclusion: known-zero
+ * accounts stay routed and are only ordered after unknown/positive.
  */
 import { expect, test } from "bun:test";
 import { RoutingEngine } from "../../src/transport/routing/router";
@@ -66,7 +66,7 @@ test("accounts with remaining credit are ordered before unknown-quota accounts",
   expect(order).toEqual(["a-credit", "a-unknown"]);
 });
 
-test("a known-zero credit account is excluded, never ordered ahead of unknown", async () => {
+test("a known-zero credit account is ordered after unknown, never excluded", async () => {
   const order = await plannedOrder(
     snapshot([
       candidate("a-zero", { quota_windows: [creditWindow(0)] }),
@@ -74,11 +74,12 @@ test("a known-zero credit account is excluded, never ordered ahead of unknown", 
     ]),
     "qoder-model",
   );
-  // The zero-credit account cannot serve; only the unknown one is routable.
-  expect(order).toEqual(["a-unknown"]);
+  // Quota is not an eligibility exclusion anymore: the zero-credit account is
+  // still routed, but credit priority puts the unknown (neutral) account first.
+  expect(order).toEqual(["a-unknown", "a-zero"]);
 });
 
-test("a free-tier model is still excluded when its own quota window is exhausted", async () => {
+test("a free-tier model routes even when its own quota window is exhausted", async () => {
   const order = await plannedOrder(
     snapshot([
       candidate("a-exhausted-free", { free_tier: true, quota_windows: [creditWindow(0)] }),
@@ -86,25 +87,22 @@ test("a free-tier model is still excluded when its own quota window is exhausted
     ]),
     "qoder-model",
   );
-  // Exhausted quota windows are the provider's own limit, not the credit floor:
-  // they still exclude the account even for a free-tier model.
-  expect(order).toEqual(["a-unknown-free"]);
+  // Exhausted windows no longer exclude; both accounts route, original order
+  // preserved (free tier skips credit preference).
+  expect(order).toEqual(["a-exhausted-free", "a-unknown-free"]);
 });
 
-test("a free-tier model ignores only the operator floor threshold, not exhausted windows", async () => {
+test("a free-tier model ignores the operator floor threshold entirely", async () => {
   const order = await plannedOrder(
     snapshot([
-      // 42 credits remaining is above zero but below the default 40% floor
-      // interpretation — the point is it is not exhausted, yet the floor
-      // threshold would normally skip it. Free tier ignores that threshold.
       candidate("a-above-floor-free", { free_tier: true, quota_windows: [creditWindow(42)] }),
       candidate("a-exhausted-free", { free_tier: true, quota_windows: [creditWindow(0)] }),
     ]),
     "qoder-model",
   );
-  // The non-exhausted account routes; the exhausted one stays excluded. Credit
-  // preference is skipped for free tier, so original order is preserved.
-  expect(order).toEqual(["a-above-floor-free"]);
+  // Neither account is excluded by quota; free tier skips credit preference, so
+  // original order is preserved.
+  expect(order).toEqual(["a-above-floor-free", "a-exhausted-free"]);
 });
 
 test("a free-tier model routes to any account (no credit preference)", async () => {

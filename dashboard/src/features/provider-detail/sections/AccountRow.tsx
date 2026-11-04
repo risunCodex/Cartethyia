@@ -18,6 +18,7 @@ import { lastModelCooldownAt } from "../../../components/AccountCooldown";
 import { Button } from "../../../components/ui/button";
 import { HealthEventsModal } from "../../../components/HealthEventsModal";
 import { ClaimGiftsButton } from "../../../components/ClaimGiftsButton";
+import { ClaimQoderCreditsButton } from "../../../components/ClaimQoderCreditsButton";
 import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Inline } from "../../../components/ui/inline";
@@ -376,6 +377,9 @@ export function AccountRow({
         <div className="account-row-actions flex items-center justify-end gap-3 flex-wrap">
           {providerId === "zcode-start" && !isPool && (
             <ClaimGiftsButton accountId={account.id} accountName={label} />
+          )}
+          {(providerId === "qoder" || providerId === "qodercn") && !isPool && (
+            <ClaimQoderCreditsButton accountId={account.id} accountName={label} />
           )}
           {!isPool ? (
             <Button

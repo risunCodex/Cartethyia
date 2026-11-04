@@ -12,7 +12,6 @@ supported target, no network fetch at deploy time.
 | `elf-x86_64/runtime-info` | Linux x86-64 | ELF | libstdc++/libm/libpthread/libdl/libc (glibc ≤ 2.28) — see `../qoder-umid-mini.tar.gz` for the bundled libs |
 | `elf-aarch64/runtime-info` | Linux arm64 | ELF | same set (musl hosts need gcompat) |
 | `macho-x86_64/runtime-info` | macOS Intel | Mach-O | only `/usr/lib/libSystem.B.dylib` (+ libz, libobjc, libsqlite3 — all present on every macOS) |
-| `macho-arm64/runtime-info` | macOS Apple Silicon | Mach-O | same |
 | `runtime-info.exe` + `sgsdk.dll` | Windows x64 | PE | the pair must sit in one directory (DLL is the SG engine) |
 
 CLI contract (upstream, donor-verified):

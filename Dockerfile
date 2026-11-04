@@ -104,7 +104,6 @@ COPY --from=builder --chown=cartethyia:cartethyia /build/vendor ./vendor
 RUN chmod +x \
     vendor/qoder-umid/umidpack/elf-aarch64/runtime-info \
     vendor/qoder-umid/umidpack/elf-x86_64/runtime-info \
-    vendor/qoder-umid/umidpack/macho-arm64/runtime-info \
     vendor/qoder-umid/umidpack/macho-x86_64/runtime-info
 COPY --from=builder --chown=cartethyia:cartethyia /build/dist/cartethyia ./cartethyia
 

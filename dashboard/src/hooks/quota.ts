@@ -173,6 +173,35 @@ export function useClaimAccountGifts(accountId: string) {
   });
 }
 
+/** Result of a manual Qoder daily-credits claim. */
+export interface QoderCreditClaimResult {
+  readonly state: "claimed" | "already_claimed" | "nothing" | "error";
+  readonly amount: number;
+  readonly detail: string | null;
+}
+
+/** Explicit operator action; grant invalidation mirrors `useClaimAccountGifts`. */
+export function useClaimQoderCredits(accountId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<QoderCreditClaimResult, ApiErrorShape, void>({
+    mutationFn: async () => {
+      const result = await consoleRequest<{ readonly data: QoderCreditClaimResult }>(
+        `/accounts/${encodeURIComponent(accountId)}/claim-qoder-credits`,
+        { method: "POST" },
+      );
+      return result.data;
+    },
+    onSuccess: async (result) => {
+      if (result.state !== "claimed") return;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.quota.account(accountId), exact: true }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.quota.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.providers.all }),
+      ]);
+    },
+  });
+}
+
 
 /** Aggregated result of one or more `/quota/refresh` batches. */
 export interface QuotaRefreshResult {

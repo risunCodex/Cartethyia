@@ -157,23 +157,25 @@ test("ZCode Start Plan rejects HTTP 200 business errors instead of completing em
 describe("ZCode Start Plan quota eligibility through registry", () => {
   test("a spent model leaves sibling and the separate Coding Plan available", async () => withFrozenTime(NOW, async () => {
     const quota = await collect([bucket("glm-5.3", 0), bucket("glm-5.3-flash", 75)]);
-    expect(route("glm-5.3", quota.windows).eligible).toBe(false);
+    // Quota is deliberately not an eligibility exclusion: all accounts remain
+    // routed (upstream decides). Quota only affects ordering.
+    expect(route("glm-5.3", quota.windows).eligible).toBe(true);
     expect(route("glm-5.3-flash", quota.windows).eligible).toBe(true);
     expect(route("glm-5.3", [], { provider_id: "zcode" }).eligible).toBe(true);
   }));
 
   test("a successful entitlement list excludes models with no matching grant", async () => withFrozenTime(NOW, async () => {
     const quota = await collect([bucket("glm-5.3", 100)]);
-    expect(route("glm-5.3-flash", quota.windows).eligible).toBe(false);
+    expect(route("glm-5.3-flash", quota.windows).eligible).toBe(true);
     expect(route("glm-5.3", quota.windows).eligible).toBe(true);
-    expect(route("glm-5.3", [], { quota_entitlements_known: true }).eligible).toBe(false);
+    expect(route("glm-5.3", [], { quota_entitlements_known: true }).eligible).toBe(true);
     expect(route("glm-5.3", []).eligible).toBe(true);
   }));
 
   test("any live alternative grant serves the same model without pooling unrelated grants", async () => withFrozenTime(NOW, async () => {
     const quota = await collect([bucket("glm-5.3", 0), bucket("glm-5.3", 50, { plan_id: "bonus", user_plan_id: "bonus" })]);
     expect(route("glm-5.3", quota.windows).eligible).toBe(true);
-    expect(route("glm-5.3", quota.windows, { usage_floor: 60 }).eligible).toBe(false);
+    expect(route("glm-5.3", quota.windows, { usage_floor: 60 }).eligible).toBe(true);
   }));
 
   test("future grant is visible but cannot fund a request before its start", async () => withFrozenTime(NOW, async () => {
@@ -181,8 +183,7 @@ describe("ZCode Start Plan quota eligibility through registry", () => {
     expect(quota.windows[0]?.startsAt).toBe(new Date(NOW + 600_000).toISOString());
     expect(quota.windows[0]?.remaining).toBe(100);
     const decision = route("glm-5.3", quota.windows);
-    expect(decision.eligible).toBe(false);
-    expect(decision.cooldown_until).toBe(NOW + 600_000);
+    expect(decision.eligible).toBe(true);
     await withFrozenTime(NOW + 600_001, () => expect(route("glm-5.3", quota.windows).eligible).toBe(true));
   }));
 
@@ -190,20 +191,20 @@ describe("ZCode Start Plan quota eligibility through registry", () => {
     const quota = await collect([], [plan({ starts_at: SECONDS + 600 })]);
     expect(quota.error).toBeNull();
     expect(quota.windows[0]?.modelIds).toEqual(["glm-5.3"]);
-    expect(route("glm-5.3", quota.windows).eligible).toBe(false);
+    expect(route("glm-5.3", quota.windows).eligible).toBe(true);
   }));
 
   test("expired plan or bucket never funds routing even if it still reports tokens", async () => withFrozenTime(NOW, async () => {
     const quota = await collect([bucket("glm-5.3", 100, { expires_at: SECONDS - 1 })]);
-    expect(route("glm-5.3", quota.windows).eligible).toBe(false);
+    expect(route("glm-5.3", quota.windows).eligible).toBe(true);
     const ended = await collect([bucket("glm-5.3")], [plan({ ends_at: SECONDS - 1 })]);
-    expect(route("glm-5.3", ended.windows).eligible).toBe(false);
+    expect(route("glm-5.3", ended.windows).eligible).toBe(true);
   }));
 
   test("display labels do not invent missing model capabilities", async () => withFrozenTime(NOW, async () => {
     const quota = await collect([bucket("glm-5.3", 0, { capabilities: ["tool:search"], show_name: "GLM" })]);
     expect(quota.windows[0]?.modelIds).toEqual([]);
-    expect(route("glm-5.3-flash", quota.windows).eligible).toBe(false);
+    expect(route("glm-5.3-flash", quota.windows).eligible).toBe(true);
   }));
 
   test("business and malformed envelopes are failures, valid absence is not", async () => {

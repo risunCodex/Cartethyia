@@ -88,7 +88,7 @@ Variables read outside the spec are therefore **not** listed below:
 
 | Variable | Kind | Default | Bounds |
 | --- | --- | --- | --- |
-| `IP_RATE_MAX_PER_WINDOW` | integer | 240 | 1 – 9007199254740991 |
+| `IP_RATE_MAX_PER_WINDOW` | integer | 540 | 1 – 9007199254740991 |
 | `CARTETHYIA_ENCRYPTION_KEY` | string, required | — (unset throws at startup) | — |
 | `CARTETHYIA_PUBLIC_ORIGIN` | string, required | — (unset throws at startup) | — |
 
@@ -116,6 +116,7 @@ Variables read outside the spec are therefore **not** listed below:
 | `CARTETHYIA_FORCED_GC` | flag | enabled (disabled only when literally `false`) | — |
 | `CARTETHYIA_RUNTIME_METRICS_INTERVAL_MS` | integer | 30000 | 1000 – 300000 |
 | `CARTETHYIA_DISABLED_TASKS` | comma-separated list | unset | — |
+| `CARTETHYIA_QODER_UMID_MINI` | integer | 0 | 0 – 1 |
 | `CARTETHYIA_USAGE_INPUT_MODE` | string | `inclusive` | — |
 | `CARTETHYIA_POOL_PROVIDER_RATE_LIMIT_COOLDOWN_MS` | integer | 3600000 | 0 – 86400000 |
 | `CARTETHYIA_OAUTH_CALLBACK_PORT` | integer | 59653 | 1024 – 65535 |

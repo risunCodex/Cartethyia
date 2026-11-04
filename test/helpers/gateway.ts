@@ -380,7 +380,7 @@ export async function createTestGateway(
 
   const ipAbuseProtection = new IpAbuseProtectionService(new InMemoryIpAbuseStore(), undefined, {
     // Effectively off by default: a suite that wants the limiter opts in by
-    // constructing its own service. Leaving the production default (240/min)
+    // constructing its own service. Leaving the production default (540/min)
     // would make a loop of requests trip the limiter and produce a confusing
     // 429 in an unrelated assertion.
     maxRequestsPerWindow: 1_000_000,

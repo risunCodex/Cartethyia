@@ -9,7 +9,7 @@ const ENCRYPTION_KEY_LENGTH = 32;
 
 /**
  * Per-IP request ceiling for the unauthenticated abuse-protection layer.
- * Defaults to 240 requests per window so an unset env does not mean unlimited;
+ * Defaults to 540 requests per window so an unset env does not mean unlimited;
  * operators tune it via `IP_RATE_MAX_PER_WINDOW`.
  */
 export function resolveIpRateLimit(): number {

@@ -99,6 +99,9 @@ describe("filterCandidateQuotaWindows", () => {
     expect(geminiDecision.eligible).toBe(true);
     expect(geminiDecision.reason).toBe("healthy");
 
+    // Exhausted quota is deliberately NOT an eligibility exclusion anymore: the
+    // account is still routed and the upstream is the one that answers. Quota
+    // only affects ordering (creditPriority), never eligibility.
     const claudeCandidate = {
       provider_id: "antigravity",
       model_id: "claude-sonnet-4-6",
@@ -112,7 +115,7 @@ describe("filterCandidateQuotaWindows", () => {
     } as unknown as RouteCandidate;
 
     const claudeDecision = evaluator.evaluate(claudeCandidate);
-    expect(claudeDecision.eligible).toBe(false);
-    expect(claudeDecision.reason).toBe("quota_exhausted");
+    expect(claudeDecision.eligible).toBe(true);
+    expect(claudeDecision.reason).toBe("healthy");
   });
 });
