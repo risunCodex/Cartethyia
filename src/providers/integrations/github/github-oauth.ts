@@ -244,6 +244,62 @@ async function fetchGitHubLogin(
   }
 }
 
+interface CopilotUserProfile {
+  readonly chat_enabled?: boolean;
+  readonly can_signup_for_limited?: boolean;
+}
+
+/**
+ * Reads the Copilot entitlement profile for a freshly approved GitHub token.
+ *
+ * OAuth itself succeeds for any GitHub account; entitlement is the only signal
+ * that the account can chat. Mirrors the reference OpenCode provider: an
+ * explicit `chat_enabled: false` is a denial (the account is not signed up or
+ * has no seat), and a failed/malformed lookup must not turn a GitHub hiccup
+ * into a denial — only an explicit answer blocks login.
+ */
+async function fetchGitHubCopilotEntitlement(
+  githubAccessToken: string,
+  domain: string,
+  fetchFn: FetchLike,
+  signal: AbortSignal,
+): Promise<{ denied: string } | { denied?: undefined }> {
+  try {
+    const endpoint =
+      domain === "github.com"
+        ? "https://api.github.com/copilot_internal/user"
+        : `https://api.${domain}/copilot_internal/user`;
+    const response = await fetchFn(endpoint, {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${githubAccessToken}`,
+        "user-agent": GITHUB_REQUEST_HEADERS["user-agent"]!,
+        "x-github-api-version": "2025-04-01",
+      },
+      signal,
+    });
+    if (!response.ok) return { denied: undefined };
+    const profile = record(await response.json()) as CopilotUserProfile | undefined;
+    if (profile?.chat_enabled === false) {
+      if (profile.can_signup_for_limited) {
+        return {
+          denied:
+            "This GitHub account is not signed up for GitHub Copilot. Sign up for Copilot Free at https://github.com/features/copilot/plans and connect again.",
+        };
+      }
+      return {
+        denied:
+          "This GitHub account does not have GitHub Copilot access. It needs an active Copilot subscription or a seat assigned by an organization.",
+      };
+    }
+    return { denied: undefined };
+  } catch {
+    // Entitlement is a gate, not a reliability dependency: a network glitch
+    // here must not lock out an account that did approve the login.
+    return { denied: undefined };
+  }
+}
+
 export class GithubOAuthClient extends OAuthDeviceFlow {
   override readonly supportsDeviceCode = true;
   override readonly supportsBrowserCode = false;
@@ -365,6 +421,19 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
     }
     let minted;
     try {
+      // OAuth succeeds for any GitHub account; the entitlement profile is the
+      // only signal that the account can actually chat. An explicit denial is
+      // surfaced as a failed verdict before any token is minted, mirroring the
+      // reference OpenCode provider.
+      const entitlement = await fetchGitHubCopilotEntitlement(
+        githubToken,
+        domain,
+        this.fetchFn,
+        AbortSignal.timeout(10_000),
+      );
+      if (entitlement.denied !== undefined) {
+        return { status: "failed", reason: entitlement.denied };
+      }
       minted = await mintGithubToken(githubToken, domain, this.fetchFn);
     } catch (error) {
       // The mint runs after approval: surface its reason as a failed verdict,
