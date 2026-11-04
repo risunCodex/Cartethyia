@@ -125,7 +125,8 @@ async function readSse(response: Response, maxFrames = 200): Promise<void> {
   let text = "";
   let reasoning = "";
   let modelSeen = "";
-  let debugShown = 0;
+  let rawUsage: Record<string, unknown> | undefined;
+  let rawUsagePrinted = false;
   while (frames < maxFrames) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -135,41 +136,54 @@ async function readSse(response: Response, maxFrames = 200): Promise<void> {
       const chunk = buf.slice(0, idx);
       buf = buf.slice(idx + 2);
       frames += 1;
-      if (debugShown < 5) {
-        console.log(`  [frame ${frames}] ${chunk.slice(0, 220)}`);
-        debugShown += 1;
-      }
+      // Akumulasi semua baris `data:` dalam satu event (bisa multi-line)
+      let dataParts: string[] = [];
       for (const line of chunk.split(/\r?\n/)) {
-        if (!line.startsWith("data:")) continue;
-        const data = line.slice(5).trim();
-        if (data === "[DONE]") {
-          console.log("  [DONE] received");
+        if (line.startsWith("data:")) dataParts.push(line.slice(5).trim());
+      }
+      const data = dataParts.join("");
+      if (data === "[DONE]") {
+        console.log("  [DONE] received");
+        console.log(`  model_echo=${modelSeen || "(none)"}`);
+        if (rawUsage && !rawUsagePrinted) {
+          rawUsagePrinted = true;
+          console.log(`  RAW_USAGE=${JSON.stringify(rawUsage, null, 2)}`);
+        }
+        return;
+      }
+      if (!data) continue;
+      try {
+        const json = JSON.parse(data) as {
+          model?: string;
+          choices?: Array<{ delta?: { content?: string; reasoning_content?: string }; finish_reason?: string | null }>;
+          error?: unknown;
+          usage?: unknown;
+          raw_usage?: unknown;
+        };
+        if (json.error !== undefined) {
+          console.log(`  error frame: ${JSON.stringify(json.error).slice(0, 300)}`);
           return;
         }
-        try {
-          const json = JSON.parse(data) as {
-            model?: string;
-            choices?: Array<{ delta?: { content?: string; reasoning_content?: string }; finish_reason?: string | null }>;
-            error?: unknown;
-            usage?: unknown;
-          };
-          if (json.error !== undefined) {
-            console.log(`  error frame: ${JSON.stringify(json.error).slice(0, 300)}`);
-            return;
-          }
-          if (typeof json.model === "string" && !modelSeen) modelSeen = json.model;
-          const delta = json.choices?.[0]?.delta;
-          if (delta?.content) text += delta.content;
-          if (delta?.reasoning_content) reasoning += delta.reasoning_content;
-          if (json.choices?.[0]?.finish_reason) return;
-        } catch {
-          // non-JSON data line
+        if (typeof json.model === "string" && !modelSeen) modelSeen = json.model;
+        if (json.raw_usage !== undefined && typeof json.raw_usage === "object") {
+          rawUsage = json.raw_usage as Record<string, unknown>;
         }
+        const delta = json.choices?.[0]?.delta;
+        if (delta?.content) text += delta.content;
+        if (delta?.reasoning_content) reasoning += delta.reasoning_content;
+        // Jangan return di finish_reason — raw_usage datang di frame yang sama
+        // (sebelum [DONE]), jadi lanjut sampai [DONE].
+      } catch {
+        // data terbelah / bukan JSON lengkap — lewati
       }
       idx = buf.indexOf("\n\n");
     }
   }
   console.log(`  model_echo=${modelSeen || "(none)"}`);
+  if (rawUsage && !rawUsagePrinted) {
+    rawUsagePrinted = true;
+    console.log(`  RAW_USAGE=${JSON.stringify(rawUsage, null, 2)}`);
+  }
   if (reasoning) console.log(`  reasoning: ${reasoning.slice(0, 400)}`);
   console.log(`  text: ${text.slice(0, 800) || "(no text)"}`);
   console.log(`  frames=${frames}`);

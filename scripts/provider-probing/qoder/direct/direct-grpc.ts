@@ -99,6 +99,7 @@ let reasoning = "";
 let firstModel: string | undefined;
 let chunks = 0;
 let usageStr = "";
+let extrasStr = "";
 let initialState = "";
 let finalTrailers = "";
 
@@ -112,6 +113,9 @@ stream.on("data", (chunk: GrpcChatChunk) => {
   chunks += 1;
   if (chunk.model !== undefined && firstModel === undefined) firstModel = chunk.model;
   if (chunk.usage) usageStr = JSON.stringify(chunk.usage);
+  if (chunk.extras && typeof chunk.extras === "object") {
+    extrasStr = JSON.stringify({ ...(extrasStr ? JSON.parse(extrasStr) : {}), ...chunk.extras });
+  }
   for (const choice of chunk.choices ?? []) {
     const delta = choice.delta ?? {};
     if (typeof delta.content === "string") answer += delta.content;
@@ -145,6 +149,7 @@ function printResult(): void {
   if (reasoning) console.log(`reasoning(len=${reasoning.length}): ${reasoning.slice(0, 300)}`);
   console.log(`answer(len=${answer.length}): ${answer.slice(0, 500) || "(empty)"}`);
   if (usageStr) console.log(`usage=${usageStr}`);
+  if (extrasStr) console.log(`extras=${extrasStr}`);
   if (initialState) console.log(`initial_metadata=${initialState}`);
   if (finalTrailers) console.log(`trailers=${finalTrailers}`);
   process.exit(0);

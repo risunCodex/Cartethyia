@@ -21,7 +21,8 @@
 - [6. Live Wire Capture — IDE OAuth (Qoder.exe NSIS)](#6-live-wire-capture--ide-oauth-qoderexe-nsis)
 - [7. Wire Verification Awal — QoderWake IDE Surface (2026-11-01)](#7-wire-verification-awal--qoderwake-ide-surface-2026-11-01)
 - [8. Adapter Delta Audit — Donor vs Gateway (2026-11-04)](#8-adapter-delta-audit--donor-vs-gateway-2026-11-04)
-- [9. Evidence Ledger](#9-evidence-ledger)
+- [9. Perbandingan Metadata Server — IDE/HTTP vs gRPC](#9-perbandingan-metadata-server--idehttp-vs-grpc)
+- [10. Evidence Ledger](#10-evidence-ledger)
 
 ---
 
@@ -1189,7 +1190,106 @@ Verifikasi kode gateway saat ini: URL sudah donor-exact (`/algo/api/v2/service/p
 
 ---
 
-## 9. Evidence Ledger (2026-11-05 / 2026-11-04 / 2026-11-01)
+## 9. Perbandingan Metadata Server — IDE/HTTP vs gRPC (2026-11-05)
+
+Sumber: live direct hit ulang (cmodel, OAuth `dt-`, 2026-11-05) — IDE/HTTP
+via `direct-ide-http.ts`, gRPC via `direct-grpc.ts`.
+
+### 9.1 Tabel perbandingan
+
+| Metadata | **IDE/HTTP** (`/model/v1`) | **gRPC** (`ChatService`) |
+|---|---|---|
+| model echo | `model: "cmodel"` (tiap chunk) | `model: "cmodel"` (di chunk) |
+| **raw_usage / strategi** | ✅ KAYA (lihat 9.2) | ❌ tidak ada |
+| usage | `raw_usage.data` (`input_tokens`, `output_tokens`, `cache_read/creation_input_tokens`) | `usage: {prompt_tokens, completion_tokens, total_tokens, prompt_tokens_details, completion_tokens_details}` |
+| server headers | `req-cost-time`, `x-envoy-upstream-service-time`, `alt-svc h3`, `server: istio-envoy`, `x-request-id` | sama persis |
+| trailers | — (SSE) | `x-request-id` |
+| latency | `ttft` 6222ms (di raw_usage) | `req-cost-time` 4732ms |
+| `account_discount` | ✅ 0.9 | ❌ |
+
+### 9.2 `raw_usage` — hanya di IDE/HTTP (opsional, tidak selalu dikirim)
+
+Contoh A (2026-11-05, capture `flows2/219`):
+
+```json
+{
+  "task_mode": "",
+  "model": "3rd-claude5.1-fable",
+  "model_level": "cmodel",
+  "target": "a-f51-[inner-model-routify]-260806-W5XoKpMc",
+  "provider_model": "claude-fable-5-1-cc",
+  "account_discount": 0.9,
+  "ttft": 6222,
+  "data": {
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "input_tokens": 34,
+    "output_tokens": 33
+  }
+}
+```
+
+Contoh B (2026-11-05, direct hit ulang — backend berbeda!):
+
+```json
+{
+  "task_mode": "",
+  "model": "aws-claude5.1-fable",
+  "model_level": "cmodel",
+  "target": "a-f51-[156808794280]-us-east-1-vC5Dah8=",
+  "model_account": "taidong261103-1",
+  "provider_model": "arn:aws:bedrock:us-east-1:156808794280:application-inference-profile/kdujtpi0bsz7",
+  "account_discount": 0.95,
+  "ttft": 3287,
+  "data": { "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "input_tokens": 32, "output_tokens": 123 },
+  "model_context": {
+    "client_type": "unknown",
+    "data_policy_preferred_count": 0,
+    "from_model": "aws-claude5.1-fable",
+    "has_data": true,
+    "image_count": 0,
+    "intention": "ignored",
+    "router_strategy_name": "cmodel_default",
+    "router_strategy_type": "single",
+    "scheduler_times": 1,
+    "target_id": "a-f51-[156808794280]-us-east-1-vC5Dah8=",
+    "task_mode": "",
+    "time_of_scheduler": 2,
+    "use_bailian_safe_mode": false,
+    "use_data_mask": false,
+    "workspace_code_language": [],
+    "workspace_file_count": -1
+  },
+  "supply_account": "156808794280",
+  "supply_region": "us-east-1",
+  "supply_model": "claude-fable-5-1"
+}
+```
+
+Insight:
+- Slot `cmodel` (Cantus) di-back model Claude 5.1 Fable, **tapi backend bisa
+  berubah antar request**: contoh A via `3rd-claude5.1-fable` (inner-model
+  routify), contoh B via **AWS Bedrock us-east-1**
+  (`arn:aws:bedrock:...application-inference-profile/kdujtpi0bsz7`).
+- `target`/`target_id` menamakan aturan routify; `router_strategy_name:
+  cmodel_default`, `router_strategy_type: single`.
+- `account_discount` bervariasi (0.9 / 0.95) — diskon akun.
+- **`raw_usage` tidak selalu dikirim** — observasi live: muncul pada sebagian
+  run, tidak pada run lain (opsional/probabilistik). Parser harus toleran.
+
+### 9.3 Kesimpulan
+
+- **IDE/HTTP jauh lebih kaya metadata strategi** — cocok untuk observability
+  (provider asli, routing target, diskon, ttft), **ketika `raw_usage` hadir**.
+- `raw_usage` **opsional/tidak konsisten** — jangan jadikan kontrak wajib.
+- gRPC hanya memberi model echo + usage sederhana + timing server.
+- Untuk menebak model asli per slot, **IDE/HTTP adalah satu-satunya surface**
+  yang meng-expose `provider_model`/`supply_model` (konsisten dengan riset
+  `raw_usage`, 2026-11-04).
+
+---
+
+## 10. Evidence Ledger (2026-11-05 / 2026-11-04 / 2026-11-01)
 
 Digabung dari [18] (live CLI), [16] (IDE/HTTP), [13] (gRPC), [17] (IDE OAuth), [9] (delta audit), [21] (header per surface), [2] Part B (QoderWake).
 
