@@ -147,7 +147,11 @@ export const QODER_INTL_MODEL_CONFIGS: Readonly<Record<string, QoderModelConfig>
   smodel: { id: "smodel", display_name: "Sonus", max_input_tokens: 1000000, max_output_tokens: 128_000, is_vl: true, is_free: false, is_reasoning: true, default_reasoning_effort: "high" },
   cmodel: { id: "cmodel", display_name: "Cantus", max_input_tokens: 1000000, max_output_tokens: 128_000, is_vl: true, is_free: false, is_reasoning: true, default_reasoning_effort: "high" },
   qmodel_38max: { id: "qmodel_38max", display_name: "Qwen3.8-Max", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_reasoning: true },
-  qfmodel: { id: "qfmodel", display_name: "Qwen3.8-Flash", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_free: true, is_reasoning: true },
+  // `qfmodel` is billed, not free: upstream's live `is_free: true` for this
+  // slot is a plan-tier flag, not a zero-cost tier — a free account gets
+  // `quota exceeded` (116) when dispatching it. The only truly free slot is
+  // `lite`. Do not re-add `is_free` here.
+  qfmodel: { id: "qfmodel", display_name: "Qwen3.8-Flash", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_reasoning: true },
   qmodel_latest: { id: "qmodel_latest", display_name: "Qwen3.7-Max", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_reasoning: false },
   qmodel: { id: "qmodel", display_name: "Qwen3.7-Plus", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_reasoning: false },
   kmodel_latest: { id: "kmodel_latest", display_name: "Kimi-K3.1-Pro", max_input_tokens: 1000000, max_output_tokens: 131_072, is_vl: true, is_free: false, is_reasoning: false },

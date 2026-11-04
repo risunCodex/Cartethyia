@@ -108,7 +108,9 @@ describe("Qoder dispatch surface", () => {
       return streamOk();
     }) as typeof fetch;
     const adapter = createQoderAdapter();
-    await collect(adapter, fetcher);
+    // `lite` is the only free tier row (`is_free: true`); a free-tier account
+    // that the modern surface refuses on 402/116 streams on legacy COSY.
+    await collect(adapter, fetcher, "lite");
     expect(calls).toBe(2);
     expect(urls[0]).toContain("/model/v1/chat/completions");
     expect(urls[1]).toContain("/algo/api/v2/service/pro/sse/agent_chat_generation");
