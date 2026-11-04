@@ -319,7 +319,7 @@ SDK Cloud Agents menggunakan `fetchImpl = globalThis.fetch` standar dengan `redi
 | E20 | Proto gRPC lengkap | `src/providers/integrations/qoder/chat-proto.ts` (sumber: vendor `chat.proto`, client v1.1.81) |
 | E21 | Adapter: OAuth device flow & refresh | `src/providers/integrations/qoder/qoder-oauth.ts` (`QODER_DEVICE_TOKEN_URL`, dt-/drt-, refresh) |
 | E22 | Adapter: umid bridge | `src/providers/integrations/qoder/qoder-umid.ts` (runtime-info ELF/PE/Mach-O, seed `.locale_cfg`, WSL) |
-| E23 | Riset gRPC 1M ctx & wire audit | `documentation/research/qoder/2026-11-04-qoder-grpc-1m-context.md`, `2026-11-04-qoder-wire-delta-audit.md` |
+| E23 | Riset gRPC 1M ctx & wire audit | `documentation/research/qoder/2026-11-04-qoder-grpc-1m-context.md` (payload limits: `documentation/research/qoder/live/2026-11-05-qoder-payload-limits.md`; delta audit: `documentation/research/qoder/live/2026-11-05-qoder-wire-reference-adapter-alignment.md` §4) |
 
 ---
 

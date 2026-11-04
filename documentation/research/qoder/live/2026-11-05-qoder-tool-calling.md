@@ -15,7 +15,7 @@
 
 ## 2. Probe Live — IDE/HTTP + gRPC (2026-11-05)
 
-**Sumber:** [22] `2026-11-05-qoder-toolcalling-probe.md` — probe live via `direct-toolcall.ts`: request dengan satu tool `get_weather` (schema: `{city: string}`) + prompt "Panggil tool get_weather dengan kota Jakarta". OAuth `dt-`, model `cmodel` (Cantus). Surfaces: IDE/HTTP (`/model/v1`) + gRPC (`ChatService`); COSY di-skip.
+**Sumber:** probe live `direct-toolcall.ts` (2026-11-05): request dengan satu tool `get_weather` (schema: `{city: string}`) + prompt "Panggil tool get_weather dengan kota Jakarta". OAuth `dt-`, model `cmodel` (Cantus). Surfaces: IDE/HTTP (`/model/v1`) + gRPC (`ChatService`); COSY di-skip.
 
 ### 2.1 Hasil (kedua surface 200/0, tool args populated)
 
@@ -75,7 +75,7 @@ OpenAI-shaped, didukung dua surface:
 
 ## 3. Postmortem — 2026-11-03 (full)
 
-**Sumber:** [4] `2026-11-03-qoder-tool-call-investigation.md` — investigasi defect tool-calling Qoder lewat gateway lokal Cartethyia (`CarteLocal` di `127.0.0.1:12800`). Dokumen ini adalah sumber tunggal kebenaran untuk gejala, hipotesis, bukti, root cause, fix, dan verifikasi sesi 2026-11-03.
+**Sumber:** investigasi defect tool-calling Qoder lewat gateway lokal Cartethyia (`CarteLocal` di `127.0.0.1:12800`), 2026-11-03. Dokumen ini adalah sumber tunggal kebenaran untuk gejala, hipotesis, bukti, root cause, fix, dan verifikasi sesi 2026-11-03.
 
 ### 3.1 TL;DR (dua defect)
 
@@ -196,7 +196,7 @@ Continuation fragments kini jatuh ke pemetaan id yang di-pin `index` (atau `last
 - `src/providers/integrations/qoder/qoder.ts` — Fix #1 (empty id), Fix #2 (sniff + progressive stream, removed drain code).
 - `test/providers/integrations/qoder-continuation-args.test.ts` — regression tests: empty-id continuation rejoin; parallel calls with empty-id continuations keep distinct identities.
 - `documentation/reference/known-issues.md` — issue #1 updated with account routing + empty-id root cause + streaming fix.
-- `documentation/research/qoder/2026-11-03-qoder-tool-call-matrix.md` — matrix updated to populated; notes for root causes.
+- `documentation/research/qoder/live/2026-11-05-qoder-tool-calling.md` — matrix updated to populated; notes for root causes.
 
 **Decisions**
 
@@ -211,7 +211,7 @@ Continuation fragments kini jatuh ke pemetaan id yang di-pin `index` (atau `last
 
 ## 4. Matrix Historis — via CarteLocal (2026-11-03)
 
-**Sumber:** [5] `2026-11-03-qoder-tool-call-matrix.md` — verifikasi live lewat gateway dev (CarteLocal di `127.0.0.1:12800`): chat completions dengan satu tool `bash` function, varian `tool_choice`, stream + non-stream, 4 trials per kombinasi. Termasuk koreksi 2026-11-04.
+**Sumber:** verifikasi live lewat gateway dev (CarteLocal di `127.0.0.1:12800`): chat completions dengan satu tool `bash` function, varian `tool_choice`, stream + non-stream, 4 trials per kombinasi. Termasuk koreksi 2026-11-04.
 
 ### 4.1 Hasil (6 slot) — 2026-11-03
 
@@ -243,9 +243,7 @@ Bacaan historis saat itu (sebelum koreksi): finish reason benar `tool_calls` dan
 > behavior") was **wrong** — the empty arguments were gateway adapter bugs
 > (free-account routing, empty-`id` continuation handling, and, on the billed
 > gRPC path, a missing `tools` request + Struct-wrapped response decoding).
-> All are fixed; see `2026-11-04-qoder-grpc-tools.md` and
-> `2026-11-04-qoder-wire-delta-audit.md`. The matrix below is retained as the
-> historical record.
+> All are fixed. The matrix below is retained as the historical record.
 
 Perbaikan di hari yang sama (2026-11-03, setelah root cause ditemukan) dan konsekuensinya:
 

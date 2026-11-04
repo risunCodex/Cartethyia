@@ -24,9 +24,7 @@ misattributed to upstream/model behavior.
 **Status: RESOLVED.** Live-verified end-to-end — tool calls stream with full
 arguments, no retry, no reset. The workaround (routing to "populated" slots /
 `openai-compatible`) is no longer needed. Evidence:
-`documentation/research/qoder/2026-11-03-qoder-tool-call-investigation.md`,
-`documentation/research/qoder/2026-11-04-qoder-grpc-tools.md`,
-`documentation/research/qoder/2026-11-04-qoder-wire-delta-audit.md`.
+`documentation/research/qoder/live/2026-11-05-qoder-tool-calling.md` (§3–4).
 
 ---
 

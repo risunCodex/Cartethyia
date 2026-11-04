@@ -2,8 +2,8 @@
 
 **Tanggal konsolidasi:** 2026-11-05
 **Sumber:**
-- [11] `2026-11-05-qoder-cosy-wasm-deepdive.md` (2026-11-05) — deep-dive alur COSY + WASM signing (worker NSIS 0.5.3)
-- [2] `2026-11-01-qoder-chat-wire-verification.md` (2026-11-01) — **Part A saja** (native plugin vs adapter)
+- [11] `2026-11-05-qoder-cosy-wasm-deepdive.md` — deep-dive alur COSY + WASM signing (worker NSIS 0.5.3; sumber dihapus saat konsolidasi — isi substantif dipertahankan pada dokumen ini)
+- [2] `2026-11-01-qoder-chat-wire-verification.md` (2026-11-01) — **Part A saja** (native plugin vs adapter; sumber dihapus saat konsolidasi)
 - Rujukan silang: [23] NSIS §8 (`2026-11-05-qoder-win-nsis-0.5.3-audit.md`), [14] IDE §8 (`2026-11-05-qoder-ide-1.38-audit.md`), [1] credits Part C/E/G (`2026-11-05-qoder-credits-claims-identity.md`)
 
 ## Daftar Isi

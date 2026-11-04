@@ -1,9 +1,8 @@
 # Qoder — Model Matrix & Roster Metadata (konsolidasi 2026-11-05)
 
-**Konsolidasi dari:**
-[`2026-11-05-qoder-model-matrix-pass.md`](2026-11-05-qoder-model-matrix-pass.md) (final 150/150) ·
-[`2026-11-05-qoder-model-matrix.md`](2026-11-05-qoder-model-matrix.md) (snapshot awal 139/150) ·
-[`2026-11-04-qoder-probe-provider-metadata.md`](../qoder/2026-11-04-qoder-probe-provider-metadata.md) (roster metadata `raw_usage`).
+**Konsolidasi dari** (file sumber dihapus saat merge; data final ada di bawah):
+- Run `model-matrix.ts` 150/150 (final) & snapshot 139/150 (awal) — hasil di `D:\tmp\qoder-sandbox\results\`.
+- Roster metadata `raw_usage` (2026-11-04) — via console probe `POST /console/api/providers/qoder/models/probe` + dashboard model cards.
 
 > Konteks dari riset Qoder 2026-11-04 s/d 2026-11-05. Tanggal sumber
 > dipertahankan per section. Tabel & blok kode dijaga verbatim.
@@ -22,7 +21,7 @@
 
 ## 1. Hasil Final — 150/150
 
-_Sumber: [`2026-11-05-qoder-model-matrix-pass.md`](2026-11-05-qoder-model-matrix-pass.md) (2026-11-05)._
+_Run final `model-matrix.ts` (2026-11-05)._
 
 **Metode:** `model-matrix.ts` — 15 model × 2 surface (ide, grpc) × 5 case
 = 150 run. OAuth `dt-`. Concurrency 5, timeout 120s.
@@ -73,7 +72,7 @@ paksaan/koersif. Prompt netral menyelesaikannya.
 
 ## 2. Snapshot Awal — 139/150 (sebelum fix)
 
-_Sumber: [`2026-11-05-qoder-model-matrix.md`](2026-11-05-qoder-model-matrix.md) (2026-11-05) — snapshot pra-fix; riwayat kegagalan._
+_Snapshot pra-fix `model-matrix.ts` (2026-11-05); riwayat kegagalan._
 
 **Metode:** `model-matrix.ts` — 15 model roster (1.1.83) × 2 surface (IDE/HTTP
 `/model/v1`, gRPC `ChatService`) × 5 case (plain, tools, tools_none,
@@ -259,7 +258,7 @@ _Sintesis [19] §6 (awal) + [20] §2/§3 (final) — 2026-11-05._
 
 ## 7. Roster Metadata — `raw_usage` (supply model / region / target)
 
-_Sumber: [`2026-11-04-qoder-probe-provider-metadata.md`](../qoder/2026-11-04-qoder-probe-provider-metadata.md) (2026-11-04)._
+_Capture console probe (2026-11-04); format `raw_usage` terminal — lihat juga `documentation/research/qoder/live/2026-11-05-qoder-wire-reference-adapter-alignment.md` §5–6._
 
 Live capture of the provider metadata the IDE surface (`/model/v1`) echoes in
 its terminal `raw_usage` frame for every Qoder roster key. This is the trusted
