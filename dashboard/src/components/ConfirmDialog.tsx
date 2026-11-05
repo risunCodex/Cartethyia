@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "./ui/button";
 import { Dialog } from "./ui/dialog";
 import { DialogActions } from "./ui/dialog-actions";
@@ -22,6 +22,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   danger,
+  children,
 }: {
   open: boolean;
   onClose: () => void;
@@ -31,6 +32,7 @@ export function ConfirmDialog({
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  children?: ReactNode;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -61,6 +63,7 @@ export function ConfirmDialog({
         <p className="text-body text-text-secondary leading-normal">
           {message}
         </p>
+        {children}
         {error ? (
           <p role="alert" className="text-caption text-red">
             {error}

@@ -36,6 +36,8 @@ import { createLiveRoutes } from "./observability/live";
 import { createLogRoutes } from "./observability/logs";
 import { createAuditRoutes } from "./audit/routes";
 import { DrizzleAuditReadStore } from "./audit/store";
+import { createIpBanRoutes } from "./ip-bans/routes";
+import type { IpAbuseStore } from "../security/abuse";
 import { createPerformanceRoutes } from "./observability/performance";
 import { createUpdateRoutes } from "./updates/routes";
 import { createRemoteSupportRoutes } from "./remote-support/routes";
@@ -82,6 +84,11 @@ import type { ConsoleAccessResolver } from "./auth/access";
 export interface ConsoleDomainContext {
   readonly db: CartethyiaDatabase;
   readonly accessResolver: ConsoleAccessResolver;
+  /**
+   * The IP-abuse store backing manual IP bans and the live ban list. Absent
+   * (reduced compositions) means the IP-ban routes are not offered.
+   */
+  readonly ipAbuseStore?: IpAbuseStore;
   readonly providerRegistry: ProviderRegistry;
   readonly bundledModelCatalog: BundledProviderCatalog;
   readonly networkBindingFactory: ValidatedNetworkBindingFactory;
@@ -271,6 +278,12 @@ export function registerConsoleDomains(
     service: createRemoteSupportService({ port: resolvePort() }),
   }));
   console.use(createAuditRoutes({ store: auditReadStore, accessResolver: ctx.accessResolver }));
+  if (ctx.ipAbuseStore) {
+    console.use(createIpBanRoutes({
+      accessResolver: ctx.accessResolver,
+      store: ctx.ipAbuseStore,
+    }));
+  }
   // InferHub market data. On demand only: a route fetches when its snapshot is
   // past its freshness window, so a page nobody opens causes no upstream calls.
   const inferhubKeys = createInferhubKeyStore(ctx.db);

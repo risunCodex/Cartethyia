@@ -84,6 +84,7 @@ const app = boot
         oauthRefreshService: boot.deps.oauthRefreshService,
         admissionService: boot.deps.admissionService,
         readRoutingAccountInflight: boot.deps.readRoutingAccountInflight,
+        ipAbuseStore: boot.deps.ipAbuseStore,
         // The same three writers the shutdown coordinator drains, so a manual
         // flush from the console does exactly what a graceful stop would do
         // for the queues, minus the stop.

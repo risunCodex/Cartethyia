@@ -39,7 +39,7 @@ import { setPendingUsageSource } from "../security/api-key-auth";
 import { HealthEventFlushBuffer, setHealthEventBuffer } from "../persistence/health-event-flush";
 import { subscribePeerSettingsRevisions } from "../persistence/settings-revision";
 import { deleteExpiredSessions } from "../console/auth/session-service";
-import { InMemoryIpAbuseStore, IpAbuseProtectionService, RedisIpAbuseStore } from "../security/abuse";
+import { InMemoryIpAbuseStore, IpAbuseProtectionService, RedisIpAbuseStore, type IpAbuseStore } from "../security/abuse";
 import { checkReadiness } from "../persistence/readiness";
 import { ProxyRequestPreparer } from "../transport/request/preparer";
 import { DrizzleNetworkPoolLoader } from "../network/pool/loader";
@@ -104,6 +104,8 @@ export interface ProductionDeps {
   proxyPreparer: ProxyRequestPreparer;
   networkBindingFactory: ValidatedNetworkBindingFactory;
   ipAbuseProtection: IpAbuseProtectionService;
+  /** The abuse store backing manual IP bans and the ban list. */
+  ipAbuseStore: IpAbuseStore;
   readiness: () => Promise<ReadinessCheckResult>;
   scheduledTasks: ScheduledTaskRegistry;
   poolAgentResolver: PoolAgentResolver;
@@ -739,6 +741,7 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
     }),
     networkBindingFactory,
     ipAbuseProtection,
+    ipAbuseStore: ipStore,
     readiness,
     scheduledTasks,
     poolAgentResolver,

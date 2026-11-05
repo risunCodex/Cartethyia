@@ -270,6 +270,41 @@ describe("ip abuse — memory bounds", () => {
   });
 });
 
+describe("manual IP bans (console)", () => {
+  test("ban blocks the identity immediately and listBans reports it", async () => {
+    const { service, store, clock } = createService({ banDurationMs: 60_000 });
+    await store.ban("10.1.2.3", 60_000);
+    const bans = await store.listBans();
+    expect(bans).toHaveLength(1);
+    expect(bans[0]?.identity).toBe("10.1.2.3");
+    expect(bans[0]?.bannedUntil).not.toBeNull();
+
+    const err = await attempt(service, "10.1.2.3");
+    expect(err?.status).toBe(429);
+    expect(err?.details["reason"]).toBe("ip-banned");
+    clock.advance(61_000);
+    expect(await store.listBans()).toHaveLength(0);
+  });
+
+  test("permanent ban (0 ms) lists with null bannedUntil and never lapses", async () => {
+    const { store, clock } = createService({});
+    await store.ban("10.1.2.4", 0);
+    const bans = await store.listBans();
+    expect(bans[0]?.bannedUntil).toBeNull();
+    clock.advance(10 * 365 * 86_400_000);
+    expect(await store.listBans()).toHaveLength(1);
+  });
+
+  test("unban lifts a manual ban", async () => {
+    const { service, store } = createService({});
+    await store.ban("10.1.2.5", 60_000);
+    await store.unban("10.1.2.5");
+    expect(await store.listBans()).toHaveLength(0);
+    const err = await attempt(service, "10.1.2.5");
+    expect(err).toBeNull();
+  });
+});
+
 /** `attempt` with an explicit abort signal. */
 async function attemptWithSignal(
   service: IpAbuseProtectionService,

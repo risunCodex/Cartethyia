@@ -35,12 +35,18 @@ import type { ProviderRegistry } from "../providers/provider-registry";
 import type { BundledProviderCatalog } from "../providers/operations/provider-catalog-service";
 import type { ValidatedNetworkBindingFactory } from "../network/pool/resolver";
 import type { TrustedProxyBoundary } from "../config/network";
+import type { IpAbuseStore } from "../security/abuse";
 import { gzipResponse } from "./response-compression";
 import { beginConsoleActivity } from "../shared/invoke-guard";
 
 export interface ConsoleApiCompositionDeps {
   readonly db: CartethyiaDatabase;
   readonly accessResolver: ConsoleAccessResolver;
+  /**
+   * The IP-abuse store backing manual IP bans and the live ban list. Absent
+   * (reduced compositions) means the IP-ban routes are not offered.
+   */
+  readonly ipAbuseStore?: IpAbuseStore;
   /**
    * Drops the cached route snapshot after a console write changes the catalog.
    * Structurally satisfied by `RouteSnapshotService`; declared here so the
@@ -222,6 +228,7 @@ export function createConsoleRouter(deps: ConsoleApiCompositionDeps): AnyElysia 
     telemetryBuffer,
     ...(deps.stateStore ? { stateStore: deps.stateStore } : {}),
     ...(deps.shareStore ? { shareStore: deps.shareStore } : {}),
+    ...(deps.ipAbuseStore ? { ipAbuseStore: deps.ipAbuseStore } : {}),
     providerRegistry: deps.providerRegistry,
     bundledModelCatalog: deps.bundledModelCatalog,
     networkBindingFactory: deps.networkBindingFactory,
