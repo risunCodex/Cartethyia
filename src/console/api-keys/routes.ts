@@ -80,18 +80,24 @@ function parseSharedChildrenQuery(query: URLSearchParams): SharedChildrenPageOpt
 
 export function createApiKeyOperations(config: ApiKeyConfig) {
   const operations = {
-    async listKeys(access: AccessDecision | undefined): Promise<ApiKeyResponse[]> {
+    async listKeys(access: AccessDecision | undefined, includeChildren = false): Promise<ApiKeyResponse[]> {
         const authorized = requireTenantScope(access, "dashboard:read");
         const records = await config.store.list(authorized.tenantId);
         const topLevel = records.filter(
           (record) => record.revokedAt === undefined && record.parentKeyId === undefined,
         );
+        // Share children are omitted from the main key list (they belong to a
+        // template), but the Banned Users search wants them so a child can be
+        // found and banned by hand.
+        const visible = includeChildren
+          ? records.filter((record) => record.revokedAt === undefined)
+          : topLevel;
         // A share template's own counter is the live family accumulator now:
         // every recipient commit adds to it (see ApiKeyAdmissionService
         // commitUsage), so reporting it raw gives the enforced family total.
         // No telemetry add-on is needed, and adding it here would double-count.
         return Promise.all(
-          topLevel.map(async (record) => {
+          visible.map(async (record) => {
             const response = sanitizeApiKeyResponse(record);
             if (record.keyMode !== "share") return response;
             return response;
@@ -921,9 +927,10 @@ function jsonNull(): Response {
 export function createApiKeyRoutes(config: ApiKeyConfig): AnyElysia {
   const factory = createApiKeyOperations(config);
   return new Elysia({ prefix: "/api-keys" })
-    .get("/", async ({ request, set }) => {
+    .get("/", async ({ request, set, query }) => {
       try {
-        return await factory.listKeys(config.accessResolver(request));
+        const includeChildren = query?.["includeChildren"] === "1" || query?.["includeChildren"] === "true";
+        return await factory.listKeys(config.accessResolver(request), includeChildren);
       } catch (error) {
         return errorResponse(error, set, "API-key operation failed");
       }

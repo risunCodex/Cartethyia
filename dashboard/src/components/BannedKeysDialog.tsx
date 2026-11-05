@@ -13,7 +13,7 @@ import { getErrorMessage } from "../data/api";
 import type { ApiKeyResponse } from "../data/contracts";
 import { API_KEY_BAN_REASONS } from "../data/contracts";
 import { BAN_DURATION_CHOICES, DEFAULT_BAN_CHOICE } from "../lib/ban-durations";
-import { useApiKeys, useBanApiKey, useBannedApiKeys, useUnbanApiKey } from "../hooks/api-keys";
+import { useAllApiKeys, useBanApiKey, useBannedApiKeys, useUnbanApiKey } from "../hooks/api-keys";
 import { useBanIp, useIpBans, useUnbanIp } from "../hooks/ip-bans";
 
 /**
@@ -54,7 +54,7 @@ export function BannedKeysDialog({
   const [ipMinutes, setIpMinutes] = useState<string>(String(DEFAULT_BAN_CHOICE.minutes ?? ""));
   const [unbanIpTarget, setUnbanIpTarget] = useState<string | null>(null);
 
-  const keysQuery = useApiKeys();
+  const keysQuery = useAllApiKeys();
   const bannedQuery = useBannedApiKeys();
   const ban = useBanApiKey();
   const unban = useUnbanApiKey();
@@ -119,12 +119,12 @@ export function BannedKeysDialog({
           <div className="flex rounded-control border border-inner-border overflow-hidden">
             <button type="button"
               onClick={() => setTab("keys")}
-              className={`px-4 py-2 text-badge font-semibold cursor-pointer ${tab === "keys" ? "bg-accent text-text-on-accent" : "text-text-secondary hover:bg-surface-hover"}`}>
+              className={`px-4 py-2 text-badge font-semibold cursor-pointer ${tab === "keys" ? "bg-accent text-accent-foreground" : "text-text-secondary hover:bg-surface-hover"}`}>
               API Keys
             </button>
             <button type="button"
               onClick={() => setTab("ips")}
-              className={`px-4 py-2 text-badge font-semibold cursor-pointer ${tab === "ips" ? "bg-accent text-text-on-accent" : "text-text-secondary hover:bg-surface-hover"}`}>
+              className={`px-4 py-2 text-badge font-semibold cursor-pointer ${tab === "ips" ? "bg-accent text-accent-foreground" : "text-text-secondary hover:bg-surface-hover"}`}>
               IP Bans
             </button>
           </div>
@@ -153,6 +153,11 @@ export function BannedKeysDialog({
                         <tr key={key.id}>
                           <td className="font-mono tabular-nums text-badge text-text-primary whitespace-nowrap">
                             {key.label || key.id.slice(0, 8)}
+                            {key.parentKeyId ? (
+                              <span className="ml-2 rounded-control border border-inner-border bg-surface-2 px-2 py-0.5 text-micro font-semibold text-text-secondary">
+                                child / share
+                              </span>
+                            ) : null}
                           </td>
                           <td className="text-badge text-text-secondary">
                             {key.revokedAt ? "revoked" : key.bannedAt ? "banned" : key.enabled ? "enabled" : "disabled"}
