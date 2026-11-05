@@ -105,7 +105,9 @@ describe("canonical SQL telemetry reader", () => {
       expect(summary.requests).toBe(10);
       expect(summary.inputTokens).toBe(100);
       expect(summary.outputTokens).toBe(50);
-      expect(summary.cachedInputTokens).toBe(10);
+      // The "eligible request" rule: every row carries a positive cached count
+      // (1), so the whole prompt counts as cached.
+      expect(summary.cachedInputTokens).toBe(100);
       expect(summary.sampled).toBe(10);
       // Nearest-rank percentiles on SQLite: p50 <= p95 <= p99, in range.
       expect(summary.latencyMs.p50).not.toBeNull();
@@ -133,6 +135,27 @@ describe("canonical SQL telemetry reader", () => {
       expect(isGatewayError("failed", 500)).toBe(true);
       expect(isGatewayError("failed", 503)).toBe(false);
       expect(isGatewayError(null, 500)).toBe(false);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("cached totals follow the eligible-request rule (any cache => whole input)", async () => {
+    const fx = await fixture();
+    try {
+      // Hit: carries cache -> whole input counts as cached.
+      await insertEvent(fx, { inputTokens: 1_000, cachedInputTokens: 900 });
+      // Miss: no cache -> nothing counts as cached.
+      await insertEvent(fx, { inputTokens: 500, cachedInputTokens: null });
+      // Miss: zero cache (reported unavailable as 0) -> nothing counts.
+      await insertEvent(fx, { inputTokens: 300, cachedInputTokens: 0 });
+      const { summary } = await summarizeUsageWithPerformance(fx.db, fx.tenantId, new Date(0));
+      expect(summary.inputTokens).toBe(1_800);
+      expect(summary.cachedInputTokens).toBe(1_000);
+
+      const groups = await breakdownTelemetry(fx.db, fx.tenantId, "model", new Date(0));
+      const byKey = new Map(groups.map((group) => [group.key, group]));
+      expect(byKey.get("p/m")?.cachedInputTokens).toBe(1_000);
     } finally {
       fx.cleanup();
     }

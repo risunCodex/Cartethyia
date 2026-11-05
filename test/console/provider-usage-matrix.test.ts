@@ -102,7 +102,9 @@ describe("providerUsageMatrix", () => {
       expect(glmA).toBeDefined();
       expect(glmA?.requests).toBe(2);
       expect(glmA?.inputTokens).toBe(110);
-      expect(glmA?.cachedInputTokens).toBe(40);
+      // Eligible-request rule: the row that touched cache (input 100) counts
+      // its whole input; the no-cache row contributes nothing.
+      expect(glmA?.cachedInputTokens).toBe(100);
       expect(glmA?.outputTokens).toBe(55);
       expect(glmA?.costUsd).toBeCloseTo(0.001, 6);
       const dsA = rows.find((row) => row.day === "2026-10-20" && row.model === "ds-m");

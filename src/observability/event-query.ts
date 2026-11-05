@@ -41,11 +41,26 @@ export const IS_GATEWAY_ERROR_SQL = gatewayErrorSql(telemetryEvents.status, tele
  * cannot drift; the sum fragments coalesce to 0 so an empty window reads as
  * zero rather than null.
  */
+/**
+ * Cached-token aggregate under the "eligible request" rule.
+ *
+ * A request that carried any cached input (`cached_input_tokens > 0`) is a
+ * cache hit, and the WHOLE prompt is read as cached — the operator's rule is
+ * binary per request, not proportional (see the Usage page's "Cached tokens"
+ * tile and the provider Activity Matrix). So the aggregate is the sum of
+ * `input_tokens` over rows with a positive cached count, not the sum of the
+ * cached counts themselves.
+ *
+ * This reuses the same column the row-level estimator writes
+ * (`cached_input_tokens`), so it stays consistent across SQLite and Postgres.
+ */
+const CACHED_INPUT_TOKENS_SQL = sql<number>`coalesce(sum(case when ${telemetryEvents.cachedInputTokens} > 0 then ${telemetryEvents.inputTokens} else 0 end), 0)`;
+
 const AGGREGATE_SELECT = {
   errors: sql<number>`sum(case when ${IS_GATEWAY_ERROR_SQL} then 1 else 0 end)`,
   inputTokens: sql<number>`coalesce(sum(${telemetryEvents.inputTokens}), 0)`,
   outputTokens: sql<number>`coalesce(sum(${telemetryEvents.outputTokens}), 0)`,
-  cachedInputTokens: sql<number>`coalesce(sum(${telemetryEvents.cachedInputTokens}), 0)`,
+  cachedInputTokens: CACHED_INPUT_TOKENS_SQL,
 } as const;
 
 /** One bounded page of events, newest first. */
@@ -531,7 +546,6 @@ export async function breakdownTelemetry(
       key: column,
       requests: sql<number>`count(*)`,
       ...AGGREGATE_SELECT,
-      cachedInputTokens: sql<number>`coalesce(sum(${telemetryEvents.cachedInputTokens}), 0)`,
       costUsd: sql<number>`coalesce(sum(${telemetryEvents.estimatedCostUsd}), 0)`,
       avgTokensPerSec: sql<number>`coalesce(avg(${telemetryEvents.tokensPerSec}), 0)`,
     })
@@ -620,7 +634,7 @@ export async function providerUsageMatrix(
       model: telemetryEvents.requestedModel,
       requests: sql<number>`count(*)`,
       inputTokens: AGGREGATE_SELECT.inputTokens,
-      cachedInputTokens: sql<number>`coalesce(sum(${telemetryEvents.cachedInputTokens}), 0)`,
+      cachedInputTokens: CACHED_INPUT_TOKENS_SQL,
       outputTokens: AGGREGATE_SELECT.outputTokens,
       costUsd: sql<number>`coalesce(sum(${telemetryEvents.estimatedCostUsd}), 0)`,
     })
@@ -861,7 +875,7 @@ export async function summarizeUsageWithPerformance(
       truncated: sql<number>`sum(case when ${telemetryEvents.status} = 'truncated' then 1 else 0 end)`,
       inputTokens: AGGREGATE_SELECT.inputTokens,
       outputTokens: AGGREGATE_SELECT.outputTokens,
-      cachedInputTokens: sql<number>`coalesce(sum(${telemetryEvents.cachedInputTokens}), 0)`,
+      cachedInputTokens: CACHED_INPUT_TOKENS_SQL,
       reasoningTokens: sql<number>`coalesce(sum(${telemetryEvents.reasoningTokens}), 0)`,
       estimatedCostUsd: sql<number>`coalesce(sum(${telemetryEvents.estimatedCostUsd}), 0)`,
       sampled: sql<number>`count(${telemetryEvents.latencyMs})`,
