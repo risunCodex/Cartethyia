@@ -263,6 +263,7 @@ export async function handleProviderProxyRequest(
         ...(conversationAffinity ? { conversationAffinity } : {}),
         ...(tenantSystemPromptText === undefined ? {} : { tenantSystemPrompt: tenantSystemPromptText }),
         ...(candidate.user_agent === undefined ? {} : { userAgent: candidate.user_agent }),
+        ...(providerCapture ? { providerCapture } : {}),
         ...(deps.networkBindingFactory
           ? {
               outboundFetch: captureProviderExchange(

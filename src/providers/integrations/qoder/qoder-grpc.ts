@@ -21,6 +21,7 @@ import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import { GatewayError } from "../../../protocol/gateway-error";
 import type { CanonicalEvent, CanonicalRequest, CanonicalStopReason } from "../../../protocol/canonical-model";
+import type { ProviderCaptureExchange } from "../../provider-contracts";
 import { usageFromProvider } from "../../provider-usage";
 import { getQoderVersion } from "../../operations/client-versions";
 import { qoderMachineOs, qoderMachineHostname } from "../../operations/cli-platform";
@@ -440,6 +441,65 @@ export function qoderGrpcMetadata(auth: QoderAuth, modelId = ""): grpc.Metadata 
   return metadata;
 }
 
+/**
+ * gRPC metadata headers safe to persist in the provider-request panel.
+ *
+ * Mirrors the HTTP capture allowlist (`CAPTURED_REQUEST_HEADERS` in
+ * `transport/dispatch/attempt-finalize.ts`): session/identity framing is kept,
+ * but credentials are never stored. `authorization` (the Bearer job token) is
+ * deliberately excluded — the HTTP wrapper never captures it, and the gRPC
+ * capture must not either.
+ */
+const GRPC_CAPTURED_HEADERS = [
+  "x-request-id",
+  "x-session-id",
+  "cosy-version",
+  "cosy-clienttype",
+  "cosy-machineos",
+  "cosy-machinehostname",
+  "x-opencode-client",
+  "x-opencode-session",
+  "x-opencode-session-id",
+  "x-opencode-parent-session-id",
+  "x-opencode-request",
+  "x-opencode-project",
+  "x-conversation-id",
+  "x-conversation-request-id",
+  "x-conversation-message-id",
+  "x-root-request-id",
+  "x-trace-id",
+  "traceparent",
+  "b3",
+] as const;
+
+/**
+ * A gRPC exchange is not a `fetch`, so the HTTP capture wrapper never sees it.
+ * The adapter fills the sink directly with a faithful rendering of the proto
+ * call: the request line (grpc method, host, allowlisted metadata, and the
+ * translated body) and a deferred response that resolves to the collected
+ * stream summary.
+ */
+export function captureQoderGrpcRequest(
+  request: Record<string, unknown>,
+  metadata: grpc.Metadata,
+  realm: QoderRealm,
+): Record<string, unknown> {
+  const host = qoderGrpcHost(realm);
+  const map = metadata.getMap() as Record<string, string | string[]>;
+  const headers: Record<string, string> = {};
+  for (const name of GRPC_CAPTURED_HEADERS) {
+    const value = map[name];
+    if (value === undefined) continue;
+    headers[name] = Array.isArray(value) ? value.join(", ") : String(value);
+  }
+  return {
+    method: "POST",
+    url: `grpc://${host}/model.chat.ChatService/ChatCompletionStream`,
+    headers,
+    body: request,
+  };
+}
+
 /** Maps a proto `finish_reason` to the canonical stop reason. */
 function mapFinishReason(raw: string | undefined): CanonicalStopReason | undefined {
   switch (raw) {
@@ -466,6 +526,7 @@ export async function* qoderGrpcToCanonicalEvents(
   metadata: grpc.Metadata,
   realm: QoderRealm,
   signal: AbortSignal,
+  capture?: ProviderCaptureExchange,
 ): AsyncGenerator<CanonicalEvent> {
   const ChatService = qoderGrpcClient();
   const host = qoderGrpcHost(realm);
@@ -483,6 +544,62 @@ export async function* qoderGrpcToCanonicalEvents(
     // clients reject content after the finish reason. A second terminal is
     // skipped too (the upstream can re-emit the finish frame).
     let finished = false;
+    // The gRPC exchange is not a fetch, so the HTTP capture wrapper never sees
+    // it. Fill the sink with the translated request and a deferred response
+    // that resolves to the collected stream summary — this is what Request
+    // Detail shows for Qoder instead of the PAT exchange or an empty panel.
+    if (capture !== undefined) {
+      capture.request = captureQoderGrpcRequest(request, metadata, realm);
+      capture.response = new Promise((resolve) => {
+        const summary: Record<string, unknown> = {
+          transport: "grpc",
+          chunks: 0,
+          answer_chars: 0,
+          reasoning_chars: 0,
+          tool_calls: 0,
+          models: [] as string[],
+          usage: undefined,
+          stop_reason: undefined,
+          status_code: 0,
+        };
+        // `stream` is attached to `data` below; the summary is updated there.
+        const onData = (chunk: unknown) => {
+          const rec = chunk as Record<string, unknown>;
+          summary["chunks"] = (summary["chunks"] as number) + 1;
+          const model = rec["model"];
+          if (typeof model === "string" && model.length > 0) {
+            const models = summary["models"] as string[];
+            if (!models.includes(model)) models.push(model);
+          }
+          const usage = rec["usage"];
+          if (usage !== undefined && typeof usage === "object") summary["usage"] = usage;
+          const choices = Array.isArray(rec["choices"]) ? (rec["choices"] as Array<Record<string, unknown>>) : [];
+          for (const choice of choices) {
+            const delta = choice["delta"] as Record<string, unknown> | undefined;
+            const content = delta?.["content"];
+            if (typeof content === "string") summary["answer_chars"] = (summary["answer_chars"] as number) + content.length;
+            const reasoning = delta?.["reasoning_content"];
+            if (typeof reasoning === "string") summary["reasoning_chars"] = (summary["reasoning_chars"] as number) + reasoning.length;
+            const calls = delta?.["tool_calls"];
+            if (Array.isArray(calls)) summary["tool_calls"] = (summary["tool_calls"] as number) + calls.length;
+            const finish = choice["finish_reason"];
+            if (typeof finish === "string" && finish.length > 0) summary["stop_reason"] = finish;
+          }
+        };
+        stream.on("data", onData);
+        stream.on("status", (s: { code?: number; details?: string }) => {
+          summary["status_code"] = s.code ?? 0;
+          summary["grpc_message"] = s.details ?? "";
+        });
+        stream.on("error", (err: Error) => {
+          summary["error"] = err.message;
+          resolve(summary);
+        });
+        stream.on("end", () => {
+          resolve(summary);
+        });
+      });
+    }
 
     const abortHandler = () => {
       aborted = true;

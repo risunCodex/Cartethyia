@@ -233,7 +233,7 @@ class QoderAdapter implements ProviderAdapter {
         );
         const grpcMetadata = qoderGrpcMetadata(auth);
         lifecycle.release();
-        yield* qoderGrpcToCanonicalEvents(grpcRequest, grpcMetadata, this.realm, lifecycle.signal);
+        yield* qoderGrpcToCanonicalEvents(grpcRequest, grpcMetadata, this.realm, lifecycle.signal, context.provider_capture);
         return;
       }
 

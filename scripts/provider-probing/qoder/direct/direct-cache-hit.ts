@@ -28,7 +28,7 @@
  */
 import { parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import * as grpc from "@grpc/grpc-js";
 import { probeChatStream } from "../lib/grpc";
 import type { QoderRealm } from "../../../../src/providers/integrations/qoder/qoder-realm";
@@ -127,8 +127,7 @@ if (calls >= 3) sequences.push({ label: "A3 prefix-hit  [P,R1]", messages: [{ ro
 if (calls >= 4) sequences.push({ label: "A4 prefix-hit [P,R1,R2]", messages: [{ role: "user", text_content: promptText }, { role: "user", text_content: R1 }, { role: "user", text_content: R2 }] });
 
 let sawAnyCached = false;
-for (let i = 0; i < sequences.length; i += 1) {
-  const { label, messages } = sequences[i];
+for (const { label, messages } of sequences) {
   const res = await probeChatStream(realm, buildRequest(messages), buildMetadata(), { timeoutMs });
   const usage = res.usage ?? {};
   const ptd = (usage["prompt_tokens_details"] ?? {}) as Record<string, unknown>;

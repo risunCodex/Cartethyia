@@ -188,6 +188,13 @@ export interface ProviderDispatchContext {
   /** Validated bidirectional HTTP/2 egress bound to the same selected network pool. */
   readonly outbound_http2?: ValidatedOutboundHttp2Bidi | undefined;
   /**
+   * Capture sink for one attempt's provider exchange, filled by HTTP fetch
+   * wrapping. Adapters whose real upstream transport is not a `fetch`
+   * (Qoder's gRPC) write it directly so Request Detail shows the actual
+   * conversation call rather than an auth exchange or an empty panel.
+   */
+  readonly provider_capture?: ProviderCaptureExchange | undefined;
+  /**
    * Route-selected fallback User-Agent from Routing Strategy; set when the
    * operator configured one (bundled API-key providers default to the Claude
    * CLI identity). Empty means the operator chose "None".
@@ -261,6 +268,20 @@ export function applyRouteUserAgent(
 }
 
 /** ProviderDispatchTarget identity already resolved by routing before credential leasing. */
+/**
+ * Capture sink for one attempt's provider exchange.
+ *
+ * HTTP transports fill this automatically by wrapping `outbound_fetch` (see
+ * `captureProviderExchange` in `transport/dispatch/attempt-finalize.ts`).
+ * Adapters whose real upstream call is not a fetch — Qoder's gRPC surface —
+ * write it directly so Request Detail shows the actual conversation call
+ * instead of an auth exchange or nothing.
+ */
+export interface ProviderCaptureExchange {
+  request: unknown;
+  response: Promise<unknown>;
+}
+
 export interface ProviderDispatchTarget {
   readonly provider_id: ProviderId;
   readonly model_id: string;
