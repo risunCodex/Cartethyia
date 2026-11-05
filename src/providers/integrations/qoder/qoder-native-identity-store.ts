@@ -18,6 +18,7 @@ import type { CartethyiaDatabase } from "../../../persistence/db-handle";
 import { providerAccounts, type NativeIdentityRecord } from "../../../persistence/schema";
 import {
   mintQoderNativeIdentity,
+  mintQoderGeneratedIdentity,
   replayQoderNativeIdentity,
   type QoderNativeIdentity,
 } from "./qoder-umid";
@@ -120,7 +121,7 @@ export function allocateQoderNativeIdentity(
     const occupied = await store.occupied(accountId);
     for (let i = 0; i < 6; i += 1) {
       const minted = mint(accountId);
-      if (!minted) return null;
+      if (!minted) break;
       const token = minted.identity.machineToken;
       if (occupied.has(token)) continue; // collision (rare) → mint again
       if (token === options.avoidToken) continue;
@@ -134,7 +135,23 @@ export function allocateQoderNativeIdentity(
       await store.bind(providerId, accountId, record);
       return record;
     }
-    return null;
+    // The native bridge (ELF runtime-info on Linux) is hardware-bound: it
+    // always yields the SAME token on one machine. On a multi-account host the
+    // first account takes that token and every later account collides forever.
+    // The generated identity is deterministic per account id (hash-derived),
+    // so it is unique per account and satisfies the partial unique index —
+    // and the daily 100-credit grant visibility does not depend on machine
+    // headers (verified live, see the store's module comment).
+    const generated = mintQoderGeneratedIdentity(accountId);
+    if (occupied.has(generated.machineToken)) return null;
+    const record: NativeIdentityRecord = {
+      machineToken: generated.machineToken,
+      machineType: generated.machineType,
+      machineCode: generated.machineCode,
+      source: generated.source,
+    };
+    await store.bind(providerId, accountId, record);
+    return record;
   });
 }
 
