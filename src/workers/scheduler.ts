@@ -29,6 +29,19 @@ export interface ScheduledTask {
    */
   readonly deferWhenBusy?: boolean;
   /**
+   * True when this task must NOT be gated by the process-wide `busy` latch
+   * (one maintenance task at a time per process).
+   *
+   * The gate exists so sweeps that contend for the same rows/files never run
+   * at once. A task that only does independent network reads (client-version
+   * discovery) has nothing to contend over — and a heavy sweep that runs
+   * nearly continuously (quota-refresh on a large account set) otherwise
+   * starves every rarer task on the same gate: a 30-minute monitor skipped at
+   * its single initial tick is not retried for another 30 minutes. Opt-in;
+   * side-effecting sweeps must not set it.
+   */
+  readonly skipGate?: boolean;
+  /**
    * Whether this task's work is SHARED across the fleet, so only one process
    * should run it per interval.
    *
@@ -321,7 +334,10 @@ export class ScheduledTaskRegistry {
     // handles, and the same single core. Queuing the skipped tick would mean
     // every task fires at once once the blocker finishes, which is the burst
     // this rule exists to prevent.
-    if (this.busy !== undefined) return;
+    // `skipGate` tasks (independent network reads) are exempt: they have no
+    // shared state to contend over, and gating them starves rare tasks when a
+    // heavy sweep runs nearly continuously.
+    if (this.busy !== undefined && task.skipGate !== true) return;
     // G-03: a foreground-deferring task waits out foreground activity (bounded)
     // before latching the shared gate. The gate is NOT latched during the wait,
     // so the re-check below is required: a different task can claim the gate
@@ -329,9 +345,9 @@ export class ScheduledTaskRegistry {
     if (task.deferWhenBusy === true) {
       await deferForForeground(this.now, (ms) => new Promise((r) => setTimeout(r, ms)));
     }
-    if (this.running.has(task.name) || this.busy !== undefined) return;
+    if (this.running.has(task.name) || (this.busy !== undefined && task.skipGate !== true)) return;
     this.running.add(task.name);
-    this.busy = task.name;
+    if (task.skipGate !== true) this.busy = task.name;
     let lease: Awaited<ReturnType<MaintenanceLeaseStore["tryAcquire"]>> | undefined;
     try {
       // The gate above is latched before this await so a concurrent tick cannot
@@ -409,7 +425,9 @@ export class ScheduledTaskRegistry {
     } finally {
       this.inFlight.delete(done);
       this.running.delete(task.name);
-      this.busy = undefined;
+      // Only clear the shared gate if THIS task held it — a `skipGate` task
+      // never latches it and must not release another task's latch.
+      if (this.busy === task.name) this.busy = undefined;
     }
   }
 }

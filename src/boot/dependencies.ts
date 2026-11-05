@@ -595,6 +595,11 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
     name: "client-version-monitor",
     intervalMs: CLIENT_VERSION_MONITOR_INTERVAL_MS,
     initialDelayMs: CLIENT_VERSION_INITIAL_DELAY_MS,
+    // Pure outbound reads with no shared rows/files: they must not be gated
+    // by the process-wide busy latch, or a nearly-continuous heavy sweep
+    // (quota-refresh) starves this monitor at its single initial tick and
+    // every 30-minute interval after it.
+    skipGate: true,
     run: refreshProviderClientVersions,
   });
 
