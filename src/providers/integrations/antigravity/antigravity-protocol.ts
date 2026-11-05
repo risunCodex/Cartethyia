@@ -268,6 +268,85 @@ export function normalizeAntigravityToolSchema(schema: unknown): unknown {
 }
 
 /**
+ * Flattens JSON-Schema constructs the Antigravity upstream rejects.
+ *
+ * Verified live (2026-11-05): the Claude-route upstream validates tool
+ * schemas as strict JSON Schema draft 2020-12 and refuses every `anyOf` /
+ * `oneOf` / multi-type `type: [...]` declaration — even a degenerate
+ * `anyOf` of two identical string schemas, and even at the root. The Gemini
+ * builder's sanitizer keeps those constructs (Gemini itself accepts them), so
+ * a tool that declares a union (e.g. OMP's `task` tool's `model` field)
+ * ships an invalid schema and the upstream 400s the whole request with
+ * `tools.N.custom.input_schema: JSON schema is invalid`.
+ *
+ * The rewrite replaces `anyOf`/`oneOf` with the single most permissive
+ * alternative's type (string when a choice is a string, otherwise any
+ * surviving type), and a multi-type `type: [...]` with its first entry —
+ * the most permissive shape a strict single-type validator can express.
+ * Recurses through `properties` and `items`.
+ */
+export function flattenAntigravitySchema(schema: unknown): unknown {
+  if (!isRecord(schema)) return schema;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(schema)) {
+    if (key === "anyOf" || key === "oneOf") {
+      if (!Array.isArray(child)) continue;
+      const chosen = child.map((entry) => flattenAntigravitySchema(entry)).find(isRecord);
+      if (chosen === undefined) continue;
+      if (typeof chosen["type"] === "string") out["type"] = chosen["type"];
+      for (const [nestedKey, nestedValue] of Object.entries(chosen)) {
+        if (nestedKey === "type") continue;
+        out[nestedKey] = nestedValue;
+      }
+      continue;
+    }
+    if (key === "type" && Array.isArray(child)) {
+      const first = child.find((entry): entry is string => typeof entry === "string");
+      if (first !== undefined) out["type"] = first;
+      continue;
+    }
+    if (key === "properties" && isRecord(child)) {
+      out["properties"] = Object.fromEntries(
+        Object.entries(child).map(([name, entry]) => [name, flattenAntigravitySchema(entry)]),
+      );
+      continue;
+    }
+    if (key === "items" && Array.isArray(child)) {
+      out["items"] = child.map((entry) => flattenAntigravitySchema(entry));
+      continue;
+    }
+    if (key === "items" && isRecord(child)) {
+      out["items"] = flattenAntigravitySchema(child);
+      continue;
+    }
+    out[key] = child;
+  }
+  return out;
+}
+
+/**
+ * Applies both tool-schema normalizations (unwrap `parametersJsonSchema`,
+ * flatten rejected union constructs) and reports whether anything changed.
+ *
+ * When flattening is a no-op, the *original* reference is returned so the
+ * request-level helper can detect an unchanged request without a deep compare.
+ */
+export function normalizeAntigravityToolSchemaForWire(schema: unknown): {
+  readonly schema: unknown;
+  readonly changed: boolean;
+} {
+  const unwrapped = normalizeAntigravityToolSchema(schema);
+  const flattened = flattenAntigravitySchema(unwrapped);
+  const unwrapChanged = unwrapped !== schema;
+  const flattenChanged =
+    flattened !== unwrapped && JSON.stringify(flattened) !== JSON.stringify(unwrapped);
+  return {
+    schema: flattenChanged ? flattened : unwrapped,
+    changed: unwrapChanged || flattenChanged,
+  };
+}
+
+/**
  * Normalizes every declared tool's schema on a canonical request, returning a
  * shallow copy of the request when anything changed and the original object
  * otherwise.
@@ -286,8 +365,8 @@ export function normalizeAntigravityToolSchemas(request: CanonicalRequest): Cano
   if (tools === undefined || tools.length === 0) return request;
   let changed = false;
   const normalized = tools.map((tool) => {
-    const schema = normalizeAntigravityToolSchema(tool.jsonSchema);
-    if (schema === tool.jsonSchema) return tool;
+    const { schema, changed: schemaChanged } = normalizeAntigravityToolSchemaForWire(tool.jsonSchema);
+    if (!schemaChanged) return tool;
     changed = true;
     return { ...tool, jsonSchema: schema };
   });
