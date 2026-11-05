@@ -53,6 +53,25 @@ with either a real cache (not reported) or a pure stateless fee model. Note:
 the provider may be charging per-request without a cache discount, which would
 make estimation a *pricing-correctness* fix, not just telemetry cosmetics.
 
+## Status (2026-11-05, after fix)
+
+**Implemented:** the shared session-cache estimator is now wired for Qoder
+(`src/providers/integrations/qoder/qoder-cache.ts`), exactly like Trae and
+Kiro. The gRPC surface also had to be fixed to *carry* usage: the upstream
+streams `usage` in a trailing chunk *after* the finish-reason chunk, and the
+old code skipped it once `finished` was set — so no usage reached telemetry at
+all. `usage` is now attached to the terminal event (the IDE surface shape),
+which both restores telemetry and lets the estimator run.
+
+Verified live (gateway, `qoder/ultimate`, two byte-identical streamed
+requests):
+
+| request | input_tokens | cached_input_tokens |
+|---|---|---|
+| #1 fresh | 32 | null (no history yet) |
+| #2 identical | 32 | **32** (100% cached estimate) |
+
+
 ## Implication / next step (next version — NOT a hotfix)
 
 Apply the shared estimator to Qoder, exactly like Trae and Kiro:

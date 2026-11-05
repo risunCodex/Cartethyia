@@ -20,7 +20,7 @@ import { join } from "node:path";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import { GatewayError } from "../../../protocol/gateway-error";
-import type { CanonicalEvent, CanonicalRequest, CanonicalStopReason } from "../../../protocol/canonical-model";
+import type { CanonicalEvent, CanonicalRequest, CanonicalStopReason, UsageRecord } from "../../../protocol/canonical-model";
 import type { ProviderCaptureExchange } from "../../provider-contracts";
 import { usageFromProvider } from "../../provider-usage";
 import { getQoderVersion } from "../../operations/client-versions";
@@ -544,6 +544,12 @@ export async function* qoderGrpcToCanonicalEvents(
     // clients reject content after the finish reason. A second terminal is
     // skipped too (the upstream can re-emit the finish frame).
     let finished = false;
+    // Last usage chunk seen; attached to the terminal event (the upstream
+    // streams usage after the finish-reason chunk, and a standalone `usage`
+    // event after terminal breaks strict Messages encoders).
+    let pendingUsage: UsageRecord | undefined;
+    /** Whether the terminal already carried the pending usage. */
+    let terminalEmitted = false;
     // The gRPC exchange is not a fetch, so the HTTP capture wrapper never sees
     // it. Fill the sink with the translated request and a deferred response
     // that resolves to the collected stream summary — this is what Request
@@ -719,21 +725,36 @@ export async function* qoderGrpcToCanonicalEvents(
                 state: stop === "stop" || stop === "tool_use" ? "complete" : "failed",
                 stop_reason: stop,
                 provider_stop_reason: choice.finish_reason,
+                // The upstream streams `usage` in a trailing chunk *after* the
+                // finish-reason chunk. A separate `usage` event after the
+                // terminal is rejected by strict Anthropic Messages encoders
+                // (the 2.7.8 regression), so the usage is carried here on the
+                // terminal instead — exactly like the IDE surface does.
+                ...(pendingUsage === undefined ? {} : { usage: pendingUsage }),
               };
+              if (pendingUsage !== undefined) terminalEmitted = true;
             }
           }
         }
-        if (chunk.usage && !finished) {
+        if (chunk.usage) {
           const usage = usageFromProvider(chunk.usage);
           if (usage !== undefined) {
-            yield { type: "usage", sequence_number: nextSeq(), usage };
+            // Keep the last usage chunk; it is attached to the terminal above
+            // (and only if no terminal ever arrives, emitted as a standalone
+            // event at stream end).
+            pendingUsage = usage;
           }
         }
       }
       // Tool-call deltas are emitted as they arrive — there is no end-of-stream
       // buffer to flush; the terminal event is yielded by the finish-reason
       // branch above (or synthesized by the caller if the stream ends without
-      // one).
+      // one). If no terminal carried the pending usage (the stream ended
+      // without a finish reason), emit it as a standalone event so telemetry
+      // still sees the upstream's numbers.
+      if (!terminalEmitted && pendingUsage !== undefined) {
+        yield { type: "usage", sequence_number: nextSeq(), usage: pendingUsage };
+      }
     } catch (err: any) {
       const status = err?.code;
       const details = err?.details ?? err?.message ?? "";

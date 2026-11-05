@@ -37,6 +37,7 @@ import { isQoderPat, qoderOAuthAuth, qoderSessionId, resolveQoderAuth } from "./
 import { buildQoderRequest, callQoder } from "./qoder-chat";
 import { buildQoderGrpcRequest, qoderGrpcMetadata, qoderGrpcToCanonicalEvents } from "./qoder-grpc";
 import { buildQoderIdeRequest, qoderBodyToCanonicalEvents } from "./qoder-ide";
+import { estimateQoderSessionCache } from "./qoder-cache";
 import {
   QODER_CHAT_PATH,
   QODER_PROVIDER_ID,
@@ -119,6 +120,30 @@ class QoderAdapter implements ProviderAdapter {
       string,
       QoderModelConfig
     >;
+  }
+
+  /**
+   * Wraps an upstream event stream and applies the local session-cache
+   * estimate to every `usage` record (and terminal-carried usage).
+   *
+   * Qoder's upstream never reports prompt-cache hits (verified live on both
+   * gRPC and IDE HTTP surfaces), so the gap is closed the same way Trae and
+   * Kiro do: estimate the cached prefix from this session's request history.
+   */
+  async *#withSessionCacheEstimate(
+    events: AsyncIterable<CanonicalEvent>,
+    request: CanonicalRequest,
+    sessionId: string | undefined,
+  ): AsyncGenerator<CanonicalEvent> {
+    for await (const event of events) {
+      if (event.type === "usage") {
+        yield { ...event, usage: estimateQoderSessionCache(event.usage, sessionId, request.messages) };
+      } else if (event.type === "terminal" && event.usage !== undefined) {
+        yield { ...event, usage: estimateQoderSessionCache(event.usage, sessionId, request.messages) };
+      } else {
+        yield event;
+      }
+    }
   }
 
   async *dispatch(
@@ -207,7 +232,11 @@ class QoderAdapter implements ProviderAdapter {
         if (!res.ok) throw await mapUpstreamHttpError(res, "qoder");
         if (!res.body) throw new GatewayError("platform_unavailable", 502, "Qoder returned empty body (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
         lifecycle.release();
-        yield* qoderBodyToCanonicalEvents(res.body as ReadableStream<Uint8Array>, lifecycle.signal, modelId);
+        yield* this.#withSessionCacheEstimate(
+          qoderBodyToCanonicalEvents(res.body as ReadableStream<Uint8Array>, lifecycle.signal, modelId),
+          request,
+          qoderSessionId(auth.userId, modelId),
+        );
         return;
       }
 
@@ -233,7 +262,11 @@ class QoderAdapter implements ProviderAdapter {
         );
         const grpcMetadata = qoderGrpcMetadata(auth);
         lifecycle.release();
-        yield* qoderGrpcToCanonicalEvents(grpcRequest, grpcMetadata, this.realm, lifecycle.signal, context.provider_capture);
+        yield* this.#withSessionCacheEstimate(
+          qoderGrpcToCanonicalEvents(grpcRequest, grpcMetadata, this.realm, lifecycle.signal, context.provider_capture),
+          request,
+          qoderSessionId(auth.userId, modelId),
+        );
         return;
       }
 
@@ -250,7 +283,11 @@ class QoderAdapter implements ProviderAdapter {
       // context.abort_signal) governs the body. Keeping this timer armed
       // would kill healthy long streams at the stale pre-stream deadline.
       lifecycle.release();
-      yield* qoderBodyToCanonicalEvents(response.body as ReadableStream<Uint8Array>, lifecycle.signal, request.model);
+      yield* this.#withSessionCacheEstimate(
+        qoderBodyToCanonicalEvents(response.body as ReadableStream<Uint8Array>, lifecycle.signal, request.model),
+        request,
+        qoderSessionId(auth.userId, modelId),
+      );
     } catch (err: unknown) {
       const abortError = abortGatewayError(lifecycle, err, context.abort_signal);
       if (abortError) throw abortError;

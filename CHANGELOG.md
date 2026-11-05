@@ -31,6 +31,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   `task` tool's `model` field) now ship the most permissive single type
   (string when a choice is a string), recursively through `properties` and
   `items`.
+- **Qoder: prompt-cache hits are now estimated locally.** The upstream never
+  reports cache hits (verified live on gRPC and IDE HTTP: `cached_tokens`
+  absent, usage absent after terminal). Qoder now uses the shared session-cache
+  estimator the Trae and Kiro adapters use: the longest previously-sent
+  message prefix in the session counts as cached. The gRPC surface also had
+  to carry upstream usage on the terminal event (the upstream streams `usage`
+  in a trailing chunk after the finish reason, which the old code dropped) —
+  this restores usage telemetry and powers the estimate. Chat/Responses/
+  Messages surfaces all read `cached_input_tokens`, so the estimate shows up
+  everywhere usage does.
 
 ## [2.7.8] - 2026-11-05
 
