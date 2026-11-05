@@ -846,6 +846,20 @@ main > .state-viewport {
   display: flex;
   flex-direction: column;
   gap: 26px;
+  /* iOS Safari auto-zooms into any input whose font-size is under 16px when
+     it is focused, which reads as "the page zooms in on its own" while typing
+     on the login/setup surfaces. 16px is the anti-zoom threshold; the rest of
+     the app keeps its 13px compact body. The `.form-input` utility (13px)
+     lives in `@layer utilities`, which is declared after `@layer base` and
+     wins — so this override needs `!important` (same pattern the other
+     base-layer overrides use). */
+  font-size: 16px;
+}
+
+.auth-form-inner .form-input,
+.auth-form-inner .form-textarea,
+.auth-form-inner textarea {
+  font-size: 16px !important;
 }
 
 .auth-brand-head {

@@ -17,9 +17,6 @@ import type { WireFamily } from "../../protocol/canonical-model";
 import type { CompatibilityProfile } from "../provider-metadata";
 import { BARE_ROOT_ENDPOINTS, type AuthHeaderShape } from "../../protocol/codecs";
 
-/** The two wires an OpenAI-compatible root conventionally serves. */
-const OPENAI_WIRE_FAMILIES: readonly WireFamily[] = ["chat", "responses"];
-
 export interface ByokWireProfile {
   /** Header shape the upstream expects for the operator's credential. */
   readonly authHeaderShape: AuthHeaderShape;
@@ -47,10 +44,14 @@ export function byokAuthHeaderShape(families: readonly WireFamily[]): AuthHeader
  *
  * Operator truth wins: an explicit `endpoint_paths_by_wire_family` names
  * exactly the families the provider serves. Without one, the provider serves
- * the family it was created with, and a `chat` default additionally serves
- * `responses` — the same OpenAI wire pair this gateway has always registered
- * for a bare OpenAI-compatible root. A `messages` default is deliberately
- * narrow: nothing about an Anthropic-compatible root implies the OpenAI wires.
+ * exactly the family it was created with — a `chat` default serves only chat,
+ * a `responses` default only responses, a `messages` default only messages.
+ *
+ * A `chat` default used to additionally serve `responses`, and discovery then
+ * reclassified gpt-5/gpt-6 ids as responses even when the operator picked
+ * "Chat completions" — the model ended up on `/v1/responses` (which the
+ * upstream may not serve) and the probe timed out. The operator's selection
+ * is the contract; nothing is inferred beyond it.
  */
 export function resolveByokWireProfile(
   wireFamilyDefault: WireFamily | null | undefined,
@@ -62,11 +63,7 @@ export function resolveByokWireProfile(
     : [];
   const defaultFamily: WireFamily = wireFamilyDefault ?? "chat";
   const supportedWireFamilies: readonly WireFamily[] =
-    declaredFamilies.length > 0
-      ? declaredFamilies
-      : defaultFamily === "chat"
-        ? OPENAI_WIRE_FAMILIES
-        : [defaultFamily];
+    declaredFamilies.length > 0 ? declaredFamilies : [defaultFamily];
   const endpointPathsByWireFamily: Partial<Record<WireFamily, string>> = {};
   for (const family of supportedWireFamilies) {
     const path = declaredPaths?.[family] ?? BARE_ROOT_ENDPOINTS[family];

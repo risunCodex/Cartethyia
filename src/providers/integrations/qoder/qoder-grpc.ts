@@ -606,7 +606,7 @@ export async function* qoderGrpcToCanonicalEvents(
             }
           }
         }
-        if (chunk.usage) {
+        if (chunk.usage && !finished) {
           const usage = usageFromProvider(chunk.usage);
           if (usage !== undefined) {
             yield { type: "usage", sequence_number: nextSeq(), usage };

@@ -85,8 +85,16 @@ describe("BYOK base URL path confusion", () => {
     expect(messages.authHeaderShape).toBe("x_api_key");
     expect(messages.supportedWireFamilies).toEqual(["messages"]);
 
+    // The operator's selection is the contract: a `chat` default serves only
+    // chat (regression 2026-11-05 — previously it also advertised responses,
+    // so discovery reclassified gpt-5/gpt-6 ids onto `/v1/responses` and the
+    // probe timed out on upstreams that do not serve it).
     const chat = resolveByokWireProfile("chat", null);
     expect(chat.authHeaderShape).toBe("authorization_bearer");
-    expect(chat.supportedWireFamilies).toEqual(["chat", "responses"]);
+    expect(chat.supportedWireFamilies).toEqual(["chat"]);
+
+    const responses = resolveByokWireProfile("responses", null);
+    expect(responses.supportedWireFamilies).toEqual(["responses"]);
+    expect(responses.endpointPathsByWireFamily).toEqual({ responses: "/v1/responses" });
   });
 });

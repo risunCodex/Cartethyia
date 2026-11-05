@@ -8,6 +8,30 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.7.8] - 2026-11-05
+
+### Fixed
+
+- **BYOK custom providers: operator-selected wire is the contract.** A custom
+  provider created with "Chat completions" previously also advertised
+  `responses` (the OpenAI wire pair default), so discovery reclassified
+  gpt-5/gpt-6 ids onto `/v1/responses` — even when the upstream only serves
+  chat — and the model test timed out. `resolveByokWireProfile` now serves
+  exactly the selected family (`chat` → chat only, `responses` → responses
+  only, `messages` → messages only). VPS installs that selected chat were
+  unaffected; local installs whose model was re-fetched as responses were not.
+- **Qoder gRPC stream: no usage after terminal.** The gRPC surface yielded
+  `usage` *after* the terminal event, which the strict Anthropic Messages
+  encoder rejected — the gateway then emitted a `transport_unavailable` error
+  frame after `message_stop`, so Anthropic clients saw "upstream closed the
+  stream before it finished" and retried in a loop. `usage` is now emitted
+  before finish only (the terminal carries usage itself). Chat and Responses
+  surfaces were unaffected.
+- **Auth surfaces: 16px input font to stop iOS auto-zoom.** Login/setup
+  inputs inherited the 13px compact body token; iOS Safari auto-zooms into
+  any focused input under 16px, which read as the page zooming itself while
+  typing. `.auth-form-inner .form-input` now forces 16px.
+
 ## [2.7.7] - 2026-11-05
 
 ### Added
