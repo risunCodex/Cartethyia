@@ -64,7 +64,7 @@ describe("Buddy upstream protocol alignment", () => {
 
   test("raising the effort also lifts a max_tokens sized for the lower one", () => {
     const payload: Record<string, unknown> = {
-      model: "hy4-preview-f",
+      model: "hy4",
       messages: [{ role: "user", content: "hi" }],
       reasoning_effort: "low",
       max_tokens: 2048,
@@ -78,7 +78,7 @@ describe("Buddy upstream protocol alignment", () => {
     // Nothing was raised, so nothing is owed a bigger budget: a caller who
     // deliberately asked for a small answer still gets one.
     const payload: Record<string, unknown> = {
-      model: "hy4-preview-f",
+      model: "hy4",
       messages: [{ role: "user", content: "hi" }],
       reasoning_effort: "high",
       max_tokens: 2048,

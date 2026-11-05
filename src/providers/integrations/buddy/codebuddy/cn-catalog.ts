@@ -24,7 +24,7 @@ export const CODEBUDDY_CN_RAW: readonly BuddyRawEntry[] = [
   ["kimi-k2.8-preview", "Kimi K2.8 Preview", true, true, 1_000_000, 64_000],
   ["kimi-k3.1-pro", "Kimi K3.1 Pro", true, true, 1_000_000, 32_000],
   ["hy3", "Hy3", true, true, 192_000, 64_000],
-  ["hy4-preview", "Hy4 Preview", true, true, 960_000, 64_000],
+  ["hy4", "Hy4", true, true, 960_000, 64_000],
   ["space-bunny", "Space Bunny", true, true, 1_000_000, 128_000],
   ["step-5-preview", "Step 5 Preview", true, true, 1_000_000, 64_000],
   ["deepseek-v4-pro", "DeepSeek V4 Pro", true, true, 1_000_000, 128_000],

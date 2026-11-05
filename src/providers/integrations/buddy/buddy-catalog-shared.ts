@@ -42,7 +42,7 @@ export const BUDDY_INTL_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "glm-5.2": ["high", "xhigh"],
   "glm-5.3": ["low", "high", "max"],
   hy3: ["low", "high"],
-  "hy4-preview-f": ["high"],
+  hy4: ["high"],
 };
 export const BUDDY_CN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "deepseek-v4-flash": ["low", "high", "max"],
@@ -53,7 +53,7 @@ export const BUDDY_CN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "glm-5.3": ["low", "high", "max"],
   "glm-5.3-flash": ["low", "high", "max"],
   hy3: ["low", "high"],
-  "hy4-preview": ["high"],
+  hy4: ["high"],
 };
 
 /** The image-generation ids the international buddy providers serve. */
@@ -103,16 +103,15 @@ export const BUDDY_IMAGE_MODEL_ID_SET: ReadonlySet<string> = new Set(
  * The CN realm's image-generation ids.
  *
  * Separate from {@link BUDDY_IMAGE_MODEL_IDS} because the realms do not share
- * a roster: `hunyuan-image-alpha` is published by the CN `/v3/config` only, and
- * the intl image ids are not served there. Sharing one list would either leak
- * CN-only ids onto the international catalogs or force a realm check into
- * every consumer.
- *
- * `hunyuan-image-alpha-edit` carries `image-to-image` and is deliberately NOT
- * here: it is not in the CLI roster, so it is not a routable generation model.
+ * a roster: `hunyuan-image-alpha` (text-to-image) and
+ * `hunyuan-image-alpha-edit` (image-to-image) are published by the CN
+ * `/v3/config` only, and the intl image ids are not served there. Sharing one
+ * list would either leak CN-only ids onto the international catalogs or force
+ * a realm check into every consumer.
  */
 const BUDDY_CN_IMAGE_MODEL_IDS: readonly { id: string; ctx: number; out: number }[] = [
   { id: "hunyuan-image-alpha", ctx: 1_000_000, out: 64_000 },
+  { id: "hunyuan-image-alpha-edit", ctx: 1_000_000, out: 64_000 },
 ];
 
 /** The CN analogue of {@link BUDDY_IMAGE_MODEL_ID_SET}. */
@@ -140,6 +139,50 @@ export function makeBuddyCnImageModels(
       out: entry.out,
       vision: true,
       output: ["image"],
+      toolCall: false,
+    }),
+  );
+}
+
+/**
+ * The CN realm's video-generation ids.
+ *
+ * `kling-video-v3` (text-to-video + image-to-video) and
+ * `minimax-video-h3` (text-to-video) are published by the CN `/v3/config`,
+ * sharing the async task surface the intl video rows use.
+ */
+const BUDDY_CN_VIDEO_MODEL_IDS: readonly { id: string; ctx: number; out: number }[] = [
+  { id: "kling-video-v3", ctx: 1_000_000, out: 128_000 },
+  { id: "minimax-video-h3", ctx: 1_000_000, out: 128_000 },
+];
+
+/** The CN analogue of {@link BUDDY_VIDEO_MODEL_ID_SET}. */
+export const BUDDY_CN_VIDEO_MODEL_ID_SET: ReadonlySet<string> = new Set(
+  BUDDY_CN_VIDEO_MODEL_IDS.map((entry) => entry.id),
+);
+
+/**
+ * Builds the CN video-generation rows for one buddy CN provider.
+ *
+ * Same shape as {@link makeBuddyVideoModels}, scoped to the CN roster: a video
+ * row produces `["video"]` on the `videoGeneration` surface and is reached
+ * through the native video route, not a chat wire.
+ */
+export function makeBuddyCnVideoModels(
+  providerId: string,
+  endpoint: string,
+): readonly ModelDefinition[] {
+  return BUDDY_CN_VIDEO_MODEL_IDS.map((entry) =>
+    defineModel({
+      id: entry.id,
+      providerId,
+      serviceKind: "videoGeneration",
+      wireFamily: "chat",
+      endpoint,
+      ctx: entry.ctx,
+      out: entry.out,
+      vision: true,
+      output: ["video"],
       toolCall: false,
     }),
   );
@@ -349,8 +392,7 @@ export const BUDDY_SHARED_RAW: readonly BuddyRawEntry[] = [
   ["grok-4.6", "Grok 4.6", true, true, 500_000, 500_000],
   ["grok-4.7", "Grok 4.7", true, true, 500_000, 128_000],
   ["hy3", "Hy3", true, true, 192_000, 64_000, true],
-  ["hy4-preview", "Hy4 Preview", true, true, 1_000_000, 64_000, true],
-  ["hy4-preview-f", "Hy4 Preview F", true, true, 1_000_000, 64_000, true],
+  ["hy4", "Hy4", true, true, 1_000_000, 64_000, true],
   ["kimi-k2.5", "Kimi K2.5", true, false, 164_000, 262_144],
   ["kimi-k2.6", "Kimi K2.6", true, false, 256_000, 262_144],
   ["kimi-k2.7", "Kimi K2.7", true, false, 256_000, 65_536],

@@ -15,9 +15,18 @@ export const WORKBUDDY_CN_DOMAIN = "www.workbuddy.cn" as const;
 export const WORKBUDDY_CN_BASE_URL = providerBaseUrl(WORKBUDDY_CN_PROVIDER_ID);
 
 export const WORKBUDDY_CN_MODELS: readonly ModelDefinition[] = [
-  ...CODEBUDDY_CN_MODELS.map((model) => ({
+  ...CODEBUDDY_CN_MODELS
+    .filter((model) => model.serviceKind !== "videoGeneration")
+    .map((model) => ({
+      ...model,
+      endpointPath: WORKBUDDY_CHAT_PATH,
+    })),
+  // Video rows reach the native video route on WorkBuddy's own `/v2` base;
+  // leaving the CodeBuddy CN `/videos/generations` path would post to the
+  // wrong host segment.
+  ...CODEBUDDY_CN_MODELS.filter((model) => model.serviceKind === "videoGeneration").map((model) => ({
     ...model,
-    endpointPath: WORKBUDDY_CHAT_PATH,
+    endpointPath: "/v2/videos/generations",
   })),
 ];
 

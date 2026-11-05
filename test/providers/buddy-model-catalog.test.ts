@@ -77,6 +77,14 @@ describe("live Buddy CLI models on the shared roster", () => {
       }
     }
   });
+
+  test("hy4-preview renamed to hy4 on both international catalogs", () => {
+    for (const rows of [CODEBUDDY_MODELS, WORKBUDDY_MODELS]) {
+      expect(rows.some((model) => model.modelId === "hy4")).toBe(true);
+      expect(rows.some((model) => model.modelId === "hy4-preview")).toBe(false);
+      expect(rows.some((model) => model.modelId === "hy4-preview-f")).toBe(false);
+    }
+  });
 });
 
 describe("Buddy image generation routes", () => {
@@ -139,8 +147,8 @@ describe("gpt-6-luna on the buddy roster", () => {
   test("CodeBuddy CN publishes the live CLI roster and drops the legacy fallback rows", () => {
     // `uto` was here only because the reference's CN fallback table carried it;
     // the CN /v3/config roster does not publish it. The legacy block is gone, so
-    // the CN catalog is exactly what upstream serves — 19 chat rows plus the
-    // image generation row.
+    // the CN catalog is exactly what upstream serves — chat rows plus the image
+    // and video generation rows.
     const rows = [
       ["space-bunny", 1_000_000, 128_000],
       ["step-5-preview", 1_000_000, 64_000],
@@ -153,13 +161,22 @@ describe("gpt-6-luna on the buddy roster", () => {
       expect(row?.contextLimit).toBe(contextLimit);
       expect(row?.outputLimit).toBe(outputLimit);
     }
-    for (const removed of ["uto", "hy4-preview-x", "hunyuan-chat", "glm-4.6", "default"]) {
+    // The rename: hy4-preview became hy4.
+    expect(CODEBUDDY_CN_MODELS.some((model) => model.modelId === "hy4")).toBe(true);
+    for (const removed of ["uto", "hy4-preview-x", "hy4-preview", "hunyuan-chat", "glm-4.6", "default"]) {
       expect(CODEBUDDY_CN_MODELS.some((model) => model.modelId === removed)).toBe(false);
     }
-    // The one row that is published but not a chat model: kept as generation.
-    expect(
-      CODEBUDDY_CN_MODELS.find((model) => model.modelId === "hunyuan-image-alpha")?.serviceKind,
-    ).toBe("imageGeneration");
+    // Generation rows are published but not chat models: kept as generation.
+    for (const imageId of ["hunyuan-image-alpha", "hunyuan-image-alpha-edit"]) {
+      expect(
+        CODEBUDDY_CN_MODELS.find((model) => model.modelId === imageId)?.serviceKind,
+      ).toBe("imageGeneration");
+    }
+    for (const videoId of ["kling-video-v3", "minimax-video-h3"]) {
+      expect(
+        CODEBUDDY_CN_MODELS.find((model) => model.modelId === videoId)?.serviceKind,
+      ).toBe("videoGeneration");
+    }
   });
 
   test("WorkBuddy CN uses exactly the CodeBuddy CN catalog with its own endpoint", () => {
@@ -170,7 +187,12 @@ describe("gpt-6-luna on the buddy roster", () => {
       const codebuddyCn = CODEBUDDY_CN_MODELS[index];
       const workbuddyCn = WORKBUDDY_CN_MODELS[index];
       expect(workbuddyCn).toBeDefined();
-      expect(workbuddyCn?.endpointPath).toBe("/v2/chat/completions");
+      // Chat and image rows use WorkBuddy's chat route; video rows use its
+      // own native video route on the `/v2` base.
+      const expectedEndpoint = codebuddyCn?.serviceKind === "videoGeneration"
+        ? "/v2/videos/generations"
+        : "/v2/chat/completions";
+      expect(workbuddyCn?.endpointPath).toBe(expectedEndpoint);
       expect(workbuddyCn?.contextLimit).toBe(codebuddyCn?.contextLimit);
       expect(workbuddyCn?.outputLimit).toBe(codebuddyCn?.outputLimit);
       expect(workbuddyCn?.modalities).toEqual(codebuddyCn?.modalities);

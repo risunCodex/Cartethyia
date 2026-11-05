@@ -20,7 +20,9 @@ import { CODEBUDDY_CN_RAW } from "./cn-catalog";
 import { CODEBUDDY_SYSTEM_PROMPT } from "./provider";
 import {
   BUDDY_CN_IMAGE_MODEL_ID_SET,
+  BUDDY_CN_VIDEO_MODEL_ID_SET,
   makeBuddyCnImageModels,
+  makeBuddyCnVideoModels,
   makeBuddyModel,
 } from "../buddy-catalog-shared";
 import { BUDDY_CN_MODELS_PATH, fetchBuddyDirectoryModels } from "../buddy-discovery-shared";
@@ -115,11 +117,28 @@ export const CODEBUDDY_CN_IMAGE_MODELS: readonly ModelDefinition[] = makeBuddyCn
   "/images/generations",
 );
 
+/**
+ * CN's video-generation rows (`kling-video-v3`, `minimax-video-h3`).
+ *
+ * Reached through the native video route like the intl rows. The video ids
+ * are filtered out of the chat pass so one id never appears under two service
+ * kinds.
+ */
+export const CODEBUDDY_CN_VIDEO_MODELS: readonly ModelDefinition[] = makeBuddyCnVideoModels(
+  CODEBUDDY_CN_PROVIDER_ID,
+  "/videos/generations",
+);
+
 export const CODEBUDDY_CN_MODELS: readonly ModelDefinition[] = [
-  ...CODEBUDDY_CN_RAW.filter((entry) => !BUDDY_CN_IMAGE_MODEL_ID_SET.has(entry[0])).map((entry) =>
+  ...CODEBUDDY_CN_RAW.filter(
+    (entry) =>
+      !BUDDY_CN_IMAGE_MODEL_ID_SET.has(entry[0]) &&
+      !BUDDY_CN_VIDEO_MODEL_ID_SET.has(entry[0]),
+  ).map((entry) =>
     makeBuddyModel(entry, CODEBUDDY_CN_PROVIDER_ID, undefined, "cn"),
   ),
   ...CODEBUDDY_CN_IMAGE_MODELS,
+  ...CODEBUDDY_CN_VIDEO_MODELS,
 ];
 
 /** Reads the CodeBuddy CN console directory (same envelope as the intl site). */
