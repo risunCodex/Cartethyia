@@ -510,6 +510,10 @@ function mapFinishReason(raw: string | undefined): CanonicalStopReason | undefin
       return "tool_use";
     case "length":
       return "length";
+    case "error":
+      return "error";
+    case "refusal":
+      return "refusal";
     default:
       return undefined;
   }
@@ -550,10 +554,11 @@ export async function* qoderGrpcToCanonicalEvents(
     let pendingUsage: UsageRecord | undefined;
     /** Whether the terminal already carried the pending usage. */
     let terminalEmitted = false;
-    // The gRPC exchange is not a fetch, so the HTTP capture wrapper never sees
-    // it. Fill the sink with the translated request and a deferred response
-    // that resolves to the collected stream summary — this is what Request
-    // Detail shows for Qoder instead of the PAT exchange or an empty panel.
+    // Capture sinks fed from the same `for await` loop that drives production
+    // events (see `feedCapture`). Declared here so the loop below can call
+    // them; they are assigned when capture is enabled.
+    let feedCapture: ((chunk: unknown) => void) | undefined;
+    let flushToolCalls: (() => void) | undefined;
     if (capture !== undefined) {
       capture.request = captureQoderGrpcRequest(request, metadata, realm);
       capture.response = new Promise((resolve) => {
@@ -581,8 +586,11 @@ export async function* qoderGrpcToCanonicalEvents(
         const MAX_TEXT_CHARS = 16_000;
         const MAX_TOOL_CALLS = 50;
         const MAX_TOOL_ARGS_CHARS = 2_000;
-        // `stream` is attached to `data` below; the summary is updated there.
-        const onData = (chunk: unknown) => {
+        // The summary is fed from the SAME `for await` loop that drives the
+        // production event stream (see `feedCapture` below) — a separate
+        // `data` listener raced the iterator and saw nothing (or a different
+        // decode), so tool calls and text never made it into the capture.
+        feedCapture = (chunk: unknown) => {
           const rec = chunk as Record<string, unknown>;
           summary["chunks"] = (summary["chunks"] as number) + 1;
           const model = rec["model"];
@@ -634,25 +642,24 @@ export async function* qoderGrpcToCanonicalEvents(
             if (typeof finish === "string" && finish.length > 0) summary["stop_reason"] = finish;
           }
         };
-        const flushToolCalls = () => {
+        flushToolCalls = () => {
           const entries = [...toolCallsByIndex.entries()]
             .sort((a, b) => a[0] - b[0])
             .slice(0, MAX_TOOL_CALLS)
             .map(([index, entry]) => ({ index, ...entry }));
           if (entries.length > 0) summary["toolCalls"] = entries;
         };
-        stream.on("data", onData);
         stream.on("status", (s: { code?: number; details?: string }) => {
           summary["status_code"] = s.code ?? 0;
           summary["grpc_message"] = s.details ?? "";
         });
         stream.on("error", (err: Error) => {
           summary["error"] = err.message;
-          flushToolCalls();
+          flushToolCalls?.();
           resolve(summary);
         });
         stream.on("end", () => {
-          flushToolCalls();
+          flushToolCalls?.();
           resolve(summary);
         });
       });
@@ -676,6 +683,8 @@ export async function* qoderGrpcToCanonicalEvents(
       const fragmentState: QoderToolFragmentState = {};
       for await (const chunk of stream) {
         if (aborted || signal.aborted) break;
+        // Feed the capture summary from this same chunk (single consumer).
+        feedCapture?.(chunk);
         // The upstream names the model it actually ran in the chunk's `model`
         // field. Surface it once as `response_start` so probes and telemetry
         // can report the real echoed model (the gRPC surface has no HTTP body
@@ -773,7 +782,13 @@ export async function* qoderGrpcToCanonicalEvents(
               yield {
                 type: "terminal",
                 sequence_number: nextSeq(),
-                state: stop === "stop" || stop === "tool_use" ? "complete" : "failed",
+                // `tool_use` and `refusal` are *successful* terminal verdicts:
+                // the model decided to call a tool / declined to answer, but the
+                // response itself is valid — `complete`, never `failed`. A
+                // `failed` state here made attempt-finalize treat a healthy tool
+                // turn as an upstream failure ("empty-handed") and replay it.
+                // A key `error` (or `length`) is the failed case.
+                state: stop === "stop" || stop === "tool_use" || stop === "refusal" ? "complete" : "failed",
                 stop_reason: stop,
                 provider_stop_reason: choice.finish_reason,
                 // The upstream streams `usage` in a trailing chunk *after* the

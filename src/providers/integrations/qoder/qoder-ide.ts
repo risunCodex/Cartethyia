@@ -163,6 +163,8 @@ function mapQoderFinishReason(raw: unknown): CanonicalStopReason | undefined {
   if (raw === "length") return "length";
   if (raw === "tool_calls") return "tool_use";
   if (raw === "content_filter") return "content_filter";
+  if (raw === "error") return "error";
+  if (raw === "refusal") return "refusal";
   return undefined;
 }
 
@@ -402,7 +404,9 @@ export async function* qoderBodyToCanonicalEvents(
   yield {
     type: "terminal",
     sequence_number: seq++,
-    state: "complete",
+    // `error` is a failed terminal; every other stop (stop, tool_use,
+    // refusal, content_filter, length) is a complete turn.
+    state: stopReason === "error" ? "failed" : "complete",
     ...(stopReason === undefined ? {} : { stop_reason: stopReason }),
     ...(_providerStop === undefined ? {} : { provider_stop_reason: _providerStop }),
     usage: usageFromProvider(rawUsage),

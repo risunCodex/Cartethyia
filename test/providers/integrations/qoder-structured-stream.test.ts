@@ -277,3 +277,28 @@ test("tool-style prose passes through as plain text (no echo recovery)", async (
   expect(textOf(ev)).toBe(echo);
   expect(callsOf(ev)).toHaveLength(0);
 });
+
+test("finish_reason error maps to a failed terminal", async () => {
+  const ev = await collect([
+    frame({ reasoning_content: "thinking…" }),
+    frame({}, "error"),
+  ]);
+  const terminal = ev.find((e) => e["type"] === "terminal");
+  expect(terminal).toBeDefined();
+  expect(terminal?.["state"]).toBe("failed");
+  expect(terminal?.["stop_reason"]).toBe("error");
+  expect(terminal?.["provider_stop_reason"]).toBe("error");
+});
+
+test("finish_reason refusal maps to a complete terminal with refusal stop", async () => {
+  const ev = await collect([
+    frame({ reasoning_content: "I should not assist with this." }),
+    frame({}, "refusal"),
+  ]);
+  const terminal = ev.find((e) => e["type"] === "terminal");
+  expect(terminal).toBeDefined();
+  // Refusal is a valid model answer, not a transport failure.
+  expect(terminal?.["state"]).toBe("complete");
+  expect(terminal?.["stop_reason"]).toBe("refusal");
+  expect(terminal?.["provider_stop_reason"]).toBe("refusal");
+});
