@@ -37,6 +37,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { log } from "../../../observability/logger";
+import { qoderMachineHostname, qoderMachineOs } from "../../operations/cli-platform";
 
 /** Environment code: an upstream "region/flavor", not a device identity. */
 const ENV_CODE = "3";
@@ -380,6 +381,9 @@ export function replayQoderNativeIdentity(seed: string, accountId: string): Qode
  * The upstream treats `cosy-machineid` as a stable UUID-shaped machine id
  * (the desktop client caches it; the donor hub derives a UUIDv4 from the
  * account uid). The native machineToken/Type/Code come from the UMID bridge.
+ * The OS and hostname are derived from the real runtime (`qoderMachineOs` /
+ * `qoderMachineHostname`), not hardcoded — the campaign surface fingerprint
+ * must match the actual client (verified live 2026-11-04).
  */
 export function qoderMachineHeaders(identity: QoderNativeIdentity, machineId?: string): Record<string, string> {
   const mid = machineId && machineId.length > 0 ? machineId : identity.machineToken;
@@ -388,7 +392,7 @@ export function qoderMachineHeaders(identity: QoderNativeIdentity, machineId?: s
     "cosy-machinetoken": identity.machineToken,
     "cosy-machinetype": identity.machineType,
     "cosy-machinecode": identity.machineCode,
-    "cosy-machineos": "x86_64_linux",
-    "cosy-machinehostname": "DESKTOP-QODER",
+    "cosy-machineos": qoderMachineOs(),
+    "cosy-machinehostname": qoderMachineHostname(),
   };
 }

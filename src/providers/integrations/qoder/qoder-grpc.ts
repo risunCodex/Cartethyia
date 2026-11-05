@@ -3,17 +3,17 @@
  *
  * This is the only proven surface for real 1M-token context: the HTTP IDE
  * surface caps at ~256 KiB (~60K tokens), while gRPC accepts bodies up to
- * ~8M chars (~1.9M tokens) — verified live 2026-11-04, see
- * `documentation/research/qoder/2026-11-04-qoder-grpc-1m-context.md`.
+ * ~5.5M–6M chars (~1.3M–1.4M tokens) — verified live 2026-11-05, see
+ * `documentation/research/qoder/live/2026-11-05-qoder-payload-limits.md`.
  *
  * gRPC only serves billed models: a free-tier row (`lite`) answers
  * `quota exceeded` (116) on this surface, so free-tier dispatch must use the
- * legacy COSY surface instead (see `qoder.ts` transport selection).
+ * legacy COSY surface instead (see `qoder-adapter.ts` transport selection).
  *
  * The proto is vendored at `vendor/qoder-proto/chat.proto` (from the unpacked
  * desktop client, version 1.1.81, `qoder-worker-runtime.mjs`).
  */
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,10 +22,12 @@ import * as protoLoader from "@grpc/proto-loader";
 import { GatewayError } from "../../../protocol/gateway-error";
 import type { CanonicalEvent, CanonicalRequest, CanonicalStopReason } from "../../../protocol/canonical-model";
 import { usageFromProvider } from "../../provider-usage";
+import { getQoderVersion } from "../../operations/client-versions";
 import { qoderMachineOs, qoderMachineHostname } from "../../operations/cli-platform";
-import type { QoderAuth, QoderRealm } from "./qoder-types";
-import { qoderGrpcHost } from "./qoder-realm";
+import { qoderSessionId } from "./qoder-auth";
 import { flattenCanonicalContent } from "./qoder-body";
+import { qoderGrpcHost } from "./qoder-realm";
+import type { QoderAuth, QoderRealm } from "./qoder-types";
 // The proto is embedded as a generated TS source (see `chat-proto.ts`), so
 // the gRPC surface works from source, dist, and the standalone binary alike —
 // the proto loader only reads from a path, so the string is materialized once
@@ -92,11 +94,6 @@ export function qoderGrpcChannelOptions(host: string): Record<string, number | s
     "grpc.max_receive_message_length": 32 * 1024 * 1024,
     "grpc.max_send_message_length": 32 * 1024 * 1024,
   };
-}
-
-/** Stable per-account session id (mirrors qoderStableHash). */
-function sessionIdFor(userId: string, modelId: string): string {
-  return createHash("sha256").update(`qoder-session:${userId}:${modelId}`).digest("hex").slice(0, 32);
 }
 
 /** Maps one canonical message onto the proto `ChatMessage` shape. */
@@ -283,6 +280,43 @@ export class QoderToolCallBuffer {
   }
 }
 
+/** Stitching state for continuation fragments (per-stream). */
+export interface QoderToolFragmentState {
+  /**
+   * The call id of the most recently announced tool call. Continuation
+   * fragments (which echo `id: ""` and a non-distinct `index: 0`) attach to
+   * this call — verified live (2026-11-05): upstream announces one call at a
+   * time (`id` + empty args), then streams that call's arguments as several
+   * small fragments before announcing the next call. The index is always 0,
+   * so it cannot distinguish calls.
+   */
+  lastSeenToolId?: string;
+}
+
+/**
+ * Resolves the call id for one wire fragment.
+ *
+ * - A fragment carrying a real `id` announces a (new) tool call: it becomes
+ *   the current active call and is returned.
+ * - A continuation fragment (`id: ""`) belongs to the current active call —
+ *   the upstream streams arguments in fragments right after the announce, and
+ *   each parallel call's argument fragments arrive before the next announce.
+ *
+ * Without this, each continuation gets a fresh fallback id and the client
+ * sees an empty-arguments call plus orphaned fragments (regression found live
+ * 2026-11-05 via opencode→CarteLocal).
+ */
+export function resolveQoderToolFragmentId(
+  state: QoderToolFragmentState,
+  declaredId: string | undefined,
+): string | undefined {
+  if (declaredId !== undefined && declaredId.length > 0) {
+    state.lastSeenToolId = declaredId;
+    return declaredId;
+  }
+  return state.lastSeenToolId;
+}
+
 /**
  * Maps the shared OpenAI-shaped `tools` array (from `qoderTools`) onto the
  * proto `Tool` shape — field-for-field matching the desktop client's `YDl()`
@@ -334,7 +368,7 @@ export function buildQoderGrpcRequest(
     readonly parameters?: Record<string, unknown>;
   },
 ): Record<string, unknown> {
-  const sessionId = sessionIdFor(userId, modelId);
+  const sessionId = qoderSessionId(userId, modelId);
   const messages = legacy === undefined ? request.messages.map(mapMessage) : legacy.messages.map(toProtoChatMessage);
   const tools = legacy === undefined ? [] : toProtoTools(legacy.tools ?? []);
   const toolChoice = legacy?.parameters?.["tool_choice"];
@@ -361,7 +395,11 @@ export function buildQoderGrpcRequest(
     ...(parallel === undefined ? {} : { parallel_tool_calls: { value: Boolean(parallel) } }),
     // `tool_choice` is a `google.protobuf.Value`; a string choice maps to
     // `{ stringValue: … }` (camelCase), matching the desktop client's `Qat()`.
-    ...(toolChoice !== undefined ? { tool_choice: { stringValue: String(toolChoice) } } : {}),
+    // gRPC rejects `tool_choice: "required"` outright (verified live
+    // 2026-11-05 model matrix: 400/406/422 on most models — dmodel/dfmodel/
+    // qmodel_38max/mmodel/cmodel). Omit it and let the neutral prompt carry the
+    // intent; `auto`/named choices are still sent.
+    ...(toolChoice !== undefined && toolChoice !== "required" ? { tool_choice: { stringValue: String(toolChoice) } } : {}),
     metadata: {
       context: {
         request_id: randomUUID(),
@@ -375,25 +413,26 @@ export function buildQoderGrpcRequest(
       business: {
         product: "cli",
         type: "agent",
-        version: "1.1.81",
+        version: getQoderVersion(),
       },
     },
   };
 }
 
 /** gRPC metadata headers mirroring the desktop client's identity headers. */
-export function qoderGrpcMetadata(auth: QoderAuth): grpc.Metadata {
+export function qoderGrpcMetadata(auth: QoderAuth, modelId = ""): grpc.Metadata {
   const metadata = new grpc.Metadata();
   metadata.set("authorization", `Bearer ${auth.securityOauthToken}`);
   metadata.set("x-request-id", randomUUID());
-  metadata.set("x-session-id", sessionIdFor(auth.userId, ""));
+  metadata.set("x-session-id", qoderSessionId(auth.userId, modelId));
   // The desktop client's gRPC surface sends exactly this set (bundle
   // `bDl`/`patchCompletionStream`): version, client type, real machine OS,
   // and the sanitized hostname. It does NOT send `cosy-machinetype` /
   // `cosy-machinetoken` on gRPC (those are HTTP-only identity headers), and
   // sending a bogus device token here is a candidate for a server-side
   // mid-stream reset — see documentation/proposals/qoder-grpc-wire-alignment.md.
-  metadata.set("cosy-version", "1.1.80");
+  const version = getQoderVersion();
+  metadata.set("cosy-version", version);
   metadata.set("cosy-clienttype", "5");
   metadata.set("cosy-machineos", qoderMachineOs());
   const hostname = qoderMachineHostname();
@@ -459,6 +498,8 @@ export async function* qoderGrpcToCanonicalEvents(
       // forwards fragments verbatim and the client stitches them by
       // `index`/`id` itself.
       const toolCallBuffer = new QoderToolCallBuffer();
+      /** Stitching state for continuation fragments. */
+      const fragmentState: QoderToolFragmentState = {};
       for await (const chunk of stream) {
         if (aborted || signal.aborted) break;
         // The upstream names the model it actually ran in the chunk's `model`
@@ -519,11 +560,18 @@ export async function* qoderGrpcToCanonicalEvents(
                   : fn["arguments"] !== undefined && fn["arguments"] !== null
                     ? JSON.stringify(fn["arguments"])
                     : undefined;
+              // Continuation fragments (`id: ""`) attach to the current active
+              // call — the upstream announces one call at a time (id + empty
+              // args) and then streams that call's arguments as several small
+              // fragments, with the index always 0. Without this, each
+              // fragment gets a fresh fallback id and the client sees an
+              // empty-arguments call plus orphaned fragments.
+              const pinnedId = resolveQoderToolFragmentId(fragmentState, declaredId);
               const call = toolCallBuffer.consume({
-                ...(declaredId !== undefined ? { id: declaredId } : {}),
+                ...(pinnedId !== undefined ? { id: pinnedId } : {}),
                 ...(index !== undefined ? { index } : {}),
                 ...(fragName !== undefined ? { name: fragName } : {}),
-                ...(fragArgs !== undefined ? { args: fragArgs } : {}),
+                ...(fragArgs !== undefined && fragArgs.length > 0 ? { args: fragArgs } : {}),
               });
               yield {
                 type: "tool_call_delta",

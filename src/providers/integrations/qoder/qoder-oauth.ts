@@ -18,7 +18,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { QODER_REALMS, type QoderRealm } from "./qoder-realm";
+import { QODER_REALMS, QODER_UA_CLI, type QoderRealm } from "./qoder-realm";
 import {
   base64UrlEncode,
   nonEmptyTrimmedString,
@@ -384,7 +384,7 @@ export class QoderOAuthClient extends OAuthDeviceFlow {
     try {
       response = await this.fetchFn(url, {
         method: "GET",
-        headers: { accept: "application/json", "user-agent": "Go-http-client/2.0" },
+        headers: { accept: "application/json", "user-agent": QODER_UA_CLI },
         signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
       });
     } catch (error) {
@@ -467,7 +467,7 @@ export class QoderOAuthClient extends OAuthDeviceFlow {
         headers: {
           authorization: `Bearer ${accessToken}`,
           accept: "application/json",
-          "user-agent": "Go-http-client/2.0",
+          "user-agent": QODER_UA_CLI,
         },
         signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
       });
@@ -502,7 +502,7 @@ export class QoderOAuthClient extends OAuthDeviceFlow {
         headers: {
           "content-type": "application/json",
           accept: "application/json",
-          "user-agent": "Go-http-client/2.0",
+          "user-agent": QODER_UA_CLI,
         },
         body: JSON.stringify({
           refresh_token: refreshToken,

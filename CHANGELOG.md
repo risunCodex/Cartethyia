@@ -8,7 +8,49 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [2.7.7] - 2026-11-04
+## [2.7.7] - 2026-11-05
+
+### Added
+
+- **Qoder tool-call stitching fix (gRPC) — single + paralel.** Tool calls
+  streamed via `model.chat.ChatService` now splice correctly: continuation
+  fragments (`id: ""`) attach to the current announced call instead of getting
+  a fresh fallback id — upstream sends `index: 0` for every parallel call, so
+  index-based pinning misattributed arguments between calls. Verified live via
+  opencode → CarteLocal: single shell call and multi-call parallel blocks
+  (`echo parallel-A` + `echo parallel-B`) both execute with full arguments
+  (previously `Invalid arguments ... Missing key` and glued JSON
+  `{"command":"..."}{"command":"..."}`). Regression tests in
+  `test/providers/integrations/qoder-grpc-wire.test.ts`. Documented in
+  `documentation/research/qoder/live/2026-11-05-qoder-tool-calling.md` §6.
+- **Qoder adapter restructured into focused modules.** `qoder.ts` is now a
+  re-export barrel over `qoder-auth` (PAT→job-token exchange v1), `qoder-cosy`
+  (COSY signing), `qoder-chat` (legacy builder/transport), `qoder-ide`
+  (probe-only surface), and `qoder-adapter` (transport selection + surface
+  contract). Public imports unchanged.
+- **Qoder User-Agent aligned to live captures.** CLI/COSY/device flow now use
+  `Bun/1.4.2`, the IDE surface `Bun/1.4.4`, the job-token exchange
+  `qoder/<version>` (was `Go-http-client/2.0`), and the openapi/business
+  surface `Qoder`/`QoderWork`.
+- **Qoder PAT→jobToken exchange moved to the v1 endpoint.** intl now uses
+  `POST center.qoder.sh/api/v1/jobToken/exchange` with a plain JSON body
+  `{personal_token, machine_id}` and uppercase `X-Request-ID` (was the v3
+  scrambled-COSY endpoint). `userId` falls back to the machine id (v1 does not
+  return it) — sufficient for Bearer surfaces; COSY signing uses it as the
+  identity placeholder.
+- **Qoder machine identity headers from the real runtime.** `qoderMachineHeaders`
+  now reports `cosy-machineos`/`cosy-machinehostname` from the actual platform
+  (was hardcoded `x86_64_linux`/`DESKTOP-QODER`); COSY chat headers include the
+  machine id set. gRPC version metadata is no longer hardcoded (follows
+  `getQoderVersion()`), and `X-Session-ID` is consistent across transports
+  (`sha256(userId:model)`).
+
+### Changed
+
+- **Qoder gRPC `tool_choice=required` is omitted.** The gRPC surface rejects
+  it with 400/406/422 on most models (verified in the live 150/150 matrix);
+  the neutral prompt carries the intent instead. `auto`/named choices are still
+  sent.
 
 ### Added
 

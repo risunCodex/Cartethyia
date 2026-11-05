@@ -13,6 +13,9 @@
 // Sourced from the donor hub `Public/qoder2api-hub` (`REALM_CONFIGS` in
 // `qoder_accounts.py`), which builds every upstream URL from this table.
 
+/** The bundled provider id for the intl deployment. */
+export const QODER_PROVIDER_ID = "qoder" as const;
+
 /** One Qoder deployment. */
 export type QoderRealm = "intl" | "cn";
 
@@ -30,9 +33,29 @@ export interface QoderRealmConfig {
   readonly clientId: string;
   /** Native redirect the desktop client registers. */
   readonly redirectUri: string;
-  /** Upstream-facing User-Agent. */
+  /**
+   * Upstream-facing User-Agent for the openapi/business surface. Verified
+   * live: the /sash campaign surface accepts plain `Qoder` / `QoderWork`
+   * (no version token).
+   */
   readonly userAgent: string;
+  /**
+   * Job-token exchange endpoint for PAT → jt (v1, plain JSON body).
+   * Verified live: `POST center.qoder.sh/api/v1/jobToken/exchange` with
+   * `{personal_token, machine_id}` returns `{token: jt-…, …}`.
+   */
+  readonly jobTokenUrl: string;
 }
+
+/**
+ * User agents observed in actual live captures of the real client
+ * (2026-11-05, mitmproxy):
+ * - CLI / legacy COSY chat + device flow: `Bun/1.4.2` (flow 218/030, v1.1.83)
+ * - IDE surface `/model/v1`: `Bun/1.4.4` (flow 219)
+ * - job-token exchange: `qoder/<version>` (capture, e.g. `qoder/1.1.83`)
+ */
+export const QODER_UA_CLI = "Bun/1.4.2";
+export const QODER_UA_IDE = "Bun/1.4.4";
 
 /** Chat + model-list paths, identical across realms. */
 export const QODER_CHAT_PATH =
@@ -84,7 +107,8 @@ export const QODER_REALMS: Readonly<Record<QoderRealm, QoderRealmConfig>> = {
     website: "https://qoder.com",
     clientId: "e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb",
     redirectUri: "qoder://aicoding.aicoding-agent/login-success",
-    userAgent: "Qoder/1.1.64",
+    userAgent: "Qoder",
+    jobTokenUrl: "https://center.qoder.sh/api/v1/jobToken/exchange",
   },
   cn: {
     gateway: "https://gateway.qoder.com.cn",
@@ -95,7 +119,8 @@ export const QODER_REALMS: Readonly<Record<QoderRealm, QoderRealmConfig>> = {
     // the client id the IDE registers for the CN deployment.
     clientId: "e93fe488-5778-4c35-a6fc-0f54ed7b3139",
     redirectUri: "qoder-work-cn://",
-    userAgent: "QoderWork/1.1.64",
+    userAgent: "QoderWork",
+    jobTokenUrl: "https://openapi.qoder.com.cn/api/v1/jobToken/exchange",
   },
 };
 

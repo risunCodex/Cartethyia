@@ -362,6 +362,14 @@ class CollectReport {
       if (typeof delta.reasoning_content === "string") this.reasoning += delta.reasoning_content;
       const calls = delta.tool_calls;
       if (Array.isArray(calls)) {
+        if (process.env.QODER_RAW_TOOLCALL === "1") {
+          for (const call of calls) {
+            const rec = call as Record<string, unknown>;
+            const uw = unwrapStruct(rec);
+            const inner = (uw["function"] ?? {}) as Record<string, unknown>;
+            console.log(`RAW_TOOLCALL index=${uw["index"] ?? "∅"} id=${JSON.stringify(uw["id"] ?? null)} name=${JSON.stringify(typeof inner["name"] === "string" ? inner["name"] : null)} args=${JSON.stringify(inner["arguments"] ?? null)} raw=${JSON.stringify(rec)}`);
+          }
+        }
         for (const call of calls) {
           const rec = call as Record<string, unknown>;
           // gRPC sends each tool_calls element as a Struct wrapper

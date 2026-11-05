@@ -18,8 +18,9 @@ import { hostname as osHostname } from "node:os";
 const { values } = parseArgs({
   options: {
     creds: { type: "string" },
+    token: { type: "string" },
     model: { type: "string", default: "cmodel" },
-    prompt: { type: "string", default: "Jelaskan secara singkat bagaimana cara kerja cuaca dan sebutkan 3 jenis awan." },
+    prompt: { type: "string", default: "Halo, jawab dalam satu kalimat: apa itu 1+1?" },
     attempts: { type: "string", default: "3" },
     "fresh-session": { type: "boolean", default: false },
     "timeout-ms": { type: "string", default: "90000" },
@@ -27,15 +28,15 @@ const { values } = parseArgs({
 });
 
 const creds = values.creds;
-if (!creds) throw new Error("--creds <path> is required");
+if (!creds && !values.token) throw new Error("--creds <path> or --token <jt/dt/pt> is required");
 const attempts = Number(values.attempts);
 const timeoutMs = Number(values["timeout-ms"]);
 
-const raw = JSON.parse(readFileSync(creds, "utf8"));
-const account = (Array.isArray(raw) ? raw : raw.accounts ?? [])[0];
-const token = account.accessToken ?? account.token ?? "";
-const userId: string = account.authState?.userId ?? "";
-const machineId: string = account.authState?.machineId ?? randomUUID();
+const raw = values.token ? null : JSON.parse(readFileSync(creds!, "utf8"));
+const account = values.token ? { label: "job-token" } : (Array.isArray(raw) ? raw : raw.accounts ?? [])[0];
+const token = values.token ?? account.accessToken ?? account.token ?? "";
+const userId: string = values.token ? "" : (account.authState?.userId ?? "");
+const machineId: string = values.token ? randomUUID() : (account.authState?.machineId ?? randomUUID());
 const VERSION = "1.1.83";
 const IDE_URL = "https://api2-v2.qoder.sh/model/v1/chat/completions";
 
@@ -86,7 +87,7 @@ async function attempt(): Promise<Capture> {
       },
       business: { business_product: "cli", business_type: "agent", business_version: VERSION, scene: "assistant" },
     },
-    max_tokens: 512,
+    max_tokens: 64,
     tools: [],
     parallel_tool_calls: true,
   };

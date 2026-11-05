@@ -38,7 +38,7 @@ import {
 import type { QuotaCollectionContext } from "../../quota/quota-support";
 import { log } from "../../../observability/logger";
 import { QODER_REALMS, type QoderRealm } from "./qoder-realm";
-import { isQoderPat, resolveQoderAuth } from "./qoder";
+import { isQoderPat, resolveQoderAuth } from "./qoder-auth";
 
 /** Paths on the realm's openapi host. */
 const QUOTA_PATH = "/api/v2/quota/usage";

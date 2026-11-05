@@ -16,6 +16,8 @@ import {
   qoderGrpcMetadata,
   qoderGrpcChannelOptions,
   QoderToolCallBuffer,
+  resolveQoderToolFragmentId,
+  type QoderToolFragmentState,
 } from "../../../src/providers/integrations/qoder/qoder-grpc";
 
 test("qoderGrpcMetadata sends exactly the donor's gRPC key set", () => {
@@ -224,6 +226,28 @@ test("buildQoderGrpcRequest mirrors the caller's parallel_tool_calls", () => {
   expect(builtFalse["parallel_tool_calls"]).toEqual({ value: false });
 });
 
+test("buildQoderGrpcRequest omits tool_choice=required (upstream rejects it)", () => {
+  // Verified live 2026-11-05 (model matrix 150/150): the gRPC surface
+  // rejects `tool_choice: "required"` with 400/406/422 on most models
+  // (dmodel/dfmodel/qmodel_38max/mmodel/cmodel). It must be omitted — the
+  // neutral prompt carries the intent instead.
+  const request = {
+    model: "m",
+    messages: [{ role: "user", content: "hi" }],
+  } as never;
+  const legacy = {
+    messages: [{ role: "user", content: "hi" }],
+    tools: [],
+    parameters: { tool_choice: "required" },
+  };
+  const built = buildQoderGrpcRequest("qfmodel", request, "u", 1_000_000, legacy);
+  expect(built["tool_choice"]).toBeUndefined();
+
+  // `auto` and named choices are still sent.
+  const autoLegacy = { ...legacy, parameters: { tool_choice: "auto" } };
+  expect(buildQoderGrpcRequest("qfmodel", request, "u", 1_000_000, autoLegacy)["tool_choice"]).toEqual({ stringValue: "auto" });
+});
+
 test("buildQoderGrpcRequest sends max_tokens only when the caller set it", () => {
   const request = {
     model: "m",
@@ -270,6 +294,52 @@ test("QoderToolCallBuffer maps a tool-call delta pass-through (donor $Dl)", () =
   const second = buf.consume({ id: "toolu_bdrk_01XvnKVT5a7X3", index: 1, name: "get_waktu", args: '{"zona": "Asia/Jakarta"}' });
   expect(second.callId).toBe("toolu_bdrk_01XvnKVT5a7X3");
   expect(second.arguments).toBe('{"zona": "Asia/Jakarta"}');
+});
+
+test("resolveQoderToolFragmentId pins continuation fragments to the current call", () => {
+  // The gRPC upstream echoes `id: ""` on continuation chunks; without
+  // pinning the client would see an empty-arguments call plus orphaned
+  // fragments (regression found live 2026-11-05 via opencode→CarteLocal).
+  const state: QoderToolFragmentState = {};
+
+  // Announce: fragment carries id+name, args empty.
+  const first = resolveQoderToolFragmentId(state, "toolu_bdrk_01ABC");
+  expect(first).toBe("toolu_bdrk_01ABC");
+
+  // Continuation: no id — attaches to the active call.
+  const cont = resolveQoderToolFragmentId(state, undefined);
+  expect(cont).toBe("toolu_bdrk_01ABC");
+
+  // Next announce switches the active call.
+  const second = resolveQoderToolFragmentId(state, "toolu_bdrk_01XYZ");
+  expect(second).toBe("toolu_bdrk_01XYZ");
+  const secondCont = resolveQoderToolFragmentId(state, undefined);
+  expect(secondCont).toBe("toolu_bdrk_01XYZ");
+});
+
+test("resolveQoderToolFragmentId handles parallel calls (announce then fragments, index always 0)", () => {
+  // Live wire (2026-11-05, parallel get_weather ×2):
+  //   {id: A, index:0, args:""}           announce A
+  //   {id:"", index:0, args:'{"city": "Jakar'}   fragment A
+  //   {id:"", index:0, args:'ta'}                fragment A
+  //   {id:"", index:0, args:'"}'                 fragment A
+  //   {id: B, index:0, args:""}           announce B
+  //   {id:"", index:0, args:'{"city": "Band'}   fragment B
+  const state: QoderToolFragmentState = {};
+
+  const a = resolveQoderToolFragmentId(state, "toolu_bdrk_01A");
+  expect(a).toBe("toolu_bdrk_01A");
+  const aFrag1 = resolveQoderToolFragmentId(state, undefined);
+  const aFrag2 = resolveQoderToolFragmentId(state, undefined);
+  const aFrag3 = resolveQoderToolFragmentId(state, undefined);
+  expect(aFrag1).toBe("toolu_bdrk_01A");
+  expect(aFrag2).toBe("toolu_bdrk_01A");
+  expect(aFrag3).toBe("toolu_bdrk_01A");
+
+  const b = resolveQoderToolFragmentId(state, "toolu_bdrk_01B");
+  expect(b).toBe("toolu_bdrk_01B");
+  const bFrag = resolveQoderToolFragmentId(state, undefined);
+  expect(bFrag).toBe("toolu_bdrk_01B");
 });
 
 test("QoderToolCallBuffer forwards glued arguments verbatim (no repair)", () => {

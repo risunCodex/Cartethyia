@@ -1,9 +1,8 @@
 /**
  * Shared Qoder types.
  *
- * Kept as a separate module so the gRPC transport (`qoder-grpc.ts`) and the
- * legacy/modern HTTP transport (`qoder.ts`) share one shape without importing
- * each other.
+ * Kept as a separate module so the transports (gRPC, IDE/HTTP, legacy COSY)
+ * and the auth layer share one shape without importing each other.
  */
 import type { QoderRealm } from "./qoder-realm";
 
@@ -15,7 +14,18 @@ export interface QoderAuth {
   userType: string;
   securityOauthToken: string;
   refreshToken: string;
+  /** One UUID-like machine id used in COSY signing and session identity. */
   machineId: string;
+  /**
+   * Native UMID machine token (`P1gA…`), when a native identity is bound.
+   * Absent for OAuth device tokens; the COSY header set then falls back to
+   * `machineId` for the token/type/code fields.
+   */
+  machineToken?: string;
+  /** Native UMID machine type (18-hex), when known. */
+  machineType?: string;
+  /** Native UMID machine code (18-hex), when known. */
+  machineCode?: string;
 }
 
 export interface QoderModelConfig {

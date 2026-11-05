@@ -6,6 +6,7 @@
 - [3. Postmortem — 2026-11-03 (full)](#3-postmortem--2026-11-03-full)
 - [4. Matrix Historis — via CarteLocal (2026-11-03)](#4-matrix-historis--via-cartelocal-2026-11-03)
 - [5. Implikasi Adapter (final)](#5-implikasi-adapter-final)
+- [6. Fix Live 2026-11-05 — gRPC tool-call stitching (single + paralel)](#6-fix-live-2026-11-05--grpc-tool-call-stitching-single--paralel)
 
 ## 1. Ringkasan — Pola Delta & Fix
 
@@ -263,3 +264,46 @@ Sintesis [22] §4 + [4] §Fixes + [5] §Notes.
 - **Terapkan empty-id handling di semua surface (gRPC + IDE/HTTP).** Pola `id: ""` pada continuation chunk dikonfirmasi identik di kedua surface (probe 2026-11-05). Satu parser delta umum: stitch by `index`, id first-seen, arguments accumulate; untuk gRPC, unwrap Struct (`fromProtoStruct`) sebelum parsing. Empty `id` harus diperlakukan sebagai missing id, bukan id call baru — jika tidak, setiap fragmen argument ter-orphan.
 - **Jangan jadikan non-stream sebagai path tool-calling (tanpa tool_calls).** Non-stream terbukti tidak membawa `tool_calls` sama sekali; tool calling hanya valid di path streaming (SSE IDE/HTTP atau gRPC), dengan `finish_reason=tool_calls` (eksplisit di gRPC; IDE/HTTP menutup via `[DONE]` + raw_usage).
 - **Roster slot (bukan virtual id) menentukan perilaku args.** Echo `model` adalah roster key (`qfmodel`, `qmodel_latest`, …), dan perilaku empty-args berkunci pada roster slot. Routing harus menghindari slot yang dikenal memancarkan empty args bila caller bergantung pada eksekusi tool, serta menghindari akun free tier (Sunny Koding) yang memancarkan empty args di setiap slot.
+
+---
+
+## 6. Fix Live 2026-11-05 — gRPC tool-call stitching (single + paralel)
+
+**Konteks:** ditemukan live via `opencode` → CarteLocal → Qoder gRPC (`ultimate`). Gejala: tool call terkirim dengan `arguments: {}` (`Invalid arguments for tool "shell": command: Missing key`); untuk paralel, args call ke-2 tergabung ke call ke-1 (`{"command":"..."}{"command":"..."}`).
+
+### 6.1 Wire nyata (raw dump gRPC, `QODER_RAW_TOOLCALL=1`)
+
+Single call — announce lalu fragmen:
+
+```
+{id:"toolu_bdrk_...", name:"shell", arguments:""}      ← announce (bawa id+name)
+{id:"", arguments:'{"command": "'}                       ← continuation (id kosong)
+{id:"", arguments:'"'"}                                  ← sambungan
+```
+
+Paralel — index SELALU 0, args berfragmen, announce menyela:
+
+```
+{id:A, index:0, args:""}                                 ← announce A
+{id:"", index:0, args:'{"city": "Jakar'}                 ← fragmen A
+{id:"", index:0, args:'ta'}
+{id:"", index:0, args:'"}'                               ← A lengkap
+{id:B, index:0, args:""}                                 ← announce B
+{id:"", index:0, args:'{"city": "Band'}                  ← fragmen B
+```
+
+### 6.2 Root cause & fix
+
+- `index` **tidak unik per call** (selalu 0) — pinning by index salah arah.
+- Args datang sebagai **banyak fragmen kecil**, bukan satu potongan.
+- Fix (`qoder-grpc.ts` — `resolveQoderToolFragmentId`): fragment **dengan id** = announce → menjadi `lastSeenToolId` (active call); fragment **tanpa id** = milik active call. Hanya `arguments` non-kosong yang diferuskan sebagai fragmen args (announce bawa `""` yang harus diabaikan).
+
+### 6.3 Verifikasi (harness opencode → CarteLocal)
+
+| Case | Sebelum | Sesudah |
+|---|---|---|
+| Shell single call | `arguments:{}` → Missing key | ✅ jalan, output benar |
+| Multi-call paralel satu blok (shell×2) | args tergabung `{...}{...}` (gagal 5×) | ✅ keduanya jalan: `parallel-A` & `parallel-B` |
+| write/edit/read/glob/grep/execute | — | ✅ (lihat `D:\tmp\harness-test\README.md`) |
+
+Test regresi: `test/providers/integrations/qoder-grpc-wire.test.ts` — `resolveQoderToolFragmentId` single & paralel. Full suite: **1397 pass / 0 fail**. Server dev restart dengan fix.

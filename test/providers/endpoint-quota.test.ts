@@ -326,10 +326,8 @@ describe("Qoder quota — an unreadable body is not a zero balance", () => {
       if (target.includes("jobToken")) {
         exchanges++;
         return jsonResponse({
-          id: "user-01",
-          securityOauthToken: jobToken,
-          refreshToken: "",
-          userType: "personal_standard",
+          token: jobToken,
+          refresh_token: "",
         });
       }
       if (target.includes("quota/usage")) {
