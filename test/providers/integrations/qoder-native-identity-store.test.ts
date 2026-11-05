@@ -173,20 +173,17 @@ describe("allocateQoderNativeIdentity", () => {
     }
   });
 
-  test("falls back to a generated identity when the minter fails or collides", async () => {
+  test("returns null when the minter always fails", async () => {
     const f = await fixture();
     try {
       const id = await f.account("a");
       const store = new DrizzleQoderNativeIdentityStore(f.db);
-      // A failing minter (or a hardware-bound bridge that always returns the
-      // same occupied token) must not leave the account unbound: the
-      // generated identity is deterministic per account id and reusable.
       const record = await allocateQoderNativeIdentity(store, "qoder", id, {
         mint: () => null,
       });
-      expect(record).not.toBeNull();
-      expect(record?.source).toBe("generated");
-      expect(await store.get("qoder", id)).toBeDefined();
+      expect(record).toBeNull();
+      if (record !== null) throw new Error("expected no bound record");
+      expect(await store.get("qoder", id)).toBeUndefined();
     } finally {
       f.cleanup();
     }

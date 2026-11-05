@@ -33,8 +33,8 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 import { log } from "../../../observability/logger";
 import { qoderMachineHostname, qoderMachineOs } from "../../operations/cli-platform";
@@ -73,7 +73,7 @@ export function umidMiniTarball(): string {
  * carry the extracted tree, and the repo stays clean.
  */
 export function umidMiniDir(): string {
-  const base = process.env.XDG_CACHE_HOME?.trim() || join(process.env.HOME ?? tmpdir(), ".cache");
+  const base = process.env.XDG_CACHE_HOME?.trim() || join(homeDir(), ".cache");
   return join(base, "cartethyia", "umid-mini");
 }
 
@@ -229,10 +229,27 @@ export function ensurePosixExecutable(file: string): void {
 
 /** Run the bridge inside WSL under flock; returns the identity or null. */
 
+/**
+ * The user's home directory. The bridge resolves it via the passwd entry
+ * (it ignores `$HOME`/`XDG_CONFIG_HOME`), so the seed file lives at
+ * `/home/<user>/.config/.locale_cfg` regardless of the environment. A systemd
+ * service often has no `$HOME`, so we must use the passwd home for both the
+ * seed path and the mini-bundle cache dir — otherwise `unlinkSync` deletes a
+ * wrong path, the real seed survives, and every mint yields the same token.
+ */
+function homeDir(): string {
+  try {
+    const homedir = userInfo().homedir;
+    if (homedir) return homedir;
+  } catch {
+    /* fall through to env */
+  }
+  return process.env.HOME ?? "";
+}
+
 function seedPath(): string {
   if (process.platform === "win32") return WSL_SEED;
-  const home = process.env.HOME ?? "";
-  return join(home, ".config", ".locale_cfg");
+  return join(homeDir(), ".config", ".locale_cfg");
 }
 
 /**
@@ -266,7 +283,11 @@ export function mintQoderNativeIdentity(accountId: string): { identity: QoderNat
     const seed = seedPath();
     const dir = seed.slice(0, seed.lastIndexOf("/"));
     mkdirSync(dir, { recursive: true });
-    try { spawnSync("rm", ["-f", seed]); } catch { /* ignore */ }
+    // Delete the seed via Node fs, not a spawned `rm`: in a service (systemd)
+    // context the PATH may not contain `/usr/bin`, so the spawn failed
+    // silently and the old seed survived — the bridge then re-derived the
+    // SAME token, every account collided, and minting "failed".
+    try { unlinkSync(seed); } catch { /* ignore */ }
     const r = spawnSync(exe, [ENV_CODE], { encoding: "utf8", timeout: 25_000 });
     const identity = parseBridgeLine(String(r.stdout ?? ""));
     if (!identity) { log.warn("[qoder] elf mint failed"); return null; }
@@ -280,7 +301,9 @@ export function mintQoderNativeIdentity(accountId: string): { identity: QoderNat
     const seed = seedPath();
     const dir = seed.slice(0, seed.lastIndexOf("/"));
     mkdirSync(dir, { recursive: true });
-    try { spawnSync("rm", ["-f", seed]); } catch { /* ignore */ }
+    // See the `elf` branch: spawn a `rm` can fail silently (service PATH
+    // without /usr/bin, ENOENT is not thrown), so use Node fs instead.
+    try { unlinkSync(seed); } catch { /* ignore */ }
     const r = spawnSync(exe, [ENV_CODE, "--account-stdin"], {
       input: `${JSON.stringify({ account: accountId })}\n`,
       encoding: "utf8",
@@ -297,7 +320,9 @@ export function mintQoderNativeIdentity(accountId: string): { identity: QoderNat
     const seed = seedPath();
     const dir = seed.slice(0, seed.lastIndexOf("/"));
     mkdirSync(dir, { recursive: true });
-    try { spawnSync("rm", ["-f", seed]); } catch { /* ignore */ }
+    // See the `elf` branch: spawn a `rm` can fail silently (service PATH
+    // without /usr/bin, ENOENT is not thrown), so use Node fs instead.
+    try { unlinkSync(seed); } catch { /* ignore */ }
     const r = spawnSync(exe, [ENV_CODE], {
       encoding: "utf8",
       timeout: 25_000,
