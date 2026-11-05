@@ -652,8 +652,19 @@ export class ResponsesEventEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
         `Canonical sequence_number must increase monotonically: ${event.sequence_number}`,
       );
     this.inputSequence = event.sequence_number;
-    if (this.terminal)
+    if (this.terminal) {
+      // `usage` after terminal is legitimate: several upstreams stream it in
+      // a trailing chunk after the finish-reason chunk (Qoder gRPC does). The
+      // canonical contract allows it, and dropping it here would either throw a
+      // false `invalid_lifecycle` (recording a failed attempt for a response
+      // the client already received complete) or lose the usage. Any *other*
+      // event after terminal is a genuine lifecycle violation.
+      if (event.type === "usage") {
+        this.usage = event.usage;
+        return [];
+      }
       throw new ResponsesLifecycleError("Canonical event arrived after terminal Responses event");
+    }
     if (event.type === "response_start") {
       if (event.system_fingerprint !== undefined)
         this.systemFingerprint = event.system_fingerprint;
