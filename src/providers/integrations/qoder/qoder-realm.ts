@@ -137,7 +137,7 @@ export function qoderGatewayCandidates(realm: QoderRealm): readonly string[] {
 
 /**
  * Inference hosts for one realm, ordered by token kind — mirrors the donor's
- * `qoderInferenceBase` (9router): job tokens (`jt-...`) are served by `api2`
+ * `qoderInferenceBase` (donor hub): job tokens (`jt-...`) are served by `api2`
  * and get rejected by `api3` with "Login expired" (403), while device tokens
  * (`dt-...`) and everything else use the ordinary gateway set. CN has a
  * single gateway and serves every token kind.

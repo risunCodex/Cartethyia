@@ -29,7 +29,8 @@
 Catatan kunci:
 - `Cosy-ClientType`: worker chat 5/6, **IDE business "0"**, claim campaign 10.
 - Chat modern & gRPC **tidak** memakai COSY signing — murni Bearer.
-- `X-Session-ID` IDE/HTTP = sha256(userId:model) 32-hex; gRPC pakai UUID.
+- `X-Session-ID` IDE/HTTP & gRPC = `sha256(userId:model)` 32-hex (satu identitas
+  dengan `session_id` body — fixed 2026-11-05).
 
 ## 2. Header per Permukaan
 
@@ -124,7 +125,7 @@ dari native bridge `aicoding.getMachineInfo` (UMID).
 | `X-Request-ID` | worker UUID; exchange uppercase | acak | perbaiki ke uppercase untuk jobToken exchange |
 | `x-model-key`/`x-model-source` | worker chat HTTP modern TIDAK kirim | adapter sempat kirim | hapus |
 | Model list path | `/api/v2/model/list?Encode=1` (tanpa `/algo`) | `/algo/api/v2/model/list?Encode=1` | sesuaikan |
-| jobToken exchange | `center.qoder.sh/api/v1/jobToken/exchange` (v1) | v3 lama | pakai v1 |
+| jobToken exchange | `center.qoder.sh/api/v1/jobToken/exchange` (v1, JSON plain) | v1 (dulu v3 scrambled-COSY) | pakai v1 |
 
 ## 3. Live Wire Capture
 
@@ -246,12 +247,15 @@ Insight:
 
 ## 7. Ringkasan untuk Adapter
 
-1. IDE/HTTP `/model/v1` = permukaan sederhana (Bearer + JSON plaintext +
-   Cosy identity minimal) — default chat.
+1. **gRPC `/model.chat.ChatService/ChatCompletionStream` = default chat**
+   (billed; satu-satunya carrier 1M-token context). COSY legacy `/algo` =
+   free/lite + fallback entitlement (only free-tier rows — `is_free:true`).
+   IDE/HTTP `/model/v1` = **probe/testing only, never production** (satu-satunya
+   yang meng-echo `raw_usage` provider metadata — lihat §5).
 2. gRPC = satu-satunya surface untuk konteks besar,≥256K chars); cap
    ~5.5M–6M chars.
 3. COSY legacy = free/lite + fallback entitlement; signing WASM-style
-   (AES/RSA + alphabet scramble).
+   (AES/RSA + alphabet scramble). Tidak ada fallback ke IDE dalam kondisi apa pun.
 4. Job token (`jt-`) hasil exchange PAT bisa langsung dipakai sebagai Bearer
    di permukaan modern (verified live).
 5. Jangan menggantungkan kontrak metadata pada `raw_usage`.

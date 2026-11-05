@@ -96,7 +96,7 @@ Faktor environment tambahan: gateway hanya merutek ke satu akun aktif **Sunny Ko
 ### 3.3 Environment & setup (CarteLocal, account, roster slots)
 
 - Gateway: Cartethyia dev (`bun run dev`), reverse proxy publik `:12800` → backend `:12801`.
-- Provider adapter: `src/providers/integrations/qoder/qoder.ts` — **IDE-first** (`surface === "ide"` → `/model/v1/chat/completions` di `api2-v2.qoder.sh`), COSY legacy fallback hanya pada HTTP 402 + model free-tier.
+- Provider adapter (pada sesi 2026-11-03, sebelum gRPC jadi default): `src/providers/integrations/qoder/qoder.ts` — **IDE-first** (`surface === "ide"` → `/model/v1/chat/completions` di `api2-v2.qoder.sh`), COSY legacy fallback hanya pada HTTP 402 + model free-tier. **Status final 2026-11-05:** gRPC default untuk billed; COSY free/lite; IDE probe-only — lihat `qoder-adapter.ts`.
 - Akun Qoder di `provider_accounts`:
   - **Sunny Koding** — free tier (`PLAN_TIER_FREE`, quota 0), dulu satu-satunya akun aktif; memancarkan empty args di setiap slot.
   - **Akun Ytprem** (`7f9d9d0c-dbe6-4ee5-99f2-ec2457c568b5`) — add-on 100 credits, dulu `disabled`; OAuth token `dt-…` (credential DB terdekripsi identik byte dengan file akun yang diekspor).
@@ -120,7 +120,7 @@ Langkah investigasi menuju root cause:
 
 Slot kosong awalnya salah diatribusikan ke perilaku upstream. Matrix penuh: `2026-11-03-qoder-tool-call-matrix.md`.
 
-2. **IDE vs COSY surface comparison:** signer COSY asli 9router (`Public/9router/open-sse/shared/qoder/cosy.js`, `encoding.js`, `constants.js`) diimpor ke `compare-ide-cosy2.mjs`. IDE surface (`api2-v2/model/v1`) + roster key `qmodel_latest` + `dt-*` → arguments **populated** (3/3 di run pertama harness; panggilan paralel flaky kadang truncate). COSY legacy (`api3…/agent_chat_generation`) hang/terminates dari host ini; tidak bisa diverifikasi. Adapter IDE-first; `endpoint_path` di DB tidak diawali `http`, jadi `qoderIdeChatUrl(this.realm)` menang → `api2-v2` (IDE). Gateway mengambil path IDE, bukan COSY.
+2. **IDE vs COSY surface comparison:** signer COSY asli (donor hub `open-sse/shared/qoder/cosy.js`, `encoding.js`, `constants.js`) diimpor ke `compare-ide-cosy2.mjs`. IDE surface (`api2-v2/model/v1`) + roster key `qmodel_latest` + `dt-*` → arguments **populated** (3/3 di run pertama harness; panggilan paralel flaky kadang truncate). COSY legacy (`api3…/agent_chat_generation`) hang/terminates dari host ini; tidak bisa diverifikasi. Adapter waktu itu IDE-first; `endpoint_path` di DB tidak diawali `http`, jadi `qoderIdeChatUrl(this.realm)` menang → `api2-v2` (IDE). Gateway mengambil path IDE, bukan COSY. (Sejak 2026-11-05: gRPC default — IDE probe-only.)
 
 3. **Account routing diagnosis:** `provider_routing_settings` untuk `qoder`: `round_robin`, `rotate_count: 2`. Hanya **Sunny Koding** yang `active`; tiga akun add-on `disabled`, sehingga setiap request mendarat di akun free → empty args di mana-mana. **Akun Ytprem** diaktifkan (SQL literal — `bun:sqlite` bound-parameter dengan `?` mengembalikan 0 rows / `undefined` untuk `provider_id='qoder'` dan `id=?`; interpolasi literal wajib di skrip scratch). Setelah aktif, `qwen3.8-max` dan `deepseek-v4.1-flash` populated 3/3, tapi `qwen3.8-flash` dan `qwen3.7-max` masih empty.
 
@@ -202,7 +202,7 @@ Continuation fragments kini jatuh ke pemetaan id yang di-pin `index` (atau `last
 **Decisions**
 
 - **Sunny Koding stays disabled** (free tier → empty args). Qoder routes only ke Ytprem. Jika Sunny di-re-enable, round-robin bisa mendarat di sana dan gejala empty-args kembali untuk request itu.
-- COSY legacy surface tetap unverified dari host ini (koneksi api3 hang); adapter tidak menggunakannya untuk akun yang diuji (IDE adalah default).
+- COSY legacy surface tetap unverified dari host ini (koneksi api3 hang); adapter tidak menggunakannya untuk akun yang diuji (waktu itu IDE default; kini gRPC default).
 
 **Operational notes**
 

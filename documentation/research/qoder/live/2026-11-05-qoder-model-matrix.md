@@ -401,12 +401,15 @@ The `target` string is the upstream routing profile behind the roster key — th
 
 _Sintesis [20] §5 (2026-11-05) + [7] §4 (2026-11-04)._
 
-1. **IDE/HTTP = surface paling aman** — 100% stabil untuk semua model & case,
-   termasuk `tool_choice=required` (didukung penuh).
+1. **IDE/HTTP = surface paling aman untuk PROBE** — 100% stabil untuk semua
+   model & case, termasuk `tool_choice=required` (didukung penuh). Ini adalah
+   alasan probe sebelum Provider Detail memakai IDE — **bukan** transport
+   production (production: gRPC default, COSY free/lite).
 2. **gRPC tools butuh bentuk proto presisi** — `parameters` Struct penuh,
    `description`/`strict` wrapper, `tool_choice` `{stringValue}`.
-3. **`tool_choice=required` tidak didukung gRPC** → omit field, andalkan prompt
-   (netral, non-koersif); atau fallback ke IDE.
+3. **`tool_choice=required` tidak didukung gRPC** → omit field (sudah
+   diterapkan), andalkan prompt netral. Jangan fallback ke IDE untuk ini —
+   IDE bukan transport production.
 4. **Jangan hard-code slot → model** — slots rotate backing-nya (mis. `fast`
    ganti dari `deepseek-v4-flash` ke `kimi-k2.7-code-highspeed`) dan
    `raw_usage` intermittent; `provider_metadata` adalah sumber identitas
@@ -416,8 +419,10 @@ _Sintesis [20] §5 (2026-11-05) + [7] §4 (2026-11-04)._
    (`qoderCmodelProbePrompt` untuk probe identity).
 6. **Timeout gRPC ≥120s** untuk stream besar/lambat (60s → `Cancelled on client`).
 7. **Pola delta tool-call sama di IDE & gRPC** (setelah unwrap `fromProtoStruct`).
-8. **Fallback gRPC → IDE** saat model menolak tools (400/406) — terutama
-   `cmodel`, `mmodel`, dan case `tools_required`.
+8. **Tidak ada fallback gRPC → IDE.** IDE adalah probe-only. Saat gRPC
+   menolak tools (400/406, mis. `cmodel`/`mmodel`/`tools_required`), satu-satunya
+   jalur alternatif adalah COSY untuk row free-tier — billed rows tanpa
+   workaround selain prompt netral.
 
 ---
 

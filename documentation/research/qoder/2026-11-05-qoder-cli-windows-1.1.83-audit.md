@@ -268,7 +268,8 @@ SDK Cloud Agents menggunakan `fetchImpl = globalThis.fetch` standar dengan `redi
 | gRPC proto | tidak ada di zip | vendored dari client 1.1.81 (`chat.proto`) |
 | Umid | hanya flag `DISABLE_UMID_REPORT` | bridge asli (`runtime-info` ELF/PE/Mach-O + seed replay) |
 | OAuth | tidak terlihat (di bytecode) | device flow PKCE + `qoder://aicoding.aicoding-agent/login-success` / `qoder-work-cn://` |
-| Versi UA | n/a | `Qoder/1.1.64` (intl) / `QoderWork/1.1.64` (CN) |
+| jobToken exchange | `center.qoder.sh/api/v1/jobToken/exchange` (v1, JSON plain `{personal_token, machine_id}`) | v1 — dulu v3 scrambled-COSY (`/algo/api/v3/user/jobToken?Encode=1`) |
+| Versi UA | n/a | CLI/COSY/device `Bun/1.4.2`; IDE `Bun/1.4.4`; exchange `qoder/<v>`; openapi `Qoder`/`QoderWork` |
 
 ### 9.3 Analisis
 1. **CLI 1.1.83 adalah klien modern/IDE-style, bukan klien legacy COSY.** Tidak adanya string `/algo`, `agent_chat_generation`, dan `cosy` di seluruh kode readable (dan di string pool bytecode yang hanya berisi nama runtime JSC) konsisten dengan CLI yang berkomunikasi lewat surface gRPC/OpenAI-style, sementara surface COSY legacy hidup di desktop worker (`qoder-worker-runtime.mjs` v1.1.81) yang di-reverse sebelumnya oleh tim.

@@ -23,13 +23,13 @@
 
 Dari worker NSIS 0.5.3 (`qoder-worker-runtime.obf.mjs` v1.1.79-hotfix.11, 34.8MB), COSY adalah satu-satunya permukaan chat yang hidup dan dipakai default. gRPC/IDE HTTP ada tetapi bukan jalur chat utama.
 
-### 1.1 Status permukaan chat (COSY aktif; gRPC untuk 1M ctx; HTTP modern ada)
+### 1.1 Status permukaan chat (gRPC default; COSY free/lite; HTTP modern probe-only)
 
-| Permukaan | Fungsi worker | Status |
+| Permukaan | Fungsi worker | Status di adapter |
 |---|---|---|
-| **Legacy COSY** | `F()` → `F7i()` → `prepareInferRequest()` → `M.send({transport:"legacy"})` | **AKTIF** — default untuk non-service-account, yang `infer-sse` |
-| gRPC | `ChatCompletionStream` via `acquireRoutedClient` | ada, tapi bukan default chat; dipakai untuk 1M ctx (per riset adapter) |
-| HTTP modern | `Mot()` = `https://<model-server>/model/v1/chat/completions` | ada; requestClass `infer-sse` |
+| **Legacy COSY** | `F()` → `F7i()` → `prepareInferRequest()` → `M.send({transport:"legacy"})` | **free/lite + fallback entitlement** — signing WASM-style (AES/RSA + alphabet scramble) |
+| gRPC | `ChatCompletionStream` via `acquireRoutedClient` | **DEFAULT** untuk billed rows; satu-satunya carrier 1M-token context |
+| HTTP modern | `Mot()` = `https://<model-server>/model/v1/chat/completions` | **probe/testing only** (raw_usage provider metadata), never production |
 | Model list | `act()` → `prepareRequest(A,e,"GET","auth")` | aktif, `/api/v2/model/list?Encode=1` |
 
 ### 1.2 Bukti dua path dikenali (`Ghl()`)
@@ -295,9 +295,9 @@ Analisis pola same-person/claim-id per campaign dan titik putusnya (worker vs VP
 | codebase headers | ada | **tidak ada** | Fitur baru |
 | `x-model-key`/`x-model-source` | **tidak ada** (modelKey/source masuk WASM) | adapter menambah header terpisah | bisa jadi noise |
 | injectClientIdentityHeaders | flag per request (false utk model-list service account, upload) | selalu inject | sesuaikan |
-| `Cosy-MachineHostname` | hanya saat `infer-sse` | selalu dev `DESKTOP-QODER` | ganti ke sanitized hostname |
+| `Cosy-MachineHostname` | hanya saat `infer-sse` | sanitized `qoderMachineHostname()` (dulu hardcode `DESKTOP-QODER`) | ✅ fixed 2026-11-05 |
 | model list | `GET /api/v2/model/list?Encode=1` | sama (`QODER_MODELS_PATH` = `/algo/api/v2/model/list?Encode=1`) | ⚠️ BEDA prefix: worker TANPA `/algo` |
-| jobToken exchange | `/api/v1/jobToken/exchange` openapi | intl pakai v3 center | 2 generasi; worker lebih modern |
+| jobToken exchange | `/api/v1/jobToken/exchange` openapi (JSON plain `{personal_token, machine_id}`) | intl kini v1 (`center.qoder.sh`), dulu v3 scrambled-COSY | ✅ fixed 2026-11-05 |
 
 ---
 
@@ -308,8 +308,7 @@ Analisis pola same-person/claim-id per campaign dan titik putusnya (worker vs VP
 1. **Hapus `x-model-key`/`x-model-source` headers** — worker tidak mengirimnya;
    modelKey/modelSource hanya argumen WASM. (Selaras delta A.2: native memakai
    `X-Model-Name`, bukan nama berbeda ini.)
-2. **`Cosy-MachineHostname`**: pakai `os.hostname()` sanitized, bukan hardcoded
-   `DESKTOP-QODER`.
+2. **`Cosy-MachineHostname`**: pakai `os.hostname()` sanitized (sudah — `qoderMachineHostname()`, fixed 2026-11-05; dulu hardcoded `DESKTOP-QODER`).
 3. **Model list path**: pastikan `/api/v2/model/list?Encode=1` (tanpa `/algo`).
 4. **Perhatikan `injectClientIdentityHeaders`** — jangan inject machine headers utk
    service-account dan model-list.

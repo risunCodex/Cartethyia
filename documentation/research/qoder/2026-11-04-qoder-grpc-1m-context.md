@@ -10,6 +10,12 @@ exceeds ~256 KiB (~60K tokens of ASCII). The **gRPC surface
 characters (~1.9M tokens)** — verified live, streaming 200 with real chunks.
 The gRPC path is therefore the only proven route for real 1M-token context.
 
+> **Status adapter (2026-11-05):** gRPC adalah transport **default** untuk
+> semua row billed; COSY legacy melayani free/lite (`is_free:true`); IDE
+> `/model/v1` **hanya untuk probe** (raw_usage metadata), never production.
+> Catatan: cap gRPC aktual per live 2026-11-05 adalah **~5.5M–6M chars**
+> (bukan ~8M) — lihat `documentation/research/qoder/live/2026-11-05-qoder-payload-limits.md`.
+
 ## Verification table (live, account `Akun Ytprem`, model `dmodel`)
 
 | Surface | Payload | Result |

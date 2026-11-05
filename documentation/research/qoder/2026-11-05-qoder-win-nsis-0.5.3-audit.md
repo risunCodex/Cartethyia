@@ -389,7 +389,7 @@ Header dari WASM (`prepareInferRequest`/`prepareRequest`) + worker layer:
 | Machine id derivation | `sha256("qoder-machine-id:v1:<platform>:<uuid>")` + random fallback | adapter: `machineId` UUIDv4-ish dari donor hub, native UMID token `P1gA...` | **BEDA (format token)** — worker: UMID machineToken dari runtime-info (umidpack); adapter: native UMID bridge + generated `P1gA` |
 | Device OAuth | `client_id` dari `_$d1` (obfuscated, tidak terbaca), PKCE S256 + machine_id, redirect `qoder://aicoding.aicoding-agent/login-success` (intl) / `qoder-work-cn://` (CN) | clientId intl `e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb`, CN `e93fe488-5778-4c35-a6fc-0f54ed7b3139`, redirect sama | **SAMA redirect; BEDA clientId** (tidak bisa dibandingkan — ter-obfuscate) |
 | Device poll/refresh | `/api/v1/deviceToken/poll`, `/api/v1/deviceToken/refresh` (body incl machine_id+machine_token) | sama | **SAMA** |
-| PAT→jobToken | `POST /api/v1/jobToken/exchange` `{personal_token, machine_id, machine_token}` | sama (openapi CN; center.qoder.sh v3 intl) | **BEDA** — adapter pakai `https://center.qoder.sh/algo/api/v3/user/jobToken?Encode=1` untuk intl; worker pakai `/api/v1/jobToken/exchange` di openapi |
+| PAT→jobToken | `POST /api/v1/jobToken/exchange` `{personal_token, machine_id, machine_token}` | intl & CN kini v1 (`center`/`openapi`/api/v1/jobToken/exchange`, JSON plain) — dulu intl v3 `https://center.qoder.sh/algo/api/v3/user/jobToken?Encode=1` | **SAMA (v1)** setelah fix 2026-11-05 |
 | jobToken refresh | `/api/v1/jobToken/refresh` `{refresh_token}` | tidak ada di adapter (tidak terpakai) | **BEDA** |
 | Quota/plan | `/api/v2/user/plan`, `/api/v3/user/status`, `/api/v2/quota/usage`, `/sash/api/v2/me/usage` | adapter `qoder-quota.ts` (baca jika perlu) — endpoint sama ASCII | **SAMA** |
 | Check-in | `/sash/api/v1/me/daily-check-in/status` + `/claim`, campaigns `/sash/api/v1/me/campaigns` | `qoder-checkin.ts` persis (status/claim/campaigns) | **SAMA** |
@@ -400,7 +400,7 @@ Header dari WASM (`prepareInferRequest`/`prepareRequest`) + worker layer:
 | Telemetry | OTLP localhost:4317 / Zipkin localhost:9411 | OTel juga (adapter tidak mengarah ke localhost Qoder) | **BEDA** |
 | MCP | @modelcontextprotocol v2025, stdio/node/http | tidak di adapter | — |
 | Office reader | .NET wasm + pdf/mammoth | tidak di adapter | — |
-| Machine hostname default | `cosy-machinehostname` dari `os.hostname()` sanitized | adapter hard-code `DESKTOP-QODER` | **BEDA** |
+| Machine hostname default | `cosy-machinehostname` dari `os.hostname()` sanitized | adapter sanitized `qoderMachineHostname()` — dulu hard-code `DESKTOP-QODER` (fixed 2026-11-05) | **SAMA** |
 | `X-IDE-Platform` | `qoder_cli` (HMAC path) | tidak di adapter (adapter tidak pakai HMAC canonical) | **BEDA** |
 | `X-Client-Timestamp` signature | `Authorization: Signature <hmac>` | tidak (adapter pakai COSY Bearer) | **BEDA** |
 | gRPC payload metadata business version | `1.1.79-hotfix.11` | `1.1.81` (donor) | **BEDA (versi)** |

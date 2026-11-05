@@ -49,7 +49,7 @@ Metode: `direct-ide-http.ts` → `POST api2-v2.qoder.sh/model/v1/chat/completion
 - **Limit body IDE/HTTP ≈ 256 KiB (≈ 262,000 chars)** — banget sekitar 256K.
 - Di atas itu server jawab `500 internal server error` (bukan 413; ditolak di layer layanan/istio-envoy).
 - Konfirmasi research lama: HTTP IDE surface cap ~256 KiB (~60K tokens).
-- **8M chars mustahil di permukaan ini** — untuk konteks besar, gRPC (`api2-v2.qoder.sh:443`, proto `ChatService`) adalah satu-satunya (sampai ~8M chars / 1.9M tokens, dari riset 2026-11-04 — lihat koreksi di §3 dan §5).
+- **8M chars mustahil di permukaan ini** — untuk konteks besar, gRPC (`api2-v2.qoder.sh:443`, proto `ChatService`) adalah satu-satunya (cap aktual ~5.5M–6M chars — lihat koreksi di §3 dan §5).
 
 ### 2.3 Implikasi adapter
 
@@ -133,7 +133,9 @@ service model.chat.ChatService {
 
 1. Untuk benar-benar mengirimkan context 1M-token, adapter Qoder harus mengirim **gRPC** (transport baru), bukan permukaan HTTP IDE.
 2. Roster statis/dinamis sudah memilih `max_input_tokens` = window terlebar (1M). Dengan gRPC deklarasi itu menjadi nyata.
-3. Pertahankan HTTP sebagai fallback untuk context kecil (< ~60K tokens) — lebih sederhana dan cepat; pindah ke gRPC saat body akan melebihi ~256 KiB.
+3. **gRPC adalah transport default** untuk billed rows (sejak 2026-11-05);
+   HTTP IDE hanya untuk probe (raw_usage), COSY untuk free/lite. Tidak ada
+   fallback ke HTTP untuk request kecil — gRPC menangani semuanya.
 4. Tidak ada akumulasi sisi-session, jadi request 1M-token harus satu panggilan gRPC dengan history penuh inline. Pada ceiling ~8M chars budget token praktis ≈1.9M token — cukup untuk 1M. (Catatan: ceiling aktual 2026-11-05 lebih rendah — lihat §3/§5.)
 
 ### 4.4 Evidence artifacts
@@ -156,5 +158,6 @@ service model.chat.ChatService {
 
 *Sintesis [15] §3 + [12] §4 + [6] §3 — 2026-11-05.*
 
-- Jangan kirim > ~256K chars ke `/model/v1/chat/completions`
+- Jangan kirim > ~256K chars ke `/model/v1/chat/completions` (permukaan ini
+  hanya untuk probe; production tidak memakainya)
 - Trim/route konteks besar ke gRPC; cap aman ~5M chars (~1.25M token)
