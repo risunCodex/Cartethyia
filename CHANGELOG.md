@@ -8,6 +8,30 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Qoder: provider request/response capture now shows the gRPC chat call,
+  not the PAT exchange.** The payload-capture wrapper only saw HTTP `fetch`
+  calls, and Qoder's production chat transport is gRPC — so Request Detail's
+  Provider Request / Provider Response panels showed the PAT → job-token
+  exchange body (`center.qoder.sh/api/v1/jobToken/exchange`) for PAT accounts
+  and nothing at all for OAuth device-token accounts. The gRPC adapter now
+  fills the capture sink directly: the translated request line (grpc method,
+  host, allowlisted metadata, body) and a stream summary (chunk count, echoed
+  model, usage, stop reason, status). Credential headers (`authorization`,
+  `cosy-machinetoken`) are excluded, matching the HTTP capture allowlist.
+- **Antigravity: tool schemas with `anyOf`/`oneOf`/multi-type are flattened
+  before dispatch.** The upstream (Claude-route) validates tool schemas as
+  strict JSON Schema draft 2020-12 and rejects *every* `anyOf` / `oneOf` /
+  multi-type `type: [...]` declaration — even a degenerate `anyOf` of two
+  identical string schemas — with `tools.N.custom.input_schema: JSON schema
+  is invalid`, failing the whole request. Tools declaring unions (e.g. OMP's
+  `task` tool's `model` field) now ship the most permissive single type
+  (string when a choice is a string), recursively through `properties` and
+  `items`.
+
 ## [2.7.8] - 2026-11-05
 
 ### Fixed
