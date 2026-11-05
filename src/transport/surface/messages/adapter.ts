@@ -17,6 +17,7 @@ import {
 import { CANONICAL_REASONING_EFFORTS, parseReasoningIntent, parseToolChoice } from "../dialects";
 import { groupedBlocks, startModel, stopData } from "./encode";
 import { finiteNumber, stringValue } from "../../../protocol/codecs";
+import { ANTHROPIC_DEFAULT_MAX_TOKENS } from "../../../protocol/request/messages";
 import { usageToMessagesWire } from "../../../providers/provider-usage";
 
 export class MessagesAdapter implements SurfaceAdapter {
@@ -39,7 +40,7 @@ export class MessagesAdapter implements SurfaceAdapter {
     const headers = options.headers ?? supplied.headers;
     if (!stringValue(body.model)) throw new Error("Messages request requires model");
     if (!Array.isArray(body.messages)) throw new Error("Messages request requires messages[]");
-    const maxTokens = body.max_tokens ?? body.maxTokens;
+    const maxTokens = body.max_tokens ?? body.maxTokens ?? ANTHROPIC_DEFAULT_MAX_TOKENS;
     if (!finiteNumber(maxTokens) || !Number.isInteger(maxTokens) || maxTokens <= 0)
       throw new Error("Messages request requires positive integer max_tokens");
     const declaredSystem = systemBlocks(body.system);

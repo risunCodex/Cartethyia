@@ -38,4 +38,19 @@ describe("chat vs messages shape overlap", () => {
     expect(chat.matchesBodyShape(body)).toBe(false);
     expect(messages.matchesBodyShape(body)).toBe(false);
   });
+
+  test("parse falls back to the gateway default when max_tokens is absent", () => {
+    const parsed = messages.parse({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    expect(parsed.generation_controls.max_tokens).toBeGreaterThan(0);
+  });
+
+  test("parse still rejects an explicit non-positive max_tokens", () => {
+    expect(() =>
+      messages.parse({
+        model: "m",
+        max_tokens: 0,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    ).toThrow(/positive integer max_tokens/);
+  });
 });
