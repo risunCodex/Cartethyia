@@ -61,6 +61,79 @@ function formatPayload(value: unknown): { readonly text: string; readonly bytes:
   return { text, bytes: new TextEncoder().encode(JSON.stringify(value)).byteLength };
 }
 
+interface ProviderToolCallView {
+  readonly index: number;
+  readonly id?: string;
+  readonly name?: string;
+  readonly arguments?: string;
+}
+
+/**
+ * Structured view of the gRPC provider-response capture. The upstream is not
+ * HTTP, so the captured "response" is the summary we collect from the stream:
+ * the emitted text, the reasoning trace, and the announced tool calls. The
+ * raw JSON summary stays below this block (the panel always renders both).
+ */
+function ProviderResponseView({ payload }: { readonly payload: unknown }): ReactNode {
+  const rec = (payload ?? {}) as Record<string, unknown>;
+  if (rec["transport"] !== "grpc") return null;
+
+  const text = typeof rec["text"] === "string" ? rec["text"] : "";
+  const reasoning = typeof rec["reasoning"] === "string" ? rec["reasoning"] : "";
+  const toolCalls = Array.isArray(rec["toolCalls"]) ? (rec["toolCalls"] as ProviderToolCallView[]) : [];
+
+  return (
+    <div className="flex flex-col gap-4 border-t border-inner-border pt-4 px-6 pb-2">
+      {text.length > 0 ? (
+        <div>
+          <div className="text-micro font-semibold uppercase tracking-label text-text-tertiary mb-2">
+            Content
+          </div>
+          <div className="text-badge text-text-primary whitespace-pre-wrap [overflow-wrap:break-word] break-words rounded-control border border-inner-border bg-surface-1 px-4 py-3 max-h-96 overflow-auto">
+            {text}
+          </div>
+        </div>
+      ) : null}
+      {reasoning.length > 0 ? (
+        <div>
+          <div className="text-micro font-semibold uppercase tracking-label text-text-tertiary mb-2">
+            Reasoning
+          </div>
+          <div className="text-badge text-text-secondary whitespace-pre-wrap [overflow-wrap:break-word] break-words rounded-control border border-inner-border bg-surface-1 px-4 py-3 max-h-96 overflow-auto">
+            {reasoning}
+          </div>
+        </div>
+      ) : null}
+      {toolCalls.length > 0 ? (
+        <div>
+          <div className="text-micro font-semibold uppercase tracking-label text-text-tertiary mb-2">
+            Tool calls ({toolCalls.length})
+          </div>
+          <div className="flex flex-col gap-2">
+            {toolCalls.map((call) => (
+              <div
+                key={`${call.index}-${call.id ?? call.name ?? ""}`}
+                className="rounded-control border border-inner-border bg-surface-1 px-4 py-3"
+              >
+                <div className="font-mono text-badge text-text-primary">
+                  <span className="text-text-tertiary">#{call.index}</span>{" "}
+                  {call.name ?? "tool"}
+                  {call.id ? <span className="text-text-tertiary"> · {call.id}</span> : null}
+                </div>
+                {call.arguments ? (
+                  <pre className="m-0 mt-2 font-mono text-micro text-text-secondary whitespace-pre-wrap [overflow-wrap:break-word] break-words max-h-64 overflow-auto">
+                    {call.arguments}
+                  </pre>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function FlowNode({
   title,
   meta,
@@ -407,6 +480,9 @@ export function RequestDetailDrawer({
                       className="p-1"
                     />
                   </div>
+                  {kind === "providerResponse" ? (
+                    <ProviderResponseView payload={payload} />
+                  ) : null}
                   <pre
                     className="select-text font-mono tabular-nums max-h-128 overflow-auto whitespace-pre-wrap [overflow-wrap:break-word] break-words m-0 border-t border-inner-border pt-4 px-6 pb-6 text-micro text-text-secondary"
                   >

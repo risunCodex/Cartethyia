@@ -567,7 +567,20 @@ export async function* qoderGrpcToCanonicalEvents(
           usage: undefined,
           stop_reason: undefined,
           status_code: 0,
+          // Materialized response content (bounded): the text the model
+          // emitted, the reasoning trace, and the tool calls that were
+          // announced. This is what Request Detail shows instead of a bare
+          // statistics block.
+          text: "",
+          reasoning: "",
+          toolCalls: [] as Array<{ index: number; id?: string; name?: string; arguments?: string }>,
         };
+        // Per-index tool-call fragments (the upstream streams one call at a
+        // time: id + empty args, then argument fragments, index always 0).
+        const toolCallsByIndex = new Map<number, { id?: string; name?: string; arguments?: string }>();
+        const MAX_TEXT_CHARS = 16_000;
+        const MAX_TOOL_CALLS = 50;
+        const MAX_TOOL_ARGS_CHARS = 2_000;
         // `stream` is attached to `data` below; the summary is updated there.
         const onData = (chunk: unknown) => {
           const rec = chunk as Record<string, unknown>;
@@ -583,14 +596,50 @@ export async function* qoderGrpcToCanonicalEvents(
           for (const choice of choices) {
             const delta = choice["delta"] as Record<string, unknown> | undefined;
             const content = delta?.["content"];
-            if (typeof content === "string") summary["answer_chars"] = (summary["answer_chars"] as number) + content.length;
+            if (typeof content === "string" && content.length > 0) {
+              summary["answer_chars"] = (summary["answer_chars"] as number) + content.length;
+              const text = summary["text"] as string;
+              if (text.length < MAX_TEXT_CHARS) {
+                summary["text"] = (text + content).slice(0, MAX_TEXT_CHARS);
+              }
+            }
             const reasoning = delta?.["reasoning_content"];
-            if (typeof reasoning === "string") summary["reasoning_chars"] = (summary["reasoning_chars"] as number) + reasoning.length;
+            if (typeof reasoning === "string" && reasoning.length > 0) {
+              summary["reasoning_chars"] = (summary["reasoning_chars"] as number) + reasoning.length;
+              const reasoningText = summary["reasoning"] as string;
+              if (reasoningText.length < MAX_TEXT_CHARS) {
+                summary["reasoning"] = (reasoningText + reasoning).slice(0, MAX_TEXT_CHARS);
+              }
+            }
             const calls = delta?.["tool_calls"];
-            if (Array.isArray(calls)) summary["tool_calls"] = (summary["tool_calls"] as number) + calls.length;
+            if (Array.isArray(calls) && calls.length > 0) {
+              summary["tool_calls"] = (summary["tool_calls"] as number) + calls.length;
+              for (const rawTc of calls) {
+                const tc = fromProtoStruct(rawTc);
+                const index = typeof tc["index"] === "number" ? (tc["index"] as number) : 0;
+                const entry = toolCallsByIndex.get(index) ?? {};
+                const declaredId = tc["id"];
+                if (typeof declaredId === "string" && declaredId.trim().length > 0) entry.id = declaredId.trim();
+                const fn = (tc["function"] ?? {}) as Record<string, unknown>;
+                const name = fn["name"];
+                if (typeof name === "string" && name.trim().length > 0) entry.name = name.trim();
+                const args = fn["arguments"];
+                if (typeof args === "string" && args.length > 0) {
+                  entry.arguments = ((entry.arguments ?? "") + args).slice(0, MAX_TOOL_ARGS_CHARS);
+                }
+                toolCallsByIndex.set(index, entry);
+              }
+            }
             const finish = choice["finish_reason"];
             if (typeof finish === "string" && finish.length > 0) summary["stop_reason"] = finish;
           }
+        };
+        const flushToolCalls = () => {
+          const entries = [...toolCallsByIndex.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .slice(0, MAX_TOOL_CALLS)
+            .map(([index, entry]) => ({ index, ...entry }));
+          if (entries.length > 0) summary["toolCalls"] = entries;
         };
         stream.on("data", onData);
         stream.on("status", (s: { code?: number; details?: string }) => {
@@ -599,9 +648,11 @@ export async function* qoderGrpcToCanonicalEvents(
         });
         stream.on("error", (err: Error) => {
           summary["error"] = err.message;
+          flushToolCalls();
           resolve(summary);
         });
         stream.on("end", () => {
+          flushToolCalls();
           resolve(summary);
         });
       });
