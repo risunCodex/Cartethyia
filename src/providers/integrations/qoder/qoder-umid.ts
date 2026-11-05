@@ -339,8 +339,8 @@ export function replayQoderNativeIdentity(seed: string, accountId: string): Qode
   if (bridge.kind === "elf") {
     const exe = join(umidpackDir(), process.arch === "arm64" ? "elf-aarch64" : "elf-x86_64", "runtime-info");
     ensurePosixExecutable(exe);
-    const seed = seedPath();
-    writeFileSync(seed, seed, "utf8");
+    const seedPathStr = seedPath();
+    writeFileSync(seedPathStr, seed, "utf8");
     const r = spawnSync(exe, [ENV_CODE], { encoding: "utf8", timeout: 25_000 });
     return parseBridgeLine(String(r.stdout ?? ""));
   }

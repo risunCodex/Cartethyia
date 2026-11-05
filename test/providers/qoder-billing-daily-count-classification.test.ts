@@ -14,6 +14,7 @@
 import { expect, test } from "bun:test";
 import { classifyAccountError } from "../../src/providers/operations/account-health-service";
 import { classifyUpstreamError } from "../../src/transport/failure-policy";
+import { GatewayError } from "../../src/protocol/gateway-error";
 
 const BILLING_DAILY = '{"code":"110","message":"Billing daily count exceeded"}';
 const UPSTREAM = { origin: "upstream" as const, scope: "account" as const };
@@ -141,4 +142,41 @@ test("textual auth rejection still invalidates the credential", () => {
     providerId: "qoder",
   });
   expect(classification.category).toBe("auth_invalidated");
+});
+
+test("Qoder gRPC quota_exceeded with providerCode cools the model for a day", () => {
+  // The gRPC surface throws `quota_exceeded` with `providerCode:
+  // "quota_exceeded"` in details. That must take the qoder model-scoped
+  // quota arm (24h) instead of falling through to the generic 429
+  // rate-limit arm (transient, short).
+  const classification = classifyAccountError(
+    new GatewayError("quota_exceeded", 429, "Qoder quota exhausted on the gRPC surface", {
+      providerCode: "quota_exceeded",
+    }, "upstream"),
+    {
+      ...UPSTREAM,
+      providerId: "qoder",
+      statusCode: 429,
+      modelId: "deepseek-v4.1-flash",
+    },
+  );
+  expect(classification.category).toBe("model_unreachable");
+  expect(classification.status).toBe("cooldown");
+  expect(classification.cooldownMs).toBe(ONE_DAY);
+  expect(classification.mutatesAccount).toBe(true);
+});
+
+test("Qoder 429 without a quota provider code stays a transient rate limit", () => {
+  const classification = classifyAccountError(
+    new GatewayError("quota_exceeded", 429, "Qoder quota exhausted on the gRPC surface", {}, "upstream"),
+    {
+      ...UPSTREAM,
+      providerId: "qoder",
+      statusCode: 429,
+      modelId: "deepseek-v4.1-flash",
+    },
+  );
+  // No provider code → not a quota signal → generic rate-limit arm.
+  expect(classification.category).toBe("rate_limit_transient");
+  expect(classification.cooldownMs).toBeLessThan(ONE_DAY);
 });

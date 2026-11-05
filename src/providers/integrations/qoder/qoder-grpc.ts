@@ -833,7 +833,7 @@ export async function* qoderGrpcToCanonicalEvents(
             "quota_exceeded",
             429,
             "Qoder quota exhausted on the gRPC surface (request {requestId})",
-            {},
+            { providerCode: "quota_exceeded" },
             "upstream",
           );
         }

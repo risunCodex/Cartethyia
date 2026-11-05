@@ -2167,3 +2167,38 @@ describe("a platform-unavailable upstream response without a body message", () =
     expect((error as GatewayError).message).toBe("origin is down for maintenance");
   });
 });
+
+describe("Qoder job-token expiry (105 / Login expired)", () => {
+  test("classifies as auth without credential evidence (re-mintable via PAT)", () => {
+    const classification = classifyUpstreamError(403, "105");
+    expect(classification.code).toBe("authentication_failed");
+    expect(classification.status).toBe(403);
+    expect(classification.origin).toBe("upstream");
+    // The PAT is still valid — re-exchanging it mints a fresh job token.
+    // Credential evidence is what parks the account; it must be absent.
+    expect(classification.credentialEvidence).toBeUndefined();
+  });
+
+  test("recognises the textual 'Login expired' verdict the same way", () => {
+    const classification = classifyUpstreamError(403, "login expired");
+    expect(classification.code).toBe("authentication_failed");
+    expect(classification.credentialEvidence).toBeUndefined();
+  });
+
+  test("mapUpstreamHttpError keeps providerCode but drops credentialEvidence", async () => {
+    const response = new Response(
+      JSON.stringify({ code: "105", message: "Login expired" }),
+      { status: 403, headers: { "content-type": "application/json" } },
+    );
+    const error = await mapUpstreamHttpError(response, "qoder").catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(GatewayError);
+    expect((error as GatewayError).code).toBe("authentication_failed");
+    expect((error as GatewayError).details.providerCode).toBe("105");
+    expect((error as GatewayError).details.credentialEvidence).toBeUndefined();
+  });
+
+  test("a genuine auth rejection still carries credential evidence", () => {
+    const classification = classifyUpstreamError(401, "invalid_api_key");
+    expect(classification.credentialEvidence).toBe(true);
+  });
+});

@@ -696,6 +696,25 @@ const AUTH_ERROR_IDENTIFIERS: ReadonlySet<string> = new Set([
   "insufficient_key_scope",
   "model_not_allowed_for_key",
 ]);
+
+/**
+ * Qoder job-token verdicts that are NOT credential evidence.
+ *
+ * A PAT (`pt-…`) is exchanged for a short-lived job token (`jt-…`). When the
+ * job token expires mid-flight the upstream answers `{"code":"105","message":
+ * "Login expired"}` (403). The PAT is still valid — re-exchanging it mints a
+ * fresh job token — so treating this as `auth_invalidated` parked a healthy
+ * account as "Re-login required". It stays `authentication_failed` (retryable;
+ * the next attempt re-runs the PAT exchange) but without `credentialEvidence`,
+ * so the account is never disabled or cooled on it.
+ */
+const QODER_JOB_TOKEN_EXPIRED: ReadonlySet<string> = new Set([
+  "105",
+  "login expired",
+  "login_expired",
+  "job token expired",
+  "jobtoken expired",
+]);
 const PLATFORM_ERROR_IDENTIFIERS: ReadonlySet<string> = new Set([
   "server_error",
   "internal_error",
@@ -809,6 +828,16 @@ export function classifyUpstreamError(
       origin: "upstream",
       rateLimitScope: "provider",
     };
+  // Qoder job-token expiry (`105` / "Login expired") is recoverable by
+  // re-exchanging the PAT — never credential evidence (see
+  // `QODER_JOB_TOKEN_EXPIRED`).
+  if (normalized !== undefined && QODER_JOB_TOKEN_EXPIRED.has(normalized)) {
+    return {
+      code: "authentication_failed",
+      status: status === 403 || status === 401 ? status : 403,
+      origin: "upstream",
+    };
+  }
   if (normalized !== undefined && AUTH_ERROR_IDENTIFIERS.has(normalized)) {
     let authStatus: number;
     if (status === 401 || status === 403) authStatus = status;
