@@ -26,7 +26,7 @@ or foundational notes stay at this root.
 | `kiro/`     | Kiro 1.4.62 wire protocol + live verification + IDE/CLI unpack                                                                                             | 3 files    |
 | `opencode/` | OpenCode free-tier wire/gate/sentinel + egress/TLS measurements (merged), desktop 2.2.5 binary evidence                                                    | 2 files    |
 | `buddy/`    | Buddy family (CodeBuddy intl/CN + WorkBuddy desktop) — chat dispatch headers, device identity, CLI 2.179.2 + desktop app.asar unpack audits, 1:1 wire gaps | 6 files    |
-| `cursor/`   | Cursor Run protocol + entitlement                                                                                                                          | 1 file     |
+| `cursor/`   | Cursor Run protocol + entitlement + agent CLI 2026.11.05 wire audit (hosts, endpoint inventory, headers)                                                   | 2 files    |
 | `grok/`     | Grok Build CLI 1.0.70 binary unpack — endpoint, headers, payload, quota                                                                                    | 1 file     |
 | `trae/`     | Trae IDE 3.6.13 unpack — endpoint inventory (chat/agent/commercial), auth headers, wire verification vs adapter                                            | 2 files   |
 
@@ -41,6 +41,7 @@ or foundational notes stay at this root.
 | 2026-10-23 | Trae     | [Agent vs. chat surface](2026-10-23-trae-agent-vs-chat-surface.md)                  |
 | 2026-10-30 | Database | [Share-child row optimization](2026-10-30-database-share-child-row-optimization.md) |
 | 2026-11-06 | Trae     | [3.6.13 unpack + wire audit](trae/2026-11-06-trae-3.6.13-unpack-wire-audit.md)     |
+| 2026-11-06 | Cursor   | [agent CLI wire audit](cursor/2026-11-06-cursor-agent-cli-wire-audit.md) — hosts, endpoint inventory, header gap audit vs adapter (x-cursor-checksum gap, timezone/team-id), payloads |
 
 
 ## Qoder findings (`qoder/`)

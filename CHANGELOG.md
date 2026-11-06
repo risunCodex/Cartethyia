@@ -12,6 +12,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Research: Cursor agent CLI 2026.11.05 wire audit.** Unpacked the
+  `cursor-agent` npm runtime (`@anysphere/agent-cli-runtime`, 102 chunks) and
+  audited hosts, Connect endpoint inventory, headers, and payloads against the
+  adapter. Findings: adapter's host/path/auth/payload map matches the CLI;
+  `x-cursor-checksum` is a bridge-worker-only header (not sent by the CLI's
+  Run/API path); CLI sends `x-cursor-timezone` on every request (adapter does
+  not); current build id is `cli-2026.11.05-86047df` (adapter fallback is one
+  build older). Full evidence:
+  `documentation/research/cursor/2026-11-06-cursor-agent-cli-wire-audit.md`.
+
 - **CodeBuddy/WorkBuddy rosters: `hy4free` added alongside `hy4`.** The
   free variant mirrors `hy4`'s metadata on every buddy roster: intl
   (cb/workbuddy) at 1M context / 64k output with tool calling and vision, CN
