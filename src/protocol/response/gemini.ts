@@ -38,15 +38,20 @@ export function responseParts(parts: readonly Record<string, unknown>[]): {
   readonly text: string;
   readonly calls: readonly { readonly id: string; readonly name: string; readonly args: Record<string, unknown> }[];
   readonly thought: string;
+  readonly thoughtSignature: string;
 } {
   const text: string[] = [];
   const thought: string[] = [];
+  let thoughtSignature = "";
   const calls: Array<{ id: string; name: string; args: Record<string, unknown> }> = [];
   let callIndex = 0;
   for (const part of parts) {
     if (typeof part["text"] === "string") {
       if (part["thought"] === true) {
         thought.push(part["text"] as string);
+        if (thoughtSignature.length === 0 && typeof part["thoughtSignature"] === "string") {
+          thoughtSignature = part["thoughtSignature"] as string;
+        }
       } else text.push(part["text"] as string);
     }
     if (isRecord(part["functionCall"]) && typeof (part["functionCall"] as Record<string, unknown>)["name"] === "string") {
@@ -58,7 +63,7 @@ export function responseParts(parts: readonly Record<string, unknown>[]): {
       });
     }
   }
-  return { text: text.join(""), calls, thought: thought.join("") };
+  return { text: text.join(""), calls, thought: thought.join(""), thoughtSignature };
 }
 
 export function mapGeminiUsage(body: Record<string, unknown>): Record<string, unknown> {

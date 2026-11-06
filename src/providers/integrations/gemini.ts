@@ -241,7 +241,7 @@ class GeminiAdapter implements ProviderAdapter {
         let seq = 1;
         yield { type: "response_start", sequence_number: seq++, model: request.model } as CanonicalEvent;
         if (output.thought) {
-          yield { type: "content_delta", sequence_number: seq++, content: { kind: "reasoning", payload: null, summary: output.thought } } as CanonicalEvent;
+          yield { type: "content_delta", sequence_number: seq++, content: { kind: "reasoning", payload: null, summary: output.thought, ...(output.thoughtSignature ? { signature: output.thoughtSignature } : {}) } } as CanonicalEvent;
         }
         if (output.text) {
           yield { type: "content_delta", sequence_number: seq++, content: { kind: "text", text: output.text } } as CanonicalEvent;
@@ -277,7 +277,7 @@ class GeminiAdapter implements ProviderAdapter {
         const { candidate: cand, parts } = geminiCandidate(parsed);
         const output = responseParts(parts);
         if (output.thought) {
-          yield { type: "content_delta", sequence_number: seq++, content: { kind: "reasoning", payload: null, summary: output.thought } } as CanonicalEvent;
+          yield { type: "content_delta", sequence_number: seq++, content: { kind: "reasoning", payload: null, summary: output.thought, ...(output.thoughtSignature ? { signature: output.thoughtSignature } : {}) } } as CanonicalEvent;
         }
         if (output.text) {
           yield { type: "content_delta", sequence_number: seq++, content: { kind: "text", text: output.text } } as CanonicalEvent;

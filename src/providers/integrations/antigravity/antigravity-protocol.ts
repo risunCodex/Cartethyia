@@ -373,6 +373,42 @@ export function normalizeAntigravityToolSchemas(request: CanonicalRequest): Cano
   return changed ? { ...request, tools: normalized } : request;
 }
 
+/**
+ * Drops replayed reasoning blocks that carry no signature on a Claude route.
+ *
+ * The Claude-route upstream requires every `thinking` block in a replayed
+ * assistant turn to carry a `signature`; an unsigned block is rejected with
+ * `400 messages.N.content.0.thinking.signature: Field required`. Chat-surface
+ * clients (e.g. OMP) replay reasoning as a bare `reasoning_content` string
+ * that has no signature — there is nothing to forward, and sending it as an
+ * unsigned `thought` part guarantees the 400.
+ *
+ * The reference client solves this with a `drop-unsigned-thinking` compat flag
+ * on `google-antigravity` (donor `anthropic.kdl:743-748`): a thinking block
+ * without a signature is simply not replayed. This mirrors that behavior —
+ * reasoning with a real signature still replays; reasoning without one is
+ * dropped so the upstream never sees an unsigned `thinking` part.
+ */
+export function dropAntigravityUnsignedReasoning(
+  request: CanonicalRequest,
+  isClaudeRoute: boolean,
+): CanonicalRequest {
+  if (!isClaudeRoute) return request;
+  const messages = request.messages;
+  let changed = false;
+  const next = messages.map((message) => {
+    if (message.role !== "assistant") return message;
+    const content = message.content.filter((part) => {
+      if (part.kind !== "reasoning") return true;
+      if (part.signature !== undefined) return true;
+      changed = true;
+      return false;
+    });
+    return changed ? { ...message, content } : message;
+  });
+  return changed ? { ...request, messages: next } : request;
+}
+
 // Last-good-endpoint stickiness
 
 /**

@@ -10,8 +10,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **OAuth browser dialog: drag-and-drop redirect URL files + field reset on
+  invalid paste.** The manual "Step 2" field now accepts a dropped file (a
+  saved redirect URL or raw code) straight into the same paste path, with a
+  highlighted drop zone. An invalid paste (a URL with no `code`, or a
+  provider error) resets the field instead of closing the modal, so the
+  operator can correct the paste without reopening the dialog.
+
 ### Fixed
 
+- **Antigravity: replayed thinking without a signature is dropped on Claude
+  routes.** The upstream requires every replayed `thinking` block to carry a
+  `signature`; a Chat-surface client replays reasoning as a bare
+  `reasoning_content` string, so the replayed `thought` part was unsigned and
+  the upstream rejected the second turn of a session with `400
+  messages.N.content.0.thinking.signature: Field required`. Claude routes now
+  drop unsigned reasoning blocks (the donor's `drop-unsigned-thinking`
+  behavior); signed reasoning still replays. Gemini routes are untouched.
+- **Antigravity/Gemini/Factory: reasoning signatures are preserved from
+  upstream responses.** `responseParts` now extracts `thoughtSignature` from
+  Gemini-family response parts and the adapters forward it on the canonical
+  reasoning event, so a signature received upstream survives the round trip
+  and replays correctly on the next turn.
 - **Qoder: provider request/response capture now shows the gRPC chat call,
   not the PAT exchange.** The payload-capture wrapper only saw HTTP `fetch`
   calls, and Qoder's production chat transport is gRPC — so Request Detail's

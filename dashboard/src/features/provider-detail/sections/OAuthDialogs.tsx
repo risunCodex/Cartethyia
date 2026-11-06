@@ -77,6 +77,7 @@ export function OAuthBrowserDialog({
 }): ReactNode {
   const [copied, setCopied] = useState(false);
   const [callbackValue, setCallbackValue] = useState("");
+  const [dragActive, setDragActive] = useState(false);
   const complete = useCompleteOAuthBrowserLogin();
   const scheduleCopyReset = useTrackedTimeout();
   const queryClient = useQueryClient();
@@ -164,9 +165,38 @@ export function OAuthBrowserDialog({
     }
   };
 
+  // A dropped file can hold the redirect URL (or raw code) — read it straight
+  // into the same field the paste path fills. The drop zone is the textarea's
+  // bounding row, so a sloppy drop still lands on it.
+  const handleDropCallbackFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = typeof reader.result === "string" ? reader.result.trim() : "";
+      if (!text) {
+        toast.error("Empty file", `"${file.name}" contained no URL to connect with.`);
+        return;
+      }
+      const parsed = extractOAuthCode(text);
+      if ("error" in parsed) {
+        // Invalid material does not close the modal — it just empties the
+        // field so the operator can try again with a clean paste.
+        setCallbackValue("");
+        toast.error("Invalid OAuth paste", parsed.error);
+        return;
+      }
+      setCallbackValue(text);
+      toast.success("Loaded redirect URL", `Read from ${file.name}`);
+    };
+    reader.onerror = () => toast.error("Could not read file", `Failed to read "${file.name}".`);
+    reader.readAsText(file);
+  };
+
   const handleConnect = () => {
     const parsed = extractOAuthCode(callbackValue);
     if ("error" in parsed) {
+      // Invalid paste does not close the modal — it resets the field so the
+      // operator can immediately paste the correct URL without reopening.
+      setCallbackValue("");
       toast.error("OAuth callback failed", parsed.error);
       return;
     }
@@ -265,14 +295,33 @@ export function OAuthBrowserDialog({
             your browser and paste it below — this works from any machine, not just localhost.
           </p>
           <Inline gap="8px" align="flex-start">
-            <textarea
-              value={callbackValue}
-              onChange={(event) => setCallbackValue(event.target.value)}
-              placeholder="http://127.0.0.1:59653/callback?code=…&state=…  (or just the code)"
-              rows={2}
-              spellCheck={false}
-              className="w-full min-h-16 resize-y rounded-control border border-inner-border bg-input-bg px-2.5 py-2 font-mono text-badge text-text-primary box-border focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1 flex-1"
-            />
+            <div
+              className={`flex-1 min-w-0 rounded-control border-2 border-dashed transition-colors ${
+                dragActive ? "border-accent bg-accent-soft" : ""
+              }`}
+              data-drag-active={dragActive ? "true" : undefined}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragActive(true);
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDragActive(false);
+                const file = event.dataTransfer.files[0];
+                if (!file) return;
+                handleDropCallbackFile(file);
+              }}
+            >
+              <textarea
+                value={callbackValue}
+                onChange={(event) => setCallbackValue(event.target.value)}
+                placeholder="http://127.0.0.1:59653/callback?code=…&state=…  (or just the code)"
+                rows={2}
+                spellCheck={false}
+                className="w-full min-h-16 resize-y rounded-control border border-inner-border bg-input-bg px-2.5 py-2 font-mono text-badge text-text-primary box-border focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
+              />
+            </div>
             <Button
               variant="secondary"
               size="sm"
@@ -282,6 +331,9 @@ export function OAuthBrowserDialog({
               Paste
             </Button>
           </Inline>
+          <p className="text-badge leading-snug text-text-tertiary">
+            Or drag a file here — a saved redirect URL or raw code is read straight into the field.
+          </p>
         </div>
       </Stack>
     </Dialog>

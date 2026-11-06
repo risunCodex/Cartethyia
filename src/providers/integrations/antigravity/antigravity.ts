@@ -41,6 +41,7 @@ import {
 import {
   antigravityWireModelId,
   applySkipThoughtSignatureBypass,
+  dropAntigravityUnsignedReasoning,
   getAntigravityModelWireProfile,
   getAntigravityUserAgent,
   loadAntigravityProject,
@@ -334,6 +335,7 @@ class AntigravityAdapter implements ProviderAdapter {
               kind: "reasoning",
               payload: null,
               summary: output.thought,
+              ...(output.thoughtSignature ? { signature: output.thoughtSignature } : {}),
             },
           } as CanonicalEvent;
         }
@@ -448,6 +450,7 @@ class AntigravityAdapter implements ProviderAdapter {
               kind: "reasoning",
               payload: null,
               summary: output.thought,
+              ...(output.thoughtSignature ? { signature: output.thoughtSignature } : {}),
             },
           } as CanonicalEvent;
         }
@@ -912,7 +915,16 @@ export function buildAntigravityEnvelope(
   // for that key and would drop both the wrapper and the schema inside it —
   // the tool would ship as `{"type":"object"}` with every property gone.
   // Rewriting after the payload is built leaves nothing to recover.
-  const geminiPayload = buildGeminiPayload(normalizeAntigravityToolSchemas(request));
+  //
+  // Claude routes also drop replayed reasoning without a signature (donor
+  // `drop-unsigned-thinking`): upstream rejects an unsigned `thinking` part
+  // with 400 `messages.N.content.0.thinking.signature: Field required`.
+  const isClaudeRoute = logicalModelId.toLowerCase().includes("claude");
+  const geminiPayload = buildGeminiPayload(
+    normalizeAntigravityToolSchemas(
+      dropAntigravityUnsignedReasoning(request, isClaudeRoute),
+    ),
+  );
   const profile = getAntigravityModelWireProfile(wireModelId);
 
   const generationConfig = isRecord(geminiPayload["generationConfig"])
@@ -946,7 +958,6 @@ export function buildAntigravityEnvelope(
   const existingContents = Array.isArray(geminiPayload["contents"])
     ? (geminiPayload["contents"] as Record<string, unknown>[])
     : [];
-  const isClaudeRoute = logicalModelId.toLowerCase().includes("claude");
   // Forced choice on Gemini routes: the backend drops `toolConfig` here, so a
   // canonical `tool_choice=required` with no declared change is restated as a
   // trailing user directive (reference behavior). Claude routes implement

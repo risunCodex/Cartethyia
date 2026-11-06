@@ -555,7 +555,7 @@ class FactoryDroidAdapter implements ProviderAdapter {
       yield {
         type: "content_delta",
         sequence_number: seq++,
-        content: { kind: "reasoning", payload: null, summary: output.thought },
+        content: { kind: "reasoning", payload: null, summary: output.thought, ...(output.thoughtSignature ? { signature: output.thoughtSignature } : {}) },
       } as CanonicalEvent;
     }
     if (output.text) {
@@ -606,7 +606,7 @@ class FactoryDroidAdapter implements ProviderAdapter {
         yield {
           type: "content_delta",
           sequence_number: seq++,
-          content: { kind: "reasoning", payload: null, summary: output.thought },
+          content: { kind: "reasoning", payload: null, summary: output.thought, ...(output.thoughtSignature ? { signature: output.thoughtSignature } : {}) },
         } as CanonicalEvent;
       }
       if (output.text) {
