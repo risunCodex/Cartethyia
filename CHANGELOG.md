@@ -25,8 +25,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   operator can correct the paste without reopening the dialog.
 - **Trae probing scripts: `scripts/provider-probing/trae/`.** `probe-trae-chat`
   (chat/agent wire + SSE decode), `probe-trae-quota` (session/entitlement/pay
-  surfaces), plus `--models`/`--picker`/`--userinfo` roster and identity probes.
-  All share the adapter's own header builder and never print tokens.
+  surfaces), plus `--models`/`--picker`/`--userinfo`/`--sweep`
+  (chat/agent sweep) roster and identity probes. All share the adapter's own
+  header builder and never print tokens.
+- **Trae intl roster: search-agent configs and paygo rows added.** `search_agent`,
+  `search_agent_gpt-5.4`, `search_agent_gpt-5.3-codex`,
+  `search_agent_gemini_3_pro_with_g3f`, and `gemini-3.1-pro-paygo` join the
+  agent catalog (skipped rows that already existed: `gpt-5.4`, all `gpt-5*paygo`).
+  All verified live (2026-11-06) to stream on the agent surface with full
+  tool-calling support; specs mirror the upstream model each config resolves to.
 
 ### Changed
 

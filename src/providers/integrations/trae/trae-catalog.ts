@@ -112,9 +112,18 @@ const TRAE_INTL_ROWS: readonly TraeModelRow[] = [
   { id: "kimi-k2.7-code", displayName: "Kimi-K2.7-Code", ctx: 1000000, out: 65_536, vision: true, reasoning: true, surface: "agent" },
   { id: "kimi-k2.5", displayName: "Kimi-K2.5", ctx: 200000, out: 262_144, vision: false, reasoning: true, surface: "agent" },
   { id: "gemini-3.1-pro", displayName: "Gemini-3.1-Pro-Preview", ctx: 1000000, out: 65_536, vision: true, reasoning: true, surface: "agent" },
+  { id: "gemini-3.1-pro-paygo", displayName: "Gemini-3.1-Pro-PayGo", ctx: 1000000, out: 65_536, vision: true, reasoning: true, surface: "agent" },
   { id: "gemini-3-flash-solo", displayName: "Gemini-3-Flash-Preview", ctx: 1000000, out: 65_536, vision: true, reasoning: true, surface: "agent" },
   { id: "minimax-m3", displayName: "MiniMax-M3", ctx: 1000000, out: 512_000, vision: true, reasoning: true, surface: "agent" },
   { id: "minimax-m2.7", displayName: "MiniMax-M2.7", ctx: 200000, out: 131_072, vision: false, reasoning: true, surface: "agent" },
+  // Search-agent configs from the live picker (batch_get_detail_param). They
+  // resolve to real chat models — gpt-5.4 / gpt-5.3-codex / gemini-3-flash —
+  // and accept the same tool-calling wire as any agent row, so their specs
+  // mirror the model they resolve to (verified live 2026-11-06).
+  { id: "search_agent", displayName: "Search Agent (GPT-5)", ctx: 272000, out: 128_000, vision: true, reasoning: true, surface: "agent" },
+  { id: "search_agent_gpt-5.4", displayName: "Search Agent (GPT-5.4)", ctx: 1_000_000, out: 128_000, vision: true, reasoning: true, surface: "agent" },
+  { id: "search_agent_gpt-5.3-codex", displayName: "Search Agent (GPT-5.3-Codex)", ctx: 272000, out: 128_000, vision: true, reasoning: true, surface: "agent" },
+  { id: "search_agent_gemini_3_pro_with_g3f", displayName: "Search Agent (Gemini-3-Flash)", ctx: 1000000, out: 65_536, vision: true, reasoning: true, surface: "agent" },
 ];
 
 function traeModels(rows: readonly TraeModelRow[], providerId: string): readonly ModelDefinition[] {
