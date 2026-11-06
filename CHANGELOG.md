@@ -79,6 +79,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   send them on chat/agent; they are OAuth/business-host headers that the quota
   collector adds explicitly. The probe scripts match the adapter's reference
   wire exactly.
+- **Trae: harness-aligned semver + traffic headers.** The adapter now sends
+  `X-App-Version`, `X-App-Version-Code`, and `x-ide-version` (from
+  `getTraeVersion()`) plus `request-traffic-type` (`agent`/`chat` per surface),
+  matching the 3.6.13 harness inventory. Verified live via A/B sweep: outcome
+  identical with and without them (audit + evidence:
+  `documentation/research/trae/2026-11-06-trae-header-payload-builder-audit.md`).
 - **Antigravity: replayed thinking without a signature is dropped on Claude
   routes.** The upstream requires every replayed `thinking` block to carry a
   `signature`; a Chat-surface client replays reasoning as a bare

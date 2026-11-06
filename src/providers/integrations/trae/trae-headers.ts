@@ -70,6 +70,13 @@ export interface TraeHeaderInput {
   readonly uid: string;
   /** Version code sent as `x-ide-version-code`. */
   readonly versionCode?: string;
+  /** Client semver (e.g. `3.6.13`), sent as `X-App-Version`/`x-ide-version`. */
+  readonly appVersion?: string;
+  /**
+   * Traffic class, sent as `request-traffic-type`. Defaults to `chat`;
+   * the agent surface overrides to `agent`.
+   */
+  readonly trafficType?: string;
   /** True for the streaming chat call, which overrides `Accept`. */
   readonly stream?: boolean;
   /** Extra/replacement headers, applied case-insensitively. */
@@ -106,6 +113,17 @@ export function buildTraeHeaders(input: TraeHeaderInput): Record<string, string>
     "X-Device-Brand": encodeURIComponent(TRAE_DEVICE_BRAND),
     "X-Device-Type": encodeURIComponent("windows"),
     "X-Os-Version": encodeURIComponent(TRAE_OS_VERSION),
+    // Semver + traffic-class headers the 3.6.13 harness sends; verified live
+    // (2026-11-06) that they are accepted and change nothing (A/B sweep
+    // identical). Only sent when the caller supplies a version.
+    ...(input.appVersion === undefined
+      ? {}
+      : {
+          "X-App-Version": input.appVersion,
+          "X-App-Version-Code": input.appVersion,
+          "x-ide-version": input.appVersion,
+        }),
+    "request-traffic-type": input.trafficType ?? "chat",
   };
 
   if (input.stream === true) {

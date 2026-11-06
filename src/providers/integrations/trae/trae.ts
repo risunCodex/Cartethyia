@@ -22,6 +22,7 @@ import { resolvePromptCacheKey } from "../../operations/session-resolution";
 import { estimateTraeSessionCache } from "./trae-cache";
 import { TRAE_CN_MODELS, TRAE_INTL_MODELS, traeMaxContextWindow } from "./trae-catalog";
 import { buildTraeHeaders } from "./trae-headers";
+import { getTraeVersion } from "../../operations/client-versions";
 import {
   buildTraeChatBody,
   isTraeAgentEndpoint,
@@ -264,6 +265,8 @@ class TraeAdapter implements ProviderAdapter {
       token: auth.token,
       uid: auth.uid,
       stream: true,
+      appVersion: getTraeVersion(),
+      trafficType: agentSurface ? "agent" : "chat",
     });
 
     const primary = traeCoreForAccount(this.realm, context.credential.auth_state);
@@ -567,6 +570,7 @@ export async function discoverTraeModels(input: {
     realm: input.realm,
     token: input.token,
     uid: input.uid,
+    appVersion: getTraeVersion(),
   });
   const core = traeCoreForAccount(
     input.realm,

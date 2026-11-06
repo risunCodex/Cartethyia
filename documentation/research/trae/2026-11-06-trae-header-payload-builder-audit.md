@@ -5,6 +5,11 @@
 (Rust harness — the only place the request builder lives; JS bundles carry no
 header/endpoint literals).
 
+**Status:** audit → probe A/B → adapter applied (2026-11-06). The three
+low-risk harness headers (`X-App-Version`, `X-App-Version-Code`,
+`x-ide-version`, `request-traffic-type`) are now sent by the adapter by
+default; the rest are intentionally not adopted (internal/telemetry only).
+
 ---
 
 ## 1. Header inventory from the harness
@@ -104,16 +109,16 @@ env_metadata = {
 | `X-App-Id` | `X-App-Id` (app id `6eefa01c-1036-4c7e-9ca5-d891f63bfcd8`) | ✅ same name; value same |
 | `X-Plugin-Channel` | `x-plugin-channel` | ⚠️ case differs (HTTP case-insensitive → OK) |
 | `X-Ide-Version-Code` | `x-ide-version-code` | ⚠️ case differs → OK; but harness also sends `x-ide-version` |
-| `X-App-Version` | — | ❌ **GAP** |
-| `X-App-Version-Code` | — | ❌ **GAP** |
-| `X-Tt-Env1` | — | ❌ **GAP** |
-| `X-Use-Ppe` | — | ❌ **GAP** |
+| `X-App-Version` | `X-App-Version` (appVersion) | ✅ **ADDED** (2026-11-06) |
+| `X-App-Version-Code` | `X-App-Version-Code` (appVersion) | ✅ **ADDED** (2026-11-06) |
+| `X-Tt-Env1` | — | ❌ **GAP** (internal env flag — not adopted) |
+| `X-Use-Ppe` | — | ❌ **GAP** (PPE test flag — not adopted) |
 | `X-Trae-Authorized-Services` | — | ❌ **GAP** |
 | `X-Custom-Trace-Id` | — | ❌ **GAP** |
 | `X-Web-Id` | — | ❌ **GAP** |
-| `x-ide-version` | — | ❌ **GAP** |
+| `x-ide-version` | `x-ide-version` (appVersion) | ✅ **ADDED** (2026-11-06) |
 | `x-ide-version-type` | — | ❌ **GAP** |
-| `request-traffic-type` | — | ❌ **GAP** |
+| `request-traffic-type` | `request-traffic-type` (agent/chat) | ✅ **ADDED** (2026-11-06) |
 | `X-User-Real-IP` | — | ❌ **GAP** |
 | `X-Trae-Mobile-Commit-Id` | — | ❌ **GAP** |
 | `X-Agent-Debug-Mode` | — | ❌ **GAP** (only when debug) |
@@ -206,23 +211,23 @@ required by the live server for plain chat/agent calls.
 
 ---
 
-## 5. Recommendations (ranked)
+## 5. Recommendations (ranked — status 2026-11-06)
 
-1. **Re-evaluate `x-ide-version-code` casing/dual-version.** Harness sends both
-   `x-ide-version` (semver) and `x-ide-version-type` + date code. Sending the
-   semver too costs nothing and matches the client profile closer.
-2. **Add `X-App-Version`** (value `3.6.13`) — cheap, low-risk, matches client.
-3. **Do NOT add environment/PPE headers** (`X-Tt-Env1`, `X-Use-Ppe`) — internal
+1. ✅ **DONE — semver headers.** `x-ide-version` (semver) + `X-App-Version` +
+   `X-App-Version-Code` sent by the adapter (from `getTraeVersion()`), with
+   `request-traffic-type` set per surface (`agent`/`chat`). Verified live via
+   A/B sweep: identical PASS/FAIL outcome with and without them.
+2. **Do NOT add environment/PPE headers** (`X-Tt-Env1`, `X-Use-Ppe`) — internal
    ByteDance testing flags; adding them could trigger unintended test-path
    behavior.
-4. **Do NOT add agent-context metadata** to chat bodies (`__internal_agent_id`,
+3. **Do NOT add agent-context metadata** to chat bodies (`__internal_agent_id`,
    rules, etc.) — internal to the agent harness; the gateway has no such
    context and the server accepts our requests without them.
-5. **Trace headers** (`x-flow-traceparent`, `X-Custom-Trace-Id`) — optional; add
+4. **Trace headers** (`x-flow-traceparent`, `X-Custom-Trace-Id`) — optional; add
    only if we want server-side trace correlation.
-6. **`request-traffic-type`** — one header that may classify `chat` vs `agent`
-   vs `fast_apply`; worth adding `agent`/`chat` to match the harness.
-7. **`X-Web-Id` / `X-User-Real-IP`** — leave out (privacy decision already made
+5. **`x-ide-version-type`** — the harness pairs `x-ide-version` with a type
+   header; low value, not adopted.
+6. **`X-Web-Id` / `X-User-Real-IP`** — leave out (privacy decision already made
    for the OS/brand strings).
 
 ---

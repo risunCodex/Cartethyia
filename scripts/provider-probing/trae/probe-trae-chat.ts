@@ -62,6 +62,8 @@ const args = parseArgs({
     "sweep-chat": { type: "boolean", default: false },
     tools: { type: "boolean", default: false },
     agent: { type: "boolean", default: false },
+    "no-harness-headers": { type: "boolean", default: false },
+    "show-headers": { type: "boolean", default: false },
     timeout: { type: "string", default: "30000" },
   },
 });
@@ -260,6 +262,21 @@ async function main(): Promise<void> {
   // canonical client does NOT send x-ide-token or store-country-code on the
   // chat/agent surface (commit b6786417, Trae 1.107.1 bundle) — drop both so
   // the probe matches the adapter's reference wire exactly.
+  //
+  // `--harness-headers` (default on) adds the low-risk headers the 3.6.13
+  // harness sends that the adapter lacks: `X-App-Version` (semver),
+  // `x-ide-version` (semver, alongside the date code), `X-App-Version-Code`,
+  // and `request-traffic-type` (`agent`/`chat`). Pass `--harness-headers=false`
+  // to run the old adapter-shape baseline for A/B.
+  const harnessHeaders: Record<string, string> =
+    v["no-harness-headers"] === true
+      ? {}
+      : {
+          "X-App-Version": "3.6.13",
+          "X-App-Version-Code": "3.6.13",
+          "x-ide-version": "3.6.13",
+          "request-traffic-type": "chat",
+        };
   const headers = buildTraeHeaders({
     realm,
     token,
@@ -269,6 +286,7 @@ async function main(): Promise<void> {
     extra: {
       "x-ide-token": null,
       "store-country-code": null,
+      ...harnessHeaders,
       ...(v["cc-auth"] === true ? { "x-cloudide-token": token } : {}),
     },
   });
@@ -441,6 +459,10 @@ async function main(): Promise<void> {
     return;
   }
   console.log(`model: ${model} stream: ${stream} message: ${JSON.stringify(message)}`);
+  if (v["show-headers"] === true) {
+    console.log("headers:");
+    for (const [k, val] of Object.entries(headers)) console.log(`  ${k}: ${k.toLowerCase().includes("token") || k.toLowerCase().includes("auth") ? val.slice(0, 12) + "…" : val}`);
+  }
 
   // The agent surface (intl catalog) needs the rewritten body and its own
   // endpoint; the chat surface takes the body verbatim. Models absent from the
@@ -450,6 +472,10 @@ async function main(): Promise<void> {
   const row = roster.find((m) => m.modelId === model);
   const forceAgent = v.agent === true;
   const agentSurface = forceAgent || (row !== undefined && isTraeAgentEndpoint(row.endpointPath));
+  // Traffic classification follows the surface the request lands on.
+  if (agentSurface && harnessHeaders["request-traffic-type"] !== undefined) {
+    headers["request-traffic-type"] = "agent";
+  }
   const chatBody: Record<string, unknown> = { ...body, model_name: model };
   const agentBody: Record<string, unknown> = { ...chatBody, Request: {} };
   const payload = agentSurface ? toTraeAgentBody(agentBody as never) : chatBody;

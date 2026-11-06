@@ -237,6 +237,31 @@ describe("buildTraeHeaders", () => {
     expect(headers["x-ide-version"]).toBeUndefined();
     expect(headers["x-app-version"]).toBeUndefined();
     expect(headers["User-Agent"]).toBe("TraeClient/TTNet");
+    // Semver/traffic headers only appear when a caller supplies the version.
+    expect(headers["request-traffic-type"]).toBe("chat");
+  });
+
+  test("appVersion adds the harness semver headers", () => {
+    const headers = buildTraeHeaders({
+      realm: "intl",
+      token: "t",
+      uid: "1",
+      appVersion: "3.6.13",
+    });
+    expect(headers["X-App-Version"]).toBe("3.6.13");
+    expect(headers["X-App-Version-Code"]).toBe("3.6.13");
+    expect(headers["x-ide-version"]).toBe("3.6.13");
+    expect(headers["request-traffic-type"]).toBe("chat");
+  });
+
+  test("trafficType overrides the request-traffic-type header", () => {
+    const headers = buildTraeHeaders({
+      realm: "intl",
+      token: "t",
+      uid: "1",
+      trafficType: "agent",
+    });
+    expect(headers["request-traffic-type"]).toBe("agent");
   });
 
   test("a stream request takes the SSE Accept", () => {
