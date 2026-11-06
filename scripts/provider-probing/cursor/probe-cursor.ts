@@ -312,15 +312,15 @@ async function probeHitOnce(
             continue;
           }
           if (exec["shell_allowlist_precheck_args"]) {
-            stream.write(encodeFrame(0, buildAllowlistPrecheckResult(execId, "shell", execIdString)));
+            stream.write(encodeFrame(0, buildAllowlistPrecheckResult(execId, "shell", execIdString, true)));
             continue;
           }
           if (exec["mcp_allowlist_precheck_args"]) {
-            stream.write(encodeFrame(0, buildAllowlistPrecheckResult(execId, "mcp", execIdString)));
+            stream.write(encodeFrame(0, buildAllowlistPrecheckResult(execId, "mcp", execIdString, false)));
             continue;
           }
           if (exec["web_fetch_allowlist_precheck_args"]) {
-            stream.write(encodeFrame(0, buildAllowlistPrecheckResult(execId, "web_fetch", execIdString)));
+            stream.write(encodeFrame(0, buildAllowlistPrecheckResult(execId, "web_fetch", execIdString, false)));
             continue;
           }
           if (exec["mcp_args"]) {

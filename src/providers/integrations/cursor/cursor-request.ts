@@ -438,15 +438,18 @@ export function buildMcpRejected(
  * `ACM#2 exec_client_message{*_allowlist_precheck_result}` for frames 41/42/43.
  *
  * Cursor asks whether a shell command, MCP tool, or web fetch would be
- * permitted *before* it emits the real call. This gateway executes none of its
- * own surface, so every precheck is answered `allowlisted: false` — the model
- * never learns otherwise than that the tool must be routed through the
- * advertised MCP channel it was told about.
+ * permitted *before* it emits the real call.
+ *
+ * - `shell` → `true`: the native executor runs shell locally.
+ * - `mcp` → `true` only when the tool is client-declared (relayed); the
+ *   caller decides on the `allowlisted` flag.
+ * - `web_fetch` → `false`: web fetch is not executed by this gateway.
  */
 export function buildAllowlistPrecheckResult(
   execId: number,
   kind: "shell" | "mcp" | "web_fetch",
-  execIdString?: string,
+  execIdString: string | undefined,
+  allowlisted: boolean,
 ): Uint8Array {
   const frame =
     kind === "shell"
@@ -455,7 +458,7 @@ export function buildAllowlistPrecheckResult(
         ? "mcp_allowlist_precheck_result"
         : "web_fetch_allowlist_precheck_result";
   return encodeMessage("AgentClientMessage", {
-    exec_client_message: { id: execId, exec_id: execIdString ?? "", [frame]: { allowlisted: false } },
+    exec_client_message: { id: execId, exec_id: execIdString ?? "", [frame]: { allowlisted } },
   });
 }
 

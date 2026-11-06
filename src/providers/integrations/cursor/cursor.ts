@@ -1110,9 +1110,9 @@ class CursorAdapter implements ProviderAdapter {
       return { kind: "handled" };
     }
     // Allowlist prechecks precede the real call. They are approval probes, not
-    // invocations — this gateway advertises every executable surface through
-    // the MCP channel, so its own host surface is never allowlisted and the
-    // typed result frame (not an mcp_result) is what the server waits on.
+    // invocations. Shell is allowlisted because the native executor runs it
+    // locally; MCP is allowlisted only when the tool is client-declared
+    // (relayed to the client); web fetch is never executed and stays denied.
     const precheckKind = recordOf(execServer["shell_allowlist_precheck_args"]) !== undefined
       ? "shell"
       : recordOf(execServer["mcp_allowlist_precheck_args"]) !== undefined
@@ -1121,7 +1121,11 @@ class CursorAdapter implements ProviderAdapter {
           ? "web_fetch"
           : undefined;
     if (precheckKind !== undefined) {
-      await handle.write(buildAllowlistPrecheckResult(execId, precheckKind, execIdString));
+      const allowlisted =
+        precheckKind === "shell" ? true
+        : precheckKind === "web_fetch" ? false
+        : this.mcpArgsAreDeclared(execServer, session.descriptors);
+      await handle.write(buildAllowlistPrecheckResult(execId, precheckKind, execIdString, allowlisted));
       return { kind: "handled" };
     }
     // Native exec frames (`read_args`, `shell_args`, `ct_read_args`, …) are
@@ -1169,6 +1173,21 @@ class CursorAdapter implements ProviderAdapter {
     await handle.write(buildExecThrow(execId, refusal, execIdString));
     await handle.write(buildExecStreamClose(execId, execIdString));
     return { kind: "handled" };
+  }
+
+  /**
+   * True when an MCP allowlist precheck targets a tool the request actually
+   * declared (so it can be relayed to the client). Undeclared MCP is denied.
+   */
+  mcpArgsAreDeclared(
+    execServer: Record<string, unknown>,
+    descriptors: readonly CursorToolDescriptor[],
+  ): boolean {
+    const precheck = recordOf(execServer["mcp_allowlist_precheck_args"]);
+    if (precheck === undefined) return false;
+    const toolName = nonEmptyStringOf(precheck["tool_name"]);
+    if (toolName === undefined) return false;
+    return descriptors.some((d) => d.toolName === toolName);
   }
 
   /**
