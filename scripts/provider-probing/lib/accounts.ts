@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 export interface AccountAuthState {
   readonly userId?: string;
   readonly machineId?: string;
+  readonly region?: string;
 }
 
 export interface ExportedAccount {

@@ -1,7 +1,7 @@
 // Trae credential login and refresh.
 //
-// Trae has a real browser authorization flow, just not a device-code one: the
-// other donor's `start_login` answers `unsupported` for device authorization,
+// Trae has a real browser authorization flow, just not a device-code one: an
+// earlier probe of the device-authorization surface answered `unsupported`,
 // which is what led to the earlier claim that Trae had no OAuth login at all.
 // The browser path is `GetLoginGuidance` (discovers the login host) → the
 // operator signs in at `/authorization` → the callback carries a refresh token
@@ -18,9 +18,6 @@
 // NEW refresh token and invalidates the one sent. A refresh that persisted only
 // the access token would leave the account holding a dead refresh token and
 // unrecoverable on its next expiry.
-//
-// Sourced from the donor hub `Public/trae2api-hub` (`_refresh_account_request`
-// in `trae_client.py`).
 
 import { randomUUID } from "node:crypto";
 import { firstNonEmptyString as firstString } from "../../../shared/coerce";
@@ -50,10 +47,9 @@ const TRAE_OAUTH_USER_AGENT = "Trae/1.0.0 antigravity-cockpit-tools";
 /**
  * Plugin version the desktop client reports.
  *
- * Observed in a real authorize URL as `2.3.93439`. The donor sent `local`,
- * which is what the *web* build reports; the login page accepts it, but the
- * value is part of the fingerprint upstream correlates, so the desktop shape
- * is used here.
+ * Observed in a real authorize URL as `2.3.93439`. The web build reports
+ * `local`; the login page accepts it, but the value is part of the fingerprint
+ * upstream correlates, so the desktop shape is used here.
  */
 const TRAE_PLUGIN_VERSION = "2.3.93439";
 
@@ -61,9 +57,9 @@ const TRAE_PLUGIN_VERSION = "2.3.93439";
  * Device context for the login.
  *
  * Derived with the same function the data plane uses, so one account presents
- * one device across login and requests. A per-process random pair — what the
- * donor sends — made every gateway restart look like a brand new device to the
- * risk-control surface that correlates them.
+ * one device across login and requests. A per-process random pair would make
+ * every gateway restart look like a brand new device to the risk-control
+ * surface that correlates them.
  *
  * The seed is the login trace id because no account identity exists yet: the
  * authorize step is what produces the account.
@@ -102,10 +98,11 @@ interface TraeExchangeResponse extends TraeExchangeResult {
 
 export class TraeOAuthClient extends OAuthClient {
   /**
-   * Trae has no device-code flow — the donor's `start_login` answers
-   * `unsupported` for it — but it does have a browser authorization flow:
-   * `GetLoginGuidance` discovers the login host, the operator signs in there,
-   * and the callback carries a refresh token that `ExchangeToken` redeems.
+   * Trae has no device-code flow — an earlier probe of the device-authorization
+   * surface answered `unsupported` for it — but it does have a browser
+   * authorization flow: `GetLoginGuidance` discovers the login host, the
+   * operator signs in there, and the callback carries a refresh token that
+   * `ExchangeToken` redeems.
    *
    * Declaring only the browser half is what keeps the console from offering a
    * device login that cannot work.
@@ -691,7 +688,7 @@ interface TraeCallbackPayload {
  * Upstream has two shapes and the page picks by how the login started:
  *
  * - `?isRedirect=true&refreshToken=…&refreshExpireAt=…` — the refresh-token
- *   flow, which is what the donor implements.
+ *   flow.
  * - `?isRedirect=true&scope=trae&authCodeInfo={"AuthCode":…}&host=…` — the PKCE
  *   flow, which is what the live page actually produces here. The code inside
  *   `authCodeInfo` is what `public/oauth/ExchangeToken` redeems against the

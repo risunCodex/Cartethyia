@@ -37,7 +37,7 @@ export interface TraeModelRow {
 /** Which upstream endpoint serves a row. */
 export type TraeSurface = "chat" | "agent";
 
-/** CN roster: 20 chat-face models from the donor's client-state snapshot. */
+/** CN roster: 20 chat-face models from the client-state snapshot. */
 const TRAE_CN_ROWS: readonly TraeModelRow[] = [
   { id: "Doubao-Seed-Code", displayName: "Seed-Code", ctx: 256000, out: 224000, vision: true, reasoning: true },
   { id: "DeepSeek-V4-Flash-Official", displayName: "DeepSeek-V4-Flash", ctx: 1000000, out: 936000, vision: false, reasoning: true },

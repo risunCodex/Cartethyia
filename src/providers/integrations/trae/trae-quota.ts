@@ -9,11 +9,11 @@
 // - `ide_user_ent_usage` on the **pay** host is the entitlement: which package
 //   the account holds and when it lapses.
 //
-// The donor reads both and lets either fail without the other, and that
-// tolerance is load-bearing here too: entitlement is a *pay* host, which is the
-// first thing a region-blocked or unpaid account loses. Letting a dead pay host
-// fail the whole read would report "no quota" for an account whose session
-// meter is perfectly readable — and "no quota" is what the router parks on.
+// Both are read and either may fail without the other: entitlement is a *pay*
+// host, which is the first thing a region-blocked or unpaid account loses.
+// Letting a dead pay host fail the whole read would report "no quota" for an
+// account whose session meter is perfectly readable — and "no quota" is what
+// the router parks on.
 //
 // Headers come from `buildTraeHeaders` rather than being rebuilt here: the
 // device fingerprint is derived from the uid, and an account that reports one
@@ -39,14 +39,16 @@ import { buildTraeHeaders } from "./trae-headers";
 import { log } from "../../../observability/logger";
 import {
   TRAE_ENT_USAGE_PATH,
+  TRAE_ENT_USAGE_PATH_V2,
   TRAE_REGION_CORE_HOSTS,
+  TRAE_REGION_PAY_HOSTS,
   TRAE_REALMS,
   TRAE_SESSION_USAGE_PATH,
   type TraeRealm,
 } from "./trae-realm";
 
 /**
- * The buckets `remain_usage` carries, in the order the donor reads them.
+ * The buckets `remain_usage` carries, in the order they are read.
  *
  * `advanced_model` and `premium_model_*` are request counts; `dollar_basic` and
  * `dollar_bonus` are spend balances. They are separate budgets and must never
@@ -210,30 +212,96 @@ function parseSessionUsage(payload: unknown): {
   return { windows, plan };
 }
 
-/** The entitlement package name and lapse, from the pay host. */
+/**
+ * The entitlement payload, from the pay host.
+ *
+ * Shape verified live (2026-11-06, intl Free plan):
+ *
+ *   {
+ *     "billing_version": 3,
+ *     "is_dollar_usage_billing": true,
+ *     "user_entitlement_pack_list": [{
+ *       "display_desc": "Free plan",
+ *       "entitlement_base_info": {
+ *         "end_time": 1796083199,
+ *         "quota": { "advanced_model_request_limit": 1000, ... }
+ *       },
+ *       "quota": { "advanced_model_request_limit": 1000, ... },
+ *       "usage": { "basic_usage_amount": 0, ... },
+ *       "status": 1,
+ *       "expire_time": 0
+ *     }]
+ *   }
+ *
+ * The v2 surface (CN realm) instead carries a `usage_summary` block:
+ *
+ *   { "total_amount": 900, "consumed_amount": 0.39, ... }
+ *
+ * Limits live in `entitlement_base_info.quota` (or the sibling `quota`)
+ * as `<bucket>_limit` fields. There is no consumed/remaining count in the
+ * v1 shape — `used` stays null, and the window reports just the cap.
+ */
 function parseEntitlement(payload: unknown): {
   readonly windows: readonly ProviderQuotaWindow[];
   readonly plan: string | null;
 } {
   const root = record(payload) ?? {};
   const data = record(root["data"]) ?? root;
-  const items = Array.isArray(data["entitlement_list"])
-    ? data["entitlement_list"]
-    : Array.isArray(data["list"])
-      ? data["list"]
+  const packs = Array.isArray(data["user_entitlement_pack_list"])
+    ? data["user_entitlement_pack_list"]
+    : Array.isArray(data["entitlement_list"])
+      ? data["entitlement_list"]
       : [];
   const windows: ProviderQuotaWindow[] = [];
   let plan: string | null = null;
-  for (const entry of items) {
-    const item = record(entry);
-    if (!item) continue;
-    const name = text(item["ent_title"] ?? item["name"] ?? item["package_name"]);
+
+  // The pack's `quota` block names its fields `<bucket>_limit` — with the
+  // word `request` inside for the model buckets (`advanced_model_request_limit`),
+  // and `usage_limit` for the dollar buckets (`basic_usage_limit`). Mapping
+  // them explicitly beats string-concatenating the bucket id.
+  const LIMIT_FIELDS: Readonly<Record<string, string>> = {
+    advanced_model: "advanced_model_request_limit",
+    premium_model_fast_request: "premium_model_fast_request_limit",
+    premium_model_slow_request: "premium_model_slow_request_limit",
+    dollar_basic: "basic_usage_limit",
+    dollar_bonus: "bonus_usage_limit",
+  };
+  const LABELS = new Map<string, string>([...REQUEST_BUCKETS, ...DOLLAR_BUCKETS]);
+
+  for (const entry of packs) {
+    const pack = record(entry);
+    if (!pack) continue;
+    const base = record(pack["entitlement_base_info"]) ?? {};
+    const quota = record(base["quota"]) ?? record(pack["quota"]) ?? {};
+    const name = text(pack["display_desc"]) ?? text(pack["name"]) ?? text(pack["title"]);
     if (!plan && name) plan = name;
-    const total = number(item["total"] ?? item["quota"] ?? item["advanced_model_request_limit"]);
-    const remaining = number(item["remain"] ?? item["remaining"] ?? item["remain_usage"]);
-    const resetsAt = isoDate(item["end_time"] ?? item["endTime"] ?? item["expires_at"]);
-    const window = bucketWindow(name ?? "Entitlement", remaining, total, resetsAt);
-    if (window) windows.push(window);
+    const resetsAt = isoDate(
+      number(base["end_time"]) ?? number(pack["end_time"]) ?? number(pack["expire_time"]),
+    );
+
+    // v2 surface (CN realm): the summary carries the total and consumed
+    // amounts; use it as a single window when present.
+    const summary = record(record(data["usage_summary"]) ?? record(pack["usage_summary"]));
+    if (summary) {
+      const window = bucketWindow(
+        name ?? "Plan",
+        number(summary["consumed_amount"]),
+        number(summary["total_amount"]),
+        resetsAt,
+      );
+      if (window) windows.push(window);
+      continue;
+    }
+
+    // v1 surface: `<bucket>_limit` fields, no consumption count — the cap
+    // is all this shape can report.
+    for (const [key, limitField] of Object.entries(LIMIT_FIELDS)) {
+      const limit = number(quota[limitField]);
+      if (limit === null) continue;
+      const label = LABELS.get(key) ?? key;
+      const window = percentWindow(`trae:${key}`, label, null, resetsAt, null, limit, "independent");
+      if (window) windows.push(window);
+    }
   }
   return { windows, plan };
 }
@@ -266,6 +334,17 @@ function logTraeQuotaMiss(errors: readonly string[]): void {
  */
 function coreHost(region: string, config: (typeof TRAE_REALMS)[TraeRealm]): string {
   return (region !== "" ? TRAE_REGION_CORE_HOSTS[region] : undefined) ?? config.core;
+}
+
+/**
+ * The pay host for this account.
+ *
+ * The pay surface correlates the credential against its region, too: an `sg`
+ * account sent to the US pay host is answered 401 code 1001, while the SG pay
+ * host accepts the same token (verified live 2026-11-06).
+ */
+function payHost(region: string, config: (typeof TRAE_REALMS)[TraeRealm]): string {
+  return (region !== "" ? TRAE_REGION_PAY_HOSTS[region] : undefined) ?? config.pay;
 }
 
 export async function fetchTraeQuota(
@@ -349,7 +428,10 @@ export async function fetchTraeQuota(
   };
 
   const session = await tryRealms((config) => coreHost(region, config) + TRAE_SESSION_USAGE_PATH, "session usage", parseSessionUsage);
-  const entitlement = await tryRealms((config) => config.pay + TRAE_ENT_USAGE_PATH, "entitlement", parseEntitlement);
+  // The entitlement path differs by realm: the CN realm answers v2 (v1 lacks
+  // `usage_summary` there), the intl realm answers v1 (v2 is a 404).
+  const entPath = realm === "cn" ? TRAE_ENT_USAGE_PATH_V2 : TRAE_ENT_USAGE_PATH;
+  const entitlement = await tryRealms((config) => payHost(region, config) + entPath, "entitlement", parseEntitlement);
 
   const windows = [...(session?.windows ?? []), ...(entitlement?.windows ?? [])];
   if (!session && !entitlement) {

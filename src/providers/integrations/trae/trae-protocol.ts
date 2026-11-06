@@ -8,9 +8,6 @@
 // 2. Message `content` must be an array of parts. A plain string is refused
 //    (400/4001), so every message is normalized to parts even when there is
 //    only text.
-//
-// Sourced from the donor hub `Public/trae2api-hub` (`build_chat_body` and
-// `iter_events` in `trae_client.py`).
 
 import type { CanonicalRequest, ContentPart } from "../../../protocol/canonical-model";
 import { resolveWireMaxTokens } from "../../../protocol/translation/quirks";
@@ -79,9 +76,9 @@ export interface TraeToolCall {
 /**
  * Generation fields upstream accepts.
  *
- * Undeclared fields are deliberately omitted: the donor notes that sending
- * anything outside this set risks a 4001, so `provider_options` is never
- * spread into the body wholesale.
+ * Undeclared fields are deliberately omitted: sending anything outside this
+ * set risks a 4001, so `provider_options` is never spread into the body
+ * wholesale.
  */
 const PASSTHROUGH_OPTIONS = ["temperature", "top_p", "max_tokens", "stop"] as const;
 

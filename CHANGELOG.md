@@ -23,6 +23,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   highlighted drop zone. An invalid paste (a URL with no `code`, or a
   provider error) resets the field instead of closing the modal, so the
   operator can correct the paste without reopening the dialog.
+- **Trae probing scripts: `scripts/provider-probing/trae/`.** `probe-trae-chat`
+  (chat/agent wire + SSE decode), `probe-trae-quota` (session/entitlement/pay
+  surfaces), plus `--models`/`--picker`/`--userinfo` roster and identity probes.
+  All share the adapter's own header builder and never print tokens.
 
 ### Changed
 
@@ -36,6 +40,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Trae: entitlement model refusals (`1005`/`4015`) surface as
+  `quota_exceeded`, not platform faults or auth failures.** Verified live
+  (2026-11-06): identical wire streams fine on a paid-capable account while a
+  Free account is refused with these codes, and the refused account's token
+  still answers `GetUserInfo` 200. They previously fell through to
+  `platform_unavailable` (502), which misattributed a quota/plan wall to a
+  transient fault.
+- **Trae: the pay/quota collector now reaches the right host and parses the
+  real entitlement shape.** The intl pay default was the US host, which
+  refuses region `sg` (or region-unrecorded intl) accounts with `401 code
+  1001`; it now defaults to the SG host like the core does, and a recorded
+  `region` picks its own pay host via `TRAE_REGION_PAY_HOSTS`. The entitlement
+  parser read a shape that does not exist (`data.entitlement_list` /
+  `ent_title` / `total` / `remain`); it now reads the live
+  `user_entitlement_pack_list` (`display_desc`, `entitlement_base_info.quota`
+  caps, v2 `usage_summary` on CN), so Free/paid plans report their real caps.
+- **Trae: the data-plane header builder no longer sends `x-ide-token` or
+  `store-country-code`.** The canonical client (Trae 1.107.1 bundle) does not
+  send them on chat/agent; they are OAuth/business-host headers that the quota
+  collector adds explicitly. The probe scripts match the adapter's reference
+  wire exactly.
 - **Antigravity: replayed thinking without a signature is dropped on Claude
   routes.** The upstream requires every replayed `thinking` block to carry a
   `signature`; a Chat-surface client replays reasoning as a bare

@@ -1,17 +1,13 @@
-// Trae realms: one vendor, two unrelated deployments.
-//
-// `trae` (global / intl) and `traecn` (China) share the wire protocol — an
-// `x-ide-token` credential, a `model_name` body, an SSE stream — but nothing
-// else about the address: different core host, different account/oauth host,
-// different UA, a *different authorization scheme*, and a different model
-// roster. Treating them as one provider with a region flag is what would send
-// a CN account to `*.traeapi.us` and get it refused.
+// Regions are per-realm constants: `trae` (global / intl) and `traecn`
+// (China) share the wire protocol — an `x-ide-token` credential, a
+// `model_name` body, an SSE stream — but nothing else about the address:
+// different core host, different account/oauth host, different UA, a
+// *different authorization scheme*, and a different model roster. Treating
+// them as one provider with a region flag is what would send a CN account to
+// `*.traeapi.us` and get it refused.
 //
 // Everything per-realm lives here so the adapter, the auth builder, and the
 // discovery fetcher cannot drift apart on host, UA, or version code.
-//
-// Sourced from the donor hub `Public/trae2api-hub` (`REALMS` in
-// `trae_client.py`, `TRAEREALMS`-shaped config in `trae_accounts.py`).
 
 /** One Trae deployment. */
 export type TraeRealm = "intl" | "cn";
@@ -43,7 +39,7 @@ export interface TraeRealmConfig {
 /**
  * Chat path, identical across realms.
  *
- * The list endpoint takes a body (`{"type":"chat"}`); the donor posts it, so
+ * The list endpoint takes a body (`{"type":"chat"}`); upstream posts it, so
  * this is not a bare GET.
  */
 export const TRAE_CHAT_PATH = "/api/ide/v1/llm_raw_chat";
@@ -101,8 +97,8 @@ export const TRAE_AUTHORIZATION_PATH = "/authorization";
  * `/`, a trailing slash — is answered with "Login Failed" before the operator
  * gets to sign in, so the gateway's own `/callback` default cannot be used.
  *
- * The donor serves this on its own dynamic port; here the port comes from the
- * gateway's redirect setting and only the path is fixed.
+ * This gateway serves this on its own configured port and only the path is
+ * fixed.
  */
 export const TRAE_CALLBACK_PATH = "/authorize";
 
@@ -123,6 +119,14 @@ export const TRAE_LOGIN_GUIDANCE_URLS: readonly string[] = [
 /** Usage / entitlement paths, relative to the realm's `pay` host. */
 export const TRAE_SESSION_USAGE_PATH = "/api/v1/commercial/get_session_usage";
 export const TRAE_ENT_USAGE_PATH = "/trae/api/v1/pay/ide_user_ent_usage";
+/**
+ * The v2 entitlement path, used by the CN realm.
+ *
+ * Verified live (2026-11-06): the CN realm answers v2 — v1 lacks the
+ * `usage_summary` block there — while the intl realm answers v1 (v2 is a
+ * 404 on the intl pay host).
+ */
+export const TRAE_ENT_USAGE_PATH_V2 = "/trae/api/v2/pay/ide_user_ent_usage";
 
 /**
  * Realm → deployment.
@@ -169,7 +173,10 @@ export const TRAE_REALMS: Readonly<Record<TraeRealm, TraeRealmConfig>> = {
     coreFallbacks: ["https://core-normal.traeapi.us", "https://core-normal.trae.ai"],
     account: "https://grow-normal.trae.ai",
     accountFallbacks: ["https://grow-normal.traeapi.us"],
-    pay: "https://grow-normal.traeapi.us",
+    // SG default, like the core: the pay surface is region-correlated too, and
+    // the SG host answers an sg-provisioned (or region-unrecorded intl) account
+    // that the US host refuses with 401 code 1001 (verified live 2026-11-06).
+    pay: "https://grow-normal.trae.ai",
     ug: "https://grow-normal.traeapi.us",
     userAgent: "Trae/3.6.2",
     versionCode: "20260212",
@@ -194,6 +201,20 @@ export const TRAE_REALMS: Readonly<Record<TraeRealm, TraeRealmConfig>> = {
 export const TRAE_REGION_CORE_HOSTS: Readonly<Record<string, string>> = {
   sg: "https://coresg-normal.trae.ai",
   us: "https://core-normal.traeapi.us",
+};
+
+/**
+ * Pay host per account region, when the login reported one.
+ *
+ * Verified live (2026-11-06): an `sg` account's token is refused by the US
+ * pay host with `401 code 1001` ("we are not able to authenticate you"), and
+ * accepted by the SG pay host. Same region-routing rule as the core host —
+ * the pay surface correlates the credential against its region, so a
+ * provisioned region must pick its own pay host too.
+ */
+export const TRAE_REGION_PAY_HOSTS: Readonly<Record<string, string>> = {
+  sg: "https://grow-normal.trae.ai",
+  us: "https://grow-normal.traeapi.us",
 };
 
 /** The app id is constant across realms. */

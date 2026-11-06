@@ -150,7 +150,23 @@ describe("Trae quota — the two surfaces are independent", () => {
     ],
     [
       "ide_user_ent_usage",
-      jsonResponse({ data: { entitlement_list: [{ ent_title: "Pro", total: 500, remain: 120 }] } }),
+      jsonResponse({
+        billing_version: 3,
+        user_entitlement_pack_list: [
+          {
+            display_desc: "Free plan",
+            entitlement_base_info: {
+              end_time: 1796083199,
+              quota: {
+                advanced_model_request_limit: 1000,
+                premium_model_fast_request_limit: 10,
+              },
+            },
+            usage: { basic_usage_amount: 0 },
+            status: 1,
+          },
+        ],
+      }),
     ],
   ] as const;
 
@@ -168,6 +184,18 @@ describe("Trae quota — the two surfaces are independent", () => {
     expect(advanced?.limit).toBe(100);
     const fast = result.windows.find((w) => w.kind === "trae:Premium fast requests");
     expect(fast?.used).toBe(41); // 50 - 9
+
+    // The entitlement surface contributes its own windows from the pack list:
+    // caps from `entitlement_base_info.quota`, no consumption count in the v1
+    // shape, and the plan name from `display_desc`.
+    const entAdv = result.windows.find((w) => w.kind === "trae:advanced_model");
+    expect(entAdv).toBeDefined();
+    expect(entAdv?.limit).toBe(1000);
+    expect(entAdv?.used).toBeNull();
+    const entFast = result.windows.find((w) => w.kind === "trae:premium_model_fast_request");
+    expect(entFast).toBeDefined();
+    expect(entFast?.limit).toBe(10);
+    expect(result.plan).toBe("Free plan");
   });
 
   test("a dead pay host does not erase a readable meter", async () => {
@@ -204,6 +232,77 @@ describe("Trae quota — the two surfaces are independent", () => {
     // No windows and no error: an unreachable surface is not evidence about
     // the account, and must not cool it.
     expect(result.error).toBeNull();
+  });
+
+  test("an sg account uses the sg pay host, not the us default", async () => {
+    // The pay surface is region-correlated like the core surface: an `sg`
+    // account sent to the US pay host is answered 401 code 1001. The collector
+    // must hit the region's pay host.
+    const urls: string[] = [];
+    const fetcher = (async (url: unknown) => {
+      const target = String(url);
+      urls.push(target);
+      if (target.includes("get_session_usage")) {
+        return jsonResponse({
+          remain_usage: { advanced_model: 40 },
+          usage: { advanced_model: { limit: 100 } },
+        });
+      }
+      if (target.includes("ide_user_ent_usage")) {
+        return jsonResponse({
+          user_entitlement_pack_list: [
+            {
+              display_desc: "Free plan",
+              entitlement_base_info: { quota: { advanced_model_request_limit: 1000 } },
+            },
+          ],
+        });
+      }
+      return new Response("not found", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const result = await fetchTraeQuota("token", fetcher, {
+      auth_state: { realm: "intl", uid: "u1", region: "sg" },
+    });
+
+    expect(result.error).toBeNull();
+    expect(urls.some((u) => u.includes("grow-normal.trae.ai"))).toBe(true);
+    expect(urls.some((u) => u.includes("grow-normal.traeapi.us"))).toBe(false);
+    expect(result.windows.some((w) => w.kind === "trae:advanced_model")).toBe(true);
+  });
+
+  test("a cn realm uses the v2 entitlement path, intl uses v1", async () => {
+    const targetUrls: string[] = [];
+    const run = async (realm: string): Promise<string[]> => {
+      const urls: string[] = [];
+      const fetcher = (async (url: unknown) => {
+        const target = String(url);
+        urls.push(target);
+        if (target.includes("get_session_usage")) {
+          return jsonResponse({
+            remain_usage: { advanced_model: 40 },
+            usage: { advanced_model: { limit: 100 } },
+          });
+        }
+        if (target.includes("ide_user_ent_usage")) {
+          return jsonResponse({
+            usage_summary: { total_amount: 900, consumed_amount: 0.39 },
+          });
+        }
+        return new Response("not found", { status: 404 });
+      }) as unknown as typeof fetch;
+      await fetchTraeQuota("token", fetcher, {
+        auth_state: { realm, uid: "u1", region: realm === "cn" ? "CN" : "sg" },
+      });
+      return urls;
+    };
+
+    targetUrls.push(...(await run("intl")));
+    targetUrls.push(...(await run("cn")));
+
+    // v1 for intl, v2 for CN.
+    expect(targetUrls.filter((u) => u.includes("api/v1/pay/ide_user_ent_usage"))).toHaveLength(1);
+    expect(targetUrls.filter((u) => u.includes("api/v2/pay/ide_user_ent_usage"))).toHaveLength(1);
   });
 });
 

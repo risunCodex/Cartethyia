@@ -94,13 +94,22 @@ function extractToken(secret: string): string | undefined {
  * Maps a Trae upstream error (a named `error` SSE event, or an error object
  * in a frame body) to the canonical GatewayError.
  *
- * The mapping mirrors the reference bridge's `TRAE_ERROR_MAP`:
+ * Codes resolved from live probing (2026-11-06), not guessed:
  * - `1001` — "we are not able to authenticate you" — is a credential verdict.
  *   It must surface as account-scoped `authentication_failed` so the account
  *   is parked for re-login and failover tries a sibling — never the proxy
- *   pool.
+ *   pool. Note: the pay host answers it on *region mismatch* too (an sg
+ *   account sent to the us pay host), which is not the same as an expired
+ *   token — a token that answers `GetUserInfo` 200 is alive.
  * - `4008` / "exceeded the quota" — free-tier quota exhausted. That is a
  *   `quota_exceeded` 429, not a platform fault.
+ * - `1005` (extra `{"plan":N}`) and `4015` — entitlement verdicts. Verified
+ *   live: identical wire, a paid-capable account streams the same model fine
+ *   while a Free account is refused with these codes, and the refused
+ *   account's token still answers `GetUserInfo` 200. Neither auth nor
+ *   platform fault: `quota_exceeded`.
+ * - `4013` / region message — durable regional unavailability, scoped by the
+ *   classifier to the account (`trae-region-unavailable`).
  * - Everything else is a platform fault (`platform_unavailable`).
  */
 function throwTraeUpstreamError(
@@ -159,6 +168,27 @@ function throwTraeUpstreamError(
       502,
       message,
       { providerCode: "4013", ...(providerId ? { providerId } : {}) },
+      "upstream",
+    );
+  }
+
+  // `1005` and `4015` are entitlement verdicts, not auth failures and not
+  // platform faults. Verified live: the same wire streams fine on a
+  // paid-capable account while a Free account is refused with these codes,
+  // and the refused account's token still answers `GetUserInfo` 200. Treating
+  // them as auth would park the account for re-login pointlessly; treating
+  // them as platform faults would failover to another account that hits the
+  // same wall. They are `quota_exceeded` — the model/account cannot serve.
+  if (code === "1005" || code === "4015") {
+    throw new GatewayError(
+      "quota_exceeded",
+      429,
+      `Trae model not available on this account (upstream code ${code}): ${message} (request {requestId}). The model needs a plan or permission this account does not hold — pick another model or account ⏳`,
+      {
+        providerCode: code,
+        providerStatus: code === "1005" ? 1005 : 4015,
+        ...(providerId ? { providerId } : {}),
+      },
       "upstream",
     );
   }
@@ -326,7 +356,7 @@ class TraeAdapter implements ProviderAdapter {
       /**
        * Two frame layouts reach here and both are live.
        *
-       * The donor's client nests the answer under `chunk`; the region host this
+       * Upstream's client nests the answer under `chunk`; the region host this
        * gateway talks to sends it flat — `event: output` with
        * `{"response":"…"}` — and reports usage as a separate `token_usage`
        * frame with the OpenAI spelling at the top level. Reading only `chunk`
@@ -550,8 +580,8 @@ export async function discoverTraeModels(input: {
   return rows
     .filter((row): row is Record<string, unknown> => typeof row === "object" && row !== null)
     .map((row) => ({
-      // `model_name` is the key upstream's listing uses; the others are the
-      // spellings the older donors assumed.
+      // `model_name` is the key upstream's listing uses; `name`/`id` are
+      // spellings older snapshots assumed.
       id: String(row["model_name"] ?? row["name"] ?? row["id"] ?? "").trim(),
       ctx: traeMaxContextWindow(row),
     }))

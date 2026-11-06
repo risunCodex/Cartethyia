@@ -221,10 +221,14 @@ describe("trae device identity", () => {
 });
 
 describe("buildTraeHeaders", () => {
-  test("CN authenticates with Cloud-IDE-JWT", () => {
+  test("CN authenticates with Cloud-IDE-JWT and omits data-plane extra headers", () => {
     const headers = buildTraeHeaders({ realm: "cn", token: "t", uid: "1" });
     expect(headers["Authorization"]).toBe("Cloud-IDE-JWT t");
-    expect(headers["x-ide-token"]).toBe("t");
+    // The canonical client does not send `x-ide-token` on the chat/agent data
+    // plane (Trae 1.107.1 bundle, commit b6786417); it is an OAuth/business
+    // header only. A probe with it diverged from the reference wire.
+    expect(headers["x-ide-token"]).toBeUndefined();
+    expect(headers["store-country-code"]).toBeUndefined();
   });
 
   test("intl uses the same Cloud-IDE-JWT scheme as CN", () => {
@@ -548,9 +552,35 @@ describe("trae stream framing", () => {
 });
 
 describe("trae Agent tool streams", () => {
-  test("an SSE error without a message preserves the upstream code", async () => {
-    await expect(agentEvents([{ event: "error", data: { code: 4015, message: "" } }]))
-      .rejects.toThrow("Trae stream error (upstream code 4015)");
+  test("an SSE 4015 is an entitlement verdict, not auth or platform", async () => {
+    // Verified live (2026-11-06): identical wire, a paid-capable account
+    // streams the same model fine while a Free account is refused with 4015
+    // (and 1005 {"plan":N}); the refused token still answers GetUserInfo 200.
+    // It must surface as `quota_exceeded` (429), never authentication_failed
+    // and never platform_unavailable.
+    let thrown: unknown;
+    try {
+      await agentEvents([{ event: "error", data: { code: 4015, message: "" } }]);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(GatewayError);
+    const g = thrown as GatewayError;
+    expect(g.code).toBe("quota_exceeded");
+    expect(g.status).toBe(429);
+  });
+
+  test("an SSE 1005 is an entitlement verdict with a plan requirement", async () => {
+    let thrown: unknown;
+    try {
+      await agentEvents([{ event: "error", data: { code: 1005, message: "", extra: '{"plan":5}' } }]);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(GatewayError);
+    const g = thrown as GatewayError;
+    expect(g.code).toBe("quota_exceeded");
+    expect(g.status).toBe(429);
   });
 
   test("an upstream 1001 is classified as auth failure, not platform_unavailable", async () => {
