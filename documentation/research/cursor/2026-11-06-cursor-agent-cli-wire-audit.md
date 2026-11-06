@@ -229,6 +229,15 @@ frame type was found for the Run path in this build.
 5. **Do NOT add:** `x-cursor-client-os`/`x-cursor-client-arch`,
    `x-cursor-host-app-*`, `x-cursor-canary`, `x-dev-experiment-overrides`,
    `local-cli-mode` — bridge-worker/env-specific.
+6. **Native tool execution — APPLIED (2026-11-06).** The adapter now executes
+   Cursor's host tools locally instead of relaying them to the client or
+   refusing them: `read`/`pi_read`, `write`/`pi_write`, `grep`/`pi_grep`,
+   `shell`/`pi_bash`, `ls`/`pi_ls`, `pi_edit`, `pi_find`, `delete`. Safety:
+   every filesystem path resolves inside the workspace root (escape → typed
+   `rejected`/`permission_denied`); shell runs via parsed argv with `shell:
+   false` and a pinned cwd. `subagent`, `web_search`, `fetch`, and MCP remain
+   refused. Harness: `scripts/provider-probing/cursor/harness/native-tool-harness.ts`
+   (19 checks, incl. parallel); unit tests in `test/providers/cursor-exec.test.ts`.
 
 ---
 

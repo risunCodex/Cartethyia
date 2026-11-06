@@ -67,6 +67,12 @@ const VARIANT = (
  */
 export const CURSOR_TOOL_VARIANTS: ReadonlyMap<number, CursorToolVariant> = new Map([
   VARIANT(1, "ShellToolCall", "ShellArgs", "ShellResult", "shell"),
+  // Legacy write has no ToolCall oneof arm — it arrives only as
+  // `ExecServerMessage.write_args` (field 3). The variant is registered with
+  // a dedicated field number so `cursorVariantForExecArgs` can resolve it
+  // without colliding with `DeleteToolCall` (which also owns field 3); the
+  // field is otherwise unused by the ToolCall path.
+  VARIANT(0, "WriteToolCall", "WriteArgs", "WriteResult", "write"),
   VARIANT(3, "DeleteToolCall", "DeleteArgs", "DeleteResult", "delete"),
   VARIANT(4, "GlobToolCall", "GlobArgs", "GlobResult", "glob"),
   VARIANT(5, "GrepToolCall", "GrepArgs", "GrepResult", "grep"),

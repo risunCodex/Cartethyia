@@ -12,6 +12,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Cursor native tool execution (no MCP fallback).** The adapter now executes
+  Cursor's host tools locally — `read`/`pi_read`, `write`/`pi_write`,
+  `grep`/`pi_grep`, `shell`/`pi_bash`, `ls`/`pi_ls`, `pi_edit`,
+  `pi_find`, `delete` — instead of relaying them to the client or refusing
+  them. Every path resolves inside the workspace root (escape → typed
+  `rejected`/`permission_denied`); shell runs via parsed argv with
+  `shell: false` and pinned cwd. `subagent`, `web_search`, `fetch`, and MCP
+  stay refused. Harness (19 checks incl. parallel):
+  `scripts/provider-probing/cursor/harness/native-tool-harness.ts`; unit tests:
+  `test/providers/cursor-exec.test.ts`.
 - **Cursor adapter aligns with the agent CLI wire (2026.11.05-86047df).**
   Unpacked the `cursor-agent` npm runtime and audited hosts, endpoint
   inventory, headers, and payloads against the adapter. Applied: `x-cursor-timezone`

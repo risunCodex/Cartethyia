@@ -288,11 +288,11 @@ function requestWithTools(
 }
 
 /** `ExecServerMessage{shell_args}` — Cursor's native shell request. */
-function shellExecFrame(execId: number, command: string): Uint8Array {
+function shellExecFrame(execId: number, command: string, cwd = process.cwd()): Uint8Array {
   return serverFrame({
     exec_server_message: {
       id: execId,
-      shell_args: { command, working_directory: "C:/project" },
+      shell_args: { command, working_directory: cwd },
     },
   });
 }
@@ -772,8 +772,8 @@ describe("Cursor Run idle expiry", () => {
   });
 });
 
-describe("Cursor host tool forwarding", () => {
-  test("a shell exec whose client declared no shell tool keeps the refusal", async () => {
+describe("Cursor host tool execution", () => {
+  test("a shell exec is executed locally and answered with a shell_result frame", async () => {
     const adapter = createCursorAdapter();
     const stream = new FakeStream([shellExecFrame(5, "echo hi")]);
     stream.endBody();
@@ -781,23 +781,27 @@ describe("Cursor host tool forwarding", () => {
     expect(opened.error).toBeUndefined();
     expect(opened.events.some((event) => event.type === "tool_call_delta")).toBe(false);
     expect(cursorRunSessions.size).toBe(0);
-    const thrown = stream.messages().find((message) => message["exec_client_control_message"] !== undefined);
-    // The refusal stands; the stated reason moved. Host tools are no longer
-    // refused for being host tools — they are relayed when the request declared
-    // them. This one is refused because nothing declared it.
-    expect(JSON.stringify(thrown)).toContain("this tool is not one the request declared");
+    // The native exec is answered in-band with a typed shell_result — not a
+    // refusal, and not a relayed tool call.
+    const answered = stream.messages().find((message) => message["exec_client_message"] !== undefined);
+    expect(answered).toBeDefined();
+    const exec = answered?.["exec_client_message"] as Record<string, unknown>;
+    expect(exec["shell_result"]).toBeDefined();
+    expect(JSON.stringify(exec["shell_result"])).toContain("echo hi");
   });
 
-  test("a shell exec whose client declared a shell tool is relayed", async () => {
-    // The behaviour the old refusal could not express: the same frame, with the
-    // tool declared, becomes an ordinary tool call for the client to answer.
+  test("a shell frame with a declared shell tool is still executed locally, not relayed", async () => {
+    // The old behaviour relayed declared host tools to the client; the executor
+    // now answers them in-band regardless of client tool declarations.
     const adapter = createCursorAdapter();
     const stream = new FakeStream([shellExecFrame(5, "echo hi")]);
     stream.endBody();
-    // The descriptor set comes from the request's own tools, so declaring
-    // `shell` is all it takes for the native arm to be recognised as declared.
     const opened = await collect(adapter, requestWithTools([SHELL_TOOL]), harnessWith([], scopeOf(), undefined, stream));
     expect(opened.error).toBeUndefined();
-    expect(opened.events.some((event) => event.type === "tool_call_delta")).toBe(true);
+    expect(opened.events.some((event) => event.type === "tool_call_delta")).toBe(false);
+    const answered = stream.messages().find((message) => message["exec_client_message"] !== undefined);
+    expect(answered).toBeDefined();
+    const exec = answered?.["exec_client_message"] as Record<string, unknown>;
+    expect(exec["shell_result"]).toBeDefined();
   });
 });
