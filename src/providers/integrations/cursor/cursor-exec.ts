@@ -33,7 +33,6 @@ import {
 } from "node:fs";
 import { resolve, join, relative, dirname, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
-import type { CursorToolVariant } from "./protocol/tool-canonical";
 
 /** Max output bytes a tool result carries before truncation is reported. */
 export const CURSOR_TOOL_MAX_OUTPUT_BYTES = 64 * 1024;
@@ -70,41 +69,6 @@ const EXEC_RESULT_FIELD: Readonly<Record<string, string>> = {
   ct_find_args: "pi_find_result",
   ct_ls_args: "pi_ls_result",
 };
-
-/** Exec frame keys the executor runs, in canonical order. */
-const EXEC_TOOL_NAMES: Readonly<Record<string, string>> = {
-  shell_args: "shell",
-  write_args: "write",
-  delete_args: "delete",
-  grep_args: "grep",
-  read_args: "read",
-  ls_args: "ls",
-  ct_read_args: "read",
-  ct_bash_args: "shell",
-  ct_edit_args: "edit",
-  ct_write_args: "write",
-  ct_grep_args: "grep",
-  ct_find_args: "find",
-  ct_ls_args: "ls",
-};
-
-/** The exec frame key for a legacy variant (wire type in snake form). */
-export function execFrameKeyForVariant(variant: CursorToolVariant): string {
-  const wire = variant.wireType; // e.g. "ReadToolCall"
-  const base = wire.replace(/ToolCall$/, "");
-  const snake = base.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
-  return `${snake}_args`;
-}
-
-/** True when this variant is one the executor can run locally. */
-export function isExecutableNativeTool(variant: CursorToolVariant): boolean {
-  return Object.hasOwn(EXEC_RESULT_FIELD, execFrameKeyForVariant(variant));
-}
-
-/** Resolves one exec frame to its canonical tool name, or undefined. */
-export function execFrameToolName(frameKey: string): string | undefined {
-  return EXEC_TOOL_NAMES[frameKey];
-}
 
 /**
  * Resolves an `ExecServerMessage` frame to `{ frameKey, args }` when the

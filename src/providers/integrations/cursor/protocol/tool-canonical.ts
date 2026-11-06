@@ -66,9 +66,9 @@ export const CURSOR_TOOL_VARIANTS: ReadonlyMap<number, CursorToolVariant> = new 
   VARIANT(1, "ShellToolCall", "ShellArgs", "ShellResult", "shell"),
   // Legacy write has no ToolCall oneof arm — it arrives only as
   // `ExecServerMessage.write_args` (field 3). The variant is registered with
-  // a dedicated field number so `cursorVariantForExecArgs` can resolve it
-  // without colliding with `DeleteToolCall` (which also owns field 3); the
-  // field is otherwise unused by the ToolCall path.
+  // a dedicated field number so the executor can resolve it without colliding
+  // with `DeleteToolCall` (which also owns field 3); the field is otherwise
+  // unused by the ToolCall path.
   VARIANT(0, "WriteToolCall", "WriteArgs", "WriteResult", "write"),
   VARIANT(3, "DeleteToolCall", "DeleteArgs", "DeleteResult", "delete"),
   VARIANT(4, "GlobToolCall", "GlobArgs", "GlobResult", "glob"),
@@ -198,30 +198,4 @@ function snakeCaseKey(key: string): string {
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .replace(/[\s-]+/g, "_")
     .toLowerCase();
-}
-
-/**
- * The variant whose args a host-exec frame is carrying.
- *
- * Exec frames name their payload after the args message — `read_args`,
- * `shell_args`, `pi_read_args` — not after the `ToolCall` arm, so the lookup
- * runs off `argsType`. Anything not ending in `_args` is not a tool payload
- * (`id`, `exec_id`, `request_context_args`, …) and is reported as `undefined`.
- */
-export function cursorVariantForExecArgs(
-  execServer: Record<string, unknown>,
-): { readonly variant: CursorToolVariant; readonly args: Record<string, unknown> } | undefined {
-  for (const [key, value] of Object.entries(execServer)) {
-    if (value === null || value === undefined || !key.endsWith("_args")) continue;
-    const wanted = key.slice(0, -"_args".length);
-    const variant = [...CURSOR_TOOL_VARIANTS.values()].find((entry) =>
-      entry.argsType.toLowerCase().startsWith(wanted.toLowerCase()),
-    );
-    if (variant === undefined) continue;
-    return {
-      variant,
-      args: canonicalToolArguments(value),
-    };
-  }
-  return undefined;
 }
