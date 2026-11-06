@@ -16,6 +16,7 @@ import {
   FALLBACK_CLIENT_VERSION,
   RUN_PATH,
   isAllowedAgentHost,
+  resolveCursorTimezone,
 } from "./cursor-shared";
 import { createCursorChecksumHeader, resolveCursorDeviceIds } from "./cursor-identity";
 
@@ -102,6 +103,7 @@ async function runHeaders(credential: string, clientVersion: string): Promise<Re
     "x-cursor-streaming": "true",
     "x-ghost-mode": "true",
     "x-request-id": crypto.randomUUID(),
+    ...(resolveCursorTimezone() === "" ? {} : { "x-cursor-timezone": resolveCursorTimezone() }),
     "user-agent": "connect-es/1.6.1",
   };
 }

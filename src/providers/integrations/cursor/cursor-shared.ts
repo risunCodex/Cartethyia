@@ -33,7 +33,7 @@ export const CURSOR_OAUTH_CLIENT_ID = "KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB";
  * operator was not what the request carried. Discovery supersedes both on its
  * first successful fetch.
  */
-export const FALLBACK_CLIENT_VERSION = "cli-2026.10.19-6bbf2c4";
+export const FALLBACK_CLIENT_VERSION = "cli-2026.11.05-86047df";
 
 /** Connect-RPC paths. Run is served by the discovered agent origin, not the API host. */
 export const RUN_PATH = "/agent.v1.AgentService/Run";
@@ -43,6 +43,24 @@ export const SERVER_CONFIG_PATH = "/aiserver.v1.ServerConfigService/GetServerCon
 /** Connect unary/bidi protocol headers. */
 export const CONTENT_TYPE_CONNECT_PROTO = "application/connect+proto";
 export const CONNECT_PROTOCOL_VERSION = "1";
+
+/**
+ * The client's timezone name, as the CLI sends on every request
+ * (`Intl.DateTimeFormat().resolvedOptions().timeZone`). Computed once: the
+ * value is stable for one process and the call is not cheap enough to repeat
+ * per request.
+ */
+let cachedTimezone: string | undefined;
+export function resolveCursorTimezone(): string {
+  if (cachedTimezone !== undefined) return cachedTimezone;
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    cachedTimezone = typeof zone === "string" && zone.length > 0 ? zone : "";
+  } catch {
+    cachedTimezone = "";
+  }
+  return cachedTimezone;
+}
 
 /** A raw Cursor API key (as opposed to a JWT already exchanged from one). */
 const CURSOR_API_KEY_PREFIX = "crsr_";

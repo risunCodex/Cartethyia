@@ -12,15 +12,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- **Research: Cursor agent CLI 2026.11.05 wire audit.** Unpacked the
-  `cursor-agent` npm runtime (`@anysphere/agent-cli-runtime`, 102 chunks) and
-  audited hosts, Connect endpoint inventory, headers, and payloads against the
-  adapter. Findings: adapter's host/path/auth/payload map matches the CLI;
-  `x-cursor-checksum` is a bridge-worker-only header (not sent by the CLI's
-  Run/API path); CLI sends `x-cursor-timezone` on every request (adapter does
-  not); current build id is `cli-2026.11.05-86047df` (adapter fallback is one
-  build older). Full evidence:
+- **Cursor adapter aligns with the agent CLI wire (2026.11.05-86047df).**
+  Unpacked the `cursor-agent` npm runtime and audited hosts, endpoint
+  inventory, headers, and payloads against the adapter. Applied: `x-cursor-timezone`
+  (IANA zone) now sent on the Run stream and unary catalog calls, matching the
+  CLI's request middleware; `FALLBACK_CLIENT_VERSION` and `VERSION_SOURCES.cursor.fallback`
+  equalized on `cli-2026.11.05-86047df` (the CLI's build id). `x-cursor-checksum`
+  is a bridge-worker-only header in this build (not sent by the CLI's Run/API
+  path); it is kept for the IDE profile and documented. `x-cursor-team-id` and
+  bridge-worker/env headers (`x-cursor-client-os/arch`, `host-app-*`, `canary`)
+  are not adopted. Full evidence + decision log:
   `documentation/research/cursor/2026-11-06-cursor-agent-cli-wire-audit.md`.
+- **Test: HTTP/2 bidi streaming suite skips when the fixture CA is not
+  trusted.** `test/network/outbound-http2.test.ts` now requires the fixture CA
+  to be present in `NODE_EXTRA_CA_CERTS` (as the runner bundles it); running
+  `bun test` directly with a different extra CA skips the suite instead of
+  failing on the self-signed cert.
 
 - **CodeBuddy/WorkBuddy rosters: `hy4free` added alongside `hy4`.** The
   free variant mirrors `hy4`'s metadata on every buddy roster: intl

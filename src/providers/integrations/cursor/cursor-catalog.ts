@@ -19,6 +19,7 @@ import {
   FALLBACK_CLIENT_VERSION,
   SERVER_CONFIG_PATH,
   normalizeAgentRunOrigin,
+  resolveCursorTimezone,
 } from "./cursor-shared";
 import { createCursorChecksumHeader, resolveCursorDeviceIds } from "./cursor-identity";
 
@@ -66,6 +67,7 @@ async function unaryHeaders(
     "x-cursor-checksum": createCursorChecksumHeader(machineId, macMachineId),
     "x-ghost-mode": "true",
     "x-request-id": crypto.randomUUID(),
+    ...(resolveCursorTimezone() === "" ? {} : { "x-cursor-timezone": resolveCursorTimezone() }),
   };
 }
 

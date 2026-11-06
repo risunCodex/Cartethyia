@@ -97,6 +97,29 @@ async function probeBind(): Promise<boolean> {
  */
 const BINDABLE = await probeBind();
 
+/**
+ * True when the runner (or caller) exports the fixture CA through
+ * `NODE_EXTRA_CA_CERTS`. The fixture is a self-signed loopback cert; the
+ * binding under test pins `rejectUnauthorized: true` and must not be weakened
+ * for it, so unless the CA that signed the fixture is in the extra-CA store
+ * the streaming suite cannot establish TLS and would fail rather than
+ * meaningfully run. The runner sets it in `scripts/test/run.ts` (a bundle of
+ * the fixture plus any pre-existing extra CA); running `bun test` directly
+ * with a different extra CA (e.g. a corporate MITM root) skips the suite
+ * instead of failing on a cert that was never trusted.
+ */
+const TRUSTED_CA = (() => {
+  const path = process.env.NODE_EXTRA_CA_CERTS?.trim();
+  if (!path) return false;
+  try {
+    const store = readFileSync(path, "utf8");
+    const fixture = readFileSync("test/fixtures/localhost-cert.pem", "utf8");
+    return store.includes(fixture.trim());
+  } catch {
+    return false;
+  }
+})();
+
 function startServer(): Promise<void> {
   const { promise, resolve, reject } = Promise.withResolvers<void>();
   {
@@ -214,7 +237,7 @@ describe("validated HTTP/2 bidi target validation", () => {
   });
 });
 
-describe.skipIf(!BINDABLE)("validated HTTP/2 bidi streaming", () => {
+describe.skipIf(!BINDABLE || !TRUSTED_CA)("validated HTTP/2 bidi streaming", () => {
   test("a tenant without a selected pool dials validated direct egress", async () => {
     // Live dispatch always passes a tenant id, and most installs select no
     // pool. `fetch` treats that as direct egress; bidi must match, or a

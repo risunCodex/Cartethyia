@@ -77,7 +77,7 @@ async function clineClientVersion(response: Response): Promise<string | null> {
  * spells it.
  *
  * Cursor's `x-cursor-client-version` is not the IDE semver on its own: the wire
- * value is `cli-<version>-<sha7>` (observed live as `cli-2026.10.19-6bbf2c4`).
+ * value is `cli-<version>-<sha7>` (observed live as `cli-2026.11.05-86047df`).
  * The download API is the only source that returns both halves — `version` and
  * `commitSha` — so they are joined here rather than guessed. A semver alone
  * would be a different identity than the one the IDE sends.
@@ -438,10 +438,12 @@ export const VERSION_SOURCES = {
   },
   cursor: {
     key: "cursor",
-    // Fallback = the last observed wire version. Discovery replaces it within
-    // one monitor tick; it is only what a cold process sends before the first
-    // successful fetch.
-    fallback: "cli-3.27.22-b1aa50c",
+    // Fallback = the last observed wire version (CLI ~2026.11.05-86047df).
+    // Discovery replaces it within one monitor tick; it is only what a cold
+    // process sends before the first successful fetch. Kept equal to
+    // `FALLBACK_CLIENT_VERSION` in the cursor adapter so the badge and the
+    // request header always send one identity.
+    fallback: "cli-2026.11.05-86047df",
     sources: [
       {
         url: "https://cursor.com/api/download?platform=win32-x64-user&releaseTrack=stable",

@@ -215,20 +215,20 @@ frame type was found for the Run path in this build.
    required for the gateway's core flow.
 2. **`x-cursor-checksum` is not a CLI header.** The adapter sends it on the
    Run stream and unary calls; the CLI sends it only for bridge-worker
-   registration. Options: (a) keep it (IDE-shaped, previously verified to be
-   accepted), or (b) drop it to exactly match the CLI. **Recommendation:** keep
-   for now — it is harmless and matches the IDE profile; document that it is
-   not part of the CLI wire. A future live A/B can decide.
-3. **Cheap additions matching the CLI:** `x-cursor-timezone` (value from
-   `Intl.DateTimeFormat().resolvedOptions().timeZone`). Low risk; the server
-   may use it for fraud/abuse heuristics. `x-cursor-team-id` only matters for
-   team accounts; the gateway does not model teams — skip.
-4. **Do NOT add:** `x-cursor-client-os`/`x-cursor-client-arch`,
+   registration. **Decision (2026-11-06): keep** — it matches the IDE profile,
+   is accepted by the server, and is not a CLI header only in the sense that
+   the CLI's own Run path omits it.
+3. **Cheap additions matching the CLI — APPLIED (2026-11-06):**
+   `x-cursor-timezone` (from `Intl.DateTimeFormat().resolvedOptions().timeZone`)
+   is now sent on the Run stream and on unary catalog calls, exactly where the
+   CLI's request middleware sends it. `x-cursor-team-id` was not added: the
+   gateway does not model Cursor teams.
+4. **`FALLBACK_CLIENT_VERSION` / `VERSION_SOURCES.cursor.fallback` updated** to
+   `cli-2026.11.05-86047df`, the build this CLI ships. The two fallbacks are
+   kept equal so the console badge and the request header never drift apart.
+5. **Do NOT add:** `x-cursor-client-os`/`x-cursor-client-arch`,
    `x-cursor-host-app-*`, `x-cursor-canary`, `x-dev-experiment-overrides`,
    `local-cli-mode` — bridge-worker/env-specific.
-5. **Update `FALLBACK_CLIENT_VERSION`** to `cli-2026.11.05-86047df` so a host
-   without discovery sends the same build id this CLI sends. (Discovery will
-   still supersede it once it succeeds.)
 
 ---
 
@@ -242,3 +242,7 @@ frame type was found for the Run path in this build.
 - Run streaming interceptor: `index.js` (`x-cursor-streaming`).
 - Bridge registration headers: `8123.index.js` + `connect-pool-worker.js`.
 - Build id literal: `cli-2026.11.05-86047df` (multiple sites).
+- Applied in: `src/providers/integrations/cursor/cursor-shared.ts` (fallback
+  + `resolveCursorTimezone`), `cursor-http2.ts`, `cursor-catalog.ts`,
+  `src/providers/operations/client-versions.ts`; tests in
+  `test/providers/cursor-auth-catalog.test.ts`.

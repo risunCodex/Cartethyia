@@ -23,6 +23,7 @@ import {
   CURSOR_MODELS,
   cursorModelDefinition,
   defaultParameterValues,
+  fetchCursorModels,
   fetchCursorRunOrigin,
   mapAvailableModelsResponse,
   parseCursorContextLimit,
@@ -381,5 +382,24 @@ describe("Cursor catalog mapping", () => {
         models: [{ name: "m", variants: [{ parameter_values: "not-an-array" }] }],
       }),
     ).toThrow(/invalid parameter values/);
+  });
+
+  test("unary catalog calls carry the CLI identity headers", async () => {
+    let seenHeaders: Headers | undefined;
+    const fetcher = (async (_url: string, init?: RequestInit) => {
+      seenHeaders = new Headers(init?.headers as HeadersInit | undefined);
+      return jsonResponse({ models: [] });
+    }) as unknown as typeof fetch;
+    await fetchCursorModels({ credential: "jwt", fetcher });
+    expect(seenHeaders?.get("authorization")).toBe("Bearer jwt");
+    expect(seenHeaders?.get("x-cursor-client-type")).toBe("cli");
+    expect(seenHeaders?.get("x-cursor-client-version")).toBe("cli-2026.11.05-86047df");
+    expect(seenHeaders?.get("x-ghost-mode")).toBe("true");
+    expect(seenHeaders?.get("x-request-id")).toBeTruthy();
+    // The CLI sends its resolved timezone on every request (IANA name; the
+    // test runner's environment is commonly `UTC`, which has no slash).
+    const zone = seenHeaders?.get("x-cursor-timezone");
+    expect(zone).toBeTruthy();
+    expect(zone).not.toBe("");
   });
 });
