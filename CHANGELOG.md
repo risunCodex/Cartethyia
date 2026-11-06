@@ -19,6 +19,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   provider error) resets the field instead of closing the modal, so the
   operator can correct the paste without reopening the dialog.
 
+### Changed
+
+- **Assets: all raster images converted to WebP and resized to display
+  needs.** The bundle drops from ~30 MB to ~3.4 MB (-89%). Console background
+  3840×2160 JPEG (12.9 MB) → 1920×1080 WebP (179 KB); share backdrop
+  2560×1440 PNG (7.5 MB) → 1920×1080 WebP (145 KB); story art and
+  documentation screenshots recompressed (WebP q75-80, screenshots capped at
+  1600px). Callers updated to the `.webp` paths; social-card dimensions in
+  `dashboard-assets.ts` and README updated to the new 1200×393 output.
+
 ### Fixed
 
 - **Antigravity: replayed thinking without a signature is dropped on Claude

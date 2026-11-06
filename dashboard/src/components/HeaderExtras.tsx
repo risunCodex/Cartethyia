@@ -14,7 +14,7 @@ import { SOURCE_LINKS } from "../lib/links";
  */
 
 const DONATION_URL = "https://saweria.co/risuncode";
-const QRIS_IMAGE = "/donation/qris-risun-marke.png";
+const QRIS_IMAGE = "/donation/qris-risun-marke.webp";
 
 /** Locales the placeholder offers; only the first is actually applied. */
 const LOCALES = [
@@ -116,7 +116,7 @@ function DonationModal({
         <DialogActions>
           <a
             href={QRIS_IMAGE}
-            download="qris-risun-marke.png"
+            download="qris-risun-marke.webp"
             className="flex items-center gap-1.5 rounded-inset border border-inner-border px-3 py-2 text-body text-text-secondary hover:bg-hover-bg hover:text-text-primary"
           >
             <Download size={14} aria-hidden="true" />

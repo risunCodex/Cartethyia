@@ -62,13 +62,13 @@ export const SHARE_SOCIAL_META: SocialMeta = {
   title: "Cartethyia — Bansos Token",
   description:
     "Come and save your tokens 💖 Shared Cartethyia API key — Bansos Token with live quota, usage and model allowlist.",
-  image: "/assets/brand/og_bansos.jpg",
-  imageType: "image/jpeg",
+  image: "/assets/brand/og_bansos.webp",
+  imageType: "image/webp",
   // Read from the file's own header, not carried over from a previous image:
   // og:image:width/height are what a crawler uses to allocate the card before
   // the bytes arrive, so a copied size makes every preview crop.
-  imageWidth: 1760,
-  imageHeight: 576,
+  imageWidth: 1200,
+  imageHeight: 393,
   imageAlt: "Cartethyia Bansos Token — Come and save your tokens",
 };
 
@@ -405,7 +405,7 @@ function getMimeType(filePath: string): string {
  * and the modern Vite spelling `app-BCnqn3N3.js` — plus `_`, and then required
  * to *look generated*: the segment must contain a digit or mix upper and lower
  * case. The second half is what keeps a plain word out of the set, since
- * `console-backgrounds.jpg` and `openai-light.svg` both match the separator
+ * `console-backgrounds.webp` and `openai-light.svg` both match the separator
  * alone and are emphatically not immutable.
  *
  * Getting this wrong in either direction costs real money: a hashed asset

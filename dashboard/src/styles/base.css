@@ -799,7 +799,7 @@ main > .state-viewport {
       color-mix(in srgb, var(--page-bg) calc(var(--auth-backdrop-veil) * 100%), transparent),
       color-mix(in srgb, var(--page-bg) calc(var(--auth-backdrop-veil) * 100%), transparent)
     ),
-    url("/assets/brand/login_register.jpg");
+    url("/assets/brand/login_register.webp");
   /* The key art renders at full height, uncropped — no zoom. On wide
      viewports the image is wider than the left pane, so it extends just
      beneath the frosted panel, whose blur picks up its tones like a
@@ -870,7 +870,7 @@ main > .state-viewport {
   width: 52px;
   height: 52px;
   border-radius: var(--radius-control);
-  background: var(--accent) center / cover no-repeat url("/assets/brand/favicon.jpg");
+  background: var(--accent) center / cover no-repeat url("/assets/brand/favicon.webp");
   color: var(--accent-foreground);
   display: grid;
   place-items: center;
@@ -957,7 +957,7 @@ main > .state-viewport {
         color-mix(in srgb, var(--page-bg) calc(var(--auth-backdrop-veil) * 100%), transparent),
         color-mix(in srgb, var(--page-bg) calc(var(--auth-backdrop-veil) * 100%), transparent)
       ),
-      url("/assets/brand/login_register.jpg");
+      url("/assets/brand/login_register.webp");
     background-position: center, center;
     background-size: cover, cover;
   }

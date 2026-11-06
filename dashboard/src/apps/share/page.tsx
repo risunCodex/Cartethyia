@@ -419,7 +419,7 @@ export function SharePage(): ReactElement {
             <span className="grid size-17 place-items-center overflow-hidden rounded-control border border-inner-border bg-accent-soft text-accent" aria-hidden="true">
               <img
                 className="block size-full object-cover"
-                src={`${import.meta.env.BASE_URL}assets/brand/favicon.jpg`}
+                src={`${import.meta.env.BASE_URL}assets/brand/favicon.webp`}
                 alt=""
                 width={34}
                 height={34}

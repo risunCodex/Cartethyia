@@ -743,7 +743,7 @@ html[data-app="share"] .share-backdrop {
       color-mix(in srgb, var(--page-bg) calc(var(--share-backdrop-veil) * 100%), transparent),
       color-mix(in srgb, var(--page-bg) calc(var(--share-backdrop-veil) * 100%), transparent)
     ),
-    url("/assets/brand/bansos_page.png");
+    url("/assets/brand/bansos_page.webp");
   background-position: center, center 28%;
   background-repeat: no-repeat, no-repeat;
   background-size: cover, cover;

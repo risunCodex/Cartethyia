@@ -282,7 +282,7 @@ export function LandingPage(): ReactElement {
             }}
           >
             <span className="flex size-9 items-center justify-center rounded-xl border border-story-white/25 bg-story-white p-0.5">
-              <img className="size-full rounded-lg object-cover" src={`${ASSET_BASE}assets/brand/favicon.jpg`} alt="" />
+              <img className="size-full rounded-lg object-cover" src={`${ASSET_BASE}assets/brand/favicon.webp`} alt="" />
             </span>
             <span>
               <strong className="block font-heading text-lead leading-none">Cartethyia</strong>

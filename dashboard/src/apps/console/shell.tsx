@@ -848,7 +848,7 @@ export function DashboardShell({
   }, []);
 
   const meta = resolveRouteMeta(location.pathname, providersQuery.data ?? []);
-  const defaultLogoUrl = `${import.meta.env.BASE_URL}assets/brand/sidebar_ico.jpg`;
+  const defaultLogoUrl = `${import.meta.env.BASE_URL}assets/brand/sidebar_ico.webp`;
   const logoUrl = defaultLogoUrl;
   return (
     <>

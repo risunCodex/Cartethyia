@@ -1,6 +1,6 @@
 # Cartethyia
 
-<img width="1760" height="576" alt="og_image" src="dashboard/public/assets/brand/og_image.jpg" />
+<img width="1200" height="393" alt="og_image" src="dashboard/public/assets/brand/og_image.webp" />
 
 **A self-hosted multi-provider AI gateway.**
 

@@ -460,7 +460,7 @@ export function ApiKeyForm({ mode, record, busy, onDone, onClose, actionsRef }: 
   // Pre-fill QRIS image when there is no stored image and user hasn't picked one yet.
   useEffect(() => {
     if (hasStoredImage || sharePopupImageDataUrl !== null || sharePopupImageRemoved) return;
-    fetch("/donation/qris-risun-marke.png")
+    fetch("/donation/qris-risun-marke.webp")
       .then((r) => r.ok ? r.blob() : Promise.reject(r.status))
       .then((blob) => {
         const { promise, resolve, reject } = Promise.withResolvers<string>();

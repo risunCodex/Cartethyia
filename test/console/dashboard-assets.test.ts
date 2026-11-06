@@ -152,9 +152,9 @@ describe("static assets — hashed vs unhashed", () => {
     { name: "app-N-ONyork.css", hashed: true, why: "CSS chunk, hash contains hyphens" },
     { name: "script_ab12cd34ef.js", hashed: true, why: "underscore separator" },
     { name: "index.html", hashed: false, why: "the entry document is never immutable" },
-    { name: "console-backgrounds.jpg", hashed: false, why: "a word, despite matching the separator" },
+    { name: "console-backgrounds.webp", hashed: false, why: "a word, despite matching the separator" },
     { name: "openai-light.svg", hashed: false, why: "a provider icon; must revalidate" },
-    { name: "favicon.jpg", hashed: false, why: "no hash segment at all" },
+    { name: "favicon.webp", hashed: false, why: "no hash segment at all" },
     { name: "wuthering-waves-hiyuki-aemeath-hiyuki-rover.webp", hashed: false, why: "story art: words, not a hash" },
   ];
 
