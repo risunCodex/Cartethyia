@@ -84,19 +84,21 @@ function traeDiscovery(
     if (rows.length === 0) return realm === "cn" ? TRAE_CN_MODELS : TRAE_INTL_MODELS;
     const fallback = realm === "cn" ? TRAE_CN_MODELS : TRAE_INTL_MODELS;
     const byId = new Map(fallback.map((model) => [model.modelId, model]));
-    // Keep only rows the static roster already carries. Discovery surfaces the
-    // full upstream picker, including configs the account cannot serve (Free
-    // accounts get `1005 {"plan":N}` on them) and configs that are not chat
-    // targets; advertising them would undo the roster trimming verified live.
-    // A discovered id that is not in the static roster is dropped rather than
-    // cloned from a template.
-    return rows
-      .map((row) => {
-        const existing = byId.get(row.id);
-        if (existing === undefined) return undefined;
-        return row.ctx === undefined ? existing : { ...existing, contextLimit: row.ctx };
-      })
-      .filter((model): model is NonNullable<typeof model> => model !== undefined);
+    // Return everything the upstream picker reports — the live listing is the
+    // truth for the account, including configs absent from the static roster.
+    // The static roster is only the fallback when discovery fails. A config
+    // discovered upstream gets the realm's first row as a template so it is
+    // routable with the shape this provider serves, carrying the window
+    // upstream reported.
+    return rows.map((row) => {
+      const existing = byId.get(row.id);
+      if (existing === undefined) {
+        const template = fallback[0];
+        if (template === undefined) return undefined;
+        return { ...template, modelId: row.id, contextLimit: row.ctx ?? null };
+      }
+      return row.ctx === undefined ? existing : { ...existing, contextLimit: row.ctx };
+    }).filter((model): model is NonNullable<typeof model> => model !== undefined);
   };
 }
 
