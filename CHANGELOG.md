@@ -12,6 +12,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Cursor model sweep live (2026-11-06): 1/47 PASS, 46/47 refused.**
+  Probe (`scripts/provider-probing/cursor/probe-cursor.ts`) now parses the
+  typed error detail (`Model unavailable on Free: …`) and resolves on
+  `turn_ended` instead of waiting for END_STREAM. Full 47-model sweep: only
+  `default` (Auto) serves; every named model answers `resource_exhausted`
+  (entitlement, not request shape).
 - **Cursor native tool execution (no MCP fallback).** The adapter now executes
   Cursor's host tools locally — `read`, `write`, `grep`, `shell`, `ls`,
   `edit`, `find`, `delete` — instead of relaying them to the client or

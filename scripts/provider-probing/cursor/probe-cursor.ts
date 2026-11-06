@@ -234,7 +234,7 @@ async function probeHitOnce(
         // exhausted/closed account answers with one inside a 200 stream.
         const envelopeText = new TextDecoder().decode(body).trimStart();
         if (envelopeText.startsWith("{\"error\"")) {
-          let envelope: { error?: { code?: unknown; message?: unknown } } | undefined;
+          let envelope: { error?: { code?: unknown; message?: unknown; details?: unknown } } | undefined;
           try {
             envelope = JSON.parse(envelopeText) as typeof envelope;
           } catch {
@@ -242,12 +242,26 @@ async function probeHitOnce(
           }
           const code = envelope?.error?.code ?? "?";
           const msg = envelope?.error?.message ?? "";
+          // Pull the human-readable detail out of typed error details when
+          // present (`debug.details.title` / `debug.details.detail`).
+          const details = envelope?.error?.details;
+          let detailMsg = msg;
+          if (Array.isArray(details)) {
+            for (const d of details) {
+              const debug = (d as { debug?: { details?: { title?: string; detail?: string } } })?.debug?.details;
+              if (debug?.detail) {
+                detailMsg = `${debug.title ? `${debug.title}: ` : ""}${debug.detail}`;
+                break;
+              }
+              if (debug?.title && detailMsg === msg) detailMsg = debug.title;
+            }
+          }
           if (frame.flags & FLAG_END_STREAM) {
             clearTimeout(timeout);
             clearInterval(heartbeatTimer);
             stream.close();
             session.close();
-            resolve(`FAIL ${modelId} [error ${code}: ${msg}]`);
+            resolve(`FAIL ${modelId} [error ${code}: ${detailMsg}]`);
             return;
           }
           continue;
@@ -274,7 +288,15 @@ async function probeHitOnce(
             sawTurnEnded = true;
             const ended = interaction["turn_ended"] as Record<string, unknown>;
             if (typeof ended["model"] === "string") providerModel = ended["model"];
-            continue;
+            // The run is terminal the moment turn_ended arrives; the END_STREAM
+            // frame may be delayed or coalesced, so resolve here rather than
+            // waiting for it. Clean up: stop heartbeats and close the stream.
+            clearTimeout(timeout);
+            clearInterval(heartbeatTimer);
+            stream.close();
+            session.close();
+            resolve(`PASS ${modelId}${providerModel ? ` -> ${providerModel}` : ""}${sawText ? "" : " [no-text]"}`);
+            return;
           }
 
           // Control frames the adapter answers to keep the Run alive.
@@ -356,7 +378,11 @@ async function probeHitOnce(
       clearTimeout(timeout);
       clearInterval(heartbeatTimer);
       session.close();
-      if (!sawTurnEnded) resolve(`FAIL ${modelId} [stream ended without turn_ended]`);
+      if (sawTurnEnded) {
+        resolve(`PASS ${modelId}${providerModel ? ` -> ${providerModel}` : ""}${sawText ? "" : " [no-text]"}`);
+      } else {
+        resolve(`FAIL ${modelId} [stream ended without turn_ended]`);
+      }
     });
   });
 }

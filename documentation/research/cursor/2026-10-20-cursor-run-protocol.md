@@ -42,6 +42,15 @@ Swept with `scripts/tools/probe-cursor.ts` (the `--params`/`--max-mode`
 flags and a temporary variant sweep). Identical refusal on ~9 combinations per
 model means no parameter, variant, or flag fixes it: it is the account's plan.
 
+Re-verified live 2026-11-06 against the full 47-model roster (all models the
+account can see): **1/47 PASS (`default`/Auto), 46/47
+`resource_exhausted`**. The refusal now surfaces the typed detail:
+`Model unavailable on Free: Free includes Grok 4.7, Grok 4.6, and Auto with
+fixed settings. Switch to an included model to continue.` — yet Grok
+4.6/4.7 are refused too, so the actionable included model is `default` (Auto).
+The 5s heartbeat + KV-set-blob reply loop is required for the run to finish
+(`turn_ended` only arrives after the set_blob frames are answered).
+
 Distinct refusal seen earlier: `ERROR_RATE_LIMITED_CHANGEABLE`
 "You've hit your free requests limit" — usage exhausted, retryable next cycle
 (reset 11/10/2026), also `resource_exhausted`.
