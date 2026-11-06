@@ -22,7 +22,7 @@ Grok); per-provider findings live in `documentation/research/` (see below).
 | Artifact | Tool / recipe |
 |---|---|
 | `.dmg` (macOS) | `7z x <file>.dmg` → `4.hfs` (HFS+), then `7z x 4.hfs` → app volume |
-| `.exe` (Inno Setup) | `innoextract` (use a recent fork for Setup ≥6.4; 1.9 errors on 6.4.0.1). **`innoextract 1.13.0` extracts 6.4 fine** (proven on Qoder IDE 1.38 — no manual LZMA needed). For 6.4+ when 1.13 is unavailable use the manual LZMA recovery below — `7z x` only yields the compressed container `[0]` (not a bare LZMA stream) |
+| `.exe` (Inno Setup) | `innoextract` (use a recent fork for Setup ≥6.4; 1.9 errors on 6.4.0.1). **`innoextract 1.13.0` extracts 6.4 fine** (proven on Qoder IDE 1.38 — no manual LZMA needed). For 6.4+ when 1.13 is unavailable use the manual LZMA recovery below — `7z x` only yields the compressed container `[0]` (not a bare LZMA stream). **Also: `innounp 2.70.1` (winget `JurgenRathlev.innounp`) handles Setup 6.4.0.1** in one pass. **Gotcha: options MUST come before the setup path** — `innounp -x -y -d <outdir> <setup.exe>`. Putting `-d <dir>` *after* the exe makes it a filemask: exit 0, no files extracted (hit live on Devin 3.11.238). Verify extraction by counting files, not by exit code |
 | `.msi` | `7z x` → unpacked payload (may contain a single-file executable) |
 | `app.asar` (Electron) | `bun scripts/tools/asar-unpack.mjs <app.asar> <outdir>`. Nativev2 header: `[u32 @0]=4`, `[u32 @4]=header+8`, `[u32 @8]=header+4`, `[u32 @12]=header JSON length`, JSON begins at offset 16. **Offsets are relative to the data section start (`16 + headerSize`), not absolute** — reading them absolute yields garbage (verified) |
 | Single-file Bun/Rust executables | Bun compiled: use `unbuned` (Python, zero-dep, GitHub `vibheksoni/unbuned`) — `python unbuned.py -a -o <outdir> <exe>` extracts modules (JS per chunk), assets (decompressed), bytecode (`.jsc`), and a `manifest.json`. **`7z x` does NOT see the embedded FS** — the Bun bundle lives in a custom section (PE `.bun` / Mach-O `__BUN.__bun`), not a standard archive. Fallback for manual section slicing: parse PE section table (off `fileHeader+20+optSize`, 40B entries: `Name[8] VirtualSize[4]@8 VirtualAddress@12 SizeOfRawData@16 PointerToRawData@20`) or Mach-O `section_64` (`addr@24 size@32 offset@40` — offset is **@40**, not @44). Rust: `7z x` often extracts embedded bundles; else string-scan (see §2) —
@@ -154,6 +154,29 @@ table above). Inside `.bun`, the file-name table lists every module as
 enumerate embedded file names without decoding the container. `7z` cannot open
 the section.
 
+### Devin desktop (Inno Setup 6.4, v3.11.238)
+
+Source binary: `D:\tmp\binaries\DevinUserSetup-x64-3.11.238.exe` (284,545,920 B,
+built 2026-11-06, CompanyName Codeium, ProductName Devin). Unpacked with
+`innounp 2.70.1` in one pass — no manual LZMA recovery needed:
+
+```
+innounp -x -y -d D:\tmp\unpacked\devin D:\tmp\binaries\DevinUserSetup-x64-3.11.238.exe
+```
+
+Result: **14,616 files, ~1.31 GB** (scratch `D:\tmp\unpacked\devin\`).
+Output layout:
+
+- `{code_GetDestDir}\` — VS Code fork desktop surface (chrome `.pak`, `d3dcompiler_47.dll`, `dxcompiler.dll`, `ffmpeg.dll`, `libEGL/GLESv2.dll`, `vk_swiftshader.dll`, `vulkan-1.dll`, `icudtl.dat`, `snapshot_blob.bin`)
+- `{code_GetDestDir}\resources\app\out\vs\workbench\devin-webapp-host\` — Devin webapp host: thousands of content-hashed `assets\*.js` bundles (e.g. `superdevin-*.js`, `session-*.js`, `skill-*.js`) — thin VS Code chrome, Devin logic lives here
+- `{code_GetDestDir}\resources\app\resources\win32\` — icons
+- `{code_GetDestDir}\resources\app\out\vscode-dts\vscode.d.ts` — extension API typings
+- `{code_GetDestDir}\bin\` — `{code_GetBinDirApplicationFilename}` (console + GUI launchers)
+- `{code_GetDestDir}\policies\Devin.admx` — Windows group policy definitions
+- `{app}\appx\devin_x64.appx` + `devin_explorer_command_x64.dll` — packaged appx payload
+- `{app}\tools\inno_updater.exe`, `vcruntime140.dll` — installer tools
+- `install_script.iss` — Inno script
+
 ## 2. String scanning
 
 - Use a **streamed string scanner** (Bun) over the binary/bundles to dump
@@ -283,6 +306,7 @@ The evidence ledgers produced with these techniques are consolidated in
 | Grok | `documentation/research/grok/2026-11-02-grok-build-1.0.70-unpack.md` |
 | Copilot | `documentation/research/copilot/` — `2026-10-15-copilot-chat-capability-map.md`, `-context-probe`, `-auto-routing`, `-auto-responses-500-repair-throw` |
 | Antigravity | unpack complete (Inno Setup 6.4 manual two-payload recovery, §1; `product.json` 44,752B carved; extension `google-antigravity` v0.0.1 located; OAuth endpoints `accounts.google.com`/`oauth2.googleapis.com` found). Wire-protocol research → `documentation/research/antigravity/` when written |
+| Devin | unpack complete (Inno Setup 6.4, `innounp 2.70.1`, 14,616 files / ~1.31 GB → `D:\tmp\unpacked\devin\`; VS Code fork + `devin-webapp-host` + appx). Audit → `documentation/research/devin/` when written |
 
 ## Cleanup
 
