@@ -34,6 +34,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   agent catalog (skipped rows that already existed: `gpt-5.4`, all `gpt-5*paygo`).
   All verified live (2026-11-06) to stream on the agent surface with full
   tool-calling support; specs mirror the upstream model each config resolves to.
+- **Trae intl roster: models refused on the Free plan removed.** Live sweep
+  (2026-11-06) showed `gpt-5.2`, `deepseek-v4.1-flash`, `deepseek-v4-flash-0731`,
+  `deepseek-v4-pro-0813`, `kimi-k3`, `kimi-k2.7-code`, `kimi-k2.5`,
+  `gemini-3.1-pro`, `gemini-3-flash-solo`, `minimax-m3`, `minimax-m2.7` all
+  answer `1005 {"plan":5}` on Free accounts; `search_agent`, `gpt-5-paygo`,
+  and `gpt-5.1-paygo` were dropped after review. The intl agent roster is now
+  the 7 verified-usable rows, and discovery no longer re-adds removed rows: the
+  intl discovery source is the agent picker (`batch_get_detail_param`,
+  `usage=chat_completion`) and only rows already in the static roster are kept —
+  a discovered id outside the roster is dropped instead of cloned from a
+  template, so a sync/update cannot republish models the account cannot serve.
 
 ### Changed
 

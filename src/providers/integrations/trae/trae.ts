@@ -30,7 +30,7 @@ import {
   TRAE_AGENT_ENDPOINT,
   TRAE_CHAT_ENDPOINT,
 } from "./trae-protocol";
-import { TRAE_REGION_CORE_HOSTS, traeCoreCandidates, type TraeRealm } from "./trae-realm";
+import { TRAE_REGION_CORE_HOSTS, traeCoreCandidates, TRAE_MODEL_LIST_PATH, TRAE_AGENT_FUNCTION, type TraeRealm } from "./trae-realm";
 
 export interface TraeAdapterOptions {
   readonly providerId?: string;
@@ -533,6 +533,17 @@ export function createTraeCnAdapter(options: TraeAdapterOptions = {}): ProviderA
 /**
  * Live model discovery.
  *
+ * The source follows the realm, not one endpoint:
+ *
+ * - **intl** — the agent picker (`batch_get_detail_param` with
+ *   `function: solo_agent`), filtered to `usage == "chat_completion"` rows.
+ *   The chat `model_list` is NOT the intl source: it lists only the legacy
+ *   nine chat ids, and an agent roster row (`gpt-5-paygo`,
+ *   `deepseek-v4.1-flash`, `search_agent_*`, …) is absent from it (verified
+ *   live 2026-11-06). Reading it would replace the agent catalog with models
+ *   the agent surface rejects (`4023 model is unknown`).
+ * - **CN** — the chat `model_list`, which is the surface that serves CN.
+ *
  * The listing is per account region, not per realm: it answers on CN and on the
  * intl region host that serves the account (`coresg-normal.trae.ai` verified),
  * while the generic intl core answers `403 no schema found`. An empty result is
@@ -557,7 +568,52 @@ export async function discoverTraeModels(input: {
     token: input.token,
     uid: input.uid,
   });
-  const url = `${traeCoreForAccount(input.realm, input.region === undefined ? undefined : { region: input.region })}/api/ide/v1/model_list`;
+  const core = traeCoreForAccount(
+    input.realm,
+    input.region === undefined ? undefined : { region: input.region },
+  );
+
+  if (input.realm === "intl") {
+    // The agent picker: the only surface that lists the intl roster's configs.
+    const url = `${core}/api/ide/v1/batch_get_detail_param`;
+    const response = await input.fetcher(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ functions: [TRAE_AGENT_FUNCTION], Request: {} }),
+      ...(input.signal ? { signal: input.signal } : {}),
+    });
+    if (!response.ok) return [];
+    const parsed = (await response.json()) as { function_configs?: unknown };
+    const groups = Array.isArray(parsed.function_configs) ? parsed.function_configs : [];
+    const out: { id: string; ctx: number | undefined }[] = [];
+    for (const group of groups) {
+      if (typeof group !== "object" || group === null) continue;
+      const list = (group as Record<string, unknown>)["config_info_list"];
+      if (!Array.isArray(list)) continue;
+      for (const entry of list) {
+        if (typeof entry !== "object" || entry === null) continue;
+        const row = entry as Record<string, unknown>;
+        // Only chat-capable configs are dispatch targets; fast_apply,
+        // title_generation, etc. are not.
+        if (String(row["usage"] ?? "") !== "chat_completion") continue;
+        const id = String(row["config_name"] ?? "").trim();
+        if (id.length === 0) continue;
+        // Context: the picker row carries `model_detail_list` with the real
+        // upstream rows; prefer the widest selectable window among them.
+        let ctx: number | undefined;
+        const details = Array.isArray(row["model_detail_list"]) ? row["model_detail_list"] : [];
+        for (const detail of details) {
+          const w = traeMaxContextWindow(detail);
+          if (w !== undefined && (ctx === undefined || w > ctx)) ctx = w;
+        }
+        out.push({ id, ctx });
+      }
+    }
+    return out;
+  }
+
+  // CN: the chat roster surface.
+  const url = `${core}${TRAE_MODEL_LIST_PATH}`;
   const response = await input.fetcher(url, {
     method: "POST",
     headers,

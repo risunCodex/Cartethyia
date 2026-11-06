@@ -168,13 +168,12 @@ describe("trae rosters", () => {
   test("context windows are per model, not uniform", () => {
     // Reading a single maximum across the roster would report 1M for the GPT
     // rows, which — except `gpt-5.4` — cap at 272k, and would overstate
-    // Kimi-K2.5 / MiniMax-M2.7, which offer no selectable upgrade above 200k.
+    // the search-agent rows that resolve to 272k models.
     const find = (id: string): number | undefined =>
       TRAE_INTL_MODELS.find((m) => m.modelId === id)?.contextLimit ?? undefined;
     expect(find("gpt-5.4")).toBe(1_000_000);
-    expect(find("gpt-5.2")).toBe(272_000);
-    expect(find("deepseek-v4.1-flash")).toBe(1_000_000);
-    expect(find("kimi-k2.5")).toBe(200_000);
+    expect(find("gpt-5.2-codex-paygo")).toBe(272_000);
+    expect(find("search_agent_gpt-5.4")).toBe(1_000_000);
   });
 });
 
@@ -386,7 +385,7 @@ describe("buildTraeChatBody", () => {
 
   test("a huge max_tokens is clamped to the roster output limit", () => {
     const body = buildTraeChatBody(
-      "gpt-5.2",
+      "gpt-5.2-codex-paygo",
       request({ generation_controls: { max_tokens: 1_000_000_000 } }),
       "intl",
       undefined,
@@ -397,7 +396,7 @@ describe("buildTraeChatBody", () => {
 
   test("a caller max_tokens within the roster limit is forwarded unchanged", () => {
     const body = buildTraeChatBody(
-      "gpt-5.2",
+      "gpt-5.2-codex-paygo",
       request({ generation_controls: { max_tokens: 32_000 } }),
       "intl",
       undefined,
@@ -417,8 +416,8 @@ describe("toTraeAgentBody", () => {
     // The agent surface ignores `model_name` entirely, and without
     // `config_source` it resolves the right upstream model and then streams
     // nothing — which looks like a dead model rather than a missing field.
-    const body = toTraeAgentBody(buildTraeChatBody("deepseek-v4.1-flash", request(), "intl"));
-    expect(body.config_name).toBe("deepseek-v4.1-flash");
+    const body = toTraeAgentBody(buildTraeChatBody("search_agent_gpt-5.4", request(), "intl"));
+    expect(body.config_name).toBe("search_agent_gpt-5.4");
     expect(body.config_source).toBe(1);
     expect("model_name" in body).toBe(false);
   });
@@ -426,13 +425,13 @@ describe("toTraeAgentBody", () => {
   test("function names the roster", () => {
     // Absent, the call fails before model resolution with
     // `[LLMUtilsChat.resolveByUsage] function is empty`.
-    const body = toTraeAgentBody(buildTraeChatBody("gpt-5.2", request(), "intl"));
+    const body = toTraeAgentBody(buildTraeChatBody("gpt-5.2-codex-paygo", request(), "intl"));
     expect(body.function).toBe(TRAE_AGENT_FUNCTION);
   });
 
   test("messages and generation controls survive the rewrite", () => {
     const source = buildTraeChatBody(
-      "kimi-k3",
+      "gemini-3.1-pro-paygo",
       request({ generation_controls: { temperature: 0.3, max_tokens: 32 } }),
       "intl",
     );
