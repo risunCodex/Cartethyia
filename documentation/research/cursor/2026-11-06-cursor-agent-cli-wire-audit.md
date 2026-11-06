@@ -229,14 +229,17 @@ frame type was found for the Run path in this build.
 5. **Do NOT add:** `x-cursor-client-os`/`x-cursor-client-arch`,
    `x-cursor-host-app-*`, `x-cursor-canary`, `x-dev-experiment-overrides`,
    `local-cli-mode` — bridge-worker/env-specific.
-6. **Native tool execution — APPLIED (2026-11-06).** The adapter now executes
+6. **Native tool execution — APPLIED (2026-11-06).** The adapter executes
    Cursor's host tools locally instead of relaying them to the client or
-   refusing them: `read`/`pi_read`, `write`/`pi_write`, `grep`/`pi_grep`,
-   `shell`/`pi_bash`, `ls`/`pi_ls`, `pi_edit`, `pi_find`, `delete`. Safety:
-   every filesystem path resolves inside the workspace root (escape → typed
+   refusing them: `read`, `write`, `grep`, `shell`, `ls`, `edit`, `find`,
+   `delete` — one canonical name per tool across both wire generations (the
+   modern exec arms are namespaced `ct_*` internally; the upstream calls them
+   `pi_*`, but the tool surface is one name). Safety: every filesystem path
+   resolves inside the workspace root (escape → typed
    `rejected`/`permission_denied`); shell runs via parsed argv with `shell:
-   false` and a pinned cwd. `subagent`, `web_search`, `fetch`, and MCP remain
-   refused. Harness: `scripts/provider-probing/cursor/harness/native-tool-harness.ts`
+   false` and a pinned cwd. **MCP is kept** for client-declared tools
+   (relayed to the client); `subagent`, `web_search`, `fetch` stay refused.
+   Harness: `scripts/provider-probing/cursor/harness/native-tool-harness.ts`
    (19 checks, incl. parallel); unit tests in `test/providers/cursor-exec.test.ts`.
 
 ---

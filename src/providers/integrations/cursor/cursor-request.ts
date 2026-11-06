@@ -23,8 +23,6 @@ import { encodeJsonAsValue } from "./protocol/struct";
 // a caller has to discover separately.
 export {
   CURSOR_TOOL_VARIANTS,
-  CursorToolCallProvenance,
-  cursorNativeToolDeclaration,
   cursorToolArm,
   decodeCursorNativeToolCall,
 } from "./protocol/tool-canonical";

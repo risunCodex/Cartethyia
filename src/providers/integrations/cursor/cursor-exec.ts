@@ -45,13 +45,13 @@ export const CURSOR_TOOL_MAX_LINES = 2000;
  * frame's result oneof.
  */
 export interface NativeToolResult {
-  /** The ExecClientMessage result field name (e.g. `read_result`, `pi_read_result`). */
+  /** The ExecClientMessage result field name (e.g. `read_result`, `ct_read_result`). */
   readonly field: string;
   /** The protobuf result message object, keyed by its oneof arm. */
   readonly message: Record<string, unknown>;
 }
 
-/** One exec-frame → result-field mapping. */
+/** One exec-frame → result-field mapping (wire arms, not tool names). */
 const EXEC_RESULT_FIELD: Readonly<Record<string, string>> = {
   shell_args: "shell_result",
   write_args: "write_result",
@@ -59,18 +59,38 @@ const EXEC_RESULT_FIELD: Readonly<Record<string, string>> = {
   grep_args: "grep_result",
   read_args: "read_result",
   ls_args: "ls_result",
-  pi_read_args: "pi_read_result",
-  pi_bash_args: "pi_bash_result",
-  pi_edit_args: "pi_edit_result",
-  pi_write_args: "pi_write_result",
-  pi_grep_args: "pi_grep_result",
-  pi_find_args: "pi_find_result",
-  pi_ls_args: "pi_ls_result",
+  // Modern exec arms are namespaced `ct_` (cartethyia) on the wire — the
+  // upstream calls them `pi_`, but the canonical tool surface is one name per
+  // tool, so the wire suffix here is ours alone.
+  ct_read_args: "pi_read_result",
+  ct_bash_args: "pi_bash_result",
+  ct_edit_args: "pi_edit_result",
+  ct_write_args: "pi_write_result",
+  ct_grep_args: "pi_grep_result",
+  ct_find_args: "pi_find_result",
+  ct_ls_args: "pi_ls_result",
 };
 
-/** The exec frame key for a variant (args wire type in snake form). */
+/** Exec frame keys the executor runs, in canonical order. */
+const EXEC_TOOL_NAMES: Readonly<Record<string, string>> = {
+  shell_args: "shell",
+  write_args: "write",
+  delete_args: "delete",
+  grep_args: "grep",
+  read_args: "read",
+  ls_args: "ls",
+  ct_read_args: "read",
+  ct_bash_args: "shell",
+  ct_edit_args: "edit",
+  ct_write_args: "write",
+  ct_grep_args: "grep",
+  ct_find_args: "find",
+  ct_ls_args: "ls",
+};
+
+/** The exec frame key for a legacy variant (wire type in snake form). */
 export function execFrameKeyForVariant(variant: CursorToolVariant): string {
-  const wire = variant.wireType; // e.g. "ReadToolCall" / "PiReadToolCall"
+  const wire = variant.wireType; // e.g. "ReadToolCall"
   const base = wire.replace(/ToolCall$/, "");
   const snake = base.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
   return `${snake}_args`;
@@ -79,6 +99,39 @@ export function execFrameKeyForVariant(variant: CursorToolVariant): string {
 /** True when this variant is one the executor can run locally. */
 export function isExecutableNativeTool(variant: CursorToolVariant): boolean {
   return Object.hasOwn(EXEC_RESULT_FIELD, execFrameKeyForVariant(variant));
+}
+
+/** Resolves one exec frame to its canonical tool name, or undefined. */
+export function execFrameToolName(frameKey: string): string | undefined {
+  return EXEC_TOOL_NAMES[frameKey];
+}
+
+/**
+ * Resolves an `ExecServerMessage` frame to `{ frameKey, args }` when the
+ * frame carries an executable tool payload. `frameKey` is the wire key
+ * (`read_args`, `pi_read_args`, …); `args` are canonicalised snake-case
+ * arguments. Returns `undefined` for non-tool frames (id, exec_id,
+ * request_context_args, …).
+ */
+export function resolveExecFrame(
+  execServer: Record<string, unknown>,
+): { readonly frameKey: string; readonly args: Record<string, unknown> } | undefined {
+  for (const [key, value] of Object.entries(execServer)) {
+    if (value === null || value === undefined || !key.endsWith("_args")) continue;
+    if (!Object.hasOwn(EXEC_RESULT_FIELD, key)) continue;
+    return { frameKey: key, args: canonicalToolArgumentsFrom(value) };
+  }
+  return undefined;
+}
+
+function canonicalToolArgumentsFrom(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, child]) => [
+      key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[\s-]+/g, "_").toLowerCase(),
+      child,
+    ]),
+  );
 }
 
 /** Resolves a tool path against the workspace root; null when it escapes. */
@@ -636,18 +689,17 @@ function deleteFileTool(args: Record<string, unknown>, root: string): Record<str
 }
 
 /**
- * Executes one Cursor-native tool. `args` are the decoded canonical (snake)
- * arguments from the exec frame. Returns the result message for the exec
- * frame's result oneof, or `undefined` when the variant is not executable
- * (the caller refuses it).
+ * Executes one Cursor-native exec frame. `frameKey` is the exec-frame key
+ * (`read_args`, `pi_read_args`, …); `args` are the decoded canonical (snake)
+ * arguments. Returns the result message for the frame's result oneof, or
+ * `undefined` when the frame is not executable (the caller refuses it).
  */
 export async function executeNativeTool(
-  variant: CursorToolVariant,
+  frameKey: string,
   args: Record<string, unknown>,
   root: string,
   timeoutMs = 30_000,
 ): Promise<NativeToolResult | undefined> {
-  const frameKey = execFrameKeyForVariant(variant);
   const field = EXEC_RESULT_FIELD[frameKey];
   if (field === undefined) return undefined;
 
@@ -656,13 +708,13 @@ export async function executeNativeTool(
     case "read_args":
       message = await readFile(args, root, false);
       break;
-    case "pi_read_args":
+    case "ct_read_args":
       message = await readFile(args, root, true);
       break;
     case "shell_args":
       message = await runShell(args, root, timeoutMs);
       break;
-    case "pi_bash_args":
+    case "ct_bash_args":
       message = await runShell(args, root, timeoutMs);
       break;
     case "glob_args":
@@ -671,31 +723,31 @@ export async function executeNativeTool(
     case "grep_args":
       message = grepFiles(args, root, false);
       break;
-    case "pi_grep_args":
+    case "ct_grep_args":
       message = grepFiles(args, root, true);
       break;
     case "ls_args":
       message = lsTree(args, root, false);
       break;
-    case "pi_ls_args":
+    case "ct_ls_args":
       message = lsTree(args, root, true);
       break;
     case "edit_args":
       message = editFile(args, root, false);
       break;
-    case "pi_edit_args":
+    case "ct_edit_args":
       message = editFile(args, root, true);
       break;
     case "write_args":
       message = writeFileTool(args, root, false);
       break;
-    case "pi_write_args":
+    case "ct_write_args":
       message = writeFileTool(args, root, true);
       break;
     case "delete_args":
       message = deleteFileTool(args, root);
       break;
-    case "pi_find_args": {
+    case "ct_find_args": {
       const path = resolveInside(root, String(args["path"] ?? "."));
       if (path === null) message = { error: { error: "path escapes the workspace root" } };
       else {

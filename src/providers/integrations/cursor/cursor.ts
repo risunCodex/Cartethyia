@@ -62,8 +62,7 @@ import { defaultParameterValues, fetchCursorModels } from "./cursor-catalog";
 import type { CursorModelInfo } from "./cursor-catalog";
 import { decodeValueToJson, decodeStructEntriesToJson } from "./protocol/struct";
 import { encodeMessage } from "./protocol/messages";
-import { cursorVariantForExecArgs } from "./protocol/tool-canonical";
-import { executeNativeTool, isExecutableNativeTool } from "./cursor-exec";
+import { executeNativeTool, resolveExecFrame } from "./cursor-exec";
 import { fnv1a32 } from "../shared/hash";
 
 /**
@@ -931,6 +930,8 @@ class CursorAdapter implements ProviderAdapter {
         if (execServer !== undefined) {
           const handled = await this.#handleExecServerMessage(execServer, session, handle);
           if (handled.kind !== "tool_call") continue;
+          // Only MCP arms are relayed to the client for execution (client-
+          // declared tools). Native tools are answered in-band by the executor.
           const callId = `call_cursor_${runId}_${handled.execId}`;
           const scope = context.continuation_scope;
           if (scope === undefined) {
@@ -1123,15 +1124,14 @@ class CursorAdapter implements ProviderAdapter {
       await handle.write(buildAllowlistPrecheckResult(execId, precheckKind, execIdString));
       return { kind: "handled" };
     }
-    // Native first. A Cursor host-exec frame (`read_args`, `shell_args`,
-    // `pi_read_args`, …) is executed locally by this gateway — not relayed to
-    // the client and not refused. The executor returns the wire result message
-    // for the frame's result oneof, so a reply can only come back in the arm
-    // it arrived on. Variants the executor does not implement fall through to
-    // the refusal below.
-    const nativeCall = cursorVariantForExecArgs(execServer);
-    if (nativeCall !== undefined && isExecutableNativeTool(nativeCall.variant)) {
-      const executed = await executeNativeTool(nativeCall.variant, nativeCall.args, process.cwd());
+    // Native exec frames (`read_args`, `shell_args`, `ct_read_args`, …) are
+    // executed locally by this gateway — not relayed to the client and not
+    // refused. The executor returns the wire result message for the frame's
+    // result oneof, so a reply can only come back in the arm it arrived on.
+    // Frames the executor does not implement fall through to the refusal.
+    const execFrame = resolveExecFrame(execServer);
+    if (execFrame !== undefined) {
+      const executed = await executeNativeTool(execFrame.frameKey, execFrame.args, process.cwd());
       if (executed !== undefined) {
         await handle.write(
           encodeMessage("AgentClientMessage", {
@@ -1145,9 +1145,9 @@ class CursorAdapter implements ProviderAdapter {
         return { kind: "handled" };
       }
     }
-    // MCP is the fallback, not the first stop: client-declared tools have no
-    // native slot in `agent.proto`, so they are the ones that must travel this
-    // channel. An arm neither path claims falls through to the refusal below.
+    // MCP remains for client-declared tools: they have no native slot, so a
+    // declared `mcp_args` arm is relayed to the client as an ordinary tool
+    // call. Undeclared MCP is refused.
     const mcpArgs = recordOf(execServer["mcp_args"]);
     if (mcpArgs !== undefined) {
       const call = readExecutableMcpCall(mcpArgs, session.descriptors);

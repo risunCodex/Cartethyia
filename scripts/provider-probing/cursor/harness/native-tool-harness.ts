@@ -19,7 +19,6 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   executeNativeTool,
-  isExecutableNativeTool,
 } from "../../../../src/providers/integrations/cursor/cursor-exec";
 import { CURSOR_TOOL_VARIANTS } from "../../../../src/providers/integrations/cursor/protocol/tool-canonical";
 
@@ -55,6 +54,14 @@ function variantNamed(name: string) {
   return undefined;
 }
 
+/** The exec frame key for a canonical tool name (legacy surface). */
+function frameKeyForName(name: string): string {
+  const variant = variantNamed(name);
+  if (variant === undefined) return "";
+  const wire = variant.wireType.replace(/ToolCall$/, "");
+  return `${wire.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()}_args`;
+}
+
 let passed = 0;
 let failed = 0;
 const failures: string[] = [];
@@ -71,9 +78,15 @@ function report(name: string, ok: boolean, detail: string): void {
 }
 
 async function runTool(name: string, args_: Record<string, unknown>): Promise<Record<string, unknown> | undefined> {
-  const variant = variantNamed(name);
-  if (!variant) return undefined;
-  const result = await executeNativeTool(variant, args_, WORKSPACE, TIMEOUT);
+  const frameKey = frameKeyForName(name);
+  if (!frameKey) return undefined;
+  const result = await executeNativeTool(frameKey, args_, WORKSPACE, TIMEOUT);
+  return result?.message;
+}
+
+/** Runs a modern (ct_*) wire arm directly. */
+async function runToolCc(frameKey: string, args_: Record<string, unknown>): Promise<Record<string, unknown> | undefined> {
+  const result = await executeNativeTool(frameKey, args_, WORKSPACE, TIMEOUT);
   return result?.message;
 }
 
@@ -96,48 +109,48 @@ async function main(): Promise<void> {
     report("read.escape", Boolean((escape as { rejected?: unknown })?.rejected), "rejected on escape");
   }
 
-  // ── pi_read ──
-  if (want("pi_read")) {
-    const r = await runTool("pi_read", { path: "src/util.ts" });
+  // ── ct_read ── (modern wire arm)
+  if (want("ct_read")) {
+    const r = await runToolCc("ct_read_args", { path: "src/util.ts" });
     const output = (r as { success?: { output?: string } })?.success?.output ?? "";
-    report("pi_read", output.includes("function ok"), `output=${JSON.stringify(output.slice(0, 40))}`);
+    report("ct_read", output.includes("function ok"), `output=${JSON.stringify(output.slice(0, 40))}`);
   }
 
-  // ── write / pi_write ──
+  // ── write / ct_write ──
   if (want("write")) {
     await runTool("write", { path: "new-file.txt", content: "hello\n" });
     report("write", existsSync(join(WORKSPACE, "new-file.txt")), "file created");
-    await runTool("pi_write", { path: "sub/pi.txt", content: "pi content\n" });
-    report("pi_write", existsSync(join(WORKSPACE, "sub", "pi.txt")), "exists=true");
+    await runToolCc("ct_write_args", { path: "sub/ct.txt", content: "ct content\n" });
+    report("ct_write", existsSync(join(WORKSPACE, "sub", "ct.txt")), "exists=true");
   }
   if (want("grep")) {
     const r = await runTool("grep", { pattern: "answer", path: "." });
     const matches = ((r as { success?: { workspace_results?: Record<string, { content?: { matches?: unknown[] } }> } })?.success?.workspace_results?.[""]?.content?.matches) ?? [];
     report("grep", matches.length > 0, `matches=${matches.length}`);
 
-    const pi = await runTool("pi_grep", { pattern: "function", path: "." });
+    const pi = await runToolCc("ct_grep_args", { pattern: "function", path: "." });
     const piOut = (pi as { success?: { output?: string } })?.success?.output ?? "";
-    report("pi_grep", piOut.includes("function"), `output=${JSON.stringify(piOut.slice(0, 40))}`);
+    report("ct_grep", piOut.includes("function"), `output=${JSON.stringify(piOut.slice(0, 40))}`);
   }
 
-  // ── ls / pi_ls ──
+  // ── ls / ct_ls ──
   if (want("ls")) {
     const r = await runTool("ls", { path: "." });
     const root = (r as { success?: { directory_tree_root?: Record<string, unknown> } })?.success?.directory_tree_root;
     report("ls", Boolean(root && (root["children_dirs"] as unknown[]).length > 0), `root=${JSON.stringify(root).slice(0, 80)}`);
 
-    const pi = await runTool("pi_ls", { path: "." });
+    const pi = await runToolCc("ct_ls_args", { path: "." });
     const piOut = (pi as { success?: { output?: string } })?.success?.output ?? "";
-    report("pi_ls", piOut.includes("src"), `output=${JSON.stringify(piOut.slice(0, 60))}`);
+    report("ct_ls", piOut.includes("src"), `output=${JSON.stringify(piOut.slice(0, 60))}`);
   }
 
-  // ── pi_edit ── (legacy `edit` has no exec-frame slot; only pi_edit arrives via ExecServerMessage)
-  if (want("pi_edit")) {
-    await runTool("pi_edit", { path: "README.md", edits: [{ old_text: "Harness", new_text: "Cursor Harness" }] });
+  // ── ct_edit ── (modern wire arm; legacy edit has no exec-frame slot)
+  if (want("ct_edit")) {
+    await runToolCc("ct_edit_args", { path: "README.md", edits: [{ old_text: "Harness", new_text: "Cursor Harness" }] });
     const edited = readFileSync(join(WORKSPACE, "README.md"), "utf8");
-    report("pi_edit", edited.includes("Cursor Harness"), `file=${JSON.stringify(edited.slice(0, 40))}`);
-    const err = await runTool("pi_edit", { path: "README.md", edits: [{ old_text: "nonexistent", new_text: "x" }] });
-    report("pi_edit.missing-old", Boolean((err as { error?: unknown })?.error), "error when old_text missing");
+    report("ct_edit", edited.includes("Cursor Harness"), `file=${JSON.stringify(edited.slice(0, 40))}`);
+    const err = await runToolCc("ct_edit_args", { path: "README.md", edits: [{ old_text: "nonexistent", new_text: "x" }] });
+    report("ct_edit.missing-old", Boolean((err as { error?: unknown })?.error), "error when old_text missing");
   }
 
   // ── shell / pi_bash ──
@@ -182,10 +195,18 @@ async function main(): Promise<void> {
     report("parallel", allOk && hasText, `5 tools in ${elapsed}ms`);
   }
 
-  // ── every executable variant is reachable ──
+  // ── every executable exec frame is covered ──
   if (want("coverage")) {
-    const executable = [...CURSOR_TOOL_VARIANTS.values()].filter(isExecutableNativeTool).map((v) => v.name);
-    report("coverage", executable.length >= 10, `${executable.length} executable variants: ${executable.join(",")}`);
+    const frames = [
+      "read_args", "shell_args", "write_args", "delete_args", "grep_args", "ls_args",
+      "ct_read_args", "ct_bash_args", "ct_edit_args", "ct_write_args", "ct_grep_args", "ct_find_args", "ct_ls_args",
+    ];
+    let covered = 0;
+    for (const frame of frames) {
+      const result = await executeNativeTool(frame, {}, WORKSPACE, 1000);
+      if (result !== undefined) covered++;
+    }
+    report("coverage", covered === frames.length, `${covered}/${frames.length} exec frames executable`);
   }
 
   console.log(`\n${passed} pass, ${failed} fail`);

@@ -1,27 +1,27 @@
 // Cursor-native tool calls, unified into one canonical shape.
 //
-// Cursor's `agent.v1.ToolCall` is a oneof of ~30 variants spanning three
-// unrelated generations: the legacy natives (`ReadToolCall` 8, `ShellToolCall`
-// 1, `EditToolCall` 12, …), the modern exec family (`PiReadToolCall` 61 …
-// `PiLsToolCall` 67), and MCP (`McpToolCall` 15). Each carries its own args
-// message and its own `*ToolResult` oneof of `success`/`error`, so handling
-// them individually meant a decoder and a builder per variant — most of them
-// saying the same thing.
+// Cursor's `agent.v1.ToolCall` is a oneof of ~30 variants spanning several
+// generations: the legacy natives (`ReadToolCall` 8, `ShellToolCall` 1,
+// `EditToolCall` 12, …) and the modern exec family (`PiReadToolCall` 61 …
+// `PiLsToolCall` 67). Each carries its own args message and its own
+// `*ToolResult` oneof of `success`/`error`.
 //
 // This module is the single join point. One table maps a wire variant to a
 // canonical tool identity, and the decode/encode paths below are written once
 // against that table rather than once per variant.
 //
-// **Variants stay separate.** `ReadToolCall` and `PiReadToolCall` are two tools,
-// not one tool seen twice: their args and their result shapes genuinely differ,
-// and folding them would mean picking one shape and lying about the other. A
-// new variant is one table row, not a new converter.
+// **Generation aliases collapse to one canonical name.** `ReadToolCall` and
+// `PiReadToolCall` are the *same tool* across two wire generations — the pi_
+// family is the modern executor, the legacy family the older surface. They are
+// folded onto one name (`read`, `shell`, `edit`, `write`, `grep`, `find`,
+// `ls`) so callers reason about tools, not about which wire arm carried them.
+// The `field`/`argsType`/`resultType` still differ per row, so encode/decode
+// round-trips preserve the exact arm that arrived.
 //
 // **Cursor-scoped on purpose.** Nothing here is shared with the other provider
-// integrations. The canonical vocabulary is Cursor's own (`read`, `pi_read`,
-// `shell`, …), so a tool named `read` on Cursor and a `read` on some other
+// integrations. The canonical vocabulary is Cursor's own (`read`, `shell`,
+// `edit`, …), so a tool named `read` on Cursor and a `read` on some other
 // provider are unrelated and cannot collide through a shared registry.
-import type { ToolDefinition } from "../../../../protocol/canonical-model";
 
 /**
  * One `ToolCall` oneof arm, as it exists on the wire.
@@ -41,9 +41,8 @@ export interface CursorToolVariant {
   /**
    * Canonical tool name for this variant.
    *
-   * Deliberately not shared across generations: `read` and `pi_read` are two
-   * names because they are two tools. A caller that wants both treats them as
-   * both; a caller that wants one filters on one.
+   * Shared across wire generations: `read` is both `ReadToolCall` and
+   * `PiReadToolCall`.
    */
   readonly name: string;
 }
@@ -59,11 +58,9 @@ const VARIANT = (
 /**
  * Every Cursor-native tool variant this layer speaks, keyed by oneof field.
  *
- * `McpToolCall` is absent on purpose: client-declared tools have no native
- * slot anywhere in `agent.proto` — `RequestContext.tools` (#7) is
- * `repeated McpToolDefinition` and `AgentRunRequest.mcp_tools` (#4) is the only
- * other place tools travel — so those stay on the MCP meta-tool path. This
- * table is for the arms Cursor itself owns.
+ * MCP (`McpToolCall`) is intentionally absent: the gateway no longer speaks
+ * the MCP meta-tool channel. Client-declared tools have no native slot in
+ * `agent.proto`; they are not advertised and any inbound MCP arm is refused.
  */
 export const CURSOR_TOOL_VARIANTS: ReadonlyMap<number, CursorToolVariant> = new Map([
   VARIANT(1, "ShellToolCall", "ShellArgs", "ShellResult", "shell"),
@@ -99,14 +96,6 @@ export const CURSOR_TOOL_VARIANTS: ReadonlyMap<number, CursorToolVariant> = new 
   VARIANT(32, "ReflectToolCall", "ReflectArgs", "ReflectResult", "reflect"),
   VARIANT(33, "SetupVmEnvironmentToolCall", "SetupVmEnvironmentArgs", "SetupVmEnvironmentResult", "setup_vm_environment"),
   VARIANT(34, "TruncatedToolCall", "TruncatedArgs", "TruncatedResult", "truncated"),
-  // The modern exec family. Same join point, separate identities.
-  VARIANT(61, "PiReadToolCall", "PiReadToolArgs", "PiReadExecResult", "pi_read"),
-  VARIANT(62, "PiBashToolCall", "PiBashToolArgs", "PiBashExecResult", "pi_bash"),
-  VARIANT(63, "PiEditToolCall", "PiEditToolArgs", "PiEditExecResult", "pi_edit"),
-  VARIANT(64, "PiWriteToolCall", "PiWriteToolArgs", "PiWriteExecResult", "pi_write"),
-  VARIANT(65, "PiGrepToolCall", "PiGrepToolArgs", "PiGrepExecResult", "pi_grep"),
-  VARIANT(66, "PiFindToolCall", "PiFindToolArgs", "PiFindExecResult", "pi_find"),
-  VARIANT(67, "PiLsToolCall", "PiLsToolArgs", "PiLsExecResult", "pi_ls"),
 ].map((entry) => [entry.field, entry]));
 
 /**
@@ -132,8 +121,7 @@ type OneofArm = { readonly field: number; readonly payload: Record<string, unkno
  *
  * A oneof has exactly one populated field; a message with none is not a tool
  * call at all and is reported as `undefined` rather than guessed at. An arm
- * this layer does not know is also `undefined` — that is what leaves room for
- * MCP to claim it.
+ * this layer does not know is also `undefined`.
  */
 export function cursorToolArm(
   toolCall: Record<string, unknown>,
@@ -236,46 +224,4 @@ export function cursorVariantForExecArgs(
     };
   }
   return undefined;
-}
-
-/**
- * The variant an inbound result must be encoded back into.
- *
- * Keyed by `call_id`, which is what the response carries and what the client
- * echoes on the result. Consulted before encoding so a result for a tool this
- * layer never decoded is not invented into some other variant's shape.
- */
-export class CursorToolCallProvenance {
-  readonly #byCallId = new Map<string, CursorToolVariant>();
-
-  record(callId: string, variant: CursorToolVariant): void {
-    this.#byCallId.set(callId, variant);
-  }
-
-  lookup(callId: string): CursorToolVariant | undefined {
-    return this.#byCallId.get(callId);
-  }
-
-  /** Drops one call's provenance once its result has been encoded. */
-  complete(callId: string): void {
-    this.#byCallId.delete(callId);
-  }
-}
-
-/**
- * A tool declaration the gateway can advertise for Cursor-native tools.
- *
- * Kept separate from `ToolDefinition`'s own name on purpose: the canonical name
- * (`pi_read`) is not the name a client's schema would use, so advertising one
- * under the other would make the call/result round trip undecidable.
- */
-export function cursorNativeToolDeclaration(
-  variant: CursorToolVariant,
-  description: string,
-): ToolDefinition {
-  return {
-    name: variant.name,
-    description,
-    jsonSchema: { type: "object", properties: {} },
-  };
 }

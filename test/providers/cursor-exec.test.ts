@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { executeNativeTool, isExecutableNativeTool } from "../../src/providers/integrations/cursor/cursor-exec";
+import { executeNativeTool } from "../../src/providers/integrations/cursor/cursor-exec";
 import { CURSOR_TOOL_VARIANTS } from "../../src/providers/integrations/cursor/protocol/tool-canonical";
 
 const WORKSPACE = mkdtempSync(join(tmpdir(), "cursor-exec-test-"));
@@ -22,27 +22,32 @@ function setup(): void {
   writeFileSync(join(WORKSPACE, "README.md"), "# Test\n\nHello world.\n");
 }
 
-function variantNamed(name: string) {
+/** Returns the exec frame key for a canonical tool name (legacy surface). */
+function frameKeyForName(name: string): string {
   for (const v of CURSOR_TOOL_VARIANTS.values()) {
-    if (v.name === name) return v;
+    if (v.name === name) {
+      const wire = v.wireType.replace(/ToolCall$/, "");
+      return `${wire.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()}_args`;
+    }
   }
-  return undefined;
+  return "";
 }
 
 async function run(name: string, args: Record<string, unknown>) {
-  const variant = variantNamed(name);
-  if (!variant) throw new Error(`no variant ${name}`);
-  return await executeNativeTool(variant, args, WORKSPACE);
+  const frameKey = frameKeyForName(name);
+  if (!frameKey) throw new Error(`no frame for ${name}`);
+  return await executeNativeTool(frameKey, args, WORKSPACE);
 }
 
 beforeEach(setup);
 
 describe("Cursor native tool executor", () => {
   test("covers the native exec surface", () => {
-    const executable = [...CURSOR_TOOL_VARIANTS.values()].filter(isExecutableNativeTool).map((v) => v.name);
-    for (const name of ["read", "pi_read", "write", "pi_write", "grep", "pi_grep", "shell", "pi_bash", "ls", "pi_ls", "pi_edit", "pi_find", "delete"]) {
-      expect(executable).toContain(name);
+    for (const name of ["read", "write", "grep", "shell", "ls", "edit", "delete"]) {
+      expect(frameKeyForName(name)).not.toBe("");
     }
+    // `find` exists only on the modern wire arm — no legacy FindToolCall.
+    expect(frameKeyForName("find")).toBe("");
   });
 
   test("read returns content and the read_result field", async () => {
@@ -63,8 +68,8 @@ describe("Cursor native tool executor", () => {
     expect(result?.message["rejected"]).toBeDefined();
   });
 
-  test("pi_read returns pi_read_result with output", async () => {
-    const result = await run("pi_read", { path: "src/a.ts" });
+  test("ct_read returns pi_read_result with output (modern wire arm)", async () => {
+    const result = await executeNativeTool("ct_read_args", { path: "src/a.ts" }, WORKSPACE);
     expect(result?.field).toBe("pi_read_result");
     const success = result?.message["success"] as Record<string, unknown>;
     expect(success["output"]).toContain("export const x");
@@ -77,8 +82,8 @@ describe("Cursor native tool executor", () => {
     expect(readFileSync(join(WORKSPACE, "out.txt"), "utf8")).toBe("hello\n");
   });
 
-  test("pi_write creates nested paths", async () => {
-    const result = await run("pi_write", { path: "nested/deep.txt", content: "x" });
+  test("ct_write creates nested paths (modern wire arm)", async () => {
+    const result = await executeNativeTool("ct_write_args", { path: "nested/deep.txt", content: "x" }, WORKSPACE);
     expect(result?.field).toBe("pi_write_result");
     expect(existsSync(join(WORKSPACE, "nested", "deep.txt"))).toBe(true);
   });
@@ -91,8 +96,8 @@ describe("Cursor native tool executor", () => {
     expect(workspace[""]?.["content"]?.["matches"]?.length).toBeGreaterThan(0);
   });
 
-  test("pi_grep finds matches", async () => {
-    const result = await run("pi_grep", { pattern: "export const", path: "." });
+  test("ct_grep finds matches (modern wire arm)", async () => {
+    const result = await executeNativeTool("ct_grep_args", { pattern: "export const", path: "." }, WORKSPACE);
     expect(result?.field).toBe("pi_grep_result");
     const success = result?.message["success"] as Record<string, unknown>;
     expect(success["output"]).toContain("a.ts");
@@ -123,15 +128,22 @@ describe("Cursor native tool executor", () => {
     expect(root["directory_tree_root"]).toBeDefined();
   });
 
-  test("pi_edit replaces text", async () => {
-    const result = await run("pi_edit", { path: "README.md", edits: [{ old_text: "Hello", new_text: "Hola" }] });
+  test("ct_edit replaces text (modern wire arm)", async () => {
+    const result = await executeNativeTool("ct_edit_args", { path: "README.md", edits: [{ old_text: "Hello", new_text: "Hola" }] }, WORKSPACE);
     expect(result?.field).toBe("pi_edit_result");
     expect(readFileSync(join(WORKSPACE, "README.md"), "utf8")).toContain("Hola");
   });
 
-  test("pi_edit missing old_text returns error", async () => {
-    const result = await run("pi_edit", { path: "README.md", edits: [{ old_text: "missing", new_text: "x" }] });
+  test("ct_edit missing old_text returns error", async () => {
+    const result = await executeNativeTool("ct_edit_args", { path: "README.md", edits: [{ old_text: "missing", new_text: "x" }] }, WORKSPACE);
     expect(result?.message["error"]).toBeDefined();
+  });
+
+  test("ct_find lists matching files (modern find arm)", async () => {
+    const result = await executeNativeTool("ct_find_args", { path: ".", pattern: "*.ts" }, WORKSPACE);
+    expect(result?.field).toBe("pi_find_result");
+    const success = result?.message["success"] as Record<string, unknown>;
+    expect(success["output"]).toContain("a.ts");
   });
 
   test("delete removes the file", async () => {
@@ -146,11 +158,13 @@ describe("Cursor native tool executor", () => {
     expect(result?.message["permission_denied"]).toBeDefined();
   });
 
-  test("unknown tool names have no exec result field", () => {
-    for (const name of ["fetch", "web_search", "subagent", "task", "switch_mode"]) {
-      const variant = variantNamed(name);
-      const result = variant ? isExecutableNativeTool(variant) : false;
-      expect(result).toBe(false);
-    }
+  test("unknown tool names have no exec frame", async () => {
+    // `subagent` has no variant at all.
+    expect(frameKeyForName("subagent")).toBe("");
+    // Known-but-unexecutable names resolve to a frame key, but execution
+    // returns undefined (the executor does not implement them).
+    expect(await executeNativeTool("task_args", {}, WORKSPACE)).toBeUndefined();
+    expect(await executeNativeTool("fetch_args", {}, WORKSPACE)).toBeUndefined();
+    expect(await executeNativeTool("web_search_args", {}, WORKSPACE)).toBeUndefined();
   });
 });
