@@ -27,6 +27,9 @@ export const queryKeys = {
     detail: (providerId: string) => ["console", "providers", providerId] as const,
     models: (providerId: string | undefined) =>
       ["console", "providers", providerId, "models"] as const,
+    /** Read-only discovery roster; never persisted, so one open = one fetch. */
+    modelDiscovery: (providerId: string | undefined) =>
+      ["console", "providers", providerId, "models-discover"] as const,
     flatAll: ["console", "providers", "models-flat-all"] as const,
     accounts: (providerId: string | undefined) =>
       ["console", "providers", providerId, "accounts"] as const,

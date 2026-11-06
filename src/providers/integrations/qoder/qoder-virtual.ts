@@ -10,6 +10,34 @@
 // is deliberately static — Qoder publishes no endpoint that resolves a name to
 // a slot the way Copilot's `/auto` does, so there is nothing to ask at runtime.
 
+import type { ModelWarning } from "../../provider-model-definition";
+
+/**
+ * Three provider-level caveats (D37), attached to every `qoder`/`qodercn` row —
+ * static, virtual, and discovered alike. These are deliberately statements of
+ * possibility, not per-model claims: the provider may route a slot to a
+ * different model, its cache may be unreliable, and a plan/transport decision
+ * may refuse a request. No roster row is asserted to have any of these
+ * behaviours individually.
+ */
+export const QODER_PROVIDER_WARNINGS: readonly ModelWarning[] = [
+  {
+    kind: "fallback_model",
+    message: "Provider may fall back to another model for this slot.",
+    severity: "warn",
+  },
+  {
+    kind: "cache_reliability",
+    message: "Cache reliability may be degraded for this provider.",
+    severity: "warn",
+  },
+  {
+    kind: "model_refusal",
+    message: "This provider may refuse certain model requests (plan/transport).",
+    severity: "warn",
+  },
+];
+
 /** A virtual id and the roster key it stands for. */
 export interface QoderVirtualModel {
   /** The id a caller sends and the catalog publishes. */

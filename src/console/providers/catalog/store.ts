@@ -1,5 +1,6 @@
 // Drizzle-backed provider, account, model, routing, and API-key repositories.
 import { and, asc, eq, gte, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { isSqliteDatabase } from "../../../persistence/dialect";
 import { ConsoleDomainError } from "../../shared/errors";
 import { parseCustomProviderId, isBundledProviderId } from "../../../providers/provider-contracts";
 import { providerRateLimitIsIpScoped } from "../../../providers/provider-metadata";
@@ -13,11 +14,13 @@ import { buddyTaskLedger, models, networkPools, providerAccounts, providerOauthS
 import { IS_GATEWAY_ERROR_SQL } from "../../../observability/event-query";
 import type { WireFamily } from "../../../protocol/canonical-model";
 import { listAccountHealthEvents, recoverAccount, deleteAccountHealthEvents, type AccountHealthEventRecord } from "../../../providers/operations/account-health-service";
-import { invalidateCredentialCache } from "../../../providers/operations/provider-credential-service";
+import { invalidateCredentialCache, invalidateCredentialCaches } from "../../../providers/operations/provider-credential-service";
+import { invalidateQuotaCaches } from "../../../providers/quota/cache";
 import { encryptCredential, hashSecret } from "../../../security/crypto";
 import type { TelemetryBatchBuffer } from "../../../observability/telemetry-buffer";
+import type { RedisClient } from "../../../persistence/redis";
 import { bumpCatalogRevision, type BundledProviderCatalog } from "../../../providers/operations/provider-catalog-service";
-import type { AccountInflightReading, BuddyGrowthTaskLedgerEntry, ByokConnectionTestRequest, ByokConnectionTestResult, CreateProviderAccountBatchItemResult, CreateProviderAccountBatchResult, CreateProviderAccountRequest, CredentialMode, ModelCatalogEntry, ProbeAllAccountsResult, ProbeAllModelsResult, ProbeModelRequest, ProbeModelResult, ProviderAccountResponse, ProviderAccountTokenUsage, ProviderCatalogStore, ProviderRecord, SetModelEnabledRequest, UpdateModelMetadataRequest, UpdateProviderAccountRequest, ModelMetadataOverride } from "./contracts";
+import type { AccountInflightReading, BuddyGrowthTaskLedgerEntry, ByokConnectionTestRequest, ByokConnectionTestResult, CreateProviderAccountBatchItemResult, CreateProviderAccountBatchResult, CreateProviderAccountRequest, CredentialMode, DiscoverModelCandidate, ModelCatalogEntry, ProbeAllAccountsResult, ProbeAllModelsResult, ProbeModelRequest, ProbeModelResult, ProviderAccountBulkActionResult, ProviderAccountResponse, ProviderAccountTokenUsage, ProviderCatalogStore, ProviderRecord, SetModelEnabledRequest, UpdateModelMetadataRequest, UpdateProviderAccountRequest, ModelMetadataOverride } from "./contracts";
 import { isServiceKind, validateCompatibilityProfile } from "./contracts";
 import { ProviderProbingService, type ProbeOutboundResolver } from "../../../providers/discovery/probing-service";
 import {
@@ -75,6 +78,7 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
   private readonly probing: ProviderProbingService;
   private readonly bundledModelCatalog: ReadonlyMap<string, readonly ModelDefinition[]>;
   private readonly providerRegistry: ProviderRegistry;
+  private readonly redis: RedisClient | undefined;
 
   private readonly readAccountInflight:
     | ((
@@ -97,11 +101,14 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
             tenantId: string,
           ) => Promise<readonly AccountInflightReading[]>)
         | undefined;
+      /** Shared Redis handle for quota-cache invalidation on bulk delete. */
+      readonly redis?: RedisClient | undefined;
     },
   ) {
     this.bundledModelCatalog = options.bundledModelCatalog.modelsByProvider;
     this.providerRegistry = options.providerRegistry;
     this.readAccountInflight = options.readAccountInflight;
+    this.redis = options.redis;
     this.probing = new ProviderProbingService({
       db,
       telemetryBuffer: options.telemetryBuffer,
@@ -430,12 +437,17 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
    * (warms OAuth token / connection pools), the rest run concurrently bounded
    * to 5. Registered model ids come from this store's own catalog read.
    */
-  async probeAllModels(tenantId: string, providerId: string): Promise<ProbeAllModelsResult> {
+  async probeAllModels(
+    tenantId: string,
+    providerId: string,
+    mode?: ProbeModelRequest["mode"],
+  ): Promise<ProbeAllModelsResult> {
     const entries = await this.listModels(tenantId, providerId);
     const requests = entries.map((entry) => ({
       modelId: entry.modelId,
       route: entry.route,
       serviceKind: isServiceKind(entry.serviceKind) ? entry.serviceKind : ("llm" as const),
+      ...(mode === undefined ? {} : { mode }),
     }));
     const uniqueRequests = requests.filter(
       (request, index, all) =>
@@ -559,6 +571,8 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
     const findRow = (ownership: SQL) =>
       this.db
         .select({ id: models.id, modalities: models.modalities, source: models.source })
+        // source is read for both the global builtin guard above and the new
+        // non-builtin-only warning edit.
         .from(models)
         .innerJoin(providers, eq(models.providerId, providers.id))
         .where(
@@ -594,6 +608,29 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
     // per-flag field: the point of the flag is that the operator does not know
     // which capabilities the model has, so an explicit `false` alongside it is
     // either stale or a mistake.
+    // Builtin rows are re-seeded from the static catalog on every boot, so a
+    // warning edit there would be reverted. Non-builtin rows (including ones a
+    // discovery commit created) are operator-owned and may set or clear them.
+    if (override?.warnings !== undefined) {
+      if (row.source === "builtin") {
+        throw new ConsoleDomainError(
+          "builtin_model_immutable",
+          403,
+          `Built-in model ${providerId}/${request.modelId} warnings cannot be edited — the bundle re-seeds them on every boot`,
+        );
+      }
+      set.warningMetadata =
+        override.warnings === null
+          ? null
+          : {
+              warnings: override.warnings.map((warning) => ({
+                kind: warning.kind,
+                message: warning.message,
+                ...(warning.severity === undefined ? {} : { severity: warning.severity }),
+                ...(warning.updatedAt === undefined ? {} : { updatedAt: warning.updatedAt }),
+              })),
+            };
+    }
     if (override?.passthrough === true) {
       set.reasoning = true;
       set.toolCall = true;
@@ -1655,8 +1692,206 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
     return recoverAccount(this.db, accountId, "manual_operator_recovery");
   }
 
+  /**
+   * One `UPDATE ... WHERE <cooldown predicate>` (D07/D08/D09). The predicate
+   * is evaluated in SQL, so the whole provider is handled in one statement
+   * without reading rows into the process. `cooldown_until` and
+   * `model_cooldowns` are left untouched: they are the evidence the operator
+   * sees on a disabled row until an explicit Recover clears them.
+   *
+   * Pool-as-account rows live in `provider_pool_accounts`, not this table, so
+   * they are excluded by construction. Shared (`tenant_id IS NULL`) rows are
+   * counted in `globalSkipped` but never written by a tenant; the global-admin
+   * pair of routes owns those.
+   */
+  async disableCooldowns(
+    tenantId: string,
+    providerId: string,
+  ): Promise<ProviderAccountBulkActionResult> {
+    const nowIso = new Date().toISOString();
+    const [globalRows, updatedRows] = await Promise.all([
+      this.db
+        .select({ id: providerAccounts.id })
+        .from(providerAccounts)
+        .where(
+          and(
+            eq(providerAccounts.providerId, providerId),
+            isNull(providerAccounts.tenantId),
+            this.liveCooldownPredicate(nowIso),
+          ),
+        ),
+      this.db
+        .update(providerAccounts)
+        .set({ status: "disabled" })
+        .where(
+          and(
+            eq(providerAccounts.providerId, providerId),
+            eq(providerAccounts.tenantId, tenantId),
+            this.liveCooldownPredicate(nowIso),
+          ),
+        )
+        .returning({ id: providerAccounts.id }),
+    ]);
+    // Status is part of the cached credential's admission decision, so every
+    // newly disabled id must be dropped here — not only on delete.
+    invalidateCredentialCaches(updatedRows.map((row) => row.id));
+    return { ok: true, updated: updatedRows.length, globalSkipped: globalRows.length };
+  }
+
+  /**
+   * One `DELETE ... WHERE <strict banned predicate> RETURNING id` (D12).
+   * Credential and quota caches are dropped for the deleted ids in one pass
+   * each, exactly like the existing batch-delete route. A delete is strictly
+   * `status='disabled' AND last_error_category='policy_blocked_banned'`;
+   * `auth_invalidated` is remediated by replacing the credential, not here.
+   */
+  async deleteBanned(
+    tenantId: string,
+    providerId: string,
+  ): Promise<ProviderAccountBulkActionResult> {
+    const globalRows = await this.db
+      .select({ id: providerAccounts.id })
+      .from(providerAccounts)
+      .where(
+        and(
+          eq(providerAccounts.providerId, providerId),
+          isNull(providerAccounts.tenantId),
+          this.bannedPredicate(),
+        ),
+      );
+    const deletedRows = await this.db
+      .delete(providerAccounts)
+      .where(
+        and(
+          eq(providerAccounts.providerId, providerId),
+          eq(providerAccounts.tenantId, tenantId),
+          this.bannedPredicate(),
+        ),
+      )
+      .returning({ id: providerAccounts.id });
+    const deletedIds = deletedRows.map((row) => row.id);
+    invalidateCredentialCaches(deletedIds);
+    await invalidateQuotaCaches(tenantId, deletedIds, this.redis);
+    return {
+      ok: true,
+      updated: 0,
+      deleted: deletedIds,
+      missing: [],
+      globalSkipped: globalRows.length,
+    };
+  }
+
+  /** Strict banned definition shared by the tenant and global DELETE paths. */
+  private bannedPredicate(): SQL {
+    return and(
+      eq(providerAccounts.status, "disabled"),
+      eq(providerAccounts.lastErrorCategory, "policy_blocked_banned"),
+    ) as SQL;
+  }
+
+  /**
+   * `status='cooldown' OR cooldown_until > now OR model_cooldowns` carries a
+   * live entry. The JSON check is dialect-specific: PostgreSQL uses
+   * `jsonb_each_text` (with a shape guard), SQLite `json_each` on its `text`
+   * column. Only entries whose ISO deadline is still in the future count, mirroring
+   * `liveModelCooldowns`. Timestamps are stored as ISO strings on both backends,
+   * so the lexical comparison against `nowIso` is stable.
+   */
+  private liveCooldownPredicate(nowIso: string): SQL {
+    const liveModelCooldown = isSqliteDatabase(this.db)
+      ? sql`EXISTS (SELECT 1 FROM json_each(${providerAccounts.modelCooldowns}) AS entry WHERE json_valid(${providerAccounts.modelCooldowns}) AND json_type(${providerAccounts.modelCooldowns}) = 'object' AND entry.value > ${nowIso})`
+      : sql`EXISTS (SELECT 1 FROM jsonb_each_text(${providerAccounts.modelCooldowns}) AS entry WHERE jsonb_typeof(${providerAccounts.modelCooldowns}) = 'object' AND entry.value > ${nowIso})`;
+    return or(
+      eq(providerAccounts.status, "cooldown"),
+      sql`${providerAccounts.cooldownUntil} > ${nowIso}`,
+      liveModelCooldown,
+    ) as SQL;
+  }
 
   async syncModels(tenantId: string, providerId: string): Promise<{ synced: number }> {
     return this.probing.syncModels(tenantId, providerId);
+  }
+
+  /** Read-only discovery; delegates to the same fetch path as sync (area 05). */
+  async listDiscoveryCandidates(
+    tenantId: string,
+    providerId: string,
+  ): Promise<{
+    readonly supported: boolean;
+    readonly candidates: readonly DiscoverModelCandidate[];
+    readonly accountLabel?: string;
+  }> {
+    const discovery = await this.probing.discoverModels(tenantId, providerId);
+    if (!discovery.supported) return { supported: false, candidates: [] };
+    const registered = await this.listModelsForTenant(tenantId, providerId);
+    const ids = new Set(
+      (registered.get(providerId) ?? []).map((entry) => entry.modelId),
+    );
+    const candidates: DiscoverModelCandidate[] = discovery.models.map((definition) => ({
+      modelId: definition.modelId,
+      wireFamily: definition.wireFamily,
+      serviceKind: definition.serviceKind ?? "llm",
+      endpointPath: definition.endpointPath,
+      contextLimit: definition.contextLimit,
+      outputLimit: definition.outputLimit,
+      modalities: definition.modalities,
+      reasoning: definition.reasoning,
+      toolCall: definition.toolCall,
+      ...(definition.freeTier === undefined ? {} : { freeTier: definition.freeTier }),
+      ...(definition.proOnly === undefined ? {} : { proOnly: definition.proOnly }),
+      alreadyRegistered: ids.has(definition.modelId),
+    }));
+    return {
+      supported: true,
+      candidates,
+      ...(discovery.accountLabel === undefined ? {} : { accountLabel: discovery.accountLabel }),
+    };
+  }
+
+  /**
+   * Re-runs discovery on the server, then persists only ids the fresh roster
+   * actually advertised (D28/D29/D30/D31). This is the anti-forgery gate: a
+   * caller cannot attach a hand-built metadata object to an arbitrary id.
+   */
+  async commitDiscoveredModels(
+    tenantId: string,
+    providerId: string,
+    modelIds: readonly string[],
+  ): Promise<{
+    readonly committed: readonly string[];
+    readonly skipped: readonly string[];
+    readonly synced: number;
+  }> {
+    const discovery = await this.probing.discoverModels(tenantId, providerId);
+    if (!discovery.supported) {
+      throw new ConsoleDomainError(
+        "model_discovery_unsupported",
+        400,
+        `${providerId} publishes no model-listing endpoint; add the model manually`,
+      );
+    }
+    const byId = new Map(discovery.models.map((definition) => [definition.modelId, definition]));
+    const wanted = [...new Set(modelIds)];
+    const unknown = wanted.filter((id) => !byId.has(id));
+    if (unknown.length > 0) {
+      throw new ConsoleDomainError(
+        "invalid_request",
+        400,
+        `Models are no longer in the provider's listing: ${unknown.join(", ")} (request {requestId}). Fetch the model list again 🪞`,
+      );
+    }
+    const registered = await this.listModelsForTenant(tenantId, providerId);
+    const existing = new Set(
+      (registered.get(providerId) ?? []).map((entry) => entry.modelId),
+    );
+    const selected = wanted.filter((id) => !existing.has(id));
+    const skipped = wanted.filter((id) => existing.has(id));
+    if (selected.length === 0) return { committed: [], skipped, synced: 0 };
+    const { synced } = await this.probing.commitDiscoveredModels(
+      tenantId,
+      providerId,
+      selected,
+    );
+    return { committed: selected, skipped, synced };
   }
 }

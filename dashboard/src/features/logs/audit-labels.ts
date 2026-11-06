@@ -41,6 +41,8 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   "provider_account.revoked": "Provider account revoked",
   "provider_account.circuit_force_closed": "Provider account circuit force-closed",
   "provider_account.deleted": "Provider account deleted",
+  "provider_account.bulk_disabled_cooldowns": "Cooldown accounts disabled",
+  "provider_account.bulk_deleted_banned": "Banned accounts deleted",
   "provider_account.exported": "Provider accounts exported (plaintext)",
   "provider_account.global.updated": "Global provider account updated",
   "provider_account.global.refreshed": "Global provider account refreshed",

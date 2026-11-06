@@ -6,13 +6,33 @@
  * capability rather than adding to a list.
  */
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { eq } from "drizzle-orm";
+import { Elysia } from "elysia";
 import {
   FALLBACK_CONTEXT_LIMIT,
   FALLBACK_OUTPUT_LIMIT,
   applyModelMetadataOverride,
   resolveManualModelMetadata,
 } from "../../src/providers/provider-model-definition";
+import { QODER_PROVIDER_WARNINGS } from "../../src/providers/integrations/qoder/qoder-virtual";
+import { QODER_CN_MODELS, QODER_INTL_MODELS, qoderVirtualModels, qoderCatalogModel } from "../../src/providers/integrations/qoder/qoder-catalog";
+import { seedBundledModels } from "../../src/providers/operations/provider-catalog-seeder";
 import { mapModelRow, withImageModality } from "../../src/console/providers/catalog/store";
+import { createProviderCatalogRoutes } from "../../src/console/providers/catalog/routes";
+import { consoleErrorHandler } from "../../src/console/shared/errors";
+import { DrizzleProviderCatalogStore } from "../../src/console/providers/catalog/store";
+import { ProviderRegistry } from "../../src/providers/provider-registry";
+import {
+  applySqliteMigrations,
+  buildSqliteHandle,
+  createSqliteDatabase,
+} from "../../src/persistence/db-sqlite";
+import { models, providers, tenants } from "../../src/persistence/schema";
+import type { AccessDecision } from "../../src/security/access-control";
+import type { ModelWarning } from "../../src/console/providers/catalog/contracts";
 
 describe("fallback ceilings", () => {
   test("are large enough to never be the binding constraint", () => {
@@ -175,5 +195,225 @@ describe("unsized model rows", () => {
     const stored = row({});
     mapModelRow(stored, false);
     expect(stored.contextLimit).toBeNull();
+  });
+});
+
+/** Area 06: warning metadata is display-only and editable only off builtin. */
+describe("warning metadata", () => {
+  const warning: ModelWarning = {
+    kind: "cache_reliability",
+    message: "Cache reliability may be degraded.",
+    severity: "warn",
+  };
+  /** A persisted row carrying only the columns `mapModelRow` reads. */
+  function warningRow(overrides: Partial<Record<string, unknown>>) {
+    return {
+      modelId: "warning-model",
+      providerId: "qoder",
+      wireFamily: "chat",
+      endpointPath: "/v1/chat/completions",
+      serviceKind: "llm",
+      enabled: true,
+      contextLimit: 200_000,
+      outputLimit: 8_192,
+      modalities: { input: ["text"], output: ["text"] },
+      reasoning: false,
+      toolCall: false,
+      cost: null,
+      source: "manual",
+      sourceUpdatedAt: null,
+      ...overrides,
+    } as unknown as Parameters<typeof mapModelRow>[0];
+  }
+
+  test("mapModelRow projects a decoded jsonb object and a SQLite JSON string alike", () => {
+    const fromObject = mapModelRow(warningRow({ warningMetadata: { warnings: [warning] } }), false);
+    expect(fromObject.warnings).toEqual([warning]);
+    const fromString = mapModelRow(warningRow({ warningMetadata: JSON.stringify({ warnings: [warning] }) }), false);
+    expect(fromString.warnings).toEqual([warning]);
+  });
+
+  test("a null, malformed, or empty blob projects no warnings", () => {
+    expect(mapModelRow(warningRow({ warningMetadata: null }), false).warnings).toBeUndefined();
+    expect(mapModelRow(warningRow({ warningMetadata: "not json" }), false).warnings).toBeUndefined();
+    expect(mapModelRow(warningRow({ warningMetadata: { warnings: [] } }), false).warnings).toBeUndefined();
+  });
+
+  test("qoder carries exactly three provider-level 'may' warnings on every row kind", () => {
+    expect(QODER_PROVIDER_WARNINGS.map((w) => w.kind)).toEqual([
+      "fallback_model",
+      "cache_reliability",
+      "model_refusal",
+    ]);
+    for (const w of QODER_PROVIDER_WARNINGS) {
+      expect(w.message).toMatch(/\bmay\b/);
+      expect(w.severity).toBe("warn");
+    }
+    const all = [
+      ...QODER_CN_MODELS,
+      ...QODER_INTL_MODELS,
+      ...qoderVirtualModels(QODER_CN_MODELS, "qodercn"),
+      qoderCatalogModel(
+        { key: "new-slot", displayName: "New", isVl: false, isReasoning: false, maxInputTokens: 1000, enable: true, isFree: false },
+        "qoder",
+      ),
+    ];
+    expect(all.length).toBeGreaterThan(0);
+    for (const definition of all) expect(definition.warnings).toEqual(QODER_PROVIDER_WARNINGS);
+  });
+
+  function removeDir(dir: string): void {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // disposable temp dir
+    }
+  }
+
+  async function fixture() {
+    const dir = mkdtempSync(join(tmpdir(), "carte-warning-metadata-"));
+    const sqlite = createSqliteDatabase(join(dir, "cartethyia.sqlite"));
+    await applySqliteMigrations(sqlite);
+    const db = buildSqliteHandle(sqlite).db;
+    const [tenant] = await db.insert(tenants).values({ name: "warnings", status: "active" }).returning({ id: tenants.id });
+    const tenantId = tenant!.id;
+    await db.insert(providers).values({ id: "qoder", enabled: true });
+    await db.insert(models).values([
+      {
+        providerId: "qoder",
+        modelId: "manual-model",
+        wireFamily: "chat",
+        endpointPath: "/v1/chat/completions",
+        source: "manual",
+      },
+      {
+        providerId: "qoder",
+        modelId: "builtin-model",
+        wireFamily: "chat",
+        endpointPath: "/v1/chat/completions",
+        source: "builtin",
+      },
+    ]);
+    const store = new DrizzleProviderCatalogStore(db, {
+      telemetryBuffer: { enqueue() {} } as never,
+      bundledModelCatalog: { modelsByProvider: new Map() },
+      providerRegistry: new ProviderRegistry(),
+      outboundFetchFor: () => fetch as never,
+      snapshotInvalidator: { invalidate() {} },
+    });
+    const access: AccessDecision = {
+      id: "operator",
+      tenantId,
+      scopes: ["models:write"],
+      admissionIdentity: "operator",
+    };
+    const app = new Elysia();
+    app.error(consoleErrorHandler("Provider catalog operation failed"));
+    app.use(createProviderCatalogRoutes({
+      store,
+      accessResolver: () => access,
+      providerRegistry: new ProviderRegistry(),
+      snapshotInvalidator: { invalidate: async () => 1 },
+    }));
+    const patch = (modelId: string, metadata: unknown) => app.handle(
+      new Request("http://localhost/providers/qoder/models", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ modelId, route: "/v1/chat/completions", enabled: true, metadata }),
+      }),
+    );
+    return {
+      db,
+      app,
+      patch,
+      cleanup: () => {
+        try { sqlite.close(); } catch { /* closed */ }
+        removeDir(dir);
+      },
+    };
+  }
+
+  test("seeder writes definition warnings into the builtin upsert", async () => {
+    const fx = await fixture();
+    try {
+      await seedBundledModels(fx.db, new Map([[
+        "qoder",
+        [{
+          modelId: "seeded-model",
+          wireFamily: "chat",
+          endpointPath: "/v1/chat/completions",
+          contextLimit: 1000,
+          outputLimit: 1000,
+          modalities: { input: ["text"], output: ["text"] },
+          reasoning: false,
+          toolCall: true,
+          cost: { input: null, output: null },
+          warnings: QODER_PROVIDER_WARNINGS,
+        }],
+      ]]));
+      const [seeded] = await fx.db.select().from(models).where(eq(models.modelId, "seeded-model"));
+      expect(seeded).toBeDefined();
+      // The column is `text` on SQLite; the Drizzle builder may return either
+      // the stored string or a decoded object depending on the mapper path.
+      const parsed = typeof seeded?.warningMetadata === "string"
+        ? JSON.parse(seeded.warningMetadata) as unknown
+        : seeded?.warningMetadata;
+      const warnings = (parsed as { warnings?: ModelWarning[] } | null)?.warnings
+        ?? (parsed as ModelWarning[] | null);
+      expect(warnings).toEqual([...QODER_PROVIDER_WARNINGS]);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("a non-builtin row can set and clear warnings; projection follows", async () => {
+    const fx = await fixture();
+    try {
+      const set = await fx.patch("manual-model", { warnings: [warning] });
+      expect(set.status).toBe(200);
+      const [stored] = await fx.db.select().from(models).where(eq(models.modelId, "manual-model"));
+      const parsed = typeof stored?.warningMetadata === "string"
+        ? JSON.parse(stored.warningMetadata) as unknown
+        : stored?.warningMetadata;
+      const storedWarnings = (parsed as { warnings?: ModelWarning[] } | null)?.warnings
+        ?? (parsed as ModelWarning[] | null);
+      expect(storedWarnings).toEqual([warning]);
+      const projected = mapModelRow(stored!, false);
+      expect(projected.warnings).toEqual([warning]);
+
+      const clear = await fx.patch("manual-model", { warnings: null });
+      expect(clear.status).toBe(200);
+      const [cleared] = await fx.db.select().from(models).where(eq(models.modelId, "manual-model"));
+      expect(cleared?.warningMetadata).toBeNull();
+      expect(mapModelRow(cleared!, false).warnings).toBeUndefined();
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("builtin warnings are immutable and invalid payloads answer 400", async () => {
+    const fx = await fixture();
+    try {
+      const builtin = await fx.patch("builtin-model", { warnings: [warning] });
+      expect(builtin.status).toBe(403);
+      expect((await builtin.json()).code).toBe("builtin_model_immutable");
+
+      const cases: unknown[] = [
+        { warnings: [{ kind: "", message: "x" }] },
+        { warnings: [{ kind: "x".repeat(65), message: "x" }] },
+        { warnings: [{ kind: "x", message: "" }] },
+        { warnings: [{ kind: "x", message: "y".repeat(501) }] },
+      ];
+      for (const metadata of cases) {
+        const response = await fx.patch("manual-model", metadata);
+        expect(response.status).toBe(400);
+        expect((await response.json()).code).toBe("invalid_request");
+      }
+      // A non-array field is a schema failure (422) before the domain validator.
+      const wrongShape = await fx.patch("manual-model", { warnings: "not-an-array" });
+      expect(wrongShape.status).toBe(422);
+    } finally {
+      fx.cleanup();
+    }
   });
 });

@@ -10,7 +10,7 @@ import {
   firstNonEmptyString as firstString,
   tryParseJson as safeParseJson,
 } from "../../../shared/coerce";
-import type { CredentialMode, ModelCatalogEntry } from "./contracts";
+import type { CredentialMode, ModelCatalogEntry, ModelWarning } from "./contracts";
 import {
   FALLBACK_CONTEXT_LIMIT,
   FALLBACK_OUTPUT_LIMIT,
@@ -286,6 +286,32 @@ export function liveModelCooldowns(
 
 
 /**
+ * Reads the display-only warning blob. Postgres returns `jsonb` already
+ * decoded; SQLite returns the JSON string its `text` column carries, so both
+ * shapes are accepted. A value that is not `{ warnings: [...] }` is ignored —
+ * a malformed row must not break the entire model list.
+ */
+function parseWarningMetadata(raw: unknown): { warnings: ModelWarning[] } | undefined {
+  let value: unknown = raw;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const warnings = (value as Record<string, unknown>)["warnings"];
+  if (!Array.isArray(warnings)) return undefined;
+  const projected = warnings.filter((warning): warning is ModelWarning => {
+    if (warning === null || typeof warning !== "object" || Array.isArray(warning)) return false;
+    const item = warning as Record<string, unknown>;
+    return typeof item["kind"] === "string" && typeof item["message"] === "string";
+  });
+  return projected.length > 0 ? { warnings: projected } : undefined;
+}
+
+/**
  * Projects one persisted `models` row into the console's catalog entry.
  *
  * `disabled` is resolved by the caller (from `tenant_disabled_models`), because
@@ -344,6 +370,9 @@ export function mapModelRow(
     // Same three-valued rule, from the provider's own directory. Qoder states
     // `is_free` per row, so a plan change moves the pill without a code change.
     ...(row.freeTier === true ? { freeTier: true } : {}),
+    // Display-only: a `NULL` column (or a malformed legacy value) projects no
+    // warnings at all rather than leaking the raw JSON shape to the dashboard.
+    ...(parseWarningMetadata(row.warningMetadata) ?? {}),
     sourceUpdatedAt: row.sourceUpdatedAt?.toISOString() ?? null,
   } satisfies ModelCatalogEntry;
 }

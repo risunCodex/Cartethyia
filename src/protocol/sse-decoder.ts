@@ -93,8 +93,19 @@ function isCompleteJsonValue(data: string): boolean {
 // invited a retry of the identical request against a broken upstream. The
 // `upstream` origin keeps the public envelope from prefixing it
 // a gateway-branded message, which blamed the gateway for the provider's bytes.
-function oversized(what: string): GatewayError {
-  return new GatewayError("platform_unavailable", 502, `SSE ${what} exceeds size bound (request {requestId}). The upstream sent more than we can hold — retry 🌙`, {}, "upstream");
+// The message quotes the offending line (bounded) so the client and operator
+// see the actual bytes the upstream sent rather than a generic sentence.
+const MAX_SSE_SNIPPET = 160;
+function snippet(line: string): string {
+  const collapsed = line.replace(/[\r\n]+/g, " ").trim();
+  if (collapsed.length === 0) return "<empty line>";
+  return collapsed.length > MAX_SSE_SNIPPET
+    ? `${collapsed.slice(0, MAX_SSE_SNIPPET)}…`
+    : collapsed;
+}
+function oversized(what: string, line?: string): GatewayError {
+  const quote = line === undefined ? "" : `: ${snippet(line)}`;
+  return new GatewayError("platform_unavailable", 502, `SSE ${what} exceeds size bound${quote} (request {requestId}). The upstream sent more than we can hold — retry 🌙`, {}, "upstream");
 }
 
 export async function* decodeSseEvents(
@@ -161,7 +172,7 @@ export async function* decodeSseEvents(
     const rest = last.subarray(newlineAt + 1);
     if (rest.byteLength > 0) pending.unshift(rest);
     const line = decoder.decode(lineBytes).replace(/\r$/, "");
-    if (line.length > maxLineBytes) throw oversized("line");
+    if (line.length > maxLineBytes) throw oversized("line", line);
     return line;
   }
   function* dispatchEvent(): Iterable<SseEvent> {
@@ -188,7 +199,7 @@ export async function* decodeSseEvents(
       const piece = line.slice(5).trimStart();
       dataLines.push(piece);
       eventBytes += piece.length;
-      if (eventBytes > maxEventBytes) throw oversized("event");
+      if (eventBytes > maxEventBytes) throw oversized("event", line);
       return;
     }
     if (line.startsWith("id:") || line.startsWith("retry:")) return;
@@ -220,10 +231,10 @@ export async function* decodeSseEvents(
     if (dataLines.length > 0) {
       dataLines.push(line);
       eventBytes += line.length;
-      if (eventBytes > maxEventBytes) throw oversized("event");
+      if (eventBytes > maxEventBytes) throw oversized("event", line);
       return;
     }
-    throw new GatewayError("platform_unavailable", 502, "Malformed SSE line (request {requestId}). The upstream sent something we can't read — retry 🌙", {}, "upstream");
+    throw new GatewayError("platform_unavailable", 502, `Malformed SSE line: ${snippet(line)} (request {requestId}). The upstream sent something we can't read — retry 🌙`, {}, "upstream");
   }
 
   try {
@@ -233,7 +244,10 @@ export async function* decodeSseEvents(
       if (chunk.value && chunk.value.byteLength > 0) {
         pending.push(chunk.value);
         pendingBytes += chunk.value.byteLength;
-        if (!hasPendingNewline() && pendingBytes > maxLineBytes) throw oversized("line");
+        if (!hasPendingNewline() && pendingBytes > maxLineBytes) {
+          const partial = decoder.decode(new Uint8Array(pendingBytes)).slice(0, MAX_SSE_SNIPPET);
+          throw oversized("line", partial);
+        }
       }
       let line = takeLine();
       while (line !== undefined) {
@@ -243,7 +257,10 @@ export async function* decodeSseEvents(
       if (chunk.done) break;
     }
     if (pendingBytes > 0) {
-      if (pendingBytes > maxLineBytes) throw oversized("line");
+      if (pendingBytes > maxLineBytes) {
+        const partial = decoder.decode(new Uint8Array(pendingBytes)).slice(0, MAX_SSE_SNIPPET);
+        throw oversized("line", partial);
+      }
       const total = new Uint8Array(pendingBytes);
       let offset = 0;
       for (const chunk of pending.splice(0, pending.length)) {

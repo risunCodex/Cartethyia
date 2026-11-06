@@ -60,6 +60,9 @@ export async function seedBundledModels(
           // states the tier, so the flag is carried rather than derived.
           freeTier: definition.freeTier ?? null,
           dialect: definition.dialect ?? null,
+          // Display-only: a static catalog that declares no warnings clears any
+          // stale value on the next boot rather than leaving an old banner.
+          warningMetadata: definition.warnings ?? null,
           source: "builtin",
           sourceUpdatedAt: now,
           enabled: true,
@@ -90,6 +93,7 @@ export async function seedBundledModels(
       proOnly: sql`excluded.pro_only`,
       freeTier: sql`excluded.free_tier`,
       dialect: sql`excluded.dialect`,
+      warningMetadata: sql`excluded.warning_metadata`,
       source: sql`'builtin'`,
       sourceUpdatedAt: sql`excluded.source_updated_at`,
     },

@@ -19,10 +19,12 @@ import { join } from "node:path";
 import type { Database as SqliteDatabase } from "bun:sqlite";
 import { applySqliteMigrations, buildSqliteHandle, createSqliteDatabase } from "../../src/persistence/db-sqlite";
 import type { CartethyiaDatabase } from "../../src/persistence/db-handle";
-import { providers, providerAccounts, healthEvents } from "../../src/persistence/schema";
+import { providers, providerAccounts, providerOauthStates, healthEvents } from "../../src/persistence/schema";
 import { and, eq } from "drizzle-orm";
 import { sweepExpiredCooldowns } from "../../src/providers/operations/account-health-service";
 import { resetCooldownCacheForTests } from "../../src/config/cooldowns";
+import { OAuthRefreshService, type OAuthTokenRefresher } from "../../src/providers/authentication/oauth-refresh-service";
+import { encryptCredential } from "../../src/security/crypto";
 
 /** Recovery window the boot-time reader resolves when the env var is unset. */
 const DEFAULT_RECOVERY_MS = 86_400_000;
@@ -79,6 +81,8 @@ async function insertAccount(options: {
   label: string;
   status: "cooldown" | "disabled";
   cooldownUntil: Date | null;
+  lastErrorCategory?: string | null;
+  lastError?: string | null;
 }): Promise<string> {
   if (!db || !providerId) throw new Error("fixture not initialised");
   const [row] = await db
@@ -89,7 +93,9 @@ async function insertAccount(options: {
       credentialKind: "api_key",
       status: options.status,
       cooldownUntil: options.cooldownUntil,
-      lastErrorCategory: options.status === "disabled" ? "auth_invalidated" : null,
+      lastErrorCategory:
+        options.lastErrorCategory ?? (options.status === "disabled" ? "auth_invalidated" : null),
+      lastError: options.lastError ?? null,
       consecutiveFailures: 4,
     })
     .returning({ id: providerAccounts.id });
@@ -109,6 +115,45 @@ async function statusOf(accountId: string): Promise<string | undefined> {
 function handle(): CartethyiaDatabase {
   if (!db) throw new Error("fixture not initialised");
   return db;
+}
+
+/** A refresher whose refresh grant is definitively dead. */
+function revokedRefresher(): OAuthTokenRefresher {
+  return {
+    refresh: () => Promise.reject(new Error("invalid_grant: refresh token revoked")),
+  };
+}
+
+/** Inserts an OAuth account row plus its oauth state; returns the account id. */
+async function insertOauthAccount(options: {
+  status: "cooldown" | "disabled";
+  cooldownUntil: Date | null;
+  refreshToken?: string | null;
+}): Promise<string> {
+  if (!db || !providerId) throw new Error("fixture not initialised");
+  const [row] = await db
+    .insert(providerAccounts)
+    .values({
+      providerId,
+      label: options.status,
+      credentialKind: "oauth",
+      credentialCiphertext: encryptCredential("access-token"),
+      status: options.status,
+      cooldownUntil: options.cooldownUntil,
+      lastErrorCategory: options.status === "disabled" ? "auth_invalidated" : null,
+      consecutiveFailures: 4,
+    })
+    .returning({ id: providerAccounts.id });
+  if (!row) throw new Error("account insert returned no row");
+  await db.insert(providerOauthStates).values({
+    providerAccountId: row.id,
+    refreshCiphertext:
+      options.refreshToken === null || options.refreshToken === undefined
+        ? null
+        : encryptCredential(options.refreshToken),
+    expiresAt: new Date(Date.now() + 3_600_000),
+  });
+  return row.id;
 }
 
 test("an automatic disable is never re-enabled by the sweep", async () => {
@@ -209,4 +254,127 @@ test("no recovery event is written for an untouched disabled account", async () 
       and(eq(healthEvents.entityKind, "account"), eq(healthEvents.accountId, accountId)),
     );
   expect(rows).toHaveLength(0);
+});
+
+test("D23: a definitive refresh failure on an operator-disabled account does not write cooldownUntil", async () => {
+  // Operator disable = disabled with NO deadline. A later machine refresh
+  // failure must not add one, or the row would look recoverable.
+  const accountId = await insertOauthAccount({
+    status: "disabled",
+    cooldownUntil: null,
+    refreshToken: "rt",
+  });
+
+  const service = new OAuthRefreshService(handle());
+  await service.ensureFreshAccessToken(accountId, revokedRefresher(), {
+    force: true,
+  });
+
+  const [row] = await db!
+    .select({
+      status: providerAccounts.status,
+      cooldownUntil: providerAccounts.cooldownUntil,
+      lastErrorCategory: providerAccounts.lastErrorCategory,
+    })
+    .from(providerAccounts)
+    .where(eq(providerAccounts.id, accountId));
+  expect(row?.status).toBe("disabled");
+  expect(row?.cooldownUntil).toBeNull();
+  // The definitive failure still records the reason.
+  expect(row?.lastErrorCategory).toBe("auth_invalidated");
+});
+
+test("D23: a definitive refresh failure on a machine-disabled account keeps its deadline", async () => {
+  // Machine disable carries a recovery deadline; a second failure must not
+  // strip it.
+  const accountId = await insertOauthAccount({
+    status: "disabled",
+    cooldownUntil: new Date(Date.now() + DEFAULT_RECOVERY_MS),
+    refreshToken: "rt",
+  });
+
+  const service = new OAuthRefreshService(handle());
+  await service.ensureFreshAccessToken(accountId, revokedRefresher(), {
+    force: true,
+  });
+
+  const [row] = await db!
+    .select({
+      status: providerAccounts.status,
+      cooldownUntil: providerAccounts.cooldownUntil,
+    })
+    .from(providerAccounts)
+    .where(eq(providerAccounts.id, accountId));
+  expect(row?.status).toBe("disabled");
+  expect(row?.cooldownUntil).not.toBeNull();
+});
+
+test("an auto-disabled quota row whose marker and deadline are present is recovered", async () => {
+  // D03/R-B: the auto-disable intercept writes a marker reason and a recovery
+  // deadline; the sweep may undo the machine's own verdict once the deadline
+  // elapses. This is the new recovery path for area 01.
+  const accountId = await insertAccount({
+    label: "auto-disabled-quota",
+    status: "disabled",
+    cooldownUntil: new Date(Date.now() - 1_000),
+    lastErrorCategory: "quota_exhausted",
+    lastError: "auto-disable (rate-limited): Provider quota exhausted",
+  });
+
+  expect(await sweepExpiredCooldowns(handle())).toBe(1);
+  expect(await statusOf(accountId)).toBe("active");
+});
+
+test("an auto-disabled rate-limit row whose marker and deadline are present is recovered", async () => {
+  const accountId = await insertAccount({
+    label: "auto-disabled-ratelimit",
+    status: "disabled",
+    cooldownUntil: new Date(Date.now() - 1_000),
+    lastErrorCategory: "rate_limit_transient",
+    lastError: "auto-disable (rate-limited): Provider rate limit",
+  });
+
+  expect(await sweepExpiredCooldowns(handle())).toBe(1);
+  expect(await statusOf(accountId)).toBe("active");
+});
+
+test("an auto-disabled row with the marker but a future deadline stays parked", async () => {
+  const accountId = await insertAccount({
+    label: "auto-disabled-pending-marker",
+    status: "disabled",
+    cooldownUntil: new Date(Date.now() + DEFAULT_RECOVERY_MS),
+    lastErrorCategory: "quota_exhausted",
+    lastError: "auto-disable (rate-limited): Provider quota exhausted",
+  });
+
+  expect(await sweepExpiredCooldowns(handle())).toBe(0);
+  expect(await statusOf(accountId)).toBe("disabled");
+});
+
+test("an operator disabled row with a target category but no marker is terminal", async () => {
+  // R-B: the marker is mandatory. A bulk/operator disable that shares the
+  // category and an elapsed deadline must not be re-enabled by the sweep.
+  const accountId = await insertAccount({
+    label: "operator-disabled-quota",
+    status: "disabled",
+    cooldownUntil: new Date(Date.now() - 1_000),
+    lastErrorCategory: "quota_exhausted",
+    lastError: "operator bulk disable",
+  });
+
+  expect(await sweepExpiredCooldowns(handle())).toBe(0);
+  expect(await statusOf(accountId)).toBe("disabled");
+});
+
+test("a disabled row with the marker but a non-target category is terminal", async () => {
+  const accountId = await insertAccount({
+    label: "marker-non-target",
+    status: "disabled",
+    cooldownUntil: new Date(Date.now() - 1_000),
+    lastErrorCategory: "auth_invalidated",
+    lastError: "auto-disable (rate-limited): Provider credential revoked",
+  });
+
+  expect(await sweepExpiredCooldowns(handle())).toBe(0);
+  expect(await statusOf(accountId)).toBe("disabled");
 });

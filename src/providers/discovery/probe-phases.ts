@@ -23,7 +23,8 @@ import type {
   WireFamily,
 } from "../../protocol/canonical-model";
 import type { CompatibilityProfile } from "../provider-metadata";
-import type { ProbeModelRequest } from "./discovery-types";
+import type { ProbeModelRequest, ProbeMode } from "./discovery-types";
+import type { ModelProbeMode } from "../../console/settings/contracts";
 import {
   constrainWireFamily,
   discoveryPathsFor,
@@ -509,9 +510,24 @@ export interface ProbeReasoning {
   summary_mode: "auto" | "concise" | "detailed";
 }
 
+/** Default fast-probe timeout, in seconds (D39/D40). */
+export const PROBE_FAST_DEFAULT_TIMEOUT_SECONDS = 10;
+/** Default fast-probe output allowance, in tokens (D40). */
+export const PROBE_FAST_MAX_OUTPUT_TOKENS = 32;
+/** Fast-probe sample bound, in characters (D40). */
+export const PROBE_FAST_SAMPLE_MAX_CHARS = 80;
+
 /** Tenant probe preferences that shape the request and telemetry. */
 export interface ProbePreferences {
   readonly probeReasoning: ProbeReasoning | undefined;
+  /** Effective probe mode: an explicit request wins over the tenant default. */
+  readonly mode: ProbeMode;
+  /** Timeout in ms for `fast`; `undefined` keeps `detail`'s 30s budget. */
+  readonly timeoutMs: number | undefined;
+  /** Token allowance for the canonical request; only `fast` overrides it. */
+  readonly maxOutputTokens: number | undefined;
+  /** `fast` suppresses payload-body capture and trims telemetry. */
+  readonly compactTelemetry: boolean;
   /**
    * The tenant's resolved capture policy for the probe, through the same
    * `resolvePayloadCapture` path every dispatched request uses.
@@ -545,6 +561,8 @@ export async function loadProbePreferences(args: {
 }): Promise<ProbePreferences> {
   const { db, tenantId, wireFamily, request } = args;
   let probeReasoning: ProbeReasoning | undefined;
+  let configuredMode: ModelProbeMode = "detail";
+  let configuredFastTimeoutSeconds = PROBE_FAST_DEFAULT_TIMEOUT_SECONDS;
   let payloadCapture: ProbePreferences["payloadCapture"] = {
     enabled: false,
     mode: "none",
@@ -568,6 +586,14 @@ export async function loadProbePreferences(args: {
     const raw = preferences?.responsesReasoningSummary;
     const mode: "auto" | "concise" | "detailed" =
       raw === "auto" || raw === "concise" || raw === "detailed" ? raw : "detailed";
+    // The tenant's settings default is `detail` when unset (D39); an explicit
+    // per-request `mode` still wins below.
+    configuredMode = preferences?.modelProbeMode === "fast" ? "fast" : "detail";
+    const configuredTimeout = preferences?.modelProbeFastTimeoutSeconds;
+    configuredFastTimeoutSeconds =
+      typeof configuredTimeout === "number" && Number.isFinite(configuredTimeout)
+        ? Math.min(Math.max(configuredTimeout, 1), 120)
+        : PROBE_FAST_DEFAULT_TIMEOUT_SECONDS;
     // Unset matches the settings default: off. Only an explicit choice
     // captures, and at the tenant's own depth/retention — the same resolution
     // `resolvePayloadCapture` performs for dispatched requests, read from the
@@ -599,7 +625,22 @@ export async function loadProbePreferences(args: {
       };
     }
   }
-  return { probeReasoning, payloadCapture };
+  const effectiveMode: ProbeMode = request.mode ?? configuredMode;
+  const fast = effectiveMode === "fast";
+  return {
+    probeReasoning,
+    mode: effectiveMode,
+    // `detail` keeps its exact 30s budget; `fast` uses the tenant's setting.
+    ...(fast ? { timeoutMs: configuredFastTimeoutSeconds * 1000 } : { timeoutMs: undefined }),
+    ...(fast ? { maxOutputTokens: PROBE_FAST_MAX_OUTPUT_TOKENS } : { maxOutputTokens: undefined }),
+    compactTelemetry: fast,
+    // `fast` never tees provider payload bodies (D40). The reported-model read
+    // still needs the exchange wrapper, so capture mode, not the wrapper, is
+    // what changes.
+    payloadCapture: fast
+      ? { enabled: false, mode: "none", depth: "minimum", retentionMs: payloadRetentionMs() }
+      : payloadCapture,
+  };
 }
 
 /**
@@ -638,8 +679,10 @@ export function buildProbeCanonicalRequest(args: {
   readonly request: ProbeModelRequest;
   readonly probeReasoning: ProbeReasoning | undefined;
   readonly sourceSurface: SourceSurface;
+  /** `fast` overrides the token allowance without changing the prompt (D42). */
+  readonly maxOutputTokens?: number;
 }): CanonicalRequest {
-  const { modelId, request, probeReasoning, sourceSurface } = args;
+  const { modelId, request, probeReasoning, sourceSurface, maxOutputTokens } = args;
   return {
     model: modelId,
     messages: [
@@ -662,8 +705,8 @@ export function buildProbeCanonicalRequest(args: {
       // class of refusal that answers `400 request illegal`. Matching the
       // caller's own small budget keeps the probe the same shape as the traffic
       // it is meant to predict.
-      max_tokens: request.maxOutputTokens ?? 256,
-      max_output_tokens: request.maxOutputTokens ?? 256,
+      max_tokens: request.maxOutputTokens ?? maxOutputTokens ?? 256,
+      max_output_tokens: request.maxOutputTokens ?? maxOutputTokens ?? 256,
       // No temperature. A real dispatch forwards whatever the client sent, and
       // the client rarely sends one; pinning 0.2 here made the probe a
       // different request from the traffic it is supposed to predict. The

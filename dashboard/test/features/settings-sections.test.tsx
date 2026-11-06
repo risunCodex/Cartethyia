@@ -1,5 +1,5 @@
 /**
- * Settings page contract: one section at a time, behind a tab strip.
+ * Settings page contract: all sections present at once, no tab strip.
  *
  * The property worth pinning is that a tab is a *choice of section*, not a
  * wall between them — every section is reachable from every other in one
@@ -71,6 +71,9 @@ const SETTINGS = {
   upstreamTimeoutSeconds: null,
   telemetryWindowMinutes: null,
   imageClampMaxBytes: null,
+  autoDisableRateLimited: false,
+  modelProbeMode: "detail",
+  modelProbeFastTimeoutSeconds: null,
   // The panel reads `settings.defaults.*` to name what each unset row
   // resolves to, so a fixture without it makes the panel throw rather than
   // merely render an empty label.
@@ -119,6 +122,7 @@ describe("Settings sections", () => {
         "privacy",
         "backup",
         "operations",
+        "model-testing",
         "data-management",
       ].map((id) =>
         container.querySelector(`#${id} h2.card-header-title`)?.textContent,
@@ -128,6 +132,7 @@ describe("Settings sections", () => {
         "Privacy",
         "Backup",
         "Operations",
+        "Model testing",
         "Data Management",
       ]);
     } finally {
@@ -145,6 +150,7 @@ describe("Settings sections", () => {
         "current-password", // Security
         "privacy-payloads", // Privacy
         "upstream-timeout", // Operations
+        "default-probe-mode", // Model testing
       ]) {
         expect(container.querySelector(`#${id}`)).not.toBeNull();
       }
@@ -249,6 +255,7 @@ describe("Settings sections", () => {
         "privacy",
         "backup",
         "operations",
+        "model-testing",
         "data-management",
       ]) {
         expect(container.querySelector(`#${id}`)).not.toBeNull();
@@ -268,9 +275,10 @@ describe("Settings sections", () => {
     // selector matches nothing and would pass no matter the markup.
     const { container, unmount, restore } = await mountSettings();
     try {
-      // Five sections: Security, Privacy, Operations, Backup, Data Management.
+      // Six sections: Security, Privacy, Operations, Model testing, Backup,
+      // Data Management.
       const cards = container.querySelectorAll(".card-solid");
-      expect(cards).toHaveLength(5);
+      expect(cards).toHaveLength(6);
       expect(container.querySelectorAll(".card-solid .card-solid")).toHaveLength(0);
     } finally {
       unmount();

@@ -9,7 +9,10 @@ import type {
 
   ModelAliasRow,
   ModelCatalogEntry,
+  DiscoverModelCandidate,
+  DiscoverModelsResponse,
   ModelComboRow,
+  ModelWarning,
   NetworkPoolResponse,
   PoolStrategySetting,
   ProviderResponse,
@@ -285,6 +288,21 @@ export function assertProvider(value: unknown): ProviderResponse {
   return provider;
 }
 
+/**
+ * The warning projection is optional (migration 0044 is additive), so an old
+ * wire stays valid. When present it is filtered rather than validated: one
+ * malformed entry must not make the whole catalog unreadable, and the card only
+ * ever reads `kind`, `message`, and the optional severity/timestamp.
+ */
+function looseWarnings(value: unknown): readonly ModelWarning[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const warnings = value.filter(
+    (item): item is ModelWarning =>
+      isRecord(item) && typeof item.kind === "string" && typeof item.message === "string",
+  );
+  return warnings.length > 0 ? warnings : undefined;
+}
+
 export function assertModels(value: unknown): ModelCatalogEntry[] {
   if (!Array.isArray(value)) throw invalidResponse("Invalid model response");
   return value.map((model) => {
@@ -296,8 +314,38 @@ export function assertModels(value: unknown): ModelCatalogEntry[] {
     ) {
       throw invalidResponse("Invalid model response");
     }
-    return model as unknown as ModelCatalogEntry;
+    // Still loose against every new field: only the warning array is projected,
+    // and only when the server actually sent one.
+    const warnings = looseWarnings(model.warnings);
+    return (warnings === undefined
+      ? model
+      : { ...model, warnings }) as unknown as ModelCatalogEntry;
   });
+}
+
+/**
+ * Discovery is a read-only preview, so an older console that answers with a
+ * bare candidate array is still usable: normalize both shapes here rather than
+ * making the modal reject a valid roster. Fields inside a candidate are left
+ * as the wire sent them — `DiscoverModelCandidate` is a C3 contract, and the
+ * UI only reads `modelId` / `alreadyRegistered` / a few display fields.
+ */
+export function assertDiscoverModels(value: unknown): DiscoverModelsResponse {
+  const raw = Array.isArray(value) ? { supported: true, candidates: value } : value;
+  if (!isRecord(raw) || raw.supported === false) {
+    return { supported: false, candidates: [] };
+  }
+  const candidates = Array.isArray(raw.candidates)
+    ? raw.candidates.filter(
+        (item): item is DiscoverModelCandidate =>
+          isRecord(item) && typeof item.modelId === "string",
+      )
+    : [];
+  return {
+    supported: true,
+    candidates,
+    ...(typeof raw.accountLabel === "string" ? { accountLabel: raw.accountLabel } : {}),
+  };
 }
 
 export function assertModelAliases(value: unknown): ModelAliasRow[] {

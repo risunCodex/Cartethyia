@@ -1,6 +1,7 @@
 import {
   Boxes,
   Cable,
+  FlaskConical,
   Globe,
   Download,
   ExternalLink,
@@ -28,6 +29,7 @@ import { EmptyState, ErrorState, LoadingState } from "../../components/ui/state"
 import { Inline, CardActions } from "../../components/ui/inline";
 import { Stack } from "../../components/ui/stack";
 import {
+  useProbeAllModels,
   useProbeAllProviderAccounts,
   useProbeModel,
   useProviderAccounts,
@@ -55,8 +57,18 @@ import {
   initialFieldValues,
   missingRequiredFields,
 } from "./sections/ImportCredentialDialog";
-import { AddModelModal, ModelGrid, ShowSelect, ThinkingSelect, type ModelShowFilter } from "./sections/Models";
-import { PROBE_REASONING_EFFORTS, type ProbeReasoningEffort } from "../../data/contracts";
+import {
+  AddModelModal,
+  ModeSelect,
+  ModelGrid,
+  ShowSelect,
+  ThinkingSelect,
+  readProbeMode,
+  writeProbeMode,
+  type ModelShowFilter,
+} from "./sections/Models";
+import { PROBE_REASONING_EFFORTS, type ModelProbeMode, type ProbeReasoningEffort } from "../../data/contracts";
+import { useRuntimeSettings } from "../../hooks/settings";
 
 type DashboardServiceKind = "llm" | "websearch" | "imageGeneration" | "videoGeneration";
 
@@ -140,6 +152,26 @@ export default function ProviderDetail(): ReactNode {
     const raw = window.localStorage.getItem(CARTETHYIA_PROVIDER_SHOW_KEY(pid));
     return raw === "free" ? "free" : "all";
   };
+  // Probe mode follows the same per-provider localStorage rule as the thinking
+  // effort, but falls back to the tenant's global default (`detail` when unset)
+  // instead of a hard-coded value, so a Settings change reaches every provider
+  // that has not overridden it.
+  const runtimeSettings = useRuntimeSettings();
+  const globalProbeMode: ModelProbeMode = runtimeSettings.data?.modelProbeMode ?? "detail";
+  const [probeMode, setProbeMode] = useState<ModelProbeMode>(() => readProbeMode(id, globalProbeMode));
+  const [probeModeTouched, setProbeModeTouched] = useState(false);
+  useEffect(() => {
+    if (!id) return;
+    const stored = typeof window === "undefined" || !window.localStorage
+      ? null
+      : window.localStorage.getItem(`cartethyia:provider:${id}:probe-mode`);
+    const next = stored === "fast" || stored === "detail" ? stored : globalProbeMode;
+    if (next !== probeMode) setProbeMode(next);
+  }, [id, globalProbeMode]);
+  useEffect(() => {
+    if (probeModeTouched && id) writeProbeMode(id, probeMode);
+  }, [id, probeMode, probeModeTouched]);
+  const probeAllModels = useProbeAllModels();
   const [showFilter, setShowFilter] = useState<ModelShowFilter>(() => readShowFilter(id));
   useEffect(() => {
     if (!id) return;
@@ -634,6 +666,35 @@ export default function ProviderDetail(): ReactNode {
                 onChange={setThinkingEffort}
                 size="sm"
               />
+              <ModeSelect
+                id="models-section-probe-mode"
+                value={probeMode}
+                onChange={(next) => {
+                  setProbeModeTouched(true);
+                  setProbeMode(next);
+                }}
+                size="sm"
+              />
+              {/* One batch request for the whole registered catalog; the
+                  per-model verdicts land in a collapsible panel under the grid. */}
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<FlaskConical size={13} className={probeAllModels.isPending ? "animate-spin" : ""} />}
+                disabled={probeAllModels.isPending || llmModels.length === 0}
+                onClick={() =>
+                  probeAllModels.mutate(
+                    { providerId: id, mode: probeMode },
+                    {
+                      onError: (error) =>
+                        toast.error("Test all models failed", (error as { message?: string }).message ?? "Probe failed"),
+                    },
+                  )
+                }
+                title={`Test every registered model in ${probeMode} mode`}
+              >
+                {probeAllModels.isPending ? "Testing…" : "Test all models"}
+              </Button>
               {/* Every provider gets the button, including one that publishes
                   no model-listing endpoint. Hiding it left the operator with no
                   way to find out why their provider has no models; the route
@@ -729,8 +790,14 @@ export default function ProviderDetail(): ReactNode {
               models={llmModels}
               serviceKind="llm"
               thinkingEffort={thinkingEffort}
+              probeMode={probeMode}
               showFilter={showFilter}
               searchCapable={provider?.supportsWebSearch === true}
+              testAll={{
+                pending: probeAllModels.isPending,
+                onRun: () => probeAllModels.mutate({ providerId: id, mode: probeMode }),
+                results: probeAllModels.data?.results ?? null,
+              }}
             />
           )}
         </CardBody>

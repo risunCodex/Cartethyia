@@ -7,11 +7,13 @@ import {
   LockOpen,
   Pencil,
   PowerOff,
+  RefreshCw,
   RotateCcw,
   Trash2,
 } from "lucide-react";
 import { useUpdateProviderAccount } from "../../../hooks/providers";
 import { useRecoverAccount } from "../../../hooks/providers";
+import { useRefreshAccountToken } from "../../../hooks/providers";
 import { useRefreshAccountQuota, type QuotaWindow } from "../../../hooks/quota";
 import { useMysteriousAccounts } from "../../../lib/privacy-mode";
 import { lastModelCooldownAt } from "../../../components/AccountCooldown";
@@ -177,6 +179,7 @@ export function AccountRow({
 }): ReactNode {
   const update = useUpdateProviderAccount();
   const recover = useRecoverAccount();
+  const refreshToken = useRefreshAccountToken();
   const testQuota = useRefreshAccountQuota(account.id);
   const poolProbe = usePoolProviderProbe();
   const isPool = account.kind === "pool";
@@ -452,6 +455,24 @@ export function AccountRow({
               title="Probe this pool against the provider"
             />
           )}
+          {!isPool && account.credentialKind === "oauth" && !account.staticToken ? (
+            <Button
+              size="icon"
+              variant="secondary"
+              icon={
+                refreshToken.isPending ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={12} />
+                )
+              }
+              label={refreshToken.isPending ? "Refreshing…" : "Refresh token"}
+              aria-label={`Refresh token for ${label}`}
+              disabled={refreshToken.isPending}
+              onClick={() => refreshToken.mutate({ providerId, accountId: account.id })}
+              title="Refresh OAuth token only — status unchanged"
+            />
+          ) : null}
           {!isPool ? (
             <Button
               size="icon"

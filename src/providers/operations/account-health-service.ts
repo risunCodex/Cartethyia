@@ -1,18 +1,66 @@
 import { randomUUID } from "node:crypto";
 import { healthEventBuffer } from "../../persistence/health-event-flush";
-import { and, count, desc, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, like, lte, or, sql } from "drizzle-orm";
 import { affectedRows, pruneExpiredCooldowns } from "../../persistence/dialect";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
-import { healthEvents, providerAccounts } from "../../persistence/schema";
+import { consoleSettings, healthEvents, providerAccounts } from "../../persistence/schema";
 import {
   COOLDOWN_RECOVERY_BATCH,
   accountDeadlineMs,
+  applyRuleEscalation,
   classifyAccountError,
-  escalateFallbackCooldown,
   latestDeadlineMs,
   unsupportedModelCooldownMs,
 } from "./account-error-classification";
+import { resolveAccountDisabledRecoveryMs } from "../../config/cooldowns";
 import type { AccountErrorClassification, AccountFailureEvidence } from "./account-error-classification";
+import { resolveCooldownRule } from "./cooldown-rules";
+import { mapPlanToTier } from "./account-tier";
+
+/**
+ * Categories the auto-disable toggle (area 01) targets (D01). Model-scoped
+ * verdicts (`model_unreachable`) are not here — they belong to the tier rules
+ * (area 03, R-C).
+ */
+const AUTO_DISABLE_TARGET_CATEGORIES: ReadonlySet<string> = new Set([
+  "quota_exhausted",
+  "rate_limit_transient",
+]);
+
+/** Prefix marking an auto-disable written by the rate-limited intercept (D03/R-B). */
+export const AUTO_DISABLE_MARKER_PREFIX = "auto-disable (rate-limited): ";
+
+/** An upstream-stated window shorter than this is not auto-disabled (D04). */
+const AUTO_DISABLE_STATED_MIN_MS = 5 * 60 * 1000;
+
+/**
+ * Whether the auto-disable preference is on for a tenant (and for shared
+ * accounts — `tenantId === null` — when any tenant has it on, D06).
+ *
+ * The preference lives in `console_settings.preferences` (the C2 cluster added
+ * the typed field to `ConsoleSettingsPreferences`). Reading is fail-safe (D01
+ * §3.1): a missing row, a failed read, or a preference that is not exactly
+ * `true` all mean off — a settings failure must never break a health write.
+ */
+export async function autoDisableRateLimitedEnabled(
+  db: CartethyiaDatabase,
+  tenantId: string | null,
+): Promise<boolean> {
+  try {
+    const rows = await db
+      .select({ tenantId: consoleSettings.tenantId, preferences: consoleSettings.preferences })
+      .from(consoleSettings);
+    return rows.some((row) => {
+      if (tenantId !== null && row.tenantId !== tenantId) return false;
+      const prefs = row.preferences as {
+        readonly autoDisableRateLimited?: boolean;
+      } | null | undefined;
+      return prefs?.autoDisableRateLimited === true;
+    });
+  } catch {
+    return false;
+  }
+}
 
 export { classifyAccountError, unsupportedModelCooldownMs } from "./account-error-classification";
 export type {
@@ -110,6 +158,11 @@ export async function recordAccountFailure(
         // counted", which is the common case and must stay cheap.
         modelBlockHits: providerAccounts.modelBlockHits,
         cooldownUntil: providerAccounts.cooldownUntil,
+        // Required by the auto-disable toggle (tenant-level preference read)
+        // and by the tier-aware cooldown rules (plan → tier).
+        providerId: providerAccounts.providerId,
+        tenantId: providerAccounts.tenantId,
+        quotaPlan: providerAccounts.quotaPlan,
       })
       .from(providerAccounts)
       .where(eq(providerAccounts.id, accountId))
@@ -128,6 +181,42 @@ export async function recordAccountFailure(
     const fromStatus = account.status;
     const now = new Date();
 
+    // ---- Auto-disable intercept (area 01, D01–D06) -------------------------
+    // Evaluated after classification and before the model-scoped/account-wide
+    // branch, so a 429/quota verdict carrying a modelId is rewritten to an
+    // account-wide disable instead of sinking into a per-model cooldown (D02).
+    //
+    // Only fires when every condition holds:
+    // - the tenant's toggle is on (fail-safe read: off on any error),
+    // - the classification mutates the account and the origin is upstream,
+    // - the category is a target (quota_exhausted / rate_limit_transient),
+    // - the verdict is a cooldown (rule-level `disabled` verdicts — bans,
+    //   revoked credentials — are untouched),
+    // - the provider did not state a sub-5-minute window (D04: Inception's
+    //   1m limit must keep its short cooldown, not park the account for 24h).
+    const autoDisableTarget =
+      AUTO_DISABLE_TARGET_CATEGORIES.has(effective.category) &&
+      effective.status === "cooldown" &&
+      effective.mutatesAccount &&
+      options?.origin === "upstream";
+    const statedTooShort =
+      effective.providerStated === true &&
+      effective.cooldownMs > 0 &&
+      effective.cooldownMs < AUTO_DISABLE_STATED_MIN_MS;
+    let autoDisableActive = false;
+    if (autoDisableTarget && !statedTooShort) {
+      autoDisableActive = await autoDisableRateLimitedEnabled(client, account.tenantId);
+    }
+    // Rewritten classification used by the write paths below.
+    const interception = autoDisableActive
+      ? {
+          ...effective,
+          status: "disabled" as const,
+          cooldownMs: resolveAccountDisabledRecoveryMs(),
+          ruleSource: "fallback" as const,
+        }
+      : effective;
+
     const modelId = options?.modelId;
     // Every category here is a verdict about one (account, model) pair rather
     // than about the credential, so all three back off that pair and leave the
@@ -138,16 +227,56 @@ export async function recordAccountFailure(
       effective.category === "rate_limit_transient" ||
       effective.category === "model_capacity" ||
       effective.category === "model_unreachable";
-    const shouldModelCooldown = modelId !== undefined && isThrottle;
+    // D02: when the auto-disable intercept fired, the target category must not
+    // sink into a model-scoped cooldown — the outcome is an account-wide
+    // disable.
+    const shouldModelCooldown = !autoDisableActive && modelId !== undefined && isThrottle;
     // The account-wide streak, escalated for a provider-stated window. Read once
     // so the model-scoped and account-wide paths below cannot disagree about it:
     // this is the count *before* this failure, which the UPDATE below increments.
     const streak = Math.max(0, account.consecutiveFailures ?? 0);
-    const escalatedCooldownMs = escalateFallbackCooldown(
-      effective.cooldownMs,
-      effective.providerStated === true,
-      streak,
-    );
+    // Tier-aware rule resolution (area 03, D15–D19): the account's plan is
+    // projected on this row, mapped to a tier, and — when a rule exists for
+    // the (provider, category, tier) combination — replaces the classifier's
+    // duration. The rule duration is a policy decision and never escalates
+    // (D18); escalation applies only to the fallback.
+    const accountTier =
+      account.quotaPlan === null || account.quotaPlan === undefined
+        ? null
+        : mapPlanToTier(account.providerId, account.quotaPlan);
+    // A provider-stated window always wins over a tier rule (D18), so the rule
+    // is only consulted when the upstream named nothing.
+    const ruleCooldownMs =
+      interception.providerStated === true
+        ? undefined
+        : resolveCooldownRule({
+            providerId: account.providerId,
+            category: effective.category,
+            tier: accountTier,
+          });
+    const ruleSource = interception.ruleSource;
+    const sourceCooldownMs =
+      ruleCooldownMs !== undefined ? ruleCooldownMs : interception.cooldownMs;
+    const sourceRuleKind: "provider-rule" | "fallback" | undefined =
+      ruleCooldownMs !== undefined ? "provider-rule" : ruleSource;
+    // The auto-disable recovery window is a policy duration like a tier rule:
+    // it must never pass through the fallback escalation ladder, or the 1h cap
+    // would truncate the default 24h recovery on the first unstated 429 (D18).
+    const resolvedCooldownMs = autoDisableActive
+      ? interception.cooldownMs
+      : applyRuleEscalation(
+          sourceCooldownMs,
+          interception.providerStated === true,
+          streak,
+          sourceRuleKind,
+        );
+    // When a rule replaces the duration, the classifier's `retryAt` (computed
+    // from the old constant/fallback) is stale: a shorter rule would lose to it
+    // in the monotonic-max deadline. Recompute from the rule duration instead.
+    const retryAtMs =
+      ruleCooldownMs !== undefined
+        ? Date.now() + ruleCooldownMs
+        : effective.retryAt?.getTime();
 
     // The unsupported-model ladder, computed before the branch: the classifier
     // could only state the base window because the authoritative hit count
@@ -173,8 +302,8 @@ export async function recordAccountFailure(
       // of the two whenever the provider really parked the pair longer.
       const previousDeadline = existing[modelId] === undefined ? undefined : Date.parse(existing[modelId]);
       const nextDeadline = latestDeadlineMs(
-        effective.retryAt?.getTime(),
-        Date.now() + (unsupportedCooldownMs ?? escalatedCooldownMs),
+        retryAtMs,
+        Date.now() + (unsupportedCooldownMs ?? resolvedCooldownMs),
         previousDeadline,
       );
       const nextUntil = new Date(nextDeadline).toISOString();
@@ -240,15 +369,35 @@ export async function recordAccountFailure(
       // The route catalog projects modelCooldowns and stamps this candidate as
       // model_cooldown. Invalidate when its deadline changes, or the cached
       // snapshot keeps routing this pair until some unrelated write rebuilds it.
-      return { ...classification, routesVisible: previousDeadline !== nextDeadline };
+      return {
+        ...classification,
+        routesVisible: previousDeadline !== nextDeadline,
+        ...(sourceRuleKind === undefined ? {} : { ruleSource: sourceRuleKind }),
+      };
     }
 
+    // When the intercept fired, the reason is prefixed with the auto-disable
+    // marker — `sweepExpiredCooldowns` (D03/R-B) uses the prefix to tell an
+    // auto-disable apart from an operator disable, which stays terminal.
+    const writtenReason = autoDisableActive
+      ? `${AUTO_DISABLE_MARKER_PREFIX}${effective.reason}`
+      : effective.reason;
+    // A disabled account's deadline is the auto-disable recovery window — the
+    // classifier's `retryAt`/cooldown duration must not leak in, or a terminal
+    // disable (`recovery = 0`) would gain a deadline and be swept back.
+    const deadlineCandidates = autoDisableActive
+      ? [interception.cooldownMs > 0 ? Date.now() + interception.cooldownMs : undefined]
+      : [
+          retryAtMs,
+          resolvedCooldownMs > 0 ? Date.now() + resolvedCooldownMs : undefined,
+          account.cooldownUntil?.getTime?.(),
+        ];
     await client
       .update(providerAccounts)
       .set({
-        status: effective.status,
+        status: interception.status,
         consecutiveFailures: sql`${providerAccounts.consecutiveFailures} + 1`,
-        lastError: effective.reason,
+        lastError: writtenReason,
         lastErrorCategory: effective.category,
         lastErrorAt: now,
         // Monotonic against the account's own in-force deadline, for the same
@@ -259,11 +408,7 @@ export async function recordAccountFailure(
         // (see `accountDeadlineMs`): the one state that asks for it is a
         // terminal automatic disable, and an elapsed deadline there would hand
         // the row straight back to the recovery sweep.
-        cooldownUntil: accountDeadlineMs([
-          effective.retryAt?.getTime(),
-          escalatedCooldownMs > 0 ? Date.now() + escalatedCooldownMs : undefined,
-          account.cooldownUntil?.getTime?.(),
-        ]),
+        cooldownUntil: accountDeadlineMs(deadlineCandidates),
       })
       .where(eq(providerAccounts.id, accountId));
 
@@ -272,8 +417,8 @@ export async function recordAccountFailure(
         entityKind: "account",
         accountId,
         fromStatus: fromStatus as "active" | "cooldown" | "disabled",
-        toStatus: effective.status,
-        reason: effective.reason,
+        toStatus: interception.status,
+        reason: writtenReason,
         errorCategory: effective.category,
         modelId: modelId ?? null,
         createdAt: now,
@@ -281,7 +426,11 @@ export async function recordAccountFailure(
     }
     // This path wrote `status` and `cooldownUntil`, both of which the snapshot
     // projects, so routing has to see it.
-    return { ...classification, routesVisible: true };
+    return {
+      ...classification,
+      routesVisible: true,
+      ...(sourceRuleKind === undefined ? {} : { ruleSource: sourceRuleKind }),
+    };
   };
 
   return withTransaction(db, persist, null);
@@ -414,11 +563,28 @@ export async function sweepExpiredCooldowns(db: CartethyiaDatabase): Promise<num
       })
       .from(providerAccounts)
       .where(
-        // An ordinary cooldown, recovered as soon as its window elapses.
+        // An ordinary cooldown, recovered as soon as its window elapses; plus
+        // (D03/R-B) an account the *auto-disable* intercept disabled — only
+        // when its category is a target AND the reason carries the auto-disable
+        // marker AND its recovery deadline has elapsed. An auto-disable is the
+        // machine's own verdict, so the sweep may undo it; an operator disable
+        // (no marker) stays terminal.
         and(
-          eq(providerAccounts.status, "cooldown"),
-          isNotNull(providerAccounts.cooldownUntil),
-          lte(providerAccounts.cooldownUntil, now),
+          or(
+            and(
+              eq(providerAccounts.status, "cooldown"),
+              isNotNull(providerAccounts.cooldownUntil),
+              lte(providerAccounts.cooldownUntil, now),
+            ),
+            and(
+              eq(providerAccounts.status, "disabled"),
+              inArray(providerAccounts.lastErrorCategory, [...AUTO_DISABLE_TARGET_CATEGORIES]),
+              isNotNull(providerAccounts.lastError),
+              like(providerAccounts.lastError, `${AUTO_DISABLE_MARKER_PREFIX}%`),
+              isNotNull(providerAccounts.cooldownUntil),
+              lte(providerAccounts.cooldownUntil, now),
+            ),
+          ),
         ),
       )
       // One pass recovers a bounded batch. The sweep runs every 30s, so a

@@ -59,6 +59,15 @@ export interface RuntimeSettingsResponse {
    * used instead.
    */
   readonly visionHandoffModels: readonly string[];
+  /**
+   * Auto-disable provider accounts stuck on upstream rate-limit/quota verdicts.
+   * Default false — the risky direction stays off until an operator flips it.
+   */
+  readonly autoDisableRateLimited: boolean;
+  /** Modelprobe mode; `detail` when unset. */
+  readonly modelProbeMode: ModelProbeMode;
+  /** Fast-probe timeout in seconds; null means the built-in default (10). */
+  readonly modelProbeFastTimeoutSeconds: number | null;
   readonly updatedAt: string;
   /*
    * What each `null` actually resolves to, in the same units the row stores.
@@ -135,6 +144,10 @@ export type PrivacyMode = (typeof PRIVACY_MODES)[number];
 export type PonyTailLevel = (typeof PONYTAIL_LEVELS)[number];
 /** RTK prune strength accepted by the runtime-settings PATCH. */
 export type RtkLevel = (typeof RTK_LEVELS)[number];
+
+export const MODEL_PROBE_MODES = ["fast", "detail"] as const;
+/** Modelprobe mode accepted by the runtime-settings PATCH and the probe route. */
+export type ModelProbeMode = (typeof MODEL_PROBE_MODES)[number];
 
 /** Upper bound on the number of ordered vision-handoff models. */
 export const VISION_HANDOFF_MAX_MODELS = 8;
@@ -272,4 +285,9 @@ export const runtimeUpdateBody = t.Object({
     t.Union([t.Null(), t.Number({ minimum: 64 * 1024, maximum: 100 * 1024 * 1024 })]),
   ),
   visionHandoffModels: t.Optional(t.Array(t.String())),
+  autoDisableRateLimited: t.Optional(t.Boolean()),
+  modelProbeMode: t.Optional(literalUnion(MODEL_PROBE_MODES)),
+  modelProbeFastTimeoutSeconds: t.Optional(
+    t.Union([t.Null(), t.Number({ minimum: 1, maximum: 120 })]),
+  ),
 });

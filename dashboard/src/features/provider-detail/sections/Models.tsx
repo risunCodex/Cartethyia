@@ -18,6 +18,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { memo, useMemo, useState, type ReactNode } from "react";
+import { Search, X } from "lucide-react";
 import { useGatewaySignedModelTest } from "./gateway-model-test";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
@@ -28,12 +29,15 @@ import { Inline } from "../../../components/ui/inline";
 import { Stack } from "../../../components/ui/stack";
 import { Banner } from "../../../components/patterns/banner";
 import {
+  useCommitDiscoveredModels,
   useDeleteProviderModel,
+  useDiscoverModelCandidates,
   useProbeModel,
   useRegisterProviderModels,
   useSetModelEnabled,
   useUpdateModelMetadata,
 } from "../../../hooks/providers";
+import { DISCOVER_MODEL_COMMIT_MAX, type DiscoverModelCandidate, type ModelProbeMode, type ModelWarning } from "../../../data/contracts";
 import {
   formatModelTokens,
   parseTokenInput,
@@ -131,6 +135,28 @@ export const DISABLED_GROUP = {
   hint: "Turned off — not routable until re-enabled",
 } as const;
 
+/** Severity ordering for the one colour the warning badge must pick (D34). */
+export function worstWarningSeverity(
+  warnings: readonly ModelWarning[],
+): "info" | "warn" | "critical" {
+  if (warnings.some((warning) => warning.severity === "critical")) return "critical";
+  if (warnings.some((warning) => warning.severity === "warn")) return "warn";
+  return "info";
+}
+
+/** Native hover text: every message, one per line, with its category. */
+export function warningTooltip(warnings: readonly ModelWarning[]): string {
+  return warnings
+    .map((warning) => `[${warning.severity ?? "warn"}] ${warning.kind}: ${warning.message}`)
+    .join("\n");
+}
+
+const WARNING_TONE: Record<"info" | "warn" | "critical", string> = {
+  info: "text-status-info",
+  warn: "text-orange",
+  critical: "text-red",
+};
+
 /**
  * The reasoning effort a probe asks for.
  *
@@ -156,6 +182,54 @@ export function probeThinkingOptions(): { value: ProbeReasoningEffort; label: st
     value: effort,
     label: effort === "auto" ? "Thinking: auto" : effort.charAt(0).toUpperCase() + effort.slice(1),
   }));
+}
+
+/** Per-provider probe mode, next to the Thinking selector in the Models header. */
+export function ModeSelect({
+  value,
+  onChange,
+  disabled,
+  size = "md",
+  id = "models-probe-mode",
+}: {
+  readonly value: ModelProbeMode;
+  readonly onChange: (value: ModelProbeMode) => void;
+  readonly disabled?: boolean;
+  readonly size?: "sm" | "md";
+  readonly id?: string;
+}): ReactNode {
+  return (
+    <div
+      title="Fast minimal sends a small token budget with a short deadline; Ask detail keeps the full sample."
+      className="min-w-56 shrink-0 max-sm:min-w-44"
+    >
+      <Select
+        id={id}
+        aria-label="Probe mode"
+        value={value}
+        disabled={disabled}
+        size={size}
+        onValueChange={(next) => onChange(next === "fast" ? "fast" : "detail")}
+        options={[
+          { value: "fast", label: "Fast minimal" },
+          { value: "detail", label: "Ask detail" },
+        ]}
+      />
+    </div>
+  );
+}
+
+/** Reads the per-provider probe-mode preference; `detail` when unset (D39). */
+export function readProbeMode(pid: string, globalDefault: ModelProbeMode = "detail"): ModelProbeMode {
+  if (typeof window === "undefined" || !window.localStorage) return globalDefault;
+  const raw = window.localStorage.getItem(`cartethyia:provider:${pid}:probe-mode`);
+  return raw === "fast" ? "fast" : raw === "detail" ? "detail" : globalDefault;
+}
+
+/** Writes the per-provider probe-mode preference. */
+export function writeProbeMode(pid: string, mode: ModelProbeMode): void {
+  if (typeof window === "undefined" || !window.localStorage || !pid) return;
+  window.localStorage.setItem(`cartethyia:provider:${pid}:probe-mode`, mode);
 }
 
 export function ThinkingSelect({
@@ -240,23 +314,40 @@ export function ShowSelect({
   );
 }
 
-export function AddModelModal({
+export interface AddModelProviderInfo {
+  readonly isBuiltIn?: boolean;
+  readonly wireFamilyDefault?: string;
+  /** When the console says the provider publishes no model directory, the
+   * modal opens straight in manual mode instead of burning a doomed fetch. */
+  readonly supportsModelDiscovery?: boolean;
+  /** Families the backend resolved for this provider (registry for built-ins,
+   * BYOK profile for custom). Used to order the wire choice so the provider's
+   * own family comes first — not to restrict it: a manually added provider may
+   * serve a protocol the gateway carries no bundled knowledge of, so the
+   * operator must be able to select any wire family. */
+  readonly supportedWireFamilies?: readonly string[];
+}
+
+/** Pure trim for the manual id, including the optional provider prefix. */
+export function normalizeManualModelId(providerId: string, raw: string): string {
+  const trimmed = raw.trim();
+  return trimmed.toLowerCase().startsWith(`${providerId.toLowerCase()}/`) &&
+    trimmed.length > providerId.length + 1
+    ? trimmed.slice(providerId.length + 1)
+    : trimmed;
+}
+
+/** The unchanged manual form, as one mode of the Add Model modal. */
+function ManualAddModelForm({
   providerId,
   provider,
   onClose,
+  onSwitchToProvider,
 }: {
   readonly providerId: string;
-  readonly provider?: {
-    readonly isBuiltIn?: boolean;
-    readonly wireFamilyDefault?: string;
-    /** Families the backend resolved for this provider (registry for built-ins,
-     * BYOK profile for custom). Used to order the wire choice so the provider's
-     * own family comes first — not to restrict it: a manually added provider may
-     * serve a protocol the gateway carries no bundled knowledge of, so the
-     * operator must be able to select any wire family. */
-    readonly supportedWireFamilies?: readonly string[];
-  };
+  readonly provider?: AddModelProviderInfo;
   readonly onClose: () => void;
+  readonly onSwitchToProvider?: () => void;
 }): ReactNode {
   const probe = useProbeModel();
   const register = useRegisterProviderModels();
@@ -287,10 +378,7 @@ export function AddModelModal({
   // Accept a pasted qualified id (`cline/cline-free/…`): the provider is
   // already selected by the page, so its prefix is stripped. Without this the
   // probe dispatches a literally-prefixed id upstream and always 404s.
-  const normalized =
-    trimmed.toLowerCase().startsWith(`${providerId.toLowerCase()}/`) && trimmed.length > providerId.length + 1
-      ? trimmed.slice(providerId.length + 1)
-      : trimmed;
+  const normalized = normalizeManualModelId(providerId, trimmed);
   const wasPrefixed = normalized !== trimmed;
 
   const runTest = () => {
@@ -373,6 +461,11 @@ export function AddModelModal({
   return (
     <Dialog open={true} onClose={onClose} title="Add Custom Model" size="sm" footer={
       <>
+        {onSwitchToProvider ? (
+          <Button variant="secondary" size="sm" onClick={onSwitchToProvider}>
+            Dari provider
+          </Button>
+        ) : null}
         <Button variant="secondary" size="sm" onClick={onClose} disabled={register.isPending}>Cancel</Button>
         <Button variant="primary" size="sm" disabled={register.isPending || normalized.length === 0} onClick={handleAdd}>
           {register.isPending ? "Adding..." : "Add Model"}
@@ -492,6 +585,226 @@ export function AddModelModal({
         )}
       </Stack>
     </Dialog>
+  );
+}
+
+/** Cap on one commit, kept next to the picker that enforces it (D29). */
+export const ADD_MODEL_MAX_SELECTION = DISCOVER_MODEL_COMMIT_MAX;
+
+/** Pure client-side roster filter: case-insensitive substring over `modelId`. */
+export function filterDiscoveredModels(
+  candidates: readonly DiscoverModelCandidate[],
+  search: string,
+): readonly DiscoverModelCandidate[] {
+  const q = search.trim().toLowerCase();
+  return q ? candidates.filter((item) => item.modelId.toLowerCase().includes(q)) : candidates;
+}
+
+/**
+ * Provider mode: the read-only upstream roster, searched client-side over
+ * `modelId`, with multi-select chips and a disabled "Registered" state.
+ * Nothing is written until commit, and the server re-runs discovery to reject
+ * ids that are not in the live roster.
+ */
+function ProviderAddModelPanel({
+  providerId,
+  onClose,
+  onManual,
+}: {
+  readonly providerId: string;
+  readonly onClose: () => void;
+  readonly onManual: () => void;
+}): ReactNode {
+  const query = useDiscoverModelCandidates(providerId);
+  const commit = useCommitDiscoveredModels();
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<readonly string[]>([]);
+
+  const candidates = query.data?.candidates ?? [];
+  // A console that reports no discovery support falls back to the manual form
+  // through the same explicit "Tambah manual" affordance as a failed fetch.
+  const unsupported = query.data?.supported === false;
+  const filtered = useMemo(
+    () => filterDiscoveredModels(candidates, search),
+    [candidates, search],
+  );
+  const toggle = (modelId: string) => {
+    setSelected((prev) =>
+      prev.includes(modelId)
+        ? prev.filter((id) => id !== modelId)
+        : prev.length < ADD_MODEL_MAX_SELECTION
+          ? [...prev, modelId]
+          : prev,
+    );
+  };
+  const canCommit = selected.length > 0 && !commit.isPending && !unsupported;
+  const handleCommit = () => {
+    if (!canCommit) return;
+    commit.mutate(
+      { providerId, modelIds: selected },
+      {
+        onSuccess: () => onClose(),
+        onError: (err) =>
+          toast.error("Failed to add models", (err as { message?: string }).message ?? "Unable to commit models"),
+      },
+    );
+  };
+  const accountNote = query.data?.accountLabel
+    ? `Using account ${query.data.accountLabel}`
+    : "Using the first usable account";
+
+  return (
+    <Dialog open={true} onClose={onClose} title="Add Model" size="md" footer={
+      <>
+        <Button variant="secondary" size="sm" onClick={onManual}>Tambah manual</Button>
+        <Button variant="secondary" size="sm" onClick={onClose} disabled={commit.isPending}>Cancel</Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={!canCommit}
+          onClick={handleCommit}
+          title={selected.length === 0 ? "Select at least one model" : `Add ${selected.length} model(s)`}
+        >
+          {commit.isPending ? "Adding..." : `Add selected (${selected.length})`}
+        </Button>
+      </>
+    }>
+      <Stack gap="10px">
+        <div className="text-badge text-text-tertiary" data-testid="discover-account-label">
+          {accountNote} · {ADD_MODEL_MAX_SELECTION} models per commit · configs follow the provider listing.
+        </div>
+        {unsupported ? (
+          <Banner tone="warning" surface="raised">
+            This provider does not publish a model directory. Use{" "}
+            <Button variant="ghost" size="sm" onClick={onManual}>Tambah manual</Button>{" "}
+            to add a model by id.
+          </Banner>
+        ) : null}
+        <div className="relative">
+          <Search size={14} aria-hidden="true" className="absolute left-5 top-1/2 -translate-y-1/2 text-text-tertiary" />
+          <input
+            aria-label="Search discovered models"
+            placeholder="Search models…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="w-full max-w-full rounded-inset border border-inner-border bg-surface-2 py-4 pr-5 pl-16 text-caption text-text-primary"
+          />
+        </div>
+        {selected.length > 0 ? (
+          <div className="flex flex-wrap gap-3 rounded-inset border border-inner-border bg-surface-2 p-4">
+            {selected.map((id) => (
+              <span
+                key={id}
+                className="font-mono tabular-nums inline-flex items-center gap-2 text-badge bg-accent-soft text-accent py-1 px-3 rounded-chip border border-accent max-w-full overflow-hidden break-all"
+              >
+                <span className="overflow-hidden truncate whitespace-nowrap">{id}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${id}`}
+                  onClick={() => toggle(id)}
+                  className="bg-transparent border-none cursor-pointer p-0 flex shrink-0"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className="flex min-h-160 max-h-210 flex-1 flex-col gap-3 overflow-y-auto rounded-control border border-inner-border bg-surface-1 p-6">
+          {query.isPending ? (
+            <div className="p-16 text-center text-caption text-text-tertiary">Fetching models from provider…</div>
+          ) : unsupported ? (
+            <div className="p-16 text-center text-caption text-text-tertiary">
+              No provider listing available.
+            </div>
+          ) : query.isError ? (
+            <div className="p-10 text-center text-caption">
+              <Banner tone="danger" live="alert">
+                Could not fetch the provider's model list. Tambah manual is still available.
+              </Banner>
+              <div className="flex gap-3 justify-center mt-4">
+                <Button variant="secondary" size="sm" onClick={() => void query.refetch()}>Retry</Button>
+                <Button variant="primary" size="sm" onClick={onManual}>Tambah manual</Button>
+              </div>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-16 text-center text-caption text-text-tertiary">No models found.</div>
+          ) : (
+            filtered.map((item: DiscoverModelCandidate) => {
+              const picked = selected.includes(item.modelId);
+              const disabled = item.alreadyRegistered;
+              return (
+                <label
+                  key={item.modelId}
+                  className={`flex items-center gap-4 min-w-0 rounded-control border border-inner-border p-4 text-caption ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-hover"}`}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${item.modelId}`}
+                    checked={picked}
+                    disabled={disabled}
+                    onChange={() => toggle(item.modelId)}
+                  />
+                  <span className="font-mono tabular-nums truncate flex-1 min-w-0" title={item.modelId}>
+                    {item.modelId}
+                  </span>
+                  <span className="shrink-0 text-micro text-text-tertiary">{item.wireFamily}</span>
+                  {item.freeTier === true ? (
+                    <span className="shrink-0 rounded-pill border border-teal-soft px-3 py-0.5 text-micro text-teal">Free tier</span>
+                  ) : null}
+                  {item.proOnly === true ? (
+                    <span className="shrink-0 rounded-tiny border border-orange bg-orange-soft px-3 py-0.5 text-micro text-orange">Pro</span>
+                  ) : null}
+                  {disabled ? (
+                    <span className="shrink-0 rounded-pill border border-inner-border px-3 py-0.5 text-micro font-bold text-text-tertiary">Registered</span>
+                  ) : null}
+                  {picked ? <Check size={13} aria-hidden="true" className="shrink-0 text-accent" /> : null}
+                </label>
+              );
+            })
+          )}
+        </div>
+        {selected.length >= ADD_MODEL_MAX_SELECTION ? (
+          <div className="text-badge text-text-tertiary">
+            {`Cap reached — commit at most ${ADD_MODEL_MAX_SELECTION} models at a time.`}
+          </div>
+        ) : null}
+      </Stack>
+    </Dialog>
+  );
+}
+
+/**
+ * One modal, two modes: "Dari provider" by default, manual only as fallback.
+ * A provider that answers `supported: false` from the wire is handled inside
+ * the provider panel itself, so the modal only ever fetches once.
+ */
+export function AddModelModal({
+  providerId,
+  provider,
+  onClose,
+}: {
+  readonly providerId: string;
+  readonly provider?: AddModelProviderInfo;
+  readonly onClose: () => void;
+}): ReactNode {
+  const [manual, setManual] = useState(provider?.supportsModelDiscovery === false);
+  if (manual) {
+    return (
+      <ManualAddModelForm
+        providerId={providerId}
+        provider={provider}
+        onClose={onClose}
+        onSwitchToProvider={() => setManual(false)}
+      />
+    );
+  }
+  return (
+    <ProviderAddModelPanel
+      providerId={providerId}
+      onClose={onClose}
+      onManual={() => setManual(true)}
+    />
   );
 }
 
@@ -652,6 +965,116 @@ function ModelMetadataFields({
 }
 
 /**
+ * Warning editor for a non-builtin row (D33).
+ *
+ * `null` is a real value here: it clears `warning_metadata` on the server,
+ * while an absent `warnings` field leaves the stored array alone. The editor
+ * therefore always sends the field. Built-in rows never reach this component —
+ * `ModelGrid` omits the pencil for them, since the seeder would overwrite any
+ * operator edit on the next boot.
+ */
+function WarningEditor({
+  warnings,
+  onChange,
+  idPrefix,
+  disabled = false,
+}: {
+  readonly warnings: readonly ModelWarning[];
+  readonly onChange: (next: readonly ModelWarning[]) => void;
+  readonly idPrefix: string;
+  readonly disabled?: boolean;
+}): ReactNode {
+  const updateAt = (index: number, patch: Partial<ModelWarning>): void => {
+    onChange(warnings.map((warning, at) => (at === index ? { ...warning, ...patch } : warning)));
+  };
+  return (
+    <Stack gap="6px">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-badge font-semibold text-text-secondary">Warnings</div>
+        {warnings.length > 0 ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            onClick={() => onChange([])}
+            aria-label="Clear all warnings"
+            title="Clear all warnings"
+          >
+            Clear
+          </Button>
+        ) : null}
+      </div>
+      {warnings.length === 0 ? (
+        <div className="text-badge text-text-tertiary">No warnings. Add one to flag a provider caveat on this model.</div>
+      ) : null}
+      {warnings.map((warning, index) => (
+        <div key={index} className="flex flex-col gap-2 rounded-inset border border-inner-border p-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <Input
+              id={`${idPrefix}-warning-kind-${index}`}
+              aria-label={`Warning ${index + 1} kind`}
+              placeholder="kind (e.g. fallback_model)"
+              value={warning.kind}
+              disabled={disabled}
+              onChange={(event) => updateAt(index, { kind: event.target.value })}
+              className="flex-1"
+            />
+            <Select
+              id={`${idPrefix}-warning-severity-${index}`}
+              aria-label={`Warning ${index + 1} severity`}
+              value={warning.severity ?? "warn"}
+              disabled={disabled}
+              size="sm"
+              onValueChange={(next) =>
+                updateAt(index, { severity: next === "info" || next === "critical" ? next : "warn" })
+              }
+              options={[
+                { value: "info", label: "Info" },
+                { value: "warn", label: "Warn — default" },
+                { value: "critical", label: "Critical" },
+              ]}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Trash2 size={12} />}
+              disabled={disabled}
+              onClick={() => onChange(warnings.filter((_, at) => at !== index))}
+              aria-label={`Remove warning ${index + 1}`}
+              title="Remove warning"
+            />
+          </div>
+          <Input
+            id={`${idPrefix}-warning-message-${index}`}
+            aria-label={`Warning ${index + 1} message`}
+            placeholder="Message shown on hover"
+            value={warning.message}
+            disabled={disabled}
+            onChange={(event) => updateAt(index, { message: event.target.value })}
+          />
+          {warning.updatedAt ? (
+            <div className="text-micro text-text-tertiary">Updated {warning.updatedAt}</div>
+          ) : null}
+        </div>
+      ))}
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={disabled}
+        onClick={() =>
+          onChange([
+            ...warnings,
+            { kind: "", message: "", severity: "warn" },
+          ])
+        }
+      >
+        Add warning
+      </Button>
+    </Stack>
+  );
+}
+
+/**
  * Edits one existing model's limits and capabilities.
  *
  * Only the fields the operator changes are sent: an absent field leaves the
@@ -679,6 +1102,9 @@ export function EditModelModal({
     reasoning: model.reasoning === true,
     toolCall: model.toolCall === true,
   }));
+  const [warnings, setWarnings] = useState<readonly ModelWarning[]>(() => [...(model.warnings ?? [])]);
+  const warningsChanged =
+    JSON.stringify(warnings) !== JSON.stringify(model.warnings ?? []);
 
   const handleSave = () => {
     const contextLimit = parseTokenInput(draft.contextLimit);
@@ -687,6 +1113,16 @@ export function EditModelModal({
       toast.error("Invalid limits", "Use a token count such as 512k, 200000, or 1.5m.");
       return;
     }
+    if (warnings.some((warning) => warning.kind.trim() === "" || warning.message.trim() === "")) {
+      toast.error("Invalid warning", "Every warning needs a kind and a message.");
+      return;
+    }
+    const now = new Date().toISOString();
+    const payloadWarnings = warningsChanged
+      ? warnings.length === 0
+        ? null
+        : warnings.map((warning) => ({ ...warning, updatedAt: now }))
+      : undefined;
     update.mutate(
       {
         providerId,
@@ -699,6 +1135,7 @@ export function EditModelModal({
           image: draft.passthrough ? true : draft.image,
           reasoning: draft.passthrough ? true : draft.reasoning,
           toolCall: draft.passthrough ? true : draft.toolCall,
+          ...(payloadWarnings === undefined ? {} : { warnings: payloadWarnings }),
         },
       },
       {
@@ -739,6 +1176,12 @@ export function EditModelModal({
           idPrefix="edit-model"
           disabled={update.isPending}
         />
+        <WarningEditor
+          warnings={warnings}
+          onChange={setWarnings}
+          idPrefix="edit-model"
+          disabled={update.isPending}
+        />
       </Stack>
     </Dialog>
   );
@@ -750,6 +1193,7 @@ function ModelCard({
   serviceKind,
   searchCapable,
   thinkingEffort,
+  probeMode,
   onDeleteRequest,
   onEditRequest,
   deletePending,
@@ -763,6 +1207,8 @@ function ModelCard({
    * setting governs every test in the section instead of each card carrying
    * its own — which is what made "set thinking, then test" need a per-card repeat. */
   readonly thinkingEffort: ProbeReasoningEffort;
+  /** Section-wide probe mode; `fast` shortens the gateway test and the console probe. */
+  readonly probeMode: ModelProbeMode;
   readonly onDeleteRequest: (model: ModelCatalogEntry) => void;
   /** Absent for a shared/built-in row, which the tenant cannot edit. */
   readonly onEditRequest?: ((model: ModelCatalogEntry) => void) | undefined;
@@ -775,7 +1221,9 @@ function ModelCard({
   const [probeResult, setProbeResult] = useState<{ ok: boolean; latencyMs: number } | null>(null);
   const [probeMeta, setProbeMeta] = useState<Readonly<Record<string, unknown>> | null>(null);
   const [showMetaDetails, setShowMetaDetails] = useState(false);
+  const [showWarnings, setShowWarnings] = useState(false);
   const scheduleCopyReset = useTrackedTimeout();
+  const warnings = model.warnings ?? [];
 
   // The routable id for this model under the section's thinking setting. The
   // suffix is what a client writes to ask for that level (`model(high)`), and
@@ -797,7 +1245,7 @@ function ModelCard({
     const qoder = providerId === "qoder" || providerId === "qodercn";
     if (qoder) {
       probeConsole.mutate(
-        { providerId, request: { modelId: model.modelId, serviceKind: "llm" } },
+        { providerId, request: { modelId: model.modelId, serviceKind: "llm", mode: probeMode } },
         {
           onSuccess: (result) => {
             setProbeResult({ ok: result.ok, latencyMs: result.latencyMs });
@@ -858,7 +1306,11 @@ function ModelCard({
       );
       return;
     }
-    void gatewayTest.test(copyId, model.outputLimit ?? undefined).then((result) => {
+    // D41: the gateway path stays. A console probe skips the routing ladder
+    // and reports a false "Fail" for a model that routes fine on a credited
+    // account, so `fast` is expressed as a small token budget + a short abort
+    // deadline on the same signed /v1/chat/completions request.
+    void gatewayTest.test(copyId, model.outputLimit ?? undefined, { fast: probeMode === "fast" }).then((result) => {
       setProbeResult({ ok: result.ok, latencyMs: result.latencyMs });
       setProbeMeta(null);
       if (!result.ok) {
@@ -969,6 +1421,26 @@ function ModelCard({
                 </span>
               ) : null}
 
+              {warnings.length > 0 ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Model warnings: ${warnings.length}`}
+                  aria-expanded={showWarnings}
+                  title={warningTooltip(warnings)}
+                  onClick={() => setShowWarnings((open) => !open)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setShowWarnings((open) => !open);
+                    }
+                  }}
+                  className={`estimate-dot inline-flex items-center justify-center rounded-full border border-inner-border bg-surface-2 cursor-help shrink-0 ${WARNING_TONE[worstWarningSeverity(warnings)]}`}
+                  data-severity={worstWarningSeverity(warnings)}
+                >
+                  <AlertTriangle size={9} aria-hidden="true" />
+                </span>
+              ) : null}
               {model.enabled ? null : (
                 <span
                   className="shrink-0 rounded-pill bg-red-soft px-3 py-0.5 text-micro font-bold tracking-[0.04em] text-red"
@@ -1131,6 +1603,19 @@ function ModelCard({
             />
           )}
         </div>
+        {showWarnings ? (
+          <div className="grid gap-1 pt-1 min-w-0" data-testid="model-warning-details">
+            {warnings.map((warning, index) => (
+              <div key={`${warning.kind}-${index}`} className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-micro font-semibold text-text-secondary">
+                  {warning.kind} · {warning.severity ?? "warn"}
+                  {warning.updatedAt ? ` · ${warning.updatedAt}` : ""}
+                </span>
+                <span className="text-micro text-text-tertiary wrap-break-word">{warning.message}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
         {probeMeta !== null && (
           <div className="grid gap-1 pt-1 min-w-0">
             {(() => {
@@ -1193,21 +1678,80 @@ function wireLabel(wireFamily: string): string {
   return "Chat";
 }
 
+/**
+ * Per-model outcome of the provider-wide run, in a collapsible panel below the
+ * grid. One row each: verdict + latency, plus the upstream's own error text on
+ * failure — the run is a diagnostic, not a rewrite of the catalog.
+ */
+export function TestAllModelsPanel({
+  results,
+}: {
+  readonly results: readonly { readonly modelId: string; readonly ok: boolean; readonly latencyMs: number; readonly error?: string }[];
+}): ReactNode {
+  const [open, setOpen] = useState(true);
+  const passed = results.filter((row) => row.ok).length;
+  return (
+    <div className="flex flex-col gap-3 rounded-control border border-inner-border bg-surface-2 p-4">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex items-center justify-between gap-4 text-caption font-semibold text-text-secondary bg-transparent border-0 p-0 cursor-pointer"
+      >
+        <span>{`Test all models · ${passed}/${results.length} passed`}</span>
+        <span className="text-badge text-text-tertiary">{open ? "(close)" : "(show)"}</span>
+      </button>
+      {open ? (
+        <div className="grid gap-1 max-h-160 overflow-y-auto" data-testid="test-all-models-results">
+          {results.length === 0 ? (
+            <div className="text-badge text-text-tertiary">No models returned by the probe.</div>
+          ) : (
+            results.map((row) => (
+              <div key={row.modelId} className="flex items-center gap-3 min-w-0 text-badge">
+                <span className={`shrink-0 font-bold ${row.ok ? "text-green" : "text-red"}`}>
+                  {row.ok ? "OK" : "Fail"}
+                </span>
+                <span className="font-mono tabular-nums truncate min-w-0 flex-1" title={row.modelId}>
+                  {row.modelId}
+                </span>
+                <span className="shrink-0 tabular-nums text-text-tertiary">{formatProbeDuration(row.latencyMs)}</span>
+                {row.error ? (
+                  <span className="truncate max-w-100 text-micro text-text-tertiary" title={row.error}>{row.error}</span>
+                ) : null}
+              </div>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ModelGrid({
   providerId,
   models,
   thinkingEffort,
+  probeMode = "detail",
   showFilter = "all",
   serviceKind = "llm",
   searchCapable = false,
+  testAll,
 }: {
   readonly providerId: string;
   readonly models: readonly ModelCatalogEntry[];
   readonly thinkingEffort: ProbeReasoningEffort;
+  /** Section-wide probe mode; default `detail` keeps the old behaviour. */
+  readonly probeMode?: ModelProbeMode;
   /** `free` hides every row the provider does not publish as free tier. */
   readonly showFilter?: ModelShowFilter;
   readonly serviceKind?: "llm" | "websearch";
   readonly searchCapable?: boolean;
+  /** Wired only on the LLM section, where the header button lives. */
+  readonly testAll?: {
+    readonly pending: boolean;
+    readonly onRun: () => void;
+    readonly results: readonly { readonly modelId: string; readonly ok: boolean; readonly latencyMs: number; readonly error?: string }[] | null;
+  };
 }): ReactNode {
   const deleteModel = useDeleteProviderModel();
   const [deleteTarget, setDeleteTarget] = useState<ModelCatalogEntry | null>(null);
@@ -1240,6 +1784,7 @@ export function ModelGrid({
       serviceKind={serviceKind}
       searchCapable={searchCapable}
       thinkingEffort={thinkingEffort}
+      probeMode={probeMode}
       deletePending={deleteModel.isPending}
       onDeleteRequest={setDeleteTarget}
       // A built-in row is the compiled catalog shared by every tenant, so the
@@ -1272,6 +1817,9 @@ export function ModelGrid({
             </div>
           </section>
         ))}
+        {testAll?.results ? (
+          <TestAllModelsPanel results={testAll.results} />
+        ) : null}
         {disabledRows.length === 0 ? null : (
           <section className="flex flex-col gap-4">
             <div className="flex items-baseline gap-4 min-w-0">

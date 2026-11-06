@@ -58,6 +58,11 @@ export const PROBE_REASONING_EFFORTS = ["auto", "minimal", "low", "medium", "hig
 /** One accepted probe reasoning effort. `auto` means "send no reasoning intent". */
 export type ProbeReasoningEffort = (typeof PROBE_REASONING_EFFORTS)[number];
 
+/** Modelprobe modes as a runtime tuple, so the route schema projects one list. */
+export const PROBE_MODES = ["fast", "detail"] as const;
+/** `detail` is the default when `mode` is absent (D39). */
+export type ProbeMode = (typeof PROBE_MODES)[number];
+
 /** Request accepted for a one-shot model connectivity test. `route`
  * disambiguates when a model id is registered under multiple endpoint
  * paths; omit it to probe against the model's already-registered wire
@@ -85,6 +90,13 @@ export interface ProbeModelRequest {
    * result the richest available source of truth.
    */
   surface?: "default" | "cosy" | "grpc" | "ide";
+  /**
+   * `fast` is a cheap liveness check: 32 output tokens, a 10s timeout, no
+   * retry, no payload-body capture, compact telemetry, and an 80-char sample.
+   * `detail` (the default when absent) is the full diagnostic probe.
+   * Health recording is identical in both modes.
+   */
+  mode?: ProbeMode;
 }
 export interface ProbeModelResult {
   accountId?: string;

@@ -17,7 +17,11 @@
  * which is honest: the upstream failed and we do not know more.
  */
 import { GatewayError } from "./gateway-error";
-import { classifyUpstreamError, extractUpstreamMessage, upstreamErrorIdentifier } from "../transport/failure-policy";
+import {
+  classifyUpstreamError,
+  upstreamErrorIdentifier,
+  extractUpstreamMessageText,
+} from "../transport/failure-policy";
 import { isRecord } from "./codecs";
 
 
@@ -54,19 +58,25 @@ export function gatewayErrorFromStreamError(
   }
   if (!isRecord(error)) return undefined;
 
-  const message = extractUpstreamMessage(error);
   const identifier = upstreamErrorIdentifier(error);
   const explicitStatus = numericStatus(error["status"], error["statusCode"], error["status_code"]);
   const classification = classifyUpstreamError(explicitStatus, identifier);
   const raw = JSON.stringify(error, null, 2).slice(0, 16_384);
+  // Only genuine prose (`message`/`msg`/`error` fields) counts as upstream
+  // passthrough text. A `code`/identifier is a classification key, not prose —
+  // it still serves as the message fallback when no text exists, but it must
+  // not set `upstreamMessageAsIs`.
+  const prose = extractUpstreamMessageText(error);
+  const message = prose.slice(0, 500) || identifier || label;
   return new GatewayError(
     classification.code,
     classification.status,
-    message || label,
+    message,
     {
       ...(explicitStatus === undefined ? {} : { providerStatus: explicitStatus }),
       ...(identifier ? { providerCode: identifier } : {}),
       raw,
+      ...(prose ? { upstreamMessageAsIs: true } : {}),
       ...(classification.credentialEvidence ? { credentialEvidence: true } : {}),
       ...(classification.rateLimitScope
         ? { rateLimitScope: classification.rateLimitScope }

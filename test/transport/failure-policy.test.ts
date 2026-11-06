@@ -2168,6 +2168,74 @@ describe("a platform-unavailable upstream response without a body message", () =
   });
 });
 
+// D44–D49: an unknown/unparseable upstream failure carries the provider's own
+// words to the client instead of a generalized 502 sentence. Only prose
+// (message/msg/error fields) counts as passthrough text; a `code` is an
+// identifier and keeps its older role as a message fallback without the flag.
+describe("upstream error passthrough (message as-is, no generalized 502)", () => {
+  test("a plain-text 502 body is surfaced verbatim, not 'temporarily unavailable'", async () => {
+    const response = new Response("connection throttled, retry later", { status: 502 });
+    const error = await mapUpstreamHttpError(response, "inception").catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(GatewayError);
+    expect((error as GatewayError).code).toBe("platform_unavailable");
+    expect((error as GatewayError).status).toBe(502);
+    expect((error as GatewayError).message).toBe("connection throttled, retry later");
+    expect((error as GatewayError).message).not.toContain("temporarily unavailable");
+    expect((error as GatewayError).details.upstreamMessageAsIs).toBe(true);
+  });
+
+  test("an HTML error page's title becomes the public message", async () => {
+    const response = new Response(
+      "<html><head><title>522 Origin Connection Time-out</title></head><body>edge</body></html>",
+      { status: 502, headers: { "content-type": "text/html" } },
+    );
+    const error = await mapUpstreamHttpError(response, "inception").catch((err: unknown) => err);
+    expect((error as GatewayError).message).toBe("522 Origin Connection Time-out");
+    expect((error as GatewayError).details.upstreamMessageAsIs).toBe(true);
+  });
+
+  test("a Claude non-JSON body keeps the raw upstream text", async () => {
+    const { mapClaudeHttpError } = await import("../../src/protocol/messages-errors");
+    const body = "connection throttled, retry later";
+    const error = mapClaudeHttpError(502, body);
+    expect(error.message).toBe(body);
+  });
+
+  test("a stream error frame without a message falls back to code, not the surface label", async () => {
+    const { gatewayErrorFromStreamError } = await import("../../src/protocol/stream-error-frames");
+    const error = gatewayErrorFromStreamError({ code: "6004" }, "label");
+    expect(error?.message).toBe("6004");
+    expect(error?.details.upstreamMessageAsIs).toBeUndefined();
+  });
+
+  test("passthrough text is bounded to 500 chars while details.raw keeps 4000", async () => {
+    const body = "x".repeat(900);
+    const response = new Response(body, { status: 502 });
+    const error = await mapUpstreamHttpError(response, "inception").catch((err: unknown) => err);
+    expect((error as GatewayError).message).toHaveLength(500);
+    expect(String((error as GatewayError).details.raw)).toHaveLength(900);
+    expect((error as GatewayError).details.upstreamMessageAsIs).toBe(true);
+  });
+
+  test("an already-classified 429 keeps its canonical message", async () => {
+    const response = new Response(
+      JSON.stringify({ error: { code: "insufficient_quota", message: "quota spent" } }),
+      { status: 429, headers: { "content-type": "application/json" } },
+    );
+    const error = await mapUpstreamHttpError(response, "inception").catch((err: unknown) => err);
+    expect((error as GatewayError).code).not.toBe("platform_unavailable");
+    expect((error as GatewayError).message).toBe("quota spent");
+  });
+
+  test("extractUpstreamMessageText ignores code identifiers", async () => {
+    const { extractUpstreamMessageText } = await import("../../src/transport/failure-policy");
+    expect(extractUpstreamMessageText({ code: "permission_error" })).toBe("");
+    expect(extractUpstreamMessageText({ code: 4026, message: "context too long" })).toBe("context too long");
+    expect(extractUpstreamMessageText({ code: "6004", msg: "resets at 12:00" })).toBe("resets at 12:00");
+    expect(extractUpstreamMessageText("plain upstream words")).toBe("plain upstream words");
+  });
+});
+
 describe("Qoder job-token expiry (105 / Login expired)", () => {
   test("classifies as auth without credential evidence (re-mintable via PAT)", () => {
     const classification = classifyUpstreamError(403, "105");

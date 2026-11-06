@@ -40,6 +40,9 @@ const REQUEST_KEYS: readonly (keyof UpdateRuntimeSettingsRequest)[] = [
   "telemetryWindowMinutes",
   "imageClampMaxBytes",
   "visionHandoffModels",
+  "autoDisableRateLimited",
+  "modelProbeMode",
+  "modelProbeFastTimeoutSeconds",
 ];
 
 describe("runtimeUpdateBody", () => {

@@ -10,6 +10,7 @@ import { applyRouteUserAgent, type ProviderDispatchContext } from "../../provide
 import { abortGatewayError, createUpstreamDeadlineLifecycle } from '../../providers/operations/upstream-deadline';
 import { mapClaudeHttpError } from '../messages-errors';
 import { isRecord } from '../codecs';
+import { upstreamMessageAsIs, MAX_UPSTREAM_ERROR_BYTES } from '../../transport/failure-policy';
 import { parseClaudeSseStream, claudeResponseToEvents } from '../response/messages';
 
 export async function* sendClaudeMessagesRequest(
@@ -67,20 +68,30 @@ export async function* sendClaudeMessagesRequest(
   try {
     json = JSON.parse(body) as unknown;
   } catch {
+    const fallback = "Claude response is not valid JSON (request {requestId}). The upstream came back empty-handed — retry 🌙";
+    const upstreamText = upstreamMessageAsIs(body, "");
     throw new GatewayError(
       "platform_unavailable",
       502,
-      "Claude response is not valid JSON (request {requestId}). The upstream came back empty-handed — retry 🌙",
-      {},
+      upstreamText.message || fallback,
+      {
+        raw: body.slice(0, MAX_UPSTREAM_ERROR_BYTES),
+        ...(upstreamText.hadUpstreamText ? { upstreamMessageAsIs: true } : {}),
+      },
       "upstream",
     );
   }
   if (!isRecord(json)) {
+    const fallback = "Claude response must be an object (request {requestId}). The upstream came back empty-handed — retry 🌙";
+    const upstreamText = upstreamMessageAsIs(body, "");
     throw new GatewayError(
       "platform_unavailable",
       502,
-      "Claude response must be an object (request {requestId}). The upstream came back empty-handed — retry 🌙",
-      {},
+      upstreamText.message || fallback,
+      {
+        raw: body.slice(0, MAX_UPSTREAM_ERROR_BYTES),
+        ...(upstreamText.hadUpstreamText ? { upstreamMessageAsIs: true } : {}),
+      },
       "upstream",
     );
   }

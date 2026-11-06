@@ -62,6 +62,72 @@ export const ACCOUNT_STATUSES = ["active", "disabled"] as const;
 /** One operator-settable account status. */
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 
+/** Display-only warning type shared with the dashboard contract mirror. */
+export type { ModelWarning, ModelWarningSeverity } from "../../../providers/provider-model-definition";
+import type { ModelWarning } from "../../../providers/provider-model-definition";
+
+/**
+ * Outcome of one provider-scoped bulk account action (area 02).
+ *
+ * A tenant-scoped action never touches shared (`tenant_id IS NULL`) rows; the
+ * global-admin pair of routes does. `globalSkipped` counts those rows on the
+ * tenant path so the console can say why its visible list and the DB disagree.
+ * `deleted`/`missing` are present on delete; `updated` on disable. Both actions
+ * are idempotent: a second call finds no matching row and reports zero.
+ */
+export interface ProviderAccountBulkActionResult {
+  readonly ok: boolean;
+  readonly updated: number;
+  readonly deleted?: readonly string[];
+  readonly missing?: readonly string[];
+  readonly globalSkipped: number;
+}
+
+/** Cap on one discovery-commit request (D29). */
+export const DISCOVER_MODEL_COMMIT_MAX = 100;
+
+/**
+ * One model the provider's own listing advertised, projected for the Add-Model
+ * picker. Read-only: `GET .../models/discover` writes nothing. `models`
+ * metadata here is the fetched `ModelDefinition`, not the static catalog's
+ * guess, so the operator can see exactly what the commit will store.
+ */
+export interface DiscoverModelCandidate {
+  readonly modelId: string;
+  readonly wireFamily: string;
+  readonly serviceKind: string;
+  readonly endpointPath: string;
+  readonly contextLimit: number | null;
+  readonly outputLimit: number | null;
+  readonly modalities: { readonly input: readonly string[]; readonly output: readonly string[] };
+  readonly reasoning: boolean;
+  readonly toolCall: boolean;
+  readonly freeTier?: boolean;
+  readonly proOnly?: boolean;
+  readonly alreadyRegistered: boolean;
+}
+
+/** Result of `GET .../models/discover`. */
+export interface DiscoverModelCandidatesResponse {
+  readonly supported: boolean;
+  readonly candidates: readonly DiscoverModelCandidate[];
+  /** Label of the usable account whose credential fetched the listing (D27). */
+  readonly accountLabel?: string;
+}
+
+/** Body of `POST .../models/discover/commit`. */
+export interface DiscoverModelCommitRequest {
+  readonly modelIds: readonly string[];
+}
+
+/** Outcome of a discovery commit: the ids persisted and the ones skipped. */
+export interface DiscoverModelCommitResult {
+  readonly ok: boolean;
+  readonly committed: readonly string[];
+  readonly skipped: readonly string[];
+  readonly synced: number;
+}
+
 const VALID_WIRE_FAMILIES: Record<WireFamily, true> = {
   chat: true,
   responses: true,
@@ -358,6 +424,8 @@ export interface ModelCatalogEntry {
    * provider's own model directory states it.
    */
   freeTier?: boolean;
+  /** Display-only warnings; `null` in storage means none. */
+  warnings?: readonly ModelWarning[];
 }
 export interface FlatModelCatalogEntry {
   readonly providerId: string;
@@ -407,6 +475,11 @@ export interface ModelMetadataOverride {
   readonly image?: boolean;
   readonly reasoning?: boolean;
   readonly toolCall?: boolean;
+  /**
+   * Display-only warnings, editable only on non-builtin rows. `null` clears
+   * the stored value; absence leaves it alone.
+   */
+  readonly warnings?: readonly ModelWarning[] | null;
 }
 
 /** Register payload: model ids plus optional operator metadata. */
@@ -484,6 +557,27 @@ export interface UpdateProviderAccountRequest {
    */
   staticToken?: boolean;
 }
+/**
+ * Response of `POST /providers/:providerId/accounts/:accountId/refresh-token`
+ * (area 04). The refresh never changes `status`: `statusAfter` is re-read from
+ * the database after the attempt and is never `"active"` by fiat — a disabled
+ * account stays disabled, only an operator can re-enable it.
+ */
+export interface RefreshAccountTokenResponse {
+  readonly ok: boolean;
+  readonly statusAfter: string;
+  /** True when an upstream token refresh actually minted a fresh token. */
+  readonly tokenRefreshed?: boolean;
+  /** ISO timestamp of the fresh access-token expiry, when known. */
+  readonly expiresAt?: string;
+  /** ISO timestamp of the refresh attempt. */
+  readonly refreshedAt?: string;
+  /** Structured reason when `ok` is false (`not_oauth`, `static_token`, …). */
+  readonly error?: string;
+  /** Human detail (failure message) when available. */
+  readonly category?: string;
+}
+
 export interface ProviderAccountTokenUsage {
   readonly requests: number;
   readonly errors: number;
@@ -786,6 +880,7 @@ export interface ProviderCatalogStore {
   probeAllModels(
     tenantId: string,
     providerId: string,
+    mode?: ProbeModelRequest["mode"],
   ): Promise<ProbeAllModelsResult>;
   probeAllAccounts(
     tenantId: string,
@@ -817,6 +912,20 @@ export interface ProviderCatalogStore {
     request: UpdateModelMetadataRequest,
   ): Promise<boolean>;
   syncModels(tenantId: string, providerId: string): Promise<{ synced: number }>;
+  /**
+   * Read-only `/models` discovery. Never persists. `supported: false` names a
+   * provider with no listing endpoint so the UI can fall back to manual add.
+   */
+  listDiscoveryCandidates(
+    tenantId: string,
+    providerId: string,
+  ): Promise<{ readonly supported: boolean; readonly candidates: readonly DiscoverModelCandidate[]; readonly accountLabel?: string }>;
+  /** Persists a verified subset of a fresh discovery as `source="manual"`. */
+  commitDiscoveredModels(
+    tenantId: string,
+    providerId: string,
+    modelIds: readonly string[],
+  ): Promise<{ readonly committed: readonly string[]; readonly skipped: readonly string[]; readonly synced: number }>;
   listAccounts(tenantId: string, providerId: string): Promise<readonly ProviderAccountResponse[]>;
   listAllAccounts(tenantId: string): Promise<readonly ProviderAccountResponse[]>;
   /**
@@ -891,6 +1000,10 @@ export interface ProviderCatalogStore {
     dayKey: string,
   ): Promise<readonly BuddyGrowthTaskLedgerEntry[]>;
   recoverAccount(tenantId: string, providerId: string, accountId: string): Promise<boolean>;
+  /** One UPDATE over this tenant's cooling accounts (D07/D08); evidence kept. */
+  disableCooldowns(tenantId: string, providerId: string): Promise<ProviderAccountBulkActionResult>;
+  /** One DELETE over this tenant's banned accounts (D12); idempotent. */
+  deleteBanned(tenantId: string, providerId: string): Promise<ProviderAccountBulkActionResult>;
 }
 
 /**

@@ -56,6 +56,18 @@ function hasSqliteDialect(database: unknown): boolean {
 }
 
 /**
+ * Dialect of a concrete Drizzle handle, rather than of the process's env.
+ *
+ * A test can hold an in-memory SQLite database while `CARTETHYIA_DB_MODE`
+ * names `full` (the backend suite sets that globally). A raw SQL predicate
+ * chosen from the env would emit `jsonb_each_text` into SQLite and fail; the
+ * handle's session is the authority, exactly as `mergeJson` already treats it.
+ */
+export function isSqliteDatabase(database: unknown): boolean {
+  return hasSqliteDialect(database);
+}
+
+/**
  * The per-model cooldown object with every entry whose timestamp has passed
  * removed, or `'{}'` when nothing remains.
  *

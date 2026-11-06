@@ -2,6 +2,7 @@ import {
   Archive,
   Database,
   Eye,
+  FlaskConical,
   Shield,
   Zap,
 } from "lucide-react";
@@ -31,6 +32,9 @@ import { getErrorMessage } from "../../data/api";
  * option, because "unset" is a real state rather than one of the numbers.
  */
 const TIMEOUT_CHOICES = [5, 15, 30, 60, 120, 300, 600] as const;
+/** Fast-probe deadline; `null` on the wire means the built-in 10 s default. */
+const FAST_PROBE_TIMEOUT_CHOICES = [5, 10, 15] as const;
+export const FAST_PROBE_TIMEOUT_DEFAULT_SECONDS = 10;
 /** How long requests stay in full before being folded into the day summary. */
 const WINDOW_CHOICES = [5, 15, 30, 60, 180, 720, 1440] as const;
 const ATTACHMENT_CHOICES = [1, 5, 10, 25, 50, 100] as const;
@@ -48,6 +52,7 @@ function SectionIcon({ name }: { readonly name: string }): ReactNode {
   const props = { size: 16 } as const;
   if (name === "privacy") return <Eye {...props} />;
   if (name === "operations") return <Zap {...props} />;
+  if (name === "model-testing") return <FlaskConical {...props} />;
   if (name === "data") return <Archive {...props} />;
   if (name === "data-management") return <Database {...props} />;
   return <Shield {...props} />;
@@ -62,6 +67,25 @@ function SectionIcon({ name }: { readonly name: string }): ReactNode {
  * operator to change something that is already right. So the current value is
  * appended when it is not among the choices, and sorted back into place.
  */
+/**
+ * The exact patch the auto-disable toggle writes, kept pure so the save path
+ * can be pinned without driving Radix's portal in a test DOM. A value outside
+ * the two offered choices resolves to `false` (the safe, default direction).
+ */
+export function autoDisableRateLimitedPatch(value: string): { readonly autoDisableRateLimited: boolean } {
+  return { autoDisableRateLimited: value === "on" };
+}
+
+/** The exact patch for the model-testing rows (area 07). */
+export function modelProbeModePatch(value: string): { readonly modelProbeMode: "fast" | "detail" } {
+  return { modelProbeMode: value === "fast" ? "fast" : "detail" };
+}
+
+/** `""` is the deployment default (10 s); anything else is the chosen seconds. */
+export function fastProbeTimeoutPatch(value: string): { readonly modelProbeFastTimeoutSeconds: number | null } {
+  return { modelProbeFastTimeoutSeconds: value === "" ? null : Number(value) };
+}
+
 export function boundedOptions(
   choices: readonly number[],
   current: number | null,
@@ -103,6 +127,12 @@ const SECTIONS = [
     title: "Operations",
     description:
       "Routing, admission, request handling, and response shaping for this tenant.",
+  },
+  {
+    id: "model-testing",
+    title: "Model testing",
+    description:
+      "Default probe mode and fast-test timeout for connectivity checks on provider models.",
   },
   {
     id: "data-management",
@@ -491,6 +521,44 @@ function OperationalPanel(): ReactNode {
         </div>
       ) : null}
 
+      <SettingsRow
+        label="Auto-disable rate-limited accounts"
+        labelFor="auto-disable-rate-limited"
+        hint="Off by default. When on, an upstream 429 / quota-exhausted or transient rate-limit verdict disables the whole account instead of parking it in cooldown — including verdicts that would otherwise only cool one model. Recovery is by the auto-disable sweep once its window elapses, or by an operator's Recover action; a manual disable stays terminal. Shared accounts follow any tenant's override (D06)."
+        control={
+          <Select
+            aria-label="Auto-disable rate-limited accounts"
+            id="auto-disable-rate-limited"
+            value={settings.autoDisableRateLimited ? "on" : "off"}
+            onValueChange={(value) => {
+              const { autoDisableRateLimited: next } = autoDisableRateLimitedPatch(value);
+              save(
+                autoDisableRateLimitedPatch(value),
+                next
+                  ? "Rate-limited accounts will be disabled."
+                  : "Rate-limited accounts return to cooldown.",
+              );
+            }}
+            options={[
+              { value: "off", label: "Off — default" },
+              { value: "on", label: "On" },
+            ]}
+          />
+        }
+      />
+      {settings.autoDisableRateLimited ? (
+        <div className="settings-row-banner">
+          <Banner tone="warning" surface="raised" live="status">
+            <strong>Rate-limited accounts leave the rotation.</strong> A 429 or
+            exhausted quota now disables the account rather than cooling it, so it
+            stays out until its recovery window elapses or an operator recovers it.
+            Turning this off does not re-enable accounts already disabled. Cooldowns
+            for other categories still behave as before, and per-model cooldowns
+            outside 429/quota verdicts are still enforced.
+          </Banner>
+        </div>
+      ) : null}
+
       {/*
        * Tenant-wide concurrency. The tolerance above a key's own limit used to
        * be editable per key in the Edit API Key modal, which silently won over
@@ -739,6 +807,96 @@ function OperationalPanel(): ReactNode {
   );
 }
 
+/**
+ * Model-testing defaults (area 07).
+ *
+ * `detail` keeps today's behaviour; `fast` is opt-in and only shortens
+ * token budget / deadline. The timeout row is always shown because the
+ * deployment default (10 s) is a real number, not an opaque "unset" — the
+ * label spells it out when the stored value is null.
+ */
+function ModelTestingPanel(): ReactNode {
+  const query = useRuntimeSettings();
+  const mutation = useUpdateRuntimeSettings();
+  const settings = query.data;
+  if (query.isPending)
+    return <LoadingState label="Loading model-testing settings…" />;
+  if (query.isError || !settings) {
+    return (
+      <ErrorState
+        message={getErrorMessage(query.error, "Failed to load runtime settings")}
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
+  const save = (
+    patch: Parameters<typeof mutation.mutate>[0],
+    message: string,
+  ): void => {
+    mutation.mutate(patch, {
+      onSuccess: () => toast.success(message),
+      onError: (error) =>
+        toast.error(getErrorMessage(error, "Could not update settings.")),
+    });
+  };
+  const timeout = settings.modelProbeFastTimeoutSeconds;
+  return (
+    <>
+      <SettingsRow
+        label="Default probe mode"
+        labelFor="default-probe-mode"
+        hint="Which test a provider model gets when the operator has not chosen a per-provider mode. Ask detail is the default and keeps the full sample; Fast minimal asks the same identity prompt with a small token budget, no retry, and a short deadline."
+        control={
+          <Select
+            aria-label="Default probe mode"
+            id="default-probe-mode"
+            value={settings.modelProbeMode}
+            onValueChange={(value) =>
+              save(
+                modelProbeModePatch(value),
+                value === "fast" ? "Fast probe is the default." : "Detailed probe is the default.",
+              )
+            }
+            options={[
+              { value: "fast", label: "Fast minimal" },
+              { value: "detail", label: "Ask detail — default" },
+            ]}
+          />
+        }
+      />
+      <SettingsRow
+        label="Fast probe timeout"
+        labelFor="fast-probe-timeout"
+        hint={`Deadline for a fast test; ${FAST_PROBE_TIMEOUT_DEFAULT_SECONDS}s when unset. Applies to the gateway test path and to the console probe, so a hung upstream cannot hold a whole "Test all models" run.`}
+        control={
+          <Select
+            aria-label="Fast probe timeout"
+            id="fast-probe-timeout"
+            value={timeout === null ? "" : String(timeout)}
+            placeholder={`Deployment default (${FAST_PROBE_TIMEOUT_DEFAULT_SECONDS} seconds)`}
+            onValueChange={(value) =>
+              save(fastProbeTimeoutPatch(value), "Fast probe timeout updated.")
+            }
+            options={[
+              ...FAST_PROBE_TIMEOUT_CHOICES.map((seconds) => ({
+                value: String(seconds),
+                label:
+                  seconds === FAST_PROBE_TIMEOUT_DEFAULT_SECONDS
+                    ? `${seconds} seconds — default`
+                    : `${seconds} seconds`,
+              })),
+              {
+                value: "",
+                label: `Deployment default (${FAST_PROBE_TIMEOUT_DEFAULT_SECONDS} seconds)`,
+              },
+            ]}
+          />
+        }
+      />
+    </>
+  );
+}
+
 function PasswordChangeForm(): ReactNode {
   const changePassword = useChangePassword();
   const [currentPassword, setCurrentPassword] = useState("");
@@ -858,6 +1016,7 @@ const PANEL_BODY: Record<SectionId, ReactNode> = {
   security: <PasswordChangeForm />,
   privacy: <PrivacyPanel />,
   operations: <OperationalPanel />,
+  "model-testing": <ModelTestingPanel />,
   backup: <BackupPanel />,
   "data-management": <DataManagementPanel />,
 };
@@ -868,10 +1027,11 @@ const PANEL_BODY: Record<SectionId, ReactNode> = {
  * Security and Privacy are the two short ones — three password fields, three
  * dropdowns — so side by side they fill a row of about the height either
  * would take alone, and the page is one screen shorter for it. Operations,
- * Backup, and Data Management stay full width: Operations runs seven rows
- * across four groups, Backup is a two-column form of its own, and Data
- * Management is a row of cards. Squeezing any of them into a half-width
- * column wraps nearly every line and buries the control under its own hint.
+ * Model testing, Backup, and Data Management stay full width: Operations runs
+ * its rows across four groups with long hints, Backup is a two-column form of
+ * its own, and Data Management is a row of cards. Squeezing any of them into
+ * a half-width column wraps nearly every line and buries the control under
+ * its own hint.
  */
 const SIDE_BY_SIDE: readonly SectionId[] = ["security", "privacy"];
 

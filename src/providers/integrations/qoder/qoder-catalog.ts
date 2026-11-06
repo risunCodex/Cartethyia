@@ -12,7 +12,7 @@ import { GatewayError } from "../../../protocol/gateway-error";
 import { defineModel } from "../../provider-model-definition";
 import type { ModelDefinition } from "../../provider-model-definition";
 import { QODER_CHAT_PATH, QODER_MODELS_PATH, qoderGatewayCandidates, type QoderRealm } from "./qoder-realm";
-import { qoderVirtualIdFor, QODER_VIRTUAL_MODELS } from "./qoder-virtual";
+import { qoderVirtualIdFor, QODER_PROVIDER_WARNINGS, QODER_VIRTUAL_MODELS } from "./qoder-virtual";
 
 /** One upstream catalog row, as `/algo/api/v2/model/list` reports it. */
 export interface QoderCatalogEntry {
@@ -199,6 +199,8 @@ function qoderModels(
       // Only an explicit `true` marks the row free; an unstated flag is left
       // unset so nothing claims a tier the roster did not state.
       ...(cfg.is_free === undefined ? {} : { free: cfg.is_free, freeTier: cfg.is_free }),
+      // Provider-level caveats, not per-model claims (D37).
+      warnings: QODER_PROVIDER_WARNINGS,
     }),
   );
 }
@@ -255,6 +257,7 @@ export function qoderVirtualModels(
           : target.freeTier === undefined
             ? {}
             : { free: target.freeTier, freeTier: target.freeTier }),
+        warnings: QODER_PROVIDER_WARNINGS,
       }),
     );
   }
@@ -349,6 +352,7 @@ export function qoderCatalogModel(
     // The live row carries no output ceiling, so inherit the static roster's
     // stated one when it exists (see `qoderRosterMaxOutputFor`).
     ...(rosterOutput === undefined ? {} : { out: rosterOutput }),
+    warnings: QODER_PROVIDER_WARNINGS,
   });
 }
 
@@ -542,6 +546,7 @@ export async function discoverQoderModels(input: {
                 : { out: rosterOutput }),
             free: virtual.free ?? entry.isFree,
             freeTier: virtual.free ?? entry.isFree,
+            warnings: QODER_PROVIDER_WARNINGS,
           }),
         );
       });

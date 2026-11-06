@@ -68,7 +68,6 @@ export type {
   CreateProviderRequest,
   UpdateProviderRequest,
   ModelCatalogResponse,
-  ModelCatalogEntry,
   FlatModelCatalogEntry,
   OAuthDevicePollResponse,
   ProviderRoutingResponse,
@@ -89,6 +88,46 @@ export type {
   SetModelEnabledRequest,
   BuddyGrowthTaskLedgerEntry,
 } from "../../../src/console/providers/catalog/contracts";
+
+/*
+ * C3 catalog contracts, re-exported rather than mirrored: the dashboard sees
+ * exactly the wire types the console emits. `ModelCatalogEntry` already carries
+ * the optional `warnings` projection (area 06), so no local extension is
+ * needed and `assertModels` stays loose against it.
+ */
+export type {
+  ProviderAccountBulkActionResult,
+  DiscoverModelCandidate,
+  DiscoverModelCommitResult,
+  ModelWarning,
+  ModelWarningSeverity,
+  ModelCatalogEntry,
+} from "../../../src/console/providers/catalog/contracts";
+export { DISCOVER_MODEL_COMMIT_MAX } from "../../../src/console/providers/catalog/contracts";
+
+/** Convenience alias for the discovery envelope; canonical name is C3's. */
+export type DiscoverModelsResponse = DiscoverModelCandidatesResponse;
+
+export type { DiscoverModelCandidatesResponse } from "../../../src/console/providers/catalog/contracts";
+
+/** Result of `POST .../models/discover/commit`. */
+export type DiscoverCommitResult = DiscoverModelCommitResult;
+
+import type {
+  DiscoverModelCandidatesResponse,
+  DiscoverModelCommitResult,
+} from "../../../src/console/providers/catalog/contracts";
+
+/** Accepted probe modes; absent on the wire means `detail` (D39). */
+export type { ProbeMode } from "../../../src/providers/discovery/discovery-types";
+import type { ProbeMode } from "../../../src/providers/discovery/discovery-types";
+export type ModelProbeMode = ProbeMode;
+
+export type { ProbeAllModelsResult } from "../../../src/console/providers/catalog/contracts";
+import type { ProbeAllModelsResult } from "../../../src/console/providers/catalog/contracts";
+
+/** Result of `POST .../models/test-models` (one row per registered model). */
+export type ProbeAllModelsRun = ProbeAllModelsResult;
 
 export type { AccountHealthEventRecord } from "../../../src/providers/operations/account-health-service";
 

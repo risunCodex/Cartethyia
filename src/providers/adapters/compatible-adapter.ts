@@ -6,9 +6,9 @@ import {
   isContextLengthFailure,
   throwIfHtmlResponse,
   mapUpstreamHttpError,
-  extractUpstreamMessage,
   extractHtmlTitle,
   upstreamErrorIdentifier,
+  upstreamMessageAsIs,
 } from "../../transport/failure-policy";
 import { applyRouteUserAgent, type ProviderDispatchTarget, type ProviderId, type ProviderDispatchContext } from "../provider-contracts";
 import { BaseProviderAdapter } from "./base-adapter";
@@ -439,11 +439,12 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
         }
         json = parsed as Record<string, unknown>;
       } catch {
-        const summary = extractHtmlTitle(raw) || raw.trim() || `HTTP ${res.status}`;
+        const fallback = `Upstream returned a non-JSON response: ${extractHtmlTitle(raw) || raw.trim() || `HTTP ${res.status}`} (request {requestId}). The connection ghosted us — come back in a moment 👻`;
+        const upstreamText = upstreamMessageAsIs(raw, "");
         throw new GatewayError(
           "transport_unavailable",
           502,
-          `Upstream returned a non-JSON response: ${summary} (request {requestId}). The connection ghosted us — come back in a moment 👻`.slice(0, 320),
+          `${upstreamText.message || fallback}`.slice(0, 500),
           { upstreamStatus: res.status, contentType },
           "upstream",
         );
@@ -485,15 +486,16 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
         const classification = isContextLengthFailure(json)
           ? { code: "context_length_exceeded" as const, status: 413, origin: "upstream" as const, credentialEvidence: false, rateLimitScope: undefined }
           : classifyUpstreamError(providerStatus, identifier);
-        const message = extractUpstreamMessage(json) || "Upstream reported an error";
+        const upstreamText = upstreamMessageAsIs(json, "");
         throw new GatewayError(
           classification.code,
           classification.status,
-          message,
+          upstreamText.message || "Upstream reported an error",
           {
             providerId: this.provider_id,
             ...(providerStatus === undefined ? {} : { providerStatus }),
             ...(identifier === undefined ? {} : { providerCode: identifier }),
+            ...(upstreamText.hadUpstreamText ? { upstreamMessageAsIs: true } : {}),
             ...(classification.credentialEvidence ? { credentialEvidence: true } : {}),
             ...(classification.rateLimitScope
               ? { rateLimitScope: classification.rateLimitScope }

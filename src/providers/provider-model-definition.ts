@@ -33,6 +33,37 @@ export const FREE_TIER_COST: ModelCostDefinition = {
   pricing_model: "pay-per-use",
 };
 
+/**
+ * Severity of one display-only model warning. `warn` is the default so a
+ * catalog that omits severity does not silently render a critical banner.
+ */
+export type ModelWarningSeverity = "info" | "warn" | "critical";
+
+/** Severity values accepted on the wire, as a runtime tuple. */
+export const MODEL_WARNING_SEVERITIES = ["info", "warn", "critical"] as const;
+
+/** Longest accepted warning `kind` / `message`, in UTF-16 code units. */
+export const MODEL_WARNING_KIND_MAX_LENGTH = 64;
+export const MODEL_WARNING_MESSAGE_MAX_LENGTH = 500;
+
+/**
+ * One display-only warning attached to a model row. `kind` is an open string
+ * with three defined values (`fallback_model`, `cache_reliability`,
+ * `model_refusal`) so a new category needs no migration. Persisted as
+ * `{ warnings: ModelWarning[] }` in `models.warning_metadata`; never read by
+ * routing.
+ */
+export interface ModelWarning {
+  /** Stable machine-readable category; open vocabulary. */
+  readonly kind: string;
+  /** Operator-facing text. Provider-level claims use "may". */
+  readonly message: string;
+  /** Defaults to `warn` when absent. */
+  readonly severity?: ModelWarningSeverity;
+  /** ISO timestamp of the last edit, when known. */
+  readonly updatedAt?: string;
+}
+
 /** Canonical static metadata for one provider model. */
 export interface ModelDefinition {
   readonly modelId: string;
@@ -118,6 +149,8 @@ export interface ModelDefinition {
    * turns a gap in our catalog into a claim about someone else's model.
    */
   readonly limitsEstimated?: boolean;
+  /** Display-only warnings carried from a static catalog into the seeded row. */
+  readonly warnings?: readonly ModelWarning[];
 }
 
 /**
@@ -205,6 +238,8 @@ export interface ModelHelperRow {
   readonly proOnly?: boolean;
   /** Explicit wire dialect override for this row. See `ModelDefinition.dialect`. */
   readonly dialect?: DialectId;
+  /** Display-only warnings to carry onto the built row. */
+  readonly warnings?: readonly ModelWarning[];
 }
 
 function defaultEndpoint(wireFamily: ModelDefinition["wireFamily"]): string {
@@ -309,6 +344,7 @@ export function defineModel(row: ModelHelperRow): ModelDefinition {
     ...(row.proOnly === undefined ? {} : { proOnly: row.proOnly }),
     ...(row.dialect === undefined ? {} : { dialect: row.dialect }),
     ...(limitsEstimated ? { limitsEstimated: true } : {}),
+    ...(row.warnings === undefined ? {} : { warnings: row.warnings }),
   };
 }
 

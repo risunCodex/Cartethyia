@@ -11,7 +11,17 @@
 import type { AccessDecision } from "../../../security/access-control";
 import { ConsoleDomainError, requireScope, requireTenantAnyScope } from "../../shared/errors";
 import { GatewayError } from "../../../protocol/gateway-error";
-import { MODEL_READ_SCOPES, MODEL_WRITE_SCOPES } from "./contracts";
+import {
+  DISCOVER_MODEL_COMMIT_MAX,
+  MODEL_READ_SCOPES,
+  MODEL_WRITE_SCOPES,
+} from "./contracts";
+import type { DiscoverModelCandidatesResponse, DiscoverModelCommitResult } from "./contracts";
+import {
+  MODEL_WARNING_KIND_MAX_LENGTH,
+  MODEL_WARNING_MESSAGE_MAX_LENGTH,
+  MODEL_WARNING_SEVERITIES,
+} from "../../../providers/provider-model-definition";
 import type {
   ByokConnectionTestRequest,
   ByokConnectionTestResult,
@@ -47,6 +57,60 @@ function validateModelMetadata(metadata: ModelMetadataOverride | undefined): voi
         `${field} must be a positive integer, or null for unknown`,
       );
   }
+  // `null` clears the stored blob; an absent field leaves it alone. Only a
+  // non-builtin row can actually carry an edit — the store enforces that
+  // invariant. Bounds here stop a hostile payload from persisting a multi-MB
+  // display banner; severity is a closed whitelist.
+  if (metadata.warnings === null || metadata.warnings === undefined) return;
+  if (!Array.isArray(metadata.warnings)) {
+    throw new ConsoleDomainError("invalid_request", 400, "warnings must be an array or null");
+  }
+  for (const [index, warning] of metadata.warnings.entries()) {
+    if (warning === null || typeof warning !== "object" || Array.isArray(warning)) {
+      throw new ConsoleDomainError("invalid_request", 400, `warnings[${index}] must be an object`);
+    }
+    const kind = (warning as { kind?: unknown }).kind;
+    const message = (warning as { message?: unknown }).message;
+    const severity = (warning as { severity?: unknown }).severity;
+    if (typeof kind !== "string" || kind.trim().length === 0 || kind.length > MODEL_WARNING_KIND_MAX_LENGTH) {
+      throw new ConsoleDomainError(
+        "invalid_request",
+        400,
+        `warnings[${index}].kind must be a non-empty string up to ${MODEL_WARNING_KIND_MAX_LENGTH} chars`,
+      );
+    }
+    if (typeof message !== "string" || message.trim().length === 0 || message.length > MODEL_WARNING_MESSAGE_MAX_LENGTH) {
+      throw new ConsoleDomainError(
+        "invalid_request",
+        400,
+        `warnings[${index}].message must be a non-empty string up to ${MODEL_WARNING_MESSAGE_MAX_LENGTH} chars`,
+      );
+    }
+    if (
+      severity !== undefined &&
+      (typeof severity !== "string" ||
+        !(MODEL_WARNING_SEVERITIES as readonly string[]).includes(severity))
+    ) {
+      throw new ConsoleDomainError(
+        "invalid_request",
+        400,
+        `warnings[${index}].severity must be one of ${MODEL_WARNING_SEVERITIES.join(", ")}`,
+      );
+    }
+  }
+}
+
+/**
+ * Discovery lives in the provider layer and raises `GatewayError`; the console
+ * speaks `ConsoleDomainError`. Keeping the exact code/status/message lets the
+ * dashboard toast name the real upstream reason rather than a generic failure.
+ */
+function translateDiscoveryError(error: unknown): unknown {
+  if (error instanceof ConsoleDomainError) return error;
+  if (error instanceof GatewayError) {
+    return new ConsoleDomainError(error.code, error.status, error.message);
+  }
+  return error;
 }
 
 export function createModelCatalogOperations(config: ProviderCatalogConfig) {
@@ -164,14 +228,7 @@ export function createModelCatalogOperations(config: ProviderCatalogConfig) {
           await config.snapshotInvalidator?.invalidate();
           return result;
         } catch (error) {
-          // Discovery runs in the provider layer and raises `GatewayError`; the
-          // console speaks `ConsoleDomainError`. Translating here keeps the
-          // upstream-vs-operator distinction and the status code intact, so the
-          // dashboard toast names the real reason instead of a generic failure.
-          if (error instanceof GatewayError) {
-            throw new ConsoleDomainError(error.code, error.status, error.message);
-          }
-          throw error;
+          throw translateDiscoveryError(error);
         }
       }
       /** Manually registers additional model ids on an existing provider (tenant-bound, no upstream call). */,
@@ -247,9 +304,10 @@ export function createModelCatalogOperations(config: ProviderCatalogConfig) {
     async probeAllModels(
         access: AccessDecision | undefined,
         providerId: string,
+        mode?: ProbeModelRequest["mode"],
       ): Promise<ProbeAllModelsResult> {
         const a = requireTenantAnyScope(access, MODEL_WRITE_SCOPES);
-        return config.store.probeAllModels(a.tenantId, providerId);
+        return config.store.probeAllModels(a.tenantId, providerId, mode);
       },
       async probeAllAccounts(
         access: AccessDecision | undefined,
@@ -299,6 +357,60 @@ export function createModelCatalogOperations(config: ProviderCatalogConfig) {
         await config.snapshotInvalidator?.invalidate();
         return { success: true };
       },
+    /**
+     * `GET .../models/discover`: fetch the provider's own listing without any
+     * write (D30). A provider with no listing endpoint answers `supported:false`
+     * so the UI can fall back to manual add instead of showing an error.
+     */
+    async listDiscoveryCandidates(
+      access: AccessDecision | undefined,
+      providerId: string,
+    ): Promise<DiscoverModelCandidatesResponse> {
+      const a = requireTenantAnyScope(access, MODEL_READ_SCOPES);
+      try {
+        return await config.store.listDiscoveryCandidates(a.tenantId, providerId);
+      } catch (error) {
+        throw translateDiscoveryError(error);
+      }
+    },
+    /**
+     * `POST .../models/discover/commit`: the store re-fetches the roster and
+     * rejects ids outside it (D31), so no hand-forged id can be persisted.
+     */
+    async commitDiscoveredModels(
+      access: AccessDecision | undefined,
+      providerId: string,
+      modelIds: readonly string[],
+    ): Promise<DiscoverModelCommitResult> {
+      const a = requireTenantAnyScope(access, MODEL_WRITE_SCOPES);
+      if (modelIds.some((id) => typeof id !== "string" || id.trim().length === 0)) {
+        throw new ConsoleDomainError(
+          "invalid_request",
+          400,
+          "modelIds must be non-empty model ids",
+        );
+      }
+      if (modelIds.length === 0 || modelIds.length > DISCOVER_MODEL_COMMIT_MAX) {
+        throw new ConsoleDomainError(
+          "invalid_request",
+          400,
+          `modelIds must contain 1-${DISCOVER_MODEL_COMMIT_MAX} entries`,
+        );
+      }
+      try {
+        const result = await config.store.commitDiscoveredModels(a.tenantId, providerId, modelIds);
+        await config.auditSink?.record({
+          access: a,
+          action: "provider.models.registered",
+          target: providerId,
+          detail: { modelIds: result.committed, source: "discover-commit" },
+        });
+        await config.snapshotInvalidator?.invalidate();
+        return { ok: true, ...result };
+      } catch (error) {
+        throw translateDiscoveryError(error);
+      }
+    },
     async deleteModelsBulk(
         access: AccessDecision | undefined,
         providerId: string,

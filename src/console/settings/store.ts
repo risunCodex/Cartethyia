@@ -10,6 +10,7 @@ import { resolveUpstreamTimeoutMs } from "../../config/timeouts";
 import { payloadRetentionMs } from "../../observability/payload-capture";
 import { IMAGE_CLAMP_MAX_BYTES } from "../../protocol/image-clamp";
 import {
+  MODEL_PROBE_MODES,
   PONYTAIL_LEVELS,
   RESPONSES_REASONING_SUMMARIES,
   RTK_LEVELS,
@@ -23,6 +24,7 @@ import {
   type RuntimeSettingsStore,
   type TelemetryPayloadDepth,
   type TelemetryPayloadMode,
+  type ModelProbeMode,
   type UpdateRuntimeSettingsRequest,
 } from "./contracts";
 
@@ -116,6 +118,23 @@ function normalizeConcurrencyTolerance(value: unknown): number | null {
   return normalizeBoundedNumber(value, 0, 1024);
 }
 
+/** Modelprobe mode: only the two known modes survive; anything else = `detail`. */
+function normalizeModelProbeMode(value: unknown): ModelProbeMode {
+  return typeof value === "string" && (MODEL_PROBE_MODES as readonly string[]).includes(value)
+    ? (value as ModelProbeMode)
+    : "detail";
+}
+
+/**
+ * Fast-probe timeout in seconds: 1–120, `null` = deployment default, and any
+ * other absent/non-finite value reads as the built-in default of 10 (the UI
+ * select's middle choice, and the value probing uses when unset).
+ */
+function normalizeModelProbeFastTimeoutSeconds(value: unknown): number | null {
+  if (value === null) return null;
+  return normalizeBoundedNumber(value, 1, 120) ?? 10;
+}
+
 /** Ordered vision-handoff models: non-empty strings, trimmed, de-duplicated. */
 function normalizeVisionHandoffModels(value: unknown): readonly string[] {
   if (!Array.isArray(value)) return [];
@@ -166,6 +185,11 @@ function mapRuntimeSettingsRow(
     telemetryWindowMinutes: normalizeTelemetryWindowMinutes(prefs.telemetryWindowMinutes),
     imageClampMaxBytes: normalizeImageClampMaxBytes(prefs.imageClampMaxBytes),
     visionHandoffModels: normalizeVisionHandoffModels(prefs.visionHandoffModels),
+    autoDisableRateLimited: prefs.autoDisableRateLimited === true,
+    modelProbeMode: normalizeModelProbeMode(prefs.modelProbeMode),
+    modelProbeFastTimeoutSeconds: normalizeModelProbeFastTimeoutSeconds(
+      prefs.modelProbeFastTimeoutSeconds,
+    ),
     updatedAt,
     /*
      * Resolved at request time, not at module load: all four come from env the
@@ -231,6 +255,14 @@ export class DrizzleRuntimeSettingsStore implements RuntimeSettingsStore {
       patchPrefs.imageClampMaxBytes = normalizeImageClampMaxBytes(patch.imageClampMaxBytes);
     if (patch.visionHandoffModels !== undefined)
       patchPrefs.visionHandoffModels = normalizeVisionHandoffModels(patch.visionHandoffModels);
+    if (patch.autoDisableRateLimited !== undefined)
+      patchPrefs.autoDisableRateLimited = patch.autoDisableRateLimited === true;
+    if (patch.modelProbeMode !== undefined)
+      patchPrefs.modelProbeMode = normalizeModelProbeMode(patch.modelProbeMode);
+    if (patch.modelProbeFastTimeoutSeconds !== undefined)
+      patchPrefs.modelProbeFastTimeoutSeconds = normalizeModelProbeFastTimeoutSeconds(
+        patch.modelProbeFastTimeoutSeconds,
+      );
 
     const rows = await this.db
       .insert(consoleSettings)

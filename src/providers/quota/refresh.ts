@@ -11,6 +11,7 @@ import type { CartethyiaDatabase } from "../../persistence/db-handle";
 import { providerAccounts } from "../../persistence/schema";
 import type { RedisClient } from "../../persistence/redis";
 import { log } from "../../observability/logger";
+import { pushStructuredConsoleLog } from "../../observability/log-ring";
 import { fetchProviderQuota } from "./quota-support";
 import { type FetchLike, type ProviderQuotaResult } from "./quota-contracts";
 import type { ProviderId } from "../provider-contracts";
@@ -261,6 +262,12 @@ const TARGET_COLUMNS = {
  * disabled account is not necessarily revoked — it may have been parked for a
  * reason unrelated to its credential — and skipping it would let a credential
  * die silently while the row still reads healthy.
+ *
+ * Invariant (area 04, D21): this sweep **never flips status**. The refresh it
+ * kicks off rewrites only credential/expiry columns; `recordAccountCheck` is
+ * active-only, so `disabled` rows are identical after the pass to before. The
+ * `origin: "sweep:quota"` tag on the token-refresh log lines (D26) is what
+ * lets an operator verify that in the Console Log.
  */
 export async function listQuotaRefreshTargets(
   db: CartethyiaDatabase,
@@ -343,6 +350,20 @@ async function runQuotaRefresh(
   let resolveError: string | undefined;
   try {
     credential = await deps.resolveCredential(target.providerId as ProviderId, target.accountId);
+    // D26: every OAuth credential this sweep resolves may have been refreshed
+    // inside the refresh-aware resolver. Label that refresh with its origin so
+    // the Console Log can prove the sweep touches disabled accounts without
+    // ever flipping their status. The refresh service itself also logs the
+    // actual token refresh under the `sweep` origin family; this line names
+    // the sweep here, at the source of the trigger.
+    if (credential !== "" && target.credentialKind === "oauth") {
+      pushStructuredConsoleLog("debug", "Quota sweep resolved OAuth credential; token may have been refreshed", {
+        event: "token_refresh",
+        accountId: target.accountId,
+        providerId: target.providerId,
+        details: { origin: "sweep:quota" },
+      });
+    }
   } catch (error) {
     resolveError = error instanceof Error ? error.message : "Failed to resolve credential";
   }

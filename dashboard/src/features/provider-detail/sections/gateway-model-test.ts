@@ -24,11 +24,20 @@ export interface GatewayModelTestResult {
 }
 
 const TEST_TIMEOUT_MS = 20_000;
+/** Fast mode: a short abort deadline and a tiny token budget, no retry (area 07). */
+export const FAST_TEST_TIMEOUT_MS = 10_000;
+export const FAST_TEST_MAX_TOKENS = 32;
+export const FAST_TEST_SAMPLE_CHARS = 80;
 // Same probe prompt the model test always used (see buildProbeCanonicalRequest):
 // it passes content-policy review and produces a useful sample — the model
 // identifies itself and states its knowledge cutoff, instead of echoing a
 // canned reply.
 const TEST_PROMPT = "What model are you, and what is your knowledge cutoff date? Answer in one sentence.";
+
+/** Options for one gateway test; `fast` keeps the same signed gateway path. */
+export interface GatewayModelTestOptions {
+  readonly fast?: boolean;
+}
 
 export function useGatewaySignedModelTest() {
   const keys = useApiKeys();
@@ -39,7 +48,9 @@ export function useGatewaySignedModelTest() {
     async (
       model: string,
       maxTokens?: number,
+      options: GatewayModelTestOptions = {},
     ): Promise<GatewayModelTestResult> => {
+      const fast = options.fast === true;
       const defaultKey = (keys.data ?? []).find(
         (key) => key.enabled && key.revokedAt === undefined && key.isDefault,
       );
@@ -65,7 +76,7 @@ export function useGatewaySignedModelTest() {
       }
 
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS);
+      const timer = setTimeout(() => controller.abort(), fast ? FAST_TEST_TIMEOUT_MS : TEST_TIMEOUT_MS);
       const startedAt = performance.now();
       setTesting(true);
       try {
@@ -85,7 +96,13 @@ export function useGatewaySignedModelTest() {
             // field so the gateway applies its own default. A hard-coded small
             // ceiling made reasoning-heavy models exhaust the budget on the
             // thinking phase and return an empty answer ("No sample text").
-            ...(maxTokens === undefined ? {} : { max_tokens: maxTokens }),
+            // Fast mode deliberately takes the other side of that trade: the
+            // answer is only a smoke signal, so 32 tokens is enough.
+            ...(fast
+              ? { max_tokens: FAST_TEST_MAX_TOKENS }
+              : maxTokens === undefined
+                ? {}
+                : { max_tokens: maxTokens }),
             stream: false,
           }),
         });
@@ -111,10 +128,12 @@ export function useGatewaySignedModelTest() {
         const choices = Array.isArray(payload?.choices) ? payload?.choices : [];
         const first = choices[0] as Record<string, unknown> | undefined;
         const message = first?.message as Record<string, unknown> | undefined;
-        const sample =
+        const rawSample =
           typeof message?.content === "string"
             ? (message.content as string).trim()
             : "";
+        // D40: fast reports just enough text to prove the model answered.
+        const sample = fast ? rawSample.slice(0, FAST_TEST_SAMPLE_CHARS) : rawSample;
         const reportedModel =
           typeof payload?.model === "string" ? (payload.model as string) : undefined;
         return {

@@ -1,9 +1,10 @@
 import { consoleRequest } from "../data/api";
 import type { ApiErrorShape } from "../data/api";
 // Console-owned device-poll DTO; token material remains provider-internal.
-import type { AccountHealthEventRecord, ByokConnectionTestRequest, ByokConnectionTestResult, CreateProviderAccountBatchResult, CreateProviderAccountRequest, CreateProviderRequest, OAuthDevicePollResponse as OAuthDevicePollResult, ProbeAllAccountsResult, ProbeModelRequest, ProbeModelResult, ProviderAccountResponse, ProviderAccountsExportResponse, ProviderResponse, SetModelEnabledRequest, UpdateProviderAccountRequest, UpdateProviderRequest } from "../data/contracts";
+import type { AccountHealthEventRecord, ByokConnectionTestRequest, ByokConnectionTestResult, CreateProviderAccountBatchResult, CreateProviderAccountRequest, CreateProviderRequest, DiscoverCommitResult, ModelProbeMode, OAuthDevicePollResponse as OAuthDevicePollResult, ProbeAllAccountsResult, ProbeAllModelsRun, ProbeModelRequest, ProbeModelResult, ProviderAccountBulkActionResult, ProviderAccountResponse, ProviderAccountsExportResponse, ProviderResponse, SetModelEnabledRequest, UpdateProviderAccountRequest, UpdateProviderRequest } from "../data/contracts";
 import { queryKeys } from "../data/query-keys";
 import { assertModels, assertProvider, assertProviders, querySignal } from "../data/assert";
+import { assertDiscoverModels } from "../data/assert";
 import { DASHBOARD_QUERY_OPTIONS, POLL } from "../data/query-policy";
 import { getErrorMessage } from "../data/api";
 import { toast } from "../lib/toast";
@@ -519,6 +520,58 @@ export function useRecoverAccount() {
   });
 }
 
+/** Result of a manual OAuth token refresh (`POST .../refresh-token`). */
+export interface RefreshAccountTokenResult {
+  readonly ok: boolean;
+  /** Status re-read server-side after the attempt; never assumed. */
+  readonly statusAfter: string;
+  readonly tokenRefreshed?: boolean;
+  readonly expiresAt?: string;
+  readonly refreshedAt?: string;
+  readonly error?: string;
+  readonly category?: string;
+}
+
+/**
+ * Manually refreshes one OAuth account's token. Available for every status,
+ * `disabled` included — the server never re-enables an account from a refresh,
+ * so the caller must re-read the account list (the toast for a disabled
+ * account says "remains disabled").
+ */
+export function useRefreshAccountToken() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    RefreshAccountTokenResult,
+    ApiErrorShape,
+    { providerId: string; accountId: string }
+  >({
+    mutationFn: ({ providerId, accountId }) =>
+      consoleRequest<RefreshAccountTokenResult>(
+        `/providers/${encodeURIComponent(providerId)}/accounts/${encodeURIComponent(accountId)}/refresh-token`,
+        { method: "POST", body: "{}" },
+      ),
+    onSuccess: async (result, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.providers.accounts(variables.providerId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.providers.healthEvents(variables.providerId, variables.accountId),
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.providers.all }),
+      ]);
+      toast.success(
+        result.statusAfter === "disabled"
+          ? "Token refreshed — account remains disabled"
+          : "Token refreshed",
+      );
+    },
+    onError: (error) => {
+      toast.error("Could not refresh the token.", getErrorMessage(error));
+    },
+  });
+}
+
 /**
  * Deletes one account's health & error log, from its own modal.
  *
@@ -851,6 +904,149 @@ export function useDeleteProvider() {
     },
     onError: (error) => {
       toast.error("Failed to delete provider", getErrorMessage(error));
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// C6 additions (areas 02 / 05 / 06 / 07). Everything above this line is untouched.
+// ---------------------------------------------------------------------------
+
+import type { ModelWarning } from "../data/contracts";
+
+/**
+ * Declaration merging, not an edit of the interface above: this file is
+ * append-only for C6. `null` clears every warning, absent leaves the stored
+ * array alone — the same semantics the other metadata fields use.
+ */
+export interface ModelMetadataPayload {
+  readonly warnings?: readonly ModelWarning[] | null;
+}
+
+/**
+ * One tenant-scoped `POST .../accounts/actions/*` action, with the shared
+ * invalidation cluster every account mutation needs plus the quota tree.
+ * `deleted` ids additionally lose their per-account quota cache — a deleted
+ * row has no meaningful cached value to revalidate.
+ */
+function useProviderAccountAction(path: string, label: string) {
+  const queryClient = useQueryClient();
+  return useMutation<ProviderAccountBulkActionResult, ApiErrorShape, { providerId: string }>({
+    mutationFn: ({ providerId }) =>
+      consoleRequest<ProviderAccountBulkActionResult>(
+        `/providers/${encodeURIComponent(providerId)}/accounts/actions/${path}`,
+        { method: "POST", body: "{}" },
+      ),
+    onSuccess: async (result, variables) => {
+      const deleted = result.deleted ?? [];
+      for (const accountId of deleted) {
+        queryClient.removeQueries({ queryKey: queryKeys.quota.account(accountId), exact: true });
+      }
+      await Promise.all([
+        invalidateProviderAccounts(queryClient, variables.providerId),
+        queryClient.invalidateQueries({ queryKey: queryKeys.quota.all }),
+      ]);
+      const changed = deleted.length > 0 ? deleted.length : result.updated;
+      toast.success(
+        label,
+        `${changed} account${changed === 1 ? "" : "s"}${
+          result.globalSkipped > 0 ? ` · ${result.globalSkipped} shared skipped` : ""
+        }`,
+      );
+    },
+    onError: (error) => {
+      toast.error(`${label} failed`, getErrorMessage(error));
+    },
+  });
+}
+
+/** Disables every account on one provider that is currently cooling down. */
+export function useDisableProviderCooldowns() {
+  return useProviderAccountAction("disable-cooldowns", "Cooldown accounts disabled");
+}
+
+/** Deletes the provider's `policy_blocked_banned` accounts (strictly that category). */
+export function useDeleteProviderBanned() {
+  return useProviderAccountAction("delete-banned", "Banned accounts deleted");
+}
+
+/**
+ * Read-only discovery roster. Open-driven: `enabled` is false until the modal
+ * is mounted, `staleTime: 0` avoids showing a roster fetched for an earlier
+ * credential/plan, and no background poll — the account behind the fetch can
+ * change, so one open = one honest fetch (D27).
+ */
+export function useDiscoverModelCandidates(providerId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.providers.modelDiscovery(providerId),
+    queryFn: (context) =>
+      consoleRequest<unknown>(
+        `/providers/${encodeURIComponent(providerId ?? "")}/models/discover`,
+        { signal: querySignal(context) },
+      ).then(assertDiscoverModels),
+    enabled: Boolean(providerId),
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Commits a selected subset of the discovery roster. The server re-runs
+ * discovery and intersects, so the client never supplies per-model metadata —
+ * the cap (100, D29) is enforced here too so the operator sees it before the
+ * request leaves.
+ */
+export function useCommitDiscoveredModels() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    DiscoverCommitResult,
+    ApiErrorShape,
+    { providerId: string; modelIds: readonly string[] }
+  >({
+    mutationFn: ({ providerId, modelIds }) =>
+      consoleRequest<DiscoverCommitResult>(
+        `/providers/${encodeURIComponent(providerId)}/models/discover/commit`,
+        { method: "POST", body: JSON.stringify({ modelIds: [...modelIds] }) },
+      ),
+    onSuccess: async (result, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.providers.models(variables.providerId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.providers.modelDiscovery(variables.providerId) }),
+      ]);
+      toast.success(
+        "Models added",
+        `${result.committed.length} model(s) registered from ${variables.providerId}${
+          result.skipped.length > 0 ? ` · ${result.skipped.length} skipped` : ""
+        }`,
+      );
+    },
+    onError: (error) => {
+      toast.error("Failed to add models", getErrorMessage(error));
+    },
+  });
+}
+
+/**
+ * Batched connectivity test for every registered model of one provider.
+ * `mode` travels with the request (absent would mean `detail`); the route
+ * returns one ok/fail + latency row per model.
+ */
+export function useProbeAllModels() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    ProbeAllModelsRun,
+    ApiErrorShape,
+    { providerId: string; mode: ModelProbeMode }
+  >({
+    mutationFn: ({ providerId, mode }) =>
+      consoleRequest<ProbeAllModelsRun>(
+        `/providers/${encodeURIComponent(providerId)}/models/test-models`,
+        { method: "POST", body: JSON.stringify({ mode }) },
+      ),
+    onSettled: async (_result, _error, variables) => {
+      await invalidateProviderAccounts(queryClient, variables.providerId);
     },
   });
 }

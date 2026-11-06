@@ -432,6 +432,11 @@ export const models = pgTable(
     reasoning: boolean("reasoning").notNull().default(false),
     toolCall: boolean("tool_call").notNull().default(false),
     cost: jsonb("cost"),
+    // Display-only warning metadata for this row: Postgres `jsonb` (SQLite
+    // `text` carrying the JSON string), nullable, `NULL` = no warnings. Shape:
+    // `{ warnings: [{ kind, message, severity?, updatedAt? }] }`. Part of the
+    // provider-account model-update proposal §3.4 area 06; not read by routing.
+    warningMetadata: jsonb("warning_metadata"),
     source: text("source"),
     sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
     enabled: boolean("enabled").notNull().default(true),
@@ -1288,6 +1293,19 @@ export interface ConsoleSettingsPreferences {
    * placeholder behavior.
    */
   visionHandoffModels?: readonly string[];
+  /**
+   * Auto-disable provider accounts that keep failing with upstream rate-limit
+   * or quota verdicts. Off by default: without it, those failures land on a
+   * per-model/account cooldown and the account stays rotatable.
+   */
+  autoDisableRateLimited?: boolean;
+  /**
+   * Modelprobe mode: `detail` (full identity probe) or `fast` (minimal
+   * 32-token check). `detail` when unset.
+   */
+  modelProbeMode?: "fast" | "detail";
+  /** Fast-probe timeout in seconds; `null`/absent means the built-in default (10). */
+  modelProbeFastTimeoutSeconds?: number | null;
 }
 
 export const consoleSettings = pgTable("console_settings", {

@@ -10,6 +10,7 @@
 import { isRecord } from "../../protocol/codecs";
 import { GatewayError } from "../../protocol/gateway-error";
 import { BUDDY_PROVIDER_IDS } from "../provider-metadata";
+import type { AccountTier } from "./account-tier";
 import { parseProviderResetDuration, parseUpstreamBackoff } from "../../protocol/upstream-parsing";
 import {
   resolveAccountAuthRejectedCooldownMs,
@@ -259,6 +260,12 @@ export interface AccountFailureEvidence {
    * limit the provider said resets in 23 days.
    */
   readonly upstreamBody?: unknown;
+  /**
+   * The account's tier, derived from its plan (`mapPlanToTier`). Read only by
+   * the writer when it resolves tier-aware cooldown rules; the classifier
+   * itself does not branch on it.
+   */
+  readonly accountTier?: AccountTier;
 }
 
 export interface AccountErrorClassification {
@@ -299,6 +306,14 @@ export interface AccountErrorClassification {
    * apart — it needs to know whether to count the hit and escalate the window.
    */
   readonly modelUnsupported?: boolean;
+  /**
+   * Where the cooldown duration came from (D18). A duration resolved from a
+   * tier/provider rule (`provider-rule`) is a policy decision and must NOT go
+   * through `escalateFallbackCooldown` — the 1h escalation cap would cut the
+   * 24h Trae rule down to an hour on the first failure. Only a pure fallback
+   * (`fallback`) escalates.
+   */
+  readonly ruleSource?: "provider-rule" | "fallback";
 }
 
 /**
@@ -342,6 +357,26 @@ export function escalateFallbackCooldown(
   if (providerStated || cooldownMs <= 0) return cooldownMs;
   const level = Math.min(Math.max(0, consecutiveFailures), COOLDOWN_ESCALATION_MAX_LEVEL);
   return Math.min(cooldownMs * 2 ** level, resolveAccountCooldownEscalationMaxMs());
+}
+
+/**
+ * Returns a cooldown duration with the D18 escalation split applied.
+ *
+ * A duration that came from a tier/provider rule (`ruleSource === "provider-rule"`)
+ * is a policy decision and must never pass through
+ * {@link escalateFallbackCooldown}: the 1h cap would truncate the 24h Trae
+ * free-tier rule to one hour on the first failure. Only a pure fallback
+ * (`ruleSource === "fallback"`, or unset for callers that predate the split)
+ * escalates.
+ */
+export function applyRuleEscalation(
+  cooldownMs: number,
+  providerStated: boolean,
+  consecutiveFailures: number,
+  ruleSource: "provider-rule" | "fallback" | undefined,
+): number {
+  if (ruleSource === "provider-rule") return cooldownMs;
+  return escalateFallbackCooldown(cooldownMs, providerStated, consecutiveFailures);
 }
 
 /**

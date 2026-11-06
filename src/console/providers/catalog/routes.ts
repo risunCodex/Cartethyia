@@ -2,9 +2,10 @@ import { consoleErrorHandler } from "../../shared/errors";
 import { literalUnion } from "../../shared/elysia-schema";
 import { Elysia, t, type AnyElysia } from "elysia";
 import { SERVICE_KINDS, WIRE_FAMILIES } from "../../../protocol/canonical-model";
-import { PROBE_REASONING_EFFORTS } from "../../../providers/discovery/discovery-types";
+import { PROBE_MODES, PROBE_REASONING_EFFORTS } from "../../../providers/discovery/discovery-types";
 import {
   ACCOUNT_STATUSES,
+  DISCOVER_MODEL_COMMIT_MAX,
   CREDENTIAL_KINDS,
   CREDENTIAL_MODES,
 } from "./contracts";
@@ -18,6 +19,7 @@ import type {
   ByokConnectionTestRequest,
   CreateProviderAccountRequest,
   CreateProviderRequest,
+  DiscoverModelCommitRequest,
   ProbeModelRequest,
   RegisterModelsRequest,
   SetModelEnabledRequest,
@@ -110,11 +112,27 @@ const modelMetadataOverrideBody = t.Object({
   image: t.Optional(t.Boolean()),
   reasoning: t.Optional(t.Boolean()),
   toolCall: t.Optional(t.Boolean()),
+  warnings: t.Optional(
+    t.Union([
+      t.Null(),
+      t.Array(
+        t.Object({
+          kind: t.String(),
+          message: t.String(),
+          severity: t.Optional(literalUnion(["info", "warn", "critical"])),
+          updatedAt: t.Optional(t.String()),
+        }),
+      ),
+    ]),
+  ),
 });
 const registerModelsBody = t.Object({
   modelIds: t.Array(t.String()),
   wireFamily: t.Optional(t.String()),
   metadata: t.Optional(modelMetadataOverrideBody),
+});
+const discoverCommitBody = t.Object({
+  modelIds: t.Array(t.String(), { minItems: 1, maxItems: DISCOVER_MODEL_COMMIT_MAX }),
 });
 const probeModelBody = t.Object({
   modelId: t.String(),
@@ -127,6 +145,7 @@ const probeModelBody = t.Object({
   maxOutputTokens: t.Optional(t.Integer({ minimum: 1, maximum: 131072 })),
   stream: t.Optional(t.Boolean()),
   surface: t.Optional(literalUnion(["default", "cosy", "grpc", "ide"])),
+  mode: t.Optional(literalUnion(PROBE_MODES)),
 });
 const byokConnectionTestBody = t.Object({
   baseUrl: t.String(),
@@ -275,9 +294,42 @@ export function createProviderCatalogRoutes(config: ProviderCatalogConfig): AnyE
         );
 },
     )
-    .post("/:providerId/models/test-models", async ({ request, params }) => {
-      return await modelFactory.probeAllModels(config.accessResolver(request), params.providerId);
-})
+    .post(
+      "/:providerId/models/test-models",
+      { body: t.Optional(t.Object({ mode: t.Optional(literalUnion(PROBE_MODES)) })) },
+      async ({ request, params, body }) => {
+        return await modelFactory.probeAllModels(
+          config.accessResolver(request),
+          params.providerId,
+          body?.mode,
+        );
+      },
+    )
+    // Discovery must be declared before `/:providerId/models/discover/commit`
+    // would be shadowed by a dynamic segment; Elysia resolves both here.
+    .get("/:providerId/models/discover", async ({ request, params }) => {
+      return await modelFactory.listDiscoveryCandidates(
+        config.accessResolver(request),
+        params.providerId,
+      );
+    })
+    .post(
+      "/:providerId/models/discover/commit",
+      { body: discoverCommitBody },
+      async ({ request, params, body }) => {
+        return await modelFactory.commitDiscoveredModels(
+          config.accessResolver(request),
+          params.providerId,
+          (body as DiscoverModelCommitRequest).modelIds,
+        );
+      },
+    )
+    .post("/:providerId/accounts/actions/disable-cooldowns", async ({ request, params }) => {
+      return await factory.disableCooldowns(config.accessResolver(request), params.providerId);
+    })
+    .post("/:providerId/accounts/actions/delete-banned", async ({ request, params }) => {
+      return await factory.deleteBanned(config.accessResolver(request), params.providerId);
+    })
     .post(
       "/:providerId/accounts/probe",
       { body: probeModelBody },
@@ -408,6 +460,14 @@ export function createProviderCatalogRoutes(config: ProviderCatalogConfig): AnyE
         params.accountId,
       );
       return recovered;
+})
+    .post("/:providerId/accounts/:accountId/refresh-token", async ({ request, params }) => {
+      const refreshed = await factory.refreshAccountToken(
+        config.accessResolver(request),
+        params.providerId,
+        params.accountId,
+      );
+      return refreshed;
 })
     .post(
       "/:providerId/accounts/export",

@@ -15,6 +15,7 @@ import {
   ConsoleDomainError,
   requireGlobalAdmin,
   requireTenantAnyScope,
+  requireTenantScope,
 } from "../../shared/errors";
 import { cachedReadWithEtag, conditionalResponse } from "../../shared/read-through-cache";
 import type { RedisClient } from "../../../persistence/redis";
@@ -27,7 +28,8 @@ import type { OAuthLoginField } from "../../../providers/authentication/oauth-fl
 import { providerCredentialHint, providerCredentialUrl, providerDisplayName, providerHasAdapterUserAgent, providerOperatorNotice, providerServiceKinds, type CompatibilityProfile } from "../../../providers/provider-metadata";
 import type { AccountHealthEventRecord } from "../../../providers/operations/account-health-service";
 import { healthEventBuffer } from "../../../persistence/health-event-flush";
-import { CREDENTIAL_MODES, PROVIDER_READ_SCOPES, PROVIDER_WRITE_SCOPES, type BuddyGrowthTaskLedgerEntry } from "./contracts";
+import { CREDENTIAL_MODES, PROVIDER_READ_SCOPES, PROVIDER_WRITE_SCOPES, type BuddyGrowthTaskLedgerEntry, type ProviderAccountBulkActionResult, type RefreshAccountTokenResponse } from "./contracts";
+import type { RefreshAccountStatusOutcome } from "../../../providers/operations/account-refresh-status";
 import { enqueueCheckin } from "../../../workers/daily-checkin";
 import {
   isWireFamily,
@@ -182,6 +184,15 @@ export interface ProviderCatalogConfig {
     providerId: string,
     accountId: string,
   ) => Promise<{ readonly accessToken: string; readonly refreshToken?: string }>;
+  /**
+   * One-shot manual OAuth token refresh (area 04). Provided by the composition
+   * root; when absent the refresh-token route answers 501 rather than silently
+   * reporting success.
+   */
+  readonly refreshAccountStatus?: (
+    accountId: string,
+    opts?: { readonly origin?: "ui" | "sweep" | "dispatch" },
+  ) => Promise<RefreshAccountStatusOutcome>;
 }
 async function attachProviderCapabilities(
   response: ProviderResponse,
@@ -714,6 +725,101 @@ export function createProviderCatalogOperations(config: ProviderCatalogConfig) {
         });
         await config.snapshotInvalidator?.invalidate();
         return { success: true };
+      },
+    /**
+     * One UPDATE over the tenant's cooling accounts, with `cooldownUntil` and
+     * `modelCooldowns` preserved as evidence (D07/D08). Shared rows are not
+     * writable here: the platform-admin pair of routes owns them (D10).
+     */
+    async disableCooldowns(
+      access: AccessDecision | undefined,
+      providerId: string,
+    ): Promise<ProviderAccountBulkActionResult> {
+      const a = requireTenantAnyScope(access, PROVIDER_WRITE_SCOPES);
+      const result = await config.store.disableCooldowns(a.tenantId, providerId);
+      await config.auditSink?.record({
+        access: a,
+        action: "provider_account.bulk_disabled_cooldowns",
+        target: providerId,
+        detail: { providerId, updated: result.updated, globalSkipped: result.globalSkipped },
+      });
+      await config.snapshotInvalidator?.invalidate();
+      return { ok: true, updated: result.updated, globalSkipped: result.globalSkipped };
+    },
+    /**
+     * One DELETE over the tenant's strictly banned accounts (D12). Empty
+     * matches are a successful no-op, so a second click is idempotent.
+     */
+    async deleteBanned(
+      access: AccessDecision | undefined,
+      providerId: string,
+    ): Promise<ProviderAccountBulkActionResult> {
+      const a = requireTenantAnyScope(access, PROVIDER_WRITE_SCOPES);
+      const result = await config.store.deleteBanned(a.tenantId, providerId);
+      await config.auditSink?.record({
+        access: a,
+        action: "provider_account.bulk_deleted_banned",
+        target: providerId,
+        detail: {
+          providerId,
+          deleted: result.deleted ?? [],
+          missing: result.missing ?? [],
+          globalSkipped: result.globalSkipped,
+        },
+      });
+      await config.snapshotInvalidator?.invalidate();
+      return {
+        ok: true,
+        updated: 0,
+        deleted: result.deleted ?? [],
+        missing: result.missing ?? [],
+        globalSkipped: result.globalSkipped,
+      };
+    },
+    async refreshAccountToken(
+        access: AccessDecision | undefined,
+        providerId: string,
+        accountId: string,
+      ): Promise<RefreshAccountTokenResponse> {
+        // The refresh changes no routing state and is a per-account operator
+        // action, so the browser session's own write scope is sufficient.
+        const a = requireTenantScope(access, "dashboard:write");
+        // 404 unless the account exists and belongs to this provider/tenant.
+        const accounts = await config.store.listAccounts(a.tenantId, providerId);
+        const owned = accounts.find((account) => account.id === accountId && account.tenantId === a.tenantId);
+        if (!owned)
+          throw new ConsoleDomainError("account_not_found", 404, `Account ${accountId} not found`);
+        // 409 for a static token (nothing to re-mint), 400 for non-OAuth —
+        // before calling the refresher, so the row is never touched on a
+        // rejectable request.
+        if (owned.staticToken === true)
+          throw new ConsoleDomainError("static_token", 409, "Account carries a static token that cannot be refreshed");
+        if (owned.credentialKind !== "oauth")
+          throw new ConsoleDomainError("not_oauth", 400, "Account is not OAuth; token refresh is not applicable");
+        if (!config.refreshAccountStatus)
+          throw new ConsoleDomainError("refresh_unavailable", 501, "Token refresh is not configured on this host");
+        const outcome = await config.refreshAccountStatus(accountId, { origin: "ui" });
+        await config.auditSink?.record({
+          access: a,
+          action: "provider_account.token_refreshed",
+          target: accountId,
+          detail: {
+            providerId,
+            ok: outcome.ok,
+            statusAfter: outcome.statusAfter,
+            ...(outcome.error === undefined ? {} : { error: outcome.error }),
+          },
+        });
+        await config.snapshotInvalidator?.invalidate();
+        return {
+          ok: outcome.ok,
+          statusAfter: outcome.statusAfter,
+          ...(outcome.tokenRefreshed ? { tokenRefreshed: true } : {}),
+          ...(outcome.expiresAt === undefined ? {} : { expiresAt: outcome.expiresAt }),
+          ...(outcome.refreshedAt === undefined ? {} : { refreshedAt: outcome.refreshedAt }),
+          ...(outcome.error === undefined ? {} : { error: outcome.error }),
+          ...(outcome.category === undefined ? {} : { category: outcome.category }),
+        };
       },
     /**
      * Exports the requested accounts with their decrypted credentials.

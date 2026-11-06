@@ -1,0 +1,11 @@
+-- Adds `models.warning_metadata` (text, nullable) — display-only warning
+-- metadata for a model row, stored as a JSON string in SQLite (the dialect's
+-- jsonb analogue; Postgres keeps the same column as jsonb). NULL means "no
+-- warnings"; the column is not read by routing. Part of the provider-account
+-- model-update proposal §3.4 (area 06).
+--
+-- Idempotency comes from the migration ledger, not from the statement: the
+-- runner records the file inside the same transaction, so a file that has
+-- already run is never re-executed. The baseline is generated from
+-- `0000_baseline.sql` alone and does not carry this column.
+ALTER TABLE "models" ADD COLUMN "warning_metadata" text;

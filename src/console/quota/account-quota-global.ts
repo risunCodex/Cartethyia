@@ -1,6 +1,7 @@
 import { t } from "elysia";
 import type { Elysia } from "elysia";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { isSqliteDatabase } from "../../persistence/dialect";
 import { adminAuditLog, providerAccounts } from "../../persistence/schema";
 import { requireGlobalAdmin } from "../shared/errors";
 import {
@@ -26,6 +27,24 @@ import {
   type AccountQuotaRoutesDeps,
   type AccountStatus,
 } from "./account-quota-shared";
+import type { ProviderAccountBulkActionResult } from "../providers/catalog/contracts";
+
+/**
+ * The same live-cooldown predicate as the tenant-scoped store, evaluated in
+ * SQL so one statement covers the whole shared-account set. `status='cooldown'`
+ * counts even when its deadline elapsed; a live `model_cooldowns` entry counts
+ * even while `status` is still `active` (D07).
+ */
+function globalLiveCooldownPredicate(database: unknown): ReturnType<typeof and> {
+  const nowIso = new Date().toISOString();
+  const liveModelCooldown = isSqliteDatabase(database)
+    ? sql`EXISTS (SELECT 1 FROM json_each(${providerAccounts.modelCooldowns}) AS entry WHERE json_valid(${providerAccounts.modelCooldowns}) AND json_type(${providerAccounts.modelCooldowns}) = 'object' AND entry.value > ${nowIso})`
+    : sql`EXISTS (SELECT 1 FROM jsonb_each_text(${providerAccounts.modelCooldowns}) AS entry WHERE jsonb_typeof(${providerAccounts.modelCooldowns}) = 'object' AND entry.value > ${nowIso})`;
+  return and(
+    isNull(providerAccounts.tenantId),
+    sql`${providerAccounts.status} = 'cooldown' OR ${providerAccounts.cooldownUntil} > ${nowIso} OR ${liveModelCooldown}`,
+  )!;
+}
 
 /**
  * Registers the platform-admin account/quota routes onto `app`. Every route here
@@ -38,6 +57,47 @@ export function registerAccountQuotaGlobalRoutes(
   refreshDeps: QuotaRefreshDeps,
 ): void {
   const { db, accessResolver, redis, snapshotInvalidator } = deps;
+  /**
+   * The two bulk actions are one statement each, scoped strictly to shared
+   * rows. Neither action takes a provider filter: the global-admin surface
+   * lists shared accounts across providers, and the same health predicate
+   * defines the target set everywhere.
+   */
+  const runGlobalBulk = async (
+    kind: "disable" | "delete",
+  ): Promise<ProviderAccountBulkActionResult> => {
+    if (kind === "disable") {
+      const updated = await db
+        .update(providerAccounts)
+        .set({ status: "disabled" })
+        .where(globalLiveCooldownPredicate(db))
+        .returning({ id: providerAccounts.id });
+      invalidateCredentialCaches(updated.map((row) => row.id));
+      await snapshotInvalidator?.invalidate();
+      return { ok: true, updated: updated.length, globalSkipped: 0 };
+    }
+    const deleted = await db
+      .delete(providerAccounts)
+      .where(
+        and(
+          isNull(providerAccounts.tenantId),
+          eq(providerAccounts.status, "disabled"),
+          eq(providerAccounts.lastErrorCategory, "policy_blocked_banned"),
+        ),
+      )
+      .returning({ id: providerAccounts.id });
+    const deletedIds = deleted.map((row) => row.id);
+    invalidateCredentialCaches(deletedIds);
+    await invalidateQuotaCaches(GLOBAL_QUOTA_LENS, deletedIds, redis);
+    await snapshotInvalidator?.invalidate();
+    return {
+      ok: true,
+      updated: 0,
+      deleted: deletedIds,
+      missing: [],
+      globalSkipped: 0,
+    };
+  };
   app
     .get("/global/accounts", async ({ request }) => {
       requireGlobalAdmin(accessResolver(request));
@@ -156,6 +216,34 @@ export function registerAccountQuotaGlobalRoutes(
         detail: { deleted: deletedIds, missing },
       });
       return { ok: true, deleted: deletedIds, missing };
+    })
+    /**
+     * Global counterparts of the provider-detail bulk actions (D10): shared
+     * accounts carry `tenant_id IS NULL`, so the tenant-scoped pair can never
+     * match them. Both are one statement, one audit row, one snapshot
+     * invalidation, and authorize through `requireGlobalAdmin`.
+     */
+    .post("/global/accounts/actions/disable-cooldowns", async ({ request }) => {
+      const access = requireGlobalAdmin(accessResolver(request));
+      const { ok, updated, globalSkipped } = await runGlobalBulk("disable");
+      await db.insert(adminAuditLog).values({
+        actor: access.admissionIdentity,
+        action: "provider_account.bulk_disabled_cooldowns",
+        target: "global",
+        detail: { updated, globalSkipped },
+      });
+      return { ok, updated, globalSkipped };
+    })
+    .post("/global/accounts/actions/delete-banned", async ({ request }) => {
+      const access = requireGlobalAdmin(accessResolver(request));
+      const { ok, updated, deleted, missing, globalSkipped } = await runGlobalBulk("delete");
+      await db.insert(adminAuditLog).values({
+        actor: access.admissionIdentity,
+        action: "provider_account.bulk_deleted_banned",
+        target: "global",
+        detail: { deleted: deleted ?? [], missing: missing ?? [], globalSkipped },
+      });
+      return { ok, updated, deleted: deleted ?? [], missing: missing ?? [], globalSkipped };
     })
     .post("/global/accounts/:id/quota/refresh", async ({ request, params, set }) => {
       const access = requireGlobalAdmin(accessResolver(request));

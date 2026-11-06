@@ -204,7 +204,9 @@ dbDescribe("OAuth refresh: automatic static-token detection", () => {
     const recovered = await readAccount(recoverable);
     expect(recovered.staticToken).toBe(true);
     expect(recovered.status).toBe("disabled");
-    expect(recovered.lastErrorCategory).toBeNull();
+    // D24: a disabled row keeps its error category — the static annotation
+    // must not erase the diagnosis behind the disable.
+    expect(recovered.lastErrorCategory).toBe("oauth_revoked");
     const parked = await readAccount(dead);
     expect(parked.staticToken).toBe(false);
     expect(parked.status).toBe("disabled");

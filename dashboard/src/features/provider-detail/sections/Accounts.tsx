@@ -12,6 +12,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { consoleRequest } from "../../../data/api";
 import { mapWithConcurrency } from "../../../lib/concurrency";
+import { useSetAccountsActiveBatch } from "../../../hooks/quota";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { Input } from "../../../components/ui/input";
@@ -19,9 +20,10 @@ import { Select } from "../../../components/ui/select";
 import { Stack } from "../../../components/ui/stack";
 import { EmptyState } from "../../../components/ui/state";
 import {
+  useDeleteProviderBanned,
+  useDisableProviderCooldowns,
   useExportProviderAccounts,
   useRecoverAccount,
-  useUpdateProviderAccount,
 } from "../../../hooks/providers";
 import { useProviderAccountInflight } from "../../../hooks/routing";
 import { useQuotaOverview, type AccountTestResult, type QuotaWindow } from "../../../hooks/quota";
@@ -32,6 +34,30 @@ import type { ProviderAccountResponse } from "../../../data/contracts";
 import { AccountRow } from "./AccountRow";
 export { AccountStatusBadge } from "./AccountStatusBadge";
 export { AddAccountModal } from "./AddAccountModal";
+
+/**
+ * Cooldown is the union the badge uses: status, an account-wide deadline still
+ * in the future, or any live per-model backoff. A pool-as-account row is never
+ * a target — it has no credential to disable or delete.
+ */
+export function accountHasCooldown(account: ProviderAccountResponse): boolean {
+  if (account.kind === "pool") return false;
+  if (account.status === "cooldown") return true;
+  if (account.cooldownUntil !== undefined && account.cooldownUntil !== null) {
+    const until = Date.parse(account.cooldownUntil);
+    if (Number.isFinite(until) && until > Date.now()) return true;
+  }
+  return Object.keys(account.modelCooldowns ?? {}).length > 0;
+}
+
+/** Strictly policy-banned disabled accounts (D12); auth failures need a new credential. */
+export function accountIsBanned(account: ProviderAccountResponse): boolean {
+  return (
+    account.kind !== "pool" &&
+    account.status === "disabled" &&
+    account.lastErrorCategory === "policy_blocked_banned"
+  );
+}
 
 function accountStatusRank(status: string): number {
   if (status === "active") return 0;
@@ -95,7 +121,9 @@ export function AccountsList({
   readonly onGrokProbe?: () => void;
 }): ReactNode {
   const queryClient = useQueryClient();
-  const update = useUpdateProviderAccount();
+  const setActiveBatch = useSetAccountsActiveBatch();
+  const disableCooldowns = useDisableProviderCooldowns();
+  const deleteBanned = useDeleteProviderBanned();
   const recover = useRecoverAccount();
   const exportAccounts = useExportProviderAccounts();
   const inflightQuery = useProviderAccountInflight(providerId);
@@ -122,6 +150,7 @@ export function AccountsList({
    */
   const [testAllProgress, setTestAllProgress] = useState<{ done: number; total: number } | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bannedDeleteOpen, setBannedDeleteOpen] = useState(false);
 
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = useMemo(() => {
@@ -152,6 +181,10 @@ export function AccountsList({
   const selectionHasDisabled = selectedAccounts.some((account) => account.status === "disabled");
   const selectionHasEnabled = selectedAccounts.some((account) => account.status !== "disabled");
   const nothingSelected = selectedAccounts.length === 0;
+  // Filter-independent: the two provider-wide actions name their whole target
+  // set, not the current selection or the search box.
+  const cooldownAccounts = useMemo(() => accounts.filter(accountHasCooldown), [accounts]);
+  const bannedAccounts = useMemo(() => accounts.filter(accountIsBanned), [accounts]);
 
   const toggleSelect = (accountId: string, next: boolean) => {
     setSelected((prev) => {
@@ -241,14 +274,49 @@ const TEST_ALL_CONCURRENCY = 3;
     toast.success("Test complete", `${realAccounts.length} account${realAccounts.length === 1 ? "" : "s"} tested`);
   };
 
-  const bulkSetActive = (active: boolean) =>
-    runBulk(active ? "Enable" : "Disable", (account) =>
-      update.mutateAsync({
-        providerId,
-        accountId: account.id,
-        request: { status: active ? "active" : "disabled" },
-      }),
-    );
+  /**
+   * One `PATCH /accounts/batch` for the whole selection (F1). It used to fan
+   * out one PATCH per account, which reloaded the list N times and left a
+   * partially-changed selection on a mid-run failure. Shared rows keep the
+   * existing global single-account PATCH — the tenant batch cannot match them.
+   */
+  const bulkSetActive = async (active: boolean) => {
+    const owned = selectedAccounts.filter((account) => account.tenantId !== null);
+    const shared = selectedAccounts.filter((account) => account.tenantId === null);
+    if (owned.length === 0 && shared.length === 0) return;
+    setBulkBusy(true);
+    let failed = 0;
+    try {
+      if (owned.length > 0) {
+        try {
+          await setActiveBatch.mutateAsync({ ids: owned.map((account) => account.id), active });
+        } catch {
+          failed += owned.length;
+        }
+      }
+      const globalResults = await mapWithConcurrency(shared, TEST_ALL_CONCURRENCY, async (account) => {
+        try {
+          await consoleRequest(`/global/accounts/${encodeURIComponent(account.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ active }),
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      failed += globalResults.filter((result) => result.status === "rejected" || result.value === false).length;
+      const ok = selectedAccounts.length - failed;
+      if (failed === 0) {
+        toast.success(`${active ? "Enable" : "Disable"} complete`, `${ok} account${ok === 1 ? "" : "s"}`);
+      } else {
+        toast.error(`${active ? "Enable" : "Disable"} partially failed`, `${ok} succeeded, ${failed} failed`);
+      }
+    } finally {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.providers.accounts(providerId) });
+      setBulkBusy(false);
+    }
+  };
 
   const bulkExport = async () => {
     if (selectedAccounts.length === 0) return;
@@ -278,24 +346,61 @@ const TEST_ALL_CONCURRENCY = 3;
     }
   };
 
+  /**
+   * One `POST /accounts/batch-delete` for tenant-owned rows (F1), one global
+   * batch-delete for shared rows. The per-account DELETE fan-out is gone: it
+   * cost one credential/quota-cache pass per row and could leave half a
+   * selection deleted with no way to tell which half.
+   */
   const bulkDelete = async () => {
-    await runBulk("Delete", async (account) => {
-      // Shared accounts carry `tenant_id IS NULL` and live under the
-      // global-admin route; the tenant-scoped path can never match them.
-      const path =
-        account.tenantId === null
-          ? `/global/accounts/${encodeURIComponent(account.id)}`
-          : `/accounts/${encodeURIComponent(account.id)}`;
-      await consoleRequest(path, { method: "DELETE" });
-      queryClient.removeQueries({ queryKey: queryKeys.quota.account(account.id), exact: true });
-    });
-    setSelected(new Set());
-    setBulkDeleteOpen(false);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.providers.accounts(providerId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.providers.all }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.quota.all }),
-    ]);
+    const owned = selectedAccounts.filter((account) => account.tenantId !== null);
+    const shared = selectedAccounts.filter((account) => account.tenantId === null);
+    const removeQuotaCaches = (ids: readonly string[]) => {
+      for (const id of ids) {
+        queryClient.removeQueries({ queryKey: queryKeys.quota.account(id), exact: true });
+      }
+    };
+    try {
+      if (owned.length > 0) {
+        const result = await consoleRequest<{ ok: boolean; deleted: string[]; missing: string[] }>(
+          "/accounts/batch-delete",
+          { method: "POST", body: JSON.stringify({ accountIds: owned.map((account) => account.id) }) },
+        );
+        removeQuotaCaches(result.deleted);
+      }
+      if (shared.length > 0) {
+        const result = await consoleRequest<{ ok: boolean; deleted: string[]; missing: string[] }>(
+          "/global/accounts/batch-delete",
+          { method: "POST", body: JSON.stringify({ accountIds: shared.map((account) => account.id) }) },
+        );
+        removeQuotaCaches(result.deleted);
+      }
+      setSelected(new Set());
+      setBulkDeleteOpen(false);
+      toast.success("Deleted accounts", `${selectedAccounts.length} account${selectedAccounts.length === 1 ? "" : "s"}`);
+    } catch (err) {
+      toast.error("Delete partially failed", (err as { message?: string }).message ?? "Unable to delete accounts");
+    } finally {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.providers.accounts(providerId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.providers.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.quota.all }),
+      ]);
+    }
+  };
+
+  const runDisableCooldowns = () => {
+    void disableCooldowns.mutateAsync({ providerId });
+  };
+
+  const runDeleteBanned = async () => {
+    try {
+      await deleteBanned.mutateAsync({ providerId });
+      setBannedDeleteOpen(false);
+    } catch {
+      // The hook already toasts the reason; the dialog stays open so the
+      // operator can retry without re-reading the warning.
+    }
   };
 
   return (
@@ -420,6 +525,38 @@ const TEST_ALL_CONCURRENCY = 3;
         >
           Delete
         </Button>
+        {/* Provider-wide actions: always mounted, greyed out when their target
+            set is empty. The count is computed from `accounts`, not the current
+            selection or search filter, so the label says what the action will
+            actually touch. */}
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={<PowerOff size={12} />}
+          disabled={bulkBusy || disableCooldowns.isPending || cooldownAccounts.length === 0}
+          title={
+            cooldownAccounts.length === 0
+              ? "No account is currently cooling down"
+              : `Disable ${cooldownAccounts.length} account(s) in cooldown (account-wide or per-model)`
+          }
+          onClick={runDisableCooldowns}
+        >
+          {`Disable cooldown (${cooldownAccounts.length})`}
+        </Button>
+        <Button
+          size="sm"
+          variant="danger"
+          icon={<Trash2 size={12} />}
+          disabled={bulkBusy || deleteBanned.isPending || bannedAccounts.length === 0}
+          title={
+            bannedAccounts.length === 0
+              ? "No policy-banned account to delete"
+              : `Permanently delete ${bannedAccounts.length} policy-banned account(s)`
+          }
+          onClick={() => setBannedDeleteOpen(true)}
+        >
+          {`Delete banned (${bannedAccounts.length})`}
+        </Button>
         {/* Grok-only: the 407 streaming probe is meaningless on any other
             provider, so it is not merely greyed out elsewhere — it is absent.
             The actions above stay mounted because they are always meaningful
@@ -515,6 +652,17 @@ const TEST_ALL_CONCURRENCY = 3;
         title={`Delete ${selectedAccounts.length} account${selectedAccounts.length === 1 ? "" : "s"}?`}
         message="This permanently removes the selected accounts and their credentials. This cannot be undone."
         confirmLabel="Delete"
+        danger
+      />
+      <ConfirmDialog
+        open={bannedDeleteOpen}
+        onClose={() => {
+          if (!deleteBanned.isPending) setBannedDeleteOpen(false);
+        }}
+        onConfirm={runDeleteBanned}
+        title={`Delete ${bannedAccounts.length} banned account${bannedAccounts.length === 1 ? "" : "s"}?`}
+        message={`This permanently removes ${bannedAccounts.length} disabled account(s) whose last failure was policy_blocked_banned, including their credentials and quota history. This cannot be undone. Accounts disabled for other reasons are left alone.`}
+        confirmLabel="Delete banned"
         danger
       />
     </Stack>

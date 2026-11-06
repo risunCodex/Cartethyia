@@ -268,7 +268,7 @@ describe("gatewayErrorFromStreamError: structured identifiers", () => {
     );
     expect(classified(error)).toBe("context_length_exceeded/413/upstream");
     expect(error?.message).toBe("We're sorry, your context length has exceeded the maximum limit.");
-    expect(detailsWithoutRaw(error)).toEqual({ providerCode: "4026" });
+    expect(detailsWithoutRaw(error)).toEqual({ providerCode: "4026", upstreamMessageAsIs: true });
   });
 
   test("a capacity identifier is a 529 unless the status already says 503", () => {
@@ -329,7 +329,7 @@ describe("gatewayErrorFromStreamError: structured identifiers", () => {
       "label",
     );
     expect(error?.message).toBe("your usage will reset at 2026-10-02 12:00 UTC+8");
-    expect(detailsWithoutRaw(error)).toEqual({ providerCode: "6004" });
+    expect(detailsWithoutRaw(error)).toEqual({ providerCode: "6004", upstreamMessageAsIs: true });
   });
 
   test("a bare-numeric code with no sibling text is still better than nothing", () => {

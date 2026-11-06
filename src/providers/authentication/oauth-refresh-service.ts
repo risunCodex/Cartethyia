@@ -169,6 +169,22 @@ async function releaseLease(
     );
 }
 
+/**
+ * D21 invariant guard: a refresh is not a health verdict, so mutating the
+ * account's `status` here would silently re-enable an account a refresh was
+ * never meant to resurrect. The `.set()` calls in `persistRefreshed` accept
+ * `status` at the type level (it is a column on `provider_accounts`), so the
+ * guard is a runtime assertion that fails loudly in development instead of
+ * letting a future edit change health state from the refresh path.
+ */
+function assertRefreshNeverMutatesStatus(set: Record<string, unknown>): void {
+  if ("status" in set) {
+    throw new Error(
+      "persistRefreshed must never write `status`; a refresh is not a health verdict",
+    );
+  }
+}
+
 /** Persists a successful refresh and releases the lease, fenced on still holding it. */
 async function persistRefreshed(
   db: CartethyiaDatabase,
@@ -177,16 +193,21 @@ async function persistRefreshed(
   result: OAuthTokenRefreshResult,
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
+    // This function must never write `status`; a refresh is not a health
+    // verdict. The guard below makes an accidental status write a loud dev
+    // failure rather than a silent re-enable.
+    const oauthSet = {
+      ...(result.refresh === undefined
+        ? {}
+        : { refreshCiphertext: encryptCredential(result.refresh) }),
+      expiresAt: result.expiresAt,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    };
+    assertRefreshNeverMutatesStatus(oauthSet);
     const leaseRows = await tx
       .update(providerOauthStates)
-      .set({
-        ...(result.refresh === undefined
-          ? {}
-          : { refreshCiphertext: encryptCredential(result.refresh) }),
-        expiresAt: result.expiresAt,
-        leaseOwner: null,
-        leaseExpiresAt: null,
-      })
+      .set(oauthSet)
       .where(
         and(
           eq(providerOauthStates.providerAccountId, accountId),
@@ -195,23 +216,27 @@ async function persistRefreshed(
       )
       .returning({ id: providerOauthStates.providerAccountId });
     if (leaseRows.length === 0) return false;
+    const accountSet = {
+      credentialCiphertext: encryptCredential(result.access),
+      // Only what the refresh reported: a refresher that learned nothing new
+      // leaves the stored configuration alone rather than blanking it.
+      // A learned identity only replaces a default label — an operator's
+      // custom rename is never overwritten. The CASE keeps the read and the
+      // write in one statement, so a concurrent rename cannot lose to the
+      // refresh's learned identity.
+      ...(result.accountLabel === undefined
+        ? {}
+        : {
+          label: sql`CASE WHEN lower(trim(${providerAccounts.label})) = lower(trim(${providerAccounts.providerId})) THEN ${result.accountLabel} ELSE ${providerAccounts.label} END`,
+        }),
+      ...(result.auth_state === undefined ? {} : { authState: result.auth_state }),
+    };
+    // The second half of the D21 invariant: the credential write must never
+    // touch the account's health state either.
+    assertRefreshNeverMutatesStatus(accountSet);
     await tx
       .update(providerAccounts)
-      .set({
-        credentialCiphertext: encryptCredential(result.access),
-        // Only what the refresh reported: a refresher that learned nothing new
-        // leaves the stored configuration alone rather than blanking it.
-        // A learned identity only replaces a default label — an operator's
-        // custom rename is never overwritten. The CASE keeps the read and the
-        // write in one statement, so a concurrent rename cannot lose to the
-        // refresh's learned identity.
-        ...(result.accountLabel === undefined
-          ? {}
-          : {
-            label: sql`CASE WHEN lower(trim(${providerAccounts.label})) = lower(trim(${providerAccounts.providerId})) THEN ${result.accountLabel} ELSE ${providerAccounts.label} END`,
-          }),
-        ...(result.auth_state === undefined ? {} : { authState: result.auth_state }),
-      })
+      .set(accountSet)
       .where(eq(providerAccounts.id, accountId));
     invalidateCredentialCache(accountId);
     return true;
@@ -240,12 +265,21 @@ function buildRefreshContext(row: AccountRow, includeAccessToken: boolean): OAut
 /**
  * Marks an account permanently unusable after a definitive refresh failure,
  * fenced on the lease.
+ *
+ * @param preserveOperatorDisable When true, an account that is already
+ *   `disabled` with no `cooldownUntil` — the operator's own disable — keeps its
+ *   lack of a recovery deadline (D23). A machine disable (this function being
+ *   the machine) always writes a deadline for itself, but it must not convert
+ *   an operator's terminal decision into a recoverable one: adding a deadline
+ *   to an operator-disabled row is what made the Recover button appear on an
+ *   account the operator disabled on purpose.
  */
 async function disableAccount(
   db: CartethyiaDatabase,
   accountId: string,
   owner: string,
   message: string,
+  options: { readonly preserveOperatorDisable?: boolean } = {},
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const leaseRows = await tx
@@ -260,6 +294,22 @@ async function disableAccount(
       .returning({ id: providerOauthStates.providerAccountId });
     if (leaseRows.length === 0) return;
     const disabledRecoveryMs = resolveAccountDisabledRecoveryMs();
+    // D23: read the row before writing so an operator disable (status `disabled`
+    // with no deadline) is not upgraded with a machine recovery deadline. The
+    // read is cheap and the lease already serializes refresh writers.
+    let isOperatorDisable = false;
+    if (options.preserveOperatorDisable === true) {
+      const rows = await tx
+        .select({
+          status: providerAccounts.status,
+          cooldownUntil: providerAccounts.cooldownUntil,
+        })
+        .from(providerAccounts)
+        .where(eq(providerAccounts.id, accountId))
+        .limit(1);
+      const row = rows[0];
+      isOperatorDisable = row?.status === "disabled" && row.cooldownUntil == null;
+    }
     await tx
       .update(providerAccounts)
       .set({
@@ -277,8 +327,10 @@ async function disableAccount(
         // parks the credential for good. The deadline is also what distinguishes
         // this (machine-disabled) from an operator's own disable, which leaves
         // `cooldownUntil` null and is therefore never swept. See
-        // `resolveAccountDisabledRecoveryMs`.
-        ...(disabledRecoveryMs > 0
+        // `resolveAccountDisabledRecoveryMs`. An operator-disabled row keeps its
+        // `null` deadline (D23): the machine must not make the operator's
+        // terminal disable look recoverable.
+        ...(!isOperatorDisable && disabledRecoveryMs > 0
           ? { cooldownUntil: new Date(Date.now() + disabledRecoveryMs) }
           : {}),
       })
@@ -299,20 +351,33 @@ async function disableAccount(
  * operator or an explicit recovery may re-enable it), while an `active` one
  * stays `active`. The static marker and the error clearing are orthogonal to
  * the account's health state.
+ *
+ * D24: for a `disabled` row the error fields are deliberately kept. Once the
+ * account is parked, `lastErrorCategory` is the only record of *why* (e.g.
+ * `auth_invalidated` → "Re-login required"); wiping it on the static
+ * annotation would leave a disabled account with no diagnosable reason. An
+ * `active` row still clears them — there the error is stale by definition.
  */
 async function markStaticToken(db: CartethyiaDatabase, accountId: string): Promise<void> {
+  const rows = await db
+    .select({ status: providerAccounts.status })
+    .from(providerAccounts)
+    .where(eq(providerAccounts.id, accountId))
+    .limit(1);
+  const isDisabled = rows[0]?.status === "disabled";
   await db
     .update(providerAccounts)
     .set({
       staticToken: true,
+      cooldownUntil: null,
       // A static token is a normal, usable credential, not an error state: any
       // error left by the failed refresh would otherwise keep the row reading
       // "Re-login required" while it is in fact serving. Mirrors the console's
-      // static-token toggle.
-      cooldownUntil: null,
-      lastError: null,
-      lastErrorCategory: null,
-      lastErrorAt: null,
+      // static-token toggle. For a `disabled` row the category is preserved
+      // (D24), because there it is the diagnosis, not a stale artifact.
+      ...(isDisabled
+        ? {}
+        : { lastError: null, lastErrorCategory: null, lastErrorAt: null }),
     })
     .where(eq(providerAccounts.id, accountId));
 }
@@ -362,7 +427,8 @@ function failureStatus(error: unknown): number | undefined {
  * still perfectly usable. This pass re-reads those rows once at startup and
  * moves each to where it now belongs:
  *
- *  - access token still usable ⇒ static token, back to `active`;
+ *  - access token still usable ⇒ static token; the account stays `disabled`;
+ *    only an operator can re-enable it;
  *  - otherwise ⇒ the `auth_invalidated` category the console renders as
  *    "Re-login required" and the quota sweep excludes.
  *
@@ -495,15 +561,20 @@ export class OAuthRefreshService {
    * that just refreshed cannot cause the caller to reuse a dead cached
    * secret. Returns the current decrypted access token, or `null` when the
    * account isn't OAuth, has no stored refresh token, or refresh failed.
+   *
+   * `opts.origin` labels who asked for the refresh (`ui`/`sweep`/`dispatch`)
+   * and is carried on the `token_refresh` log lines (D26). The origin is
+   * observational only — it never changes what a refresh does.
    */
   async ensureFreshAccessToken(
     accountId: string,
     refresher: OAuthTokenRefresher,
-    opts: { force?: boolean; skewMs?: number } = {},
+    opts: { force?: boolean; skewMs?: number; origin?: "ui" | "sweep" | "dispatch" } = {},
   ): Promise<string | null> {
     const force = opts.force === true;
     // No explicit skew: the per-provider lead is applied at load time.
     const skewMs = opts.skewMs;
+    const origin = opts.origin ?? "sweep";
     // Forced refreshes get their own in-flight slot so they don't merge with
     // a raced non-force call that would otherwise short-circuit.
     const key = force ? `${accountId}:force` : accountId;
@@ -518,7 +589,7 @@ export class OAuthRefreshService {
       const oldestKey = this.#inFlight.keys().next().value;
       if (oldestKey !== undefined) this.#inFlight.delete(oldestKey);
     }
-    const task = this.#refreshIfDue(accountId, refresher, skewMs, force).finally(() => {
+    const task = this.#refreshIfDue(accountId, refresher, skewMs, force, origin).finally(() => {
       this.#inFlight.delete(key);
     });
     this.#inFlight.set(key, task);
@@ -530,6 +601,7 @@ export class OAuthRefreshService {
     refresher: OAuthTokenRefresher,
     skewMs: number | undefined,
     force: boolean,
+    origin: "ui" | "sweep" | "dispatch",
   ): Promise<string | null> {
     const account = await loadAccountWithFreshness(this.#db, accountId, skewMs);
     if (!account || account.row.credentialKind !== "oauth") return null;
@@ -547,18 +619,24 @@ export class OAuthRefreshService {
         ? decryptCredentialToString(row.credentialCiphertext)
         : null;
     }
-    return this.#refreshNow(row, refresher, skewMs);
+    return this.#refreshNow(row, refresher, skewMs, origin);
   }
 
   async #refreshNow(
     row: AccountRow,
     refresher: OAuthTokenRefresher,
     skewMs: number | undefined,
+    origin: "ui" | "sweep" | "dispatch",
   ): Promise<string | null> {
+    // D26: statusBefore is read once up front (the row projection used by the
+    // refresh path does not carry status) and statusAfter is re-read after any
+    // mutation, so the log proves a refresh never flipped the account.
+    const statusBefore = await readAccountStatus(this.#db, row.id);
     pushStructuredConsoleLog("info", "OAuth token refresh started", {
       event: "token_refresh",
       accountId: row.id,
       providerId: row.providerId,
+      details: { origin, statusBefore },
     });
     const owner = randomUUID();
     const leased = await acquireLease(this.#db, row.id, owner);
@@ -583,6 +661,7 @@ export class OAuthRefreshService {
         accountId: row.id,
         providerId: row.providerId,
         errorCode: "static_token",
+        details: { origin },
       });
       return null;
     }
@@ -594,12 +673,20 @@ export class OAuthRefreshService {
         buildRefreshContext(row, refresher.requiresAccessToken === true),
       );
       const persisted = await persistRefreshed(this.#db, row.id, owner, result);
+      // D26: `statusAfter` is re-read from the DB rather than assumed — a
+      // successful refresh never changes `status`, and the log proves it.
+      const statusAfter = await readAccountStatus(this.#db, row.id);
       pushStructuredConsoleLog(persisted ? "info" : "warn", persisted ? "OAuth token refresh completed" : "OAuth token refresh lost lease", {
         event: "token_refresh",
         accountId: row.id,
         providerId: row.providerId,
         ...(persisted ? {} : { errorCode: "refresh_lease_lost" }),
-        details: { expiresAt: result.expiresAt.toISOString() },
+        details: {
+          expiresAt: result.expiresAt.toISOString(),
+          origin,
+          statusBefore,
+          statusAfter,
+        },
       });
       return persisted ? result.access : null;
     } catch (error) {
@@ -612,6 +699,7 @@ export class OAuthRefreshService {
         accountId: row.id,
         providerId: row.providerId,
         errorCode: classification,
+        details: { origin, statusBefore },
       });
       if (classification === "definitive") {
         // A definitive refresh failure means the refresh grant is dead — but
@@ -627,14 +715,29 @@ export class OAuthRefreshService {
         if (accessUsability === "usable") {
           await releaseLease(this.#db, row.id, owner);
           await markStaticToken(this.#db, row.id);
+          const statusAfter = await readAccountStatus(this.#db, row.id);
           pushStructuredConsoleLog("info", "OAuth refresh failed; access token still valid, marking static", {
             event: "token_refresh",
             accountId: row.id,
             providerId: row.providerId,
             errorCode: "static_token",
+            details: { origin, statusBefore, statusAfter },
           });
         } else {
-          await disableAccount(this.#db, row.id, owner, failureMessage(error));
+          await disableAccount(this.#db, row.id, owner, failureMessage(error), {
+            // D23: a definitive refresh failure must not turn an operator's
+            // disable into a machine-recoverable one. If the row is already
+            // `disabled` without a deadline, leave it that way.
+            preserveOperatorDisable: true,
+          });
+          const statusAfter = await readAccountStatus(this.#db, row.id);
+          pushStructuredConsoleLog("warn", "OAuth refresh failed definitively; account disabled for re-auth", {
+            event: "token_refresh",
+            accountId: row.id,
+            providerId: row.providerId,
+            errorCode: classification,
+            details: { origin, statusBefore, statusAfter },
+          });
         }
       } else {
         await releaseLease(this.#db, row.id, owner);
@@ -642,4 +745,14 @@ export class OAuthRefreshService {
       return null;
     }
   }
+}
+
+/** Reads one account's status (used only for logging/observability, D26). */
+async function readAccountStatus(db: CartethyiaDatabase, accountId: string): Promise<string | undefined> {
+  const rows = await db
+    .select({ status: providerAccounts.status })
+    .from(providerAccounts)
+    .where(eq(providerAccounts.id, accountId))
+    .limit(1);
+  return rows[0]?.status;
 }
