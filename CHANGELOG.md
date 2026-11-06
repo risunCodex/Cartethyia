@@ -12,6 +12,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **CodeBuddy/WorkBuddy rosters: `hy4free` added alongside `hy4`.** The
+  free variant mirrors `hy4`'s metadata on every buddy roster: intl
+  (cb/workbuddy) at 1M context / 64k output with tool calling and vision, CN
+  (cbcn/workbuddycn) at 960k / 64k, and the `high` reasoning effort ladder on
+  both realms.
 - **OAuth browser dialog: drag-and-drop redirect URL files + field reset on
   invalid paste.** The manual "Step 2" field now accepts a dropped file (a
   saved redirect URL or raw code) straight into the same paste path, with a

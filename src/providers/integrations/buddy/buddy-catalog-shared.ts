@@ -43,6 +43,7 @@ export const BUDDY_INTL_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "glm-5.3": ["low", "high", "max"],
   hy3: ["low", "high"],
   hy4: ["high"],
+  hy4free: ["high"],
 };
 export const BUDDY_CN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "deepseek-v4-flash": ["low", "high", "max"],
@@ -54,6 +55,7 @@ export const BUDDY_CN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "glm-5.3-flash": ["low", "high", "max"],
   hy3: ["low", "high"],
   hy4: ["high"],
+  hy4free: ["high"],
 };
 
 /** The image-generation ids the international buddy providers serve. */
@@ -393,6 +395,7 @@ export const BUDDY_SHARED_RAW: readonly BuddyRawEntry[] = [
   ["grok-4.7", "Grok 4.7", true, true, 500_000, 128_000],
   ["hy3", "Hy3", true, true, 192_000, 64_000, true],
   ["hy4", "Hy4", true, true, 1_000_000, 64_000, true],
+  ["hy4free", "Hy4 Free", true, true, 1_000_000, 64_000, true],
   ["kimi-k2.5", "Kimi K2.5", true, false, 164_000, 262_144],
   ["kimi-k2.6", "Kimi K2.6", true, false, 256_000, 262_144],
   ["kimi-k2.7", "Kimi K2.7", true, false, 256_000, 65_536],
