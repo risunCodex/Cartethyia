@@ -9,10 +9,9 @@
  *   tags=[] / absent → 400      no user tag  → 400
  *
  * The value is not validated, so this is a shape requirement. What must not
- * drift is that it is present at all: `poolside/laguna-s-2.1:free` and
- * `meituan/longcat-2.5-preview:free` answer 200 with only `product=` and
- * `client=`, which is why the omission went unnoticed — `upstage/solar-mini4:free`
- * and both stepfun rows reject the same request outright.
+ * drift is that it is present at all: `meituan/longcat-2.5:free` answers 200
+ * with only `product=` and `client=`, which is why the omission went unnoticed —
+ * `upstage/solar-mini4:free` rejects the same request outright.
  *
  * The client tag tracks the released Hermes tag, which is date-based. Hermes
  * publishes no semver, so a `v0.13.0` client string names a version that never
@@ -96,29 +95,22 @@ describe("hermes portal tags", () => {
     // and 404 "This model's free period has ended" when dispatched, so it was
     // a card that could only ever fail.
     //
-    // `ornith/ornith-1.5-122b:free` was missing entirely — live, free, and a
-    // dispatch answers 200, but with no row here a client asking for it
-    // resolved to nothing.
+    // `meituan/longcat-2.5-preview:free` was retired in favor of
+    // `meituan/longcat-2.5:free`; `ornith/ornith-1.5-122b:free` was dropped.
     const ids = HERMES_MODELS.map((m) => m.modelId).sort();
     expect(ids).toEqual([
-      "meituan/longcat-2.5-preview:free",
-      "ornith/ornith-1.5-122b:free",
-      "poolside/laguna-s-2.1:free",
-      "poolside/laguna-xs-2.1:free",
+      "meituan/longcat-2.5:free",
       "reflection/beam-1.0-501b-a23b:free",
-      "stepfun/step-3.7-flash:free",
       "upstage/solar-mini4:free",
     ]);
   });
 
   test("vision matches what the live catalog declares", () => {
     // Read from `architecture.input_modalities` on a live read. This was wrong
-    // for `meituan/longcat-2.5-preview:free`, published without vision it has —
+    // for `meituan/longcat-2.5:free`, published without vision it has —
     // which strips images from a request the model accepts.
     const vision = new Set([
-      "meituan/longcat-2.5-preview:free",
-      "ornith/ornith-1.5-122b:free",
-      "stepfun/step-3.7-flash:free",
+      "meituan/longcat-2.5:free",
     ]);
     for (const model of HERMES_MODELS) {
       expect(model.modalities.input.includes("image")).toBe(vision.has(model.modelId));

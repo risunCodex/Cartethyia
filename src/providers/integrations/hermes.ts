@@ -78,28 +78,20 @@ export const HERMES_MODELS: readonly ModelDefinition[] = [
   //
   // `meituan/longcat-2.0:free` is excluded: the catalog still lists the id, but
   // dispatching it answers 404 "This model is no longer free", so listing it
-  // would be a card that can only ever fail. `meituan/longcat-2.5-preview:free`
+  // would be a card that can only ever fail. `meituan/longcat-2.5:free`
   // is listed instead and answers 200.
   //
   // `stepfun/step-5-preview:free` is excluded: it is absent from the live catalog
   // entirely and dispatching it answers 404 "This model's free period has
   // ended" — a retired row, not a capacity blip, so it cannot be left in.
   //
-  // Output caps are the catalog's own `top_provider.max_completion_tokens`,
-  // which differ per row: `poolside/laguna-xs-2.1:free` is 32768 while its
-  // sibling `laguna-s` is 131072, so a uniform value overstates one of them.
-  defineModel({ id: "poolside/laguna-s-2.1:free", ctx: 262144, out: 131072, reasoning: true, free: true, freeTier: true }),
-  defineModel({ id: "poolside/laguna-xs-2.1:free", ctx: 262144, out: 32768, reasoning: true, free: true, freeTier: true }),
-  defineModel({ id: "stepfun/step-3.7-flash:free", ctx: 262144, out: 256000, vision: true, reasoning: true, free: true, freeTier: true }),
+  // `poolside/laguna-s-2.1:free`, `poolside/laguna-xs-2.1:free`, and
+  // `stepfun/step-3.7-flash:free` are removed too: they fail at dispatch.
   defineModel({ id: "upstage/solar-mini4:free", ctx: 524288, out: 131072, reasoning: true, free: true, freeTier: true }),
   defineModel({ id: "reflection/beam-1.0-501b-a23b:free", ctx: 262144, out: 131072, reasoning: true, free: true, freeTier: true }),
   // Vision-corrected against the live catalog: `architecture.input_modalities`
   // lists `image` for this row, so it was published without vision it has.
-  defineModel({ id: "meituan/longcat-2.5-preview:free", ctx: 1048576, out: 131072, vision: true, reasoning: true, free: true, freeTier: true }),
-  // Added after a live read: the catalog carries it, it is free, and a dispatch
-  // answers 200 — it was simply absent from this list, so a client asking for
-  // it resolved to nothing. 262144 out is the catalog's own cap.
-  defineModel({ id: "ornith/ornith-1.5-122b:free", ctx: 262144, out: 262144, vision: true, reasoning: true, free: true, freeTier: true }),
+  defineModel({ id: "meituan/longcat-2.5:free", ctx: 1048576, out: 131072, vision: true, reasoning: true, free: true, freeTier: true }),
 ];
 
 

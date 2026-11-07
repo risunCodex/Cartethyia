@@ -366,6 +366,7 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
     // User-Agent. Letting the operator overwrite it would let them break the
     // provider, so the console locks the control.
     hasAdapterUserAgent: true,
+    credentialHint: "Paste a Nous Portal API key (portal.nousresearch.com → API keys), or sign in with the Nous Portal device code (OAuth) for the subscription route.",
   },
   { id: "bai", displayName: "B.AI", baseUrl: "https://api.b.ai/v1", credentialUrl: "https://b.ai" },
   {

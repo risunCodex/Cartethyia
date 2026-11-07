@@ -575,6 +575,9 @@ export const PROVIDER_CAPABILITIES = {
   hermes: {
     loadAdapter: async () => createApiKeyAdapter((await import("./integrations/hermes")).HERMES_SPEC),
     loadModels: async () => (await import("./integrations/hermes")).HERMES_MODELS,
+    // Hermes accepts both API keys and the Nous Portal device-code OAuth flow
+    // (subscription route). The OAuth client is refreshable.
+    loadAuthentication: oauthCapability(() => import("./integrations/hermes/hermes-oauth"), "hermesOAuthClient", { withRefresher: true }),
     // `/v1/models` is open and states each row's real limits, so the free
     // allowance tracks upstream instead of a hand-kept list. The static list
     // above stays as the offline fallback for a fetch that fails.
