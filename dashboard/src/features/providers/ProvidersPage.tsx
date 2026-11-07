@@ -753,6 +753,9 @@ const FREE_LIMITED_IDS = new Set([
   "inception",
   // ZCode Start exposes account-specific, time-limited GLM grants.
   "zcode-start",
+  // Free-pi is ad-funded: a daily USD/credit allowance (guest or GitHub
+  // sign-in), with a small set of "Free Unlimited" rows on the free tier.
+  "freepi",
 ]);
 /**
  * The providers an operator reaches for first: household names with a

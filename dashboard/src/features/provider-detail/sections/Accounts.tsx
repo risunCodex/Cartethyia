@@ -83,17 +83,21 @@ function compareAccounts(
   b: ProviderAccountResponse,
   key: AccountSortKey,
 ): number {
+  // createdAt/id can be absent on imported/legacy accounts; sort them as
+  // oldest rather than crashing on null.localeCompare.
+  const createdAt = (v: ProviderAccountResponse): string => v.createdAt ?? "";
+  const id = (v: ProviderAccountResponse): string => v.id ?? "";
   const stableTie = (left: ProviderAccountResponse, right: ProviderAccountResponse): number =>
     (left.label || left.id).localeCompare(right.label || right.id) ||
-    left.createdAt.localeCompare(right.createdAt) ||
-    left.id.localeCompare(right.id);
+    createdAt(left).localeCompare(createdAt(right)) ||
+    id(left).localeCompare(id(right));
   if (key === "added") {
     // The server's stable list position; falls back to creation order for
     // payloads that predate the index.
     return (
       a.sortIndex - b.sortIndex ||
-      a.createdAt.localeCompare(b.createdAt) ||
-      a.id.localeCompare(b.id)
+      createdAt(a).localeCompare(createdAt(b)) ||
+      id(a).localeCompare(id(b))
     );
   }
   if (key === "label") return stableTie(a, b);

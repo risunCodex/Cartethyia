@@ -246,6 +246,10 @@ export default function ProviderDetail(): ReactNode {
   const deduped = (() => {
     const seen = new Map<string, (typeof models)[number]>();
     for (const model of models) {
+      // A row without a model id cannot be rendered or routed; dropping it
+      // here (instead of crashing the sort below on null.localeCompare) is the
+      // safe surface for a stale/legacy row.
+      if (!model.modelId) continue;
       const serviceKind = model.serviceKind ?? "llm";
       const key = `${serviceKind}:${model.modelId}`;
       const existing = seen.get(key);
