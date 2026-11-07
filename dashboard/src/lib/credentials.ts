@@ -193,53 +193,6 @@ export function extractCredentialFromPaste(raw: string): ExtractedCredential {
 export type DetectedCredentialKind = "api_key" | "oauth" | "jwt";
 
 /**
- * Providers whose credential is accepted by more than one channel.
- *
- * CodeBuddy and WorkBuddy issue interchangeable tokens: one works in the
- * other. But a token used outside the channel it was issued for carries a
- * higher ban risk — the account is seen as active on a surface it never
- * authenticated against. The gateway cannot tell which channel a token came
- * from, so it warns and lets the operator decide instead of silently
- * accepting what looks like a valid credential.
- *
- * Ids are already normalized to match the compacted haystack below.
- */
-const CROSS_CHANNEL_PROVIDERS = [
-  { id: "codebuddy", counterpart: "WorkBuddy" },
-  { id: "workbuddy", counterpart: "CodeBuddy" },
-] as const;
-
-export interface CrossChannelWarning {
-  /** The provider this credential was recognised as. */
-  readonly provider: string;
-  /** The other channel that also accepts this token. */
-  readonly counterpart: string;
-}
-
-/**
- * Recognises a credential whose token is interchangeable between two channels.
- *
- * Matching is deliberately loose on casing and separators (`code-buddy`,
- * `code_buddy`) because provider ids and pasted exports are not canonical, and
- * a missed match here means the warning that protects the account never shows.
- * The provider id is what the dialog is opened for, so it is checked first;
- * the raw paste is checked too because a token often names its own issuer.
- */
-export function detectCrossChannelCredential(
-  providerId: string,
-  raw: string,
-): CrossChannelWarning | undefined {
-  // Loose on casing and separators: `code-buddy`, `code_buddy`, `CodeBuddy`
-  // are all one provider here. A missed match means the warning that protects
-  // the account never shows, which is worse than warning once too often.
-  const compact = `${providerId} ${raw}`.toLowerCase().replace(/[^a-z]/g, "");
-  for (const entry of CROSS_CHANNEL_PROVIDERS) {
-    if (compact.includes(entry.id)) return { provider: entry.id, counterpart: entry.counterpart };
-  }
-  return undefined;
-}
-
-/**
  * Auto-detects OAuth exports, JWTs, or opaque API keys. Refresh-token fields
  * win over JWT detection because a refreshable export is an OAuth credential.
  */

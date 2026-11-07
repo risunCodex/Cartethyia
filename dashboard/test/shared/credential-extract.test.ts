@@ -385,7 +385,7 @@ describe("parseCredentialBatch — Cartethyia's own export row", () => {
     // a static credential and the refresh token is lost. The whole row must go.
     const row = {
       credentialKind: "oauth",
-      providerId: "workbuddy",
+      providerId: "cb",
       accessToken: "eyJhbGciOiJIUzI1NiJ9.payload.sig",
       refreshToken: "rt-EXAMPLE",
       label: "Work",

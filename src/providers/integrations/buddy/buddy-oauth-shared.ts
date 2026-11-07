@@ -1,5 +1,5 @@
 /**
- * The buddy-family device-login mechanism (`cb`, `cbcn`, `workbuddy`).
+ * The buddy-family device-login mechanism (`cb`, `cbcn`).
  *
  * All three complete device login against the same plugin auth endpoints: a
  * state POST, a token poll that answers the pending code `11217` until the user
@@ -64,7 +64,7 @@ export function strictResponseCode(payload: unknown): number | undefined {
 }
 
 /**
- * Reads the envelope `code` through `Number()`, which is how the WorkBuddy
+ * Reads the envelope `code` through `Number()`, which is how the buddy
  * gateway is read. Looser than `strictResponseCode` on a malformed payload: a
  * `null` code coerces to `0`, i.e. success, and `true` to `1`. Kept verbatim
  * rather than tightened because nothing here shows what that gateway sends for

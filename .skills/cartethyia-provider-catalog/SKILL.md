@@ -86,19 +86,18 @@ safety rule (never claim without an explicit `CLAIMABLE`).
 
 ## Fetch a Buddy model catalog
 
-CodeBuddy and WorkBuddy (including WorkBuddy CN) expose two different catalog
-surfaces. Do not confuse the desktop product-config snapshot with Cartethyia's
-runtime discovery:
+CodeBuddy exposes two catalog surfaces (intl and CN). Do not confuse the
+desktop product-config snapshot with Cartethyia's runtime discovery:
 
 | Purpose | International endpoint | Response shape |
 |---|---|---|
-| Desktop picker snapshot / manual investigation | `GET https://www.codebuddy.ai/v3/config`, `GET https://www.workbuddy.ai/v3/config`, or `GET https://www.workbuddy.cn/v3/config` | `data.agents[].models` is the picker roster; `data.models[]` has metadata |
-| Cartethyia account discovery | intl: `/v3/config` first, falling back to `/v2/enterprises/personal/models`; CN variants: `/console/enterprises/personal/models` | `data.models[]` plus `data.agents[]`; `disabled` and the `cli` agent roster constrain the result |
+| Desktop picker snapshot / manual investigation | `GET https://www.codebuddy.ai/v3/config`, or `GET https://copilot.tencent.com/v3/config` | `data.agents[].models` is the picker roster; `data.models[]` has metadata |
+| Cartethyia account discovery | intl: `/v3/config` first, falling back to `/v2/enterprises/personal/models`; CN: `/console/enterprises/personal/models` | `data.models[]` plus `data.agents[]`; `disabled` and the `cli` agent roster constrain the result |
 
-WorkBuddy CN is the same WorkBuddy client contract on `www.workbuddy.cn`.
-Its desktop client version is fetched from that host's
-`/v2/update?platform=workbuddy-win32-x64-user` feed; keep its version source
-separate from the international `.ai` feed because releases can differ.
+CodeBuddy CN is the same client contract on `copilot.tencent.com`. Its
+desktop client version is fetched from that host's update feed; keep its
+version source separate from the international `.ai` feed because releases can
+differ.
 
 ## Refresh client versions quickly
 
@@ -137,7 +136,7 @@ are examples from that capture, not permanent version pins:
 | Product | Host | Observed `User-Agent` |
 |---|---|---|
 | CodeBuddy CLI | `www.codebuddy.ai` | `CLI/4.12.1.39217423 CodeBuddy/4.12.1.39217423` |
-| WorkBuddy desktop | `www.workbuddy.ai` | `CLI/4.12.1.39217423 CodeBuddy/4.12.1.39217423` |
+| CodeBuddy CN | `copilot.tencent.com` | `CLI/4.12.1.39217423 CodeBuddy/4.12.1.39217423` |
 
 When refreshing the snapshot, use a currently authorized account and the
 matching current client identity. Send `Accept`, `User-Agent`, `Origin`,
@@ -187,19 +186,17 @@ port from it by **comparison, not wholesale copy**:
 Decisions already made against the donor — treat as settled unless the owner
 reopens them. Exact strings live in the owning code, not here:
 
-- **Official identity prompts** — `cb` sends the CodeBuddy Code prompt and the
-  WorkBuddy variants the WorkBuddy prompt, matching the official client instead
-  of a neutral stand-in (`codebuddy/provider.ts`, `workbuddy/provider.ts`).
+- **Official identity prompts** — `cb` sends the CodeBuddy Code prompt,
+  matching the official client instead of a neutral stand-in
+  (`codebuddy/provider.ts`).
 - **DSH channel-identity scrub** — `scrubBuddyChannelIdentity`
   (`buddy-chat-shared.ts`) rewrites DeepSeek Harness role identities to the
-  WorkBuddy identity, zero-width-space tolerant.
-- **Message-id wire format** — WorkBuddy *desktop* emits dashed-UUID
-  `x-conversation-message-id`/`x-request-id`; CLI and all of CodeBuddy stay
-  32-hex; the turn key and B3/W3C trace ids are always hex
-  (`buddy-conversation-headers.ts`).
+  CodeBuddy identity, zero-width-space tolerant.
+- **Message-id wire format** — CLI and all of CodeBuddy stay 32-hex; the turn
+  key and B3/W3C trace ids are always hex (`buddy-conversation-headers.ts`).
 - **CLI request markers** — the CLI identity keeps `x-requested-with` +
   `x-codebuddy-request` but drops browser *transport* headers and the device
-  token (`codebuddy/shared.ts`, `workbuddy/shared.ts`).
+  token (`codebuddy/shared.ts`).
 - **No stainless fingerprint on chat.** The CLI's chat transport is axios, not
   the OpenAI Node SDK, so `x-stainless-*` headers are deliberately absent from
   CLI chat (`buddy-cli-headers.ts`). Do not "restore" them — the donor's own

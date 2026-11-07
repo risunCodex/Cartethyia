@@ -76,11 +76,11 @@ async function collect(
 }
 
 describe("Qoder transport selection", () => {
-  test("defaults to gRPC for a billed model", () => {
-    expect(resolveQoderTransport(undefined, { id: "dmodel", display_name: "DeepSeek", max_input_tokens: 1_000_000, is_vl: true, is_reasoning: true })).toBe("grpc");
+  test("defaults to legacy COSY for a billed model (gRPC host is dead)", () => {
+    expect(resolveQoderTransport(undefined, { id: "dmodel", display_name: "DeepSeek", max_input_tokens: 1_000_000, is_vl: true, is_reasoning: true })).toBe("cosy");
   });
 
-  test("free-tier row (`lite`) uses legacy COSY even when surface defaults to gRPC", () => {
+  test("free-tier row (`lite`) uses legacy COSY", () => {
     expect(resolveQoderTransport(undefined, { id: "lite", display_name: "Lite-Qwen-3.7-Plus", max_input_tokens: 1_000_000, is_vl: true, is_reasoning: false, is_free: true })).toBe("cosy");
   });
 

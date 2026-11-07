@@ -10,7 +10,7 @@
  * (2026-11-04). The gateway's canonical per-realm constants live in
  * `src/providers/integrations/qoder/qoder-realm.ts`; these literals keep the
  * exact hosts the probes proved (legacy COSY on `api2.qoder.sh`, IDE on
- * `api2-v2.qoder.sh`, control plane on `openapi.qoder.sh`). Note the model-list
+ * `api1.qoder.sh`, control plane on `openapi.qoder.sh`). Note the model-list
  * endpoint is reachable on both `api2` and `openapi` — the discrepancy is
  * documented, not silently resolved.
  */
@@ -27,7 +27,7 @@ import type { QoderProbeAuth } from "../cosy-signer";
 /** Single source for the probe client version (was 9 literals, 2 values). */
 export const QODER_VERSION = "1.1.79-hotfix.11";
 
-export const QODER_IDE_CHAT_URL = "https://api2-v2.qoder.sh/model/v1/chat/completions";
+export const QODER_IDE_CHAT_URL = "https://api1.qoder.sh/model/v1/chat/completions";
 export const QODER_LEGACY_CHAT_URL =
   "https://api2.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1";
 // Worker runtime (qoder-worker-runtime.obf.mjs v1.1.79-hotfix.11) builds the

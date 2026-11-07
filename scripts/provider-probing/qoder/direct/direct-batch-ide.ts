@@ -44,7 +44,7 @@ const token = account.accessToken ?? account.token ?? "";
 const userId: string = account.authState?.userId ?? "";
 const machineId: string = account.authState?.machineId ?? randomUUID();
 const VERSION = "1.1.83";
-const IDE_URL = "https://api2-v2.qoder.sh/model/v1/chat/completions";
+const IDE_URL = "https://api1.qoder.sh/model/v1/chat/completions";
 
 function machineOs(): string {
   const arch = process.arch === "arm64" ? "aarch64" : process.arch === "x64" ? "x86_64" : process.arch;

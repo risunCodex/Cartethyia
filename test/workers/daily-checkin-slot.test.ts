@@ -134,7 +134,7 @@ describe("quota sweep — the check-in budget is spent on buddy accounts only", 
   });
 
   test("every buddy variant is covered, not just one", async () => {
-    expect(await runPass(["cb", "cbcn", "workbuddy", "workbuddycn"], CAP)).toBe(4);
+    expect(await runPass(["cb", "cbcn"], CAP)).toBe(2);
   });
 
   test("a failed quota fetch still attempts the check-in", async () => {

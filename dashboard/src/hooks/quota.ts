@@ -64,7 +64,7 @@ export interface QuotaEntry {
   readonly providerName: string;
   readonly providerIcon: string;
   /**
-   * Present only on buddy-family accounts (`workbuddy`, `workbuddycn`, `cb`, `cbcn`).
+   * Present only on buddy-family accounts (`cb`, `cbcn`).
    * `attemptedToday` is the sweep's day marker: true means the sweep already
    * tried this account today (no upstream cost to read). False means unknown —
    * the sweep may simply not have reached it yet, never "not claimed".
@@ -333,7 +333,7 @@ export interface AccountCheckinResult {
 }
 
 /** Provider ids whose billing facade exposes the daily check-in routes. */
-const CHECKIN_PROVIDER_IDS = new Set(["workbuddy", "workbuddycn", "cb", "cbcn"]);
+const CHECKIN_PROVIDER_IDS = new Set(["cb", "cbcn"]);
 
 /** True when the account can show a daily check-in action on its card. */
 export function supportsAccountCheckin(providerId: string): boolean {

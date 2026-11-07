@@ -56,7 +56,7 @@ function png(parts: readonly Uint8Array[]): string {
 
 function imageRequest(url: string): CanonicalRequest {
   return {
-    model: "workbuddy/deepseek-v4.1-flash",
+    model: "cb/deepseek-v4.1-flash",
     messages: [
       {
         role: "user",

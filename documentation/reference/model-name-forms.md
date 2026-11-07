@@ -49,7 +49,7 @@ records (`/console/api/routing/combos`) that expand to member models served by
 real providers, for example:
 
 ```
-bansos/deepseek-v4.1-flash -> ["cb/deepseek-v4.1-flash", "workbuddy/deepseek-v4.1-flash"]
+bansos/deepseek-v4.1-flash -> ["cb/deepseek-v4.1-flash", "cbcn/deepseek-v4.1-flash"]
 ```
 
 Routing resolves the combo, expands its members, and picks a candidate. Every

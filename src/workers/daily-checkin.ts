@@ -4,7 +4,7 @@
 // inside the account loop (B-02) so the boot graph stays clean — this runs
 // as a ride-along with the quota sweep, not at startup.
 //
-// WorkBuddy/CodeBuddy grant a free credit package once per calendar day. This
+// CodeBuddy grants a free credit package once per calendar day. This
 // claims it for every stored account and logs one line per account, so an
 // operator can confirm each account got its daily login credit.
 //

@@ -71,7 +71,11 @@ export const QODER_VIRTUAL_MODELS: readonly QoderVirtualModel[] = [
   { id: "cantus", target: "cmodel", displayName: "Cantus" },
   { id: "sonus", target: "smodel", displayName: "Sonus" },
   { id: "qwen3.8-max", target: "qmodel_38max", displayName: "Qwen3.8-Max" },
-  { id: "qwen3.8-flash", target: "qfmodel", displayName: "Qwen3.8-Flash" },
+  // `qwen3.8-flash` is the free-tier entry point over the `qfmodel` slot.
+  // Upstream's live `is_free` on this slot is a plan-tier flag rather than a
+  // zero-cost tier, so the static roster deliberately does not state it; the
+  // free badge is applied here, the same way `lite` overrides `qmodel`.
+  { id: "qwen3.8-flash", target: "qfmodel", displayName: "Qwen3.8-Flash", free: true },
   { id: "qwen3.7-max", target: "qmodel_latest", displayName: "Qwen3.7-Max" },
   { id: "qwen3.7-plus", target: "qmodel", displayName: "Qwen3.7-Plus" },
   { id: "kimi-k3", target: "kmodel_latest", displayName: "Kimi-K3.1-Pro" },

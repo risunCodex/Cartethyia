@@ -1,5 +1,6 @@
 import type { ProviderDispatchContext } from "../../provider-contracts";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { decodeJwtPayload } from "../../authentication/oauth-flow-store";
 import { buddyAccountUid } from "./buddy-oauth-shared";
 import type { CanonicalRequest } from "../../../protocol/canonical-model";
@@ -227,4 +228,73 @@ export function buddyAgentPurpose(
   const fromRequest = request?.metadata?.["agent_purpose"];
   if (typeof fromRequest === "string" && fromRequest.trim().length > 0) return fromRequest.trim();
   return undefined;
+}
+
+/**
+ * Desktop risk token, sent only when the account actually has one.
+ *
+ * The account's own `auth_state` wins. When it carries none, a file the
+ * desktop client writes (`CARTETHYIA_DEVICE_TOKEN_FILE`, default
+ * `/app/data/device_token`) is read instead — cached for five minutes, and
+ * ignored when it is larger than 1 KB, because a token file that size is not
+ * a token. A missing file is the normal case and reads as "no token".
+ */
+const DEVICE_TOKEN_FILE_MAX_BYTES = 1024;
+const DEVICE_TOKEN_FILE_TTL_MS = 5 * 60_000;
+let deviceTokenFileCache: { readonly value: string | undefined; readonly readAt: number } | undefined;
+
+export function readBuddyDeviceToken(context?: ProviderDispatchContext): string | undefined {
+  const state = context?.credential.auth_state;
+  const value = state?.["deviceToken"] ?? state?.["device_token"];
+  if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  return readDeviceTokenFile();
+}
+
+/**
+ * The reference `X-Device-Token` pair, per the official desktop app.
+ *
+ * The desktop client always presents one of the
+ * two on chat traffic — a real token from the TuringShield SDK, or an
+ * `X-Device-Token-Error` when the SDK cannot produce one. It never omits both,
+ * and it sends the header on every realm (Intl and CN alike).
+ *
+ * The TuringShield SDK was a proprietary native addon shipped under
+ * `vendor/turing-sdk/`; it has been removed. The fallback path below is the
+ * captured token (auth_state / `CARTETHYIA_DEVICE_TOKEN_FILE`) and then the
+ * official failure state.
+ *
+ * - Legacy token (auth_state/file) → used when no SDK is available.
+ * - CLI identity never carries a device token (the CLI has no device).
+ */
+export async function buddyDeviceTokenHeaders(args: {
+  realm: "intl" | "cn";
+  context: ProviderDispatchContext | undefined;
+  cliIdentity: boolean | undefined;
+}): Promise<Record<string, string>> {
+  const { context, cliIdentity } = args;
+  void args.realm; // the desktop client sends the token on both realms
+  if (resolveBuddyIdentity(context, cliIdentity) === "cli") return {};
+  const token = readBuddyDeviceToken(context);
+  if (token !== undefined) return { "x-device-token": token };
+  return { "x-device-token-error": "sdk_not_initialized" };
+}
+
+function readDeviceTokenFile(): string | undefined {
+  const now = Date.now();
+  if (deviceTokenFileCache !== undefined && now - deviceTokenFileCache.readAt < DEVICE_TOKEN_FILE_TTL_MS) {
+    return deviceTokenFileCache.value;
+  }
+  const path = process.env["CARTETHYIA_DEVICE_TOKEN_FILE"] ?? "/app/data/device_token";
+  let value: string | undefined;
+  try {
+    const raw = readFileSync(path);
+    if (raw.byteLength > 0 && raw.byteLength <= DEVICE_TOKEN_FILE_MAX_BYTES) {
+      const text = raw.toString("utf8").trim();
+      if (text.length > 0) value = text;
+    }
+  } catch {
+    value = undefined;
+  }
+  deviceTokenFileCache = { value, readAt: now };
+  return value;
 }

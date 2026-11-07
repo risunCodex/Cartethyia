@@ -3,9 +3,7 @@ import { BUNDLED_PROVIDER_METADATA, providerServiceKinds } from "../../src/provi
 import { SERVICE_KINDS } from "../../src/protocol/canonical-model";
 import { buildCapabilityProfile } from "../../src/transport/routing/route-catalog";
 import { sanitizeProviderResponse } from "../../src/console/providers/catalog/provider-operations";
-import { createDefaultProviderRegistry } from "../../src/providers/default-registry";
 
-const registry = createDefaultProviderRegistry();
 describe("provider service taxonomy", () => {
   test("declares real search surfaces and keeps bundled providers explicit", () => {
     expect(providerServiceKinds("openai")).toEqual(["llm"]);
@@ -17,7 +15,6 @@ describe("provider service taxonomy", () => {
     // A bundled provider without a declaration serves LLM only — the
     // declaration is authoritative, so `llm` is not read as "everything".
     expect(providerServiceKinds("cbcn")).toEqual(["llm"]);
-    expect(providerServiceKinds("workbuddycn")).toEqual(["llm", "imageGeneration", "videoGeneration"]);
     for (const provider of BUNDLED_PROVIDER_METADATA)
       expect(provider.serviceKinds).not.toContain("all");
   });
@@ -33,17 +30,6 @@ describe("provider service taxonomy", () => {
     expect(providerServiceKinds("custom-provider")).toEqual([...SERVICE_KINDS]);
   });
 
-  test("WorkBuddy CN is wired through the provider composition root", async () => {
-    const adapter = await registry.resolve("workbuddycn");
-    const authentication = await registry.resolveAuthentication("workbuddycn");
-    const quotaCollector = await registry.resolveQuotaCollector("workbuddycn");
-
-    expect(adapter?.provider_id).toBe("workbuddycn");
-    expect(registry.hasModelDiscovery("workbuddycn")).toBe(true);
-    expect(authentication?.client).toBeDefined();
-    expect(authentication?.refresher).toBeDefined();
-    expect(quotaCollector).toBeDefined();
-  });
   test("a chat model never advertises search", () => {
     expect(buildCapabilityProfile({
       modalities: undefined,

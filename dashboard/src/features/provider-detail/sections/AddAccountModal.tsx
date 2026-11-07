@@ -14,7 +14,6 @@ import {
 import {
   assignAccountNames,
   chunkCredentials,
-  detectCrossChannelCredential,
   jwtExpiresAt,
   MAX_ACCOUNTS_PER_BATCH_REQUEST,
   mergeCredentialFiles,
@@ -43,10 +42,6 @@ export function AddAccountModal({
   const [secret, setSecret] = useState("");
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [credentialMode, setCredentialMode] = useState<CredentialMode>("auto");
-  // The warning is acknowledged once per paste, not once per dialog: changing
-  // the credential after acknowledging must ask again, or the operator would
-  // confirm a token they never saw the warning for.
-  const [crossChannelAckFor, setCrossChannelAckFor] = useState<string | undefined>(undefined);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -56,10 +51,6 @@ export function AddAccountModal({
   const detectedKind = credentialMode === "auto" ? singleEntry?.kind : credentialMode;
   const detectedExpiry =
     singleEntry && detectedKind === "jwt" ? jwtExpiresAt(singleEntry.value) : undefined;
-  const crossChannel = entries.length > 0
-    ? detectCrossChannelCredential(providerId, secret)
-    : undefined;
-  const crossChannelPending = crossChannel !== undefined && crossChannelAckFor !== secret;
   const existingNames = accounts.map((account) => account.label);
   const batchNames = isBatch ? assignAccountNames(entries, providerId, existingNames) : [];
   const requestForEntry = (entry: ParsedCredentialEntry) => {
@@ -143,10 +134,6 @@ export function AddAccountModal({
 
   const handleSubmit = async () => {
     if (entries.length === 0) return;
-    // A cross-channel token must be acknowledged first: submitting is blocked,
-    // not merely warned about, because the risk is a ban the operator cannot
-    // undo and the warning is the only thing standing between them and it.
-    if (crossChannelPending) return;
     if (entries.length === 1) {
       const entry = entries[0] as ParsedCredentialEntry;
       create.mutate(
@@ -249,11 +236,9 @@ export function AddAccountModal({
         <Button size="sm" variant="primary" disabled={submitting || entries.length === 0} onClick={() => void handleSubmit()}>
           {submitting
             ? "Connecting..."
-            : crossChannelPending
-              ? "Confirm below"
-              : isBatch
-                ? `Add ${entries.length} Accounts`
-                : "Add Account"}
+            : isBatch
+              ? `Add ${entries.length} Accounts`
+              : "Add Account"}
         </Button>
       </>
     }>
@@ -401,55 +386,6 @@ export function AddAccountModal({
                 </Badge>
               </div>
             ))}
-          </div>
-        )}
-        {/* Interchangeable token warning. Shown before the operator commits,
-            because the gateway cannot tell which channel issued a token — only
-            the operator knows, and using one outside its channel raises the
-            ban risk on an account they may depend on. */}
-        {crossChannel && (
-          <div
-            className="flex flex-col gap-3 rounded-control border border-warning-line bg-surface-2 px-4 py-5"
-            role="alert"
-          >
-            <div className="flex items-start gap-3">
-              <span className="inline-flex items-center flex-none px-3.5 py-px border rounded-md bg-surface-2 text-badge tabular-nums border-warning-line text-status-warning">
-                Cross-channel credential
-              </span>
-            </div>
-            <p className="text-caption text-text-primary">
-              This looks like a {crossChannel.provider} credential.{" "}
-              {crossChannel.provider} and {crossChannel.counterpart} tokens are
-              interchangeable — one works in the other — but using a token on a
-              channel it was not issued for can raise the risk of the account
-              being banned, because it appears active somewhere it never
-              authenticated. The same applies in reverse.
-            </p>
-            {crossChannelPending ? (
-              <Inline gap="8px" className="justify-end">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setSecret("");
-                    onClose();
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() => setCrossChannelAckFor(secret)}
-                >
-                  Add anyway
-                </Button>
-              </Inline>
-            ) : (
-              <p className="text-micro text-text-tertiary">
-                Acknowledged — you can add this account now.
-              </p>
-            )}
           </div>
         )}
       </div>

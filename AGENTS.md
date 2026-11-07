@@ -189,6 +189,11 @@ Describe durable rules rather than current counts or incidental measurements.
 When a value matters, name its owning constant or file. Resolve contradictions
 against current code and tests instead of preserving both versions.
 
+**Language:** all repository artifacts — code comments, documentation,
+research notes, and release notes — are written in **English only**. Local
+languages (e.g. Indonesian) are reserved for chat conversation with the
+operator, never for files in the repository.
+
 `documentation/archive/` contains unverified historical records. Never use it
 as evidence of current behavior.
 

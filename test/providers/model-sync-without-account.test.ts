@@ -208,6 +208,29 @@ describe("read-only discovery and verified commit (area 05)", () => {
     }
   });
 
+  test("registered models are excluded from discovery candidates", async () => {
+    const fx = await fixture();
+    try {
+      await fx.db.insert(models).values({
+        providerId: PROVIDER_ID,
+        modelId: "listed-model",
+        wireFamily: "chat",
+        endpointPath: "/v1/chat/completions",
+        contextLimit: 128_000,
+        outputLimit: 8_192,
+        modalities: { input: ["text"], output: ["text"] },
+        reasoning: false,
+        toolCall: true,
+        enabled: true,
+      });
+      const candidates = await fx.store.listDiscoveryCandidates("tenant-1", PROVIDER_ID);
+      expect(candidates.supported).toBe(true);
+      expect(candidates.candidates).toEqual([]);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
   test("the commit route answers 400 for an id outside the fresh roster and writes nothing", async () => {
     const fx = await fixture();
     try {

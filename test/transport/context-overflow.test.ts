@@ -44,7 +44,7 @@ function upstreamResponse(body: string, status = 400): Response {
 /** Captures the GatewayError a mapping throws, since it never returns. */
 async function capture(response: Response): Promise<{ code: string; status: number; message: string }> {
   try {
-    await mapUpstreamHttpError(response, "workbuddy");
+    await mapUpstreamHttpError(response, "cb");
   } catch (error) {
     const e = error as { code: string; status: number; message: string };
     return { code: e.code, status: e.status, message: e.message };

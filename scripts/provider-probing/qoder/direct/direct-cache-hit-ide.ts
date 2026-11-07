@@ -37,7 +37,7 @@ const userId: string = account.authState?.userId ?? "";
 const machineId: string = account.authState?.machineId ?? randomUUID();
 
 const VERSION = "1.1.83";
-const IDE_URL = "https://api2-v2.qoder.sh/model/v1/chat/completions";
+const IDE_URL = "https://api1.qoder.sh/model/v1/chat/completions";
 const promptText = values.prompt!;
 
 function machineOs(): string {

@@ -48,8 +48,6 @@ const iconAssets: Record<string, { file: string; ext: "svg" | "webp" }> = {
   cbcn: { file: "codebuddy", ext: "webp" },
   // WorkBuddy variants share the CodeBuddy family brand mark. Without these
   // entries `assetFor` falls through to missing provider-specific assets.
-  workbuddy: { file: "codebuddy", ext: "webp" },
-  workbuddycn: { file: "codebuddy", ext: "webp" },
   agentrouter: { file: "agentrouter", ext: "svg" },
   parallel: { file: "parallel", ext: "svg" },
   gmi: { file: "gmi-cloud", ext: "svg" },
@@ -88,6 +86,13 @@ const iconAssets: Record<string, { file: string; ext: "svg" | "webp" }> = {
   kimchi: { file: "kimchi", ext: "webp" },
   commandcode: { file: "commandcode", ext: "webp" },
   cursor: { file: "cursor", ext: "webp" },
+  // Devin's official mark is an SVG (dark tile + white rotor); without this
+  // entry the fallback would look for `devin.webp`.
+  devin: { file: "devin", ext: "svg" },
+  // Windsurf is the same Codeium family as Devin but uses its own mark; it is
+  // not mapped to Devin's logo. Credentials for Windsurf Enterprise seats store
+  // under the `devin` provider, but the icon stays its own brand.
+  windsurf: { file: "windsurf", ext: "svg" },
   trae: { file: "trae", ext: "webp" },
   // The China deployment is the same Trae brand mark; without this entry
   // `traecn` falls through to the generic placeholder while `trae` renders the

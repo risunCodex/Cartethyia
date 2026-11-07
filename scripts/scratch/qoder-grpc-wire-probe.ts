@@ -19,7 +19,7 @@ import { join } from "node:path";
 import * as protoLoader from "@grpc/proto-loader";
 
 const DB_PATH = process.argv[2] ?? "C:/Users/Aria/AppData/Roaming/cartethyia/cartethyia.sqlite";
-const HOST = "api2-v2.qoder.sh";
+const HOST = "api1.qoder.sh";
 const MODEL = "qfmodel"; // Qwen3.8-Flash billed roster key
 
 interface AccRow {

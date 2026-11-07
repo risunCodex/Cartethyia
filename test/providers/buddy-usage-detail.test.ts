@@ -19,7 +19,6 @@
 import { describe, expect, test } from "bun:test";
 import { fetchBuddyRequestUsage } from "../../src/providers/integrations/buddy/buddy-usage-shared";
 import { fetchCodeBuddyRequestUsage } from "../../src/providers/integrations/buddy/codebuddy/quota";
-import { fetchWorkBuddyRequestUsage } from "../../src/providers/integrations/buddy/workbuddy/quota";
 import type { FetchLike } from "../../src/providers/quota/quota-contracts";
 
 interface Seen {
@@ -212,18 +211,5 @@ describe("the per-provider wrappers", () => {
     const headers = calls[0]!.init?.headers as Record<string, string>;
     expect(headers["Authorization"]).toBe("Bearer token-abc");
     expect(calls[0]!.body["days"]).toBe(14);
-  });
-
-  test("WorkBuddy sends its account UID as the billing identity header", async () => {
-    const { fetcher, calls } = recordingFetcher(() => ok({ code: 0, data: { total: 0, data: [] } }));
-    await fetchWorkBuddyRequestUsage(
-      JSON.stringify({ accessToken: "wb-token", userId: "123456" }),
-      fetcher,
-      { days: 3 },
-    );
-    expect(calls[0]!.url).toContain("workbuddy.ai/billing/meter/get-user-request-usage");
-    const headers = calls[0]!.init?.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Bearer wb-token");
-    expect(calls[0]!.body["days"]).toBe(3);
   });
 });

@@ -30,7 +30,7 @@ A disagreement between the local answer and public resolvers means resolution
 is inconsistent; investigate poisoning, split-horizon DNS, filtering, or a
 different upstream answer rather than assuming one cause. Poisoning can be
 selective: on the host above
-`www.workbuddy.ai` resolved correctly while `www.codebuddy.ai` did not, so one
+`www.codebuddy.ai` resolved correctly while `copilot.tencent.com` did not, so one
 healthy lookup proves nothing.
 
 ## Fix permanently

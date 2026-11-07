@@ -23,8 +23,6 @@ const TRAE_PROVIDER_IDS: ReadonlySet<string> = new Set(["trae", "traecn"]);
 const BUDDY_PROVIDER_IDS: ReadonlySet<string> = new Set([
   "cb",
   "cbcn",
-  "workbuddy",
-  "workbuddycn",
 ]);
 const QODER_PROVIDER_IDS: ReadonlySet<string> = new Set(["qoder", "qodercn"]);
 

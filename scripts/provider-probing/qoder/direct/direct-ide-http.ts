@@ -63,7 +63,7 @@ function sessionIdFor(uid: string, model: string): string {
 const VERSION = "1.1.83";
 
 // --- surface URL / headers ---
-const IDE_URL = "https://api2-v2.qoder.sh/model/v1/chat/completions";
+const IDE_URL = "https://api1.qoder.sh/model/v1/chat/completions";
 const COSY_URL =
   "https://api1.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1";
 

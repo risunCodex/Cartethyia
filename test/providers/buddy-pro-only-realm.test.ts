@@ -1,6 +1,6 @@
 /**
- * Pro-only flags are shared by the international CodeBuddy and WorkBuddy model
- * roster. The CN realm does not inherit these international tags.
+ * Pro-only flags live on the international CodeBuddy model roster. The CN realm
+ * does not inherit these international tags.
  *
  * The test pins the realm split at `makeBuddyModel`. It is a unit over the
  * shared helper because that is where the conditioning lives; the intl-only
@@ -9,24 +9,18 @@
 import { describe, expect, test } from "bun:test";
 import { CODEBUDDY_MODELS } from "../../src/providers/integrations/buddy/codebuddy/provider";
 import { CODEBUDDY_CN_MODELS } from "../../src/providers/integrations/buddy/codebuddy/cn-provider";
-import { WORKBUDDY_MODELS } from "../../src/providers/integrations/buddy/workbuddy/provider";
-import { WORKBUDDY_CN_MODELS } from "../../src/providers/integrations/buddy/workbuddy/cn-provider";
 
 describe("Buddy Pro-only tagging follows measured account scope", () => {
   test("none of the CN roster rows carry proOnly", () => {
     // `proOnly === true` is the only known refusal. absence means tier unknown,
     // and "the intl roster says free" must not propagate to CN.
-    const cnRows = [...CODEBUDDY_CN_MODELS, ...WORKBUDDY_CN_MODELS];
-    const leaky = cnRows.filter((row) => row.proOnly === true);
+    const leaky = CODEBUDDY_CN_MODELS.filter((row) => row.proOnly === true);
     expect(leaky).toEqual([]);
   });
 
-  test("CodeBuddy and WorkBuddy share the same Pro-only model ids", () => {
+  test("CodeBuddy international publishes the expected Pro-only model ids", () => {
     const codeBuddyProIds = new Set(
       CODEBUDDY_MODELS.filter((row) => row.proOnly === true).map((row) => row.modelId),
-    );
-    const workBuddyProIds = new Set(
-      WORKBUDDY_MODELS.filter((row) => row.proOnly === true).map((row) => row.modelId),
     );
     const expected = new Set([
       "primary-model",
@@ -49,6 +43,5 @@ describe("Buddy Pro-only tagging follows measured account scope", () => {
       "claude-opus-4.7-1m",
     ]);
     expect(codeBuddyProIds).toEqual(expected);
-    expect(workBuddyProIds).toEqual(expected);
   });
 });

@@ -265,7 +265,7 @@ function quotaPhrase(outcome: QuotaRefreshOutcome): string {
  * nothing to report.
  *
  * Only providers that expose the check-in route appear here at all: the sweep
- * skips the rest, and `daily unsupported` on every non-WorkBuddy account is
+ * skips the rest, and `daily unsupported` on every non-CodeBuddy account is
  * pure noise. The routine "nothing to claim today" states collapse to one
  * short phrase so the line stays scannable; only a real grant or a failure
  * carries detail.

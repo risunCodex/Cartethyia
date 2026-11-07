@@ -55,7 +55,7 @@ test("captureQoderGrpcRequest renders the gRPC call", () => {
     body: unknown;
   };
   expect(capture.method).toBe("POST");
-  expect(capture.url).toBe("grpc://api2-v2.qoder.sh/model.chat.ChatService/ChatCompletionStream");
+  expect(capture.url).toBe("grpc://api1.qoder.sh/model.chat.ChatService/ChatCompletionStream");
   expect(capture.headers["authorization"]).toBeUndefined();
   expect(capture.headers["x-session-id"]).toBe("sess-123");
   expect(capture.headers["x-request-id"]).toBe("req-1");

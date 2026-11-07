@@ -928,7 +928,31 @@ export class RoutingEngine {
         matching = groups.flat();
       }
     }
-    if (matching.length === 0) throw modelNotFoundError(requestedModel, modelIds);
+    if (matching.length === 0) {
+      // A qualified `provider/model` reference whose model is not in the
+      // catalog still routes: clone the provider's first live candidate (any
+      // model) and retarget it at the requested model. This is the passthrough
+      // contract — a provider that accepts arbitrary model ids (BYOK, custom
+      // gateways, or a model the catalog has not fetched yet) must be able to
+      // serve them. The clone inherits the provider's endpoint, wire family,
+      // dialect, capabilities, tenant scoping and account/network-pool wiring;
+      // only the model id changes. A provider with zero candidates cannot be
+      // synthesized, so bare-model misses and empty providers still 404.
+      if (parsedModels.length === 1 && parsedModels[0]!.parsed.providerId !== null) {
+        const providerId = parsedModels[0]!.parsed.providerId;
+        const sibling = [...index.qualified.entries()]
+          .filter(([key]) => key.startsWith(`${providerId}/`))
+          .flatMap(([, group]) => group)
+          .find((candidate) => candidate.tenant_id == null || candidate.tenant_id === tid);
+        if (sibling !== undefined) {
+          matching = [{
+            ...sibling,
+            model_id: parsedModels[0]!.parsed.modelId,
+          }];
+        }
+      }
+      if (matching.length === 0) throw modelNotFoundError(requestedModel, modelIds);
+    }
     const owners = [...new Set(matching.map((candidate) => candidate.provider_id))];
     if (owners.length > 1 && !resolved.model.includes("/") && !combo)
       throw ambiguousModelError(requestedModel, owners);

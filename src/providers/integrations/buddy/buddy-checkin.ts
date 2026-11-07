@@ -1,7 +1,7 @@
 import { asCoercedNumber as sharedAsNumber, asRecord as sharedAsRecord } from "../../../shared/coerce";
 
-// Buddy-family daily check-in (daily login credit claim), shared by all three
-// variants (`cb`, `cbcn`, `workbuddy`): same Tencent billing facade, same
+// Buddy-family daily check-in (daily login credit claim), shared by both
+// variants (`cb`, `cbcn`): same Tencent billing facade, same
 // status/claim contract — only the endpoint base and identity headers differ
 // per variant, and those already live in each provider's own modules.
 //
@@ -22,15 +22,8 @@ import { asCoercedNumber as sharedAsNumber, asRecord as sharedAsRecord } from ".
 
 import { providerBaseUrl } from "../../provider-metadata";
 import { sleep } from "../../../shared/sleep";
-import { WORKBUDDY_DOMAIN } from "./workbuddy/shared";
 import { BUDDY_PROVIDER_IDS } from "../../provider-metadata";
 import { QODER_CHECKIN_PROVIDER_IDS } from "../qoder/qoder-checkin";
-import {
-  buildWorkBuddyUserAgent,
-  getWorkBuddyClientVersion,
-  getWorkBuddyCnClientVersion,
-  getWorkBuddyCliVersion,
-} from "../../operations/client-versions";
 import { buildCodeBuddyUserAgent } from "../../operations/client-versions";
 import { codebuddyDomain, type CodeBuddyVariant } from "./codebuddy/shared";
 /** Providers whose billing facade exposes the daily check-in routes. */
@@ -186,8 +179,8 @@ export function buildActivityReportEvent(args: {
  * chat send. A single event did not move the growth tasks; four events per
  * batch, sent twice with a pause between the rounds, is what does. The pause
  * is what keeps the two rounds from landing as one burst. Both numbers apply
- * to every buddy variant — the request is built the same way for `cb`,
- * `cbcn`, and `workbuddy`, so none of them can drift back to a single shot.
+ * to every buddy variant — the request is built the same way for `cb` and
+ * `cbcn`, so neither can drift back to a single shot.
  */
 export const ACTIVITY_REPORT_EVENTS_PER_BATCH = 4;
 export const ACTIVITY_REPORT_ROUNDS = 2;
@@ -196,8 +189,8 @@ export const ACTIVITY_REPORT_ROUND_DELAY_MS = 1_500;
 /**
  * Sends the growth-activity report (`POST {base}/v2/report`, the versioned
  * billing-meter path joined the same way as the status/claim routes:
- * `VERSION_SEGMENT` supplies `/v2` for the bare `workbuddy` base and nothing
- * for `cb`/`cbcn`, which already end in it).
+ * `VERSION_SEGMENT` supplies nothing for `cb`/`cbcn`, which already end in
+ * `/v2`).
  *
  * Two rounds of four events, paused between rounds. Each event carries its
  * own conversation and request id: the facade drops a repeated id as a
@@ -290,13 +283,10 @@ const CLAIM_RETRY_DELAYS_MS = [1_000, 2_000] as const;
 /**
  * Check-in paths are joined onto the provider's manifest base URL, which does
  * NOT carry a consistent version segment: `cb`/`cbcn` already end in `/v2`,
- * while WorkBuddy variants are bare and need `/v2` prepended. This map keeps that
- * join aligned with each provider's own quota collector, so the three
- * gateways cannot drift apart.
+ * so no segment is prepended. This map keeps the join aligned with each
+ * provider's own quota collector, so the gateways cannot drift apart.
  */
 const VERSION_SEGMENT: Readonly<Record<string, string>> = {
-  workbuddy: "/v2",
-  workbuddycn: "/v2",
   cb: "",
   cbcn: "",
 };
@@ -311,10 +301,9 @@ function claimUrl(providerId: string): string {
 
 /**
  * Per-provider billing headers. The Buddy gateways share the Tencent billing
- * facade but each risk-gates on its own client identity: WorkBuddy wants the
- * desktop brand, CodeBuddy intl wants the `IDE` identity, and CN wants `CLI`
- * (plus its own `X-Domain`). Sending the wrong one trips a 403 the same way
- * the chat surface does.
+ * facade but each risk-gates on its own client identity: CodeBuddy intl
+ * wants the `IDE` identity, and CN wants `CLI` (plus its own `X-Domain`).
+ * Sending the wrong one trips a 403 the same way the chat surface does.
  */
 async function checkinHeaders(providerId: string): Promise<Record<string, string>> {
   const common = {
@@ -324,24 +313,13 @@ async function checkinHeaders(providerId: string): Promise<Record<string, string
     "Content-Type": "application/json",
     Accept: "application/json",
   };
-  if (providerId === "cb" || providerId === "cbcn") {
-    const variant: CodeBuddyVariant = providerId === "cb" ? "IDE" : "CLI";
-    return {
-      ...common,
-      "User-Agent": buildCodeBuddyUserAgent(variant),
-      "X-IDE-Type": variant,
-      "X-IDE-Name": variant,
-      "X-Domain": codebuddyDomain(variant),
-    };
-  }
-  const clientVersion = providerId === "workbuddycn"
-    ? getWorkBuddyCnClientVersion()
-    : getWorkBuddyClientVersion();
+  const variant: CodeBuddyVariant = providerId === "cb" ? "IDE" : "CLI";
   return {
     ...common,
-    "User-Agent": buildWorkBuddyUserAgent(clientVersion, getWorkBuddyCliVersion()),
-    "X-Domain": providerId === "workbuddycn" ? "www.workbuddy.cn" : WORKBUDDY_DOMAIN,
-    "Accept-Language": "en-US",
+    "User-Agent": buildCodeBuddyUserAgent(variant),
+    "X-IDE-Type": variant,
+    "X-IDE-Name": variant,
+    "X-Domain": codebuddyDomain(variant),
   };
 }
 
@@ -392,7 +370,7 @@ function envelopeCode(payload: unknown): number | null {
 }
 
 /**
- * Unwraps the check-in payload. WorkBuddy returns a flat `{ code, data }`,
+ * Unwraps the check-in payload. The gateway returns a flat `{ code, data }`,
  * while the CodeBuddy billing facade nests Tencent's `data.Response.Data`
  * (the same double wrap its quota endpoint uses), so both shapes resolve.
  */

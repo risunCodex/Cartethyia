@@ -71,7 +71,7 @@ export function parseUpstreamBackoff(headers: {
  *
  *   - **Relative** — "quota will reset in 3 hours", "try again in 30s".
  *   - **Absolute** — "your usage will reset at 2026-09-24 02:12:51 UTC+8"
- *     (WorkBuddy/CodeBuddy `6004`). An absolute stamp is *not* a duration, and
+ *     (CodeBuddy `6004`). An absolute stamp is *not* a duration, and
  *     the relative-only pattern silently missed it, so the account fell back to
  *     the generic 15-minute default while the provider had actually parked it
  *     for the rest of the window — the account kept re-entering rotation and

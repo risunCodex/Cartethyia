@@ -62,9 +62,9 @@ export interface BuddyConversationIds {
    * Wire format for the two message-scoped ids (`x-conversation-message-id`,
    * `x-request-id`).
    *
-   * The reference emits these as dashed UUIDs on the WorkBuddy desktop product
+   * The reference emits these as dashed UUIDs on the desktop product
    * and as 32-hex on CLI traffic (`build_attempt_headers` converts only the
-   * message/request ids, and only for the WorkBuddy profiles). The turn
+   * message/request ids, and only for the desktop profiles). The turn
    * aggregation key (`x-conversation-request-id` / `x-root-request-id`) and the
    * B3/W3C trace ids stay hex in both styles, because B3's spec accepts only
    * hex. Default `"hex"`.

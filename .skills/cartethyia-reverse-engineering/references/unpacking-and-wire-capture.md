@@ -177,6 +177,43 @@ Output layout:
 - `{app}\tools\inno_updater.exe`, `vcruntime140.dll` — installer tools
 - `install_script.iss` — Inno script
 
+### Devin OAuth — static-to-live flow (proven 2026-11-06, Google provider)
+
+Reconstructed entirely from static bundle analysis — no donor code, no SDK.
+Files: `devin-webapp-host/assets/app-initial-Sul-BBHA.js`,
+`app-initial-C64Yu33K.js`, `app-initial-B5PhWzwv.js`,
+`callback-CQ5-zgeD.js`.
+
+1. **Config lives in the mangled bundle.** `app-initial-Sul-BBHA.js`
+   defines `sd=auth.devin.ai` (Auth0 domain), `cd=DjKr4B4qtVDBVMBzE4FvveclTSkJYfhk`
+   (Auth0 client id), `ld=https://backend.webapp.devin.ai` (audience),
+   `Ku` → API base `https://api.devin.ai`. Trace import aliases
+   (`dn as g`, `un as v`, `ln as _` in `app-initial-C64Yu33K.js` — i.e.
+   `g=sd`, `v=cd`, `_=ld`) to see where they feed the Auth0 provider config.
+2. **External OAuth client IDs are NOT in the bundle.** `Jh` map
+   (github/google/openai) holds only `authorizeUrl`+`scope`; `client_id`
+   comes from `POST /api/auth1/connections` (`{product:"devin"}`) →
+   `connections[]` (`github: Iv1.fffb955bc006997f`, google `686954959906-...`,
+   `openai: oaiapp_...`).
+3. **PKCE S256 everywhere.** verifier = base64url(32 random bytes) trimmed to
+   43 chars; challenge = base64url(SHA256(verifier)). State format
+   `auth1-<csrf>.<id>` / `auth1-<id>` (`jm()`).
+4. **Exchange dispatcher** (`callback-CQ5-zgeD.js`):
+   `POST /api/auth1/{provider}/exchange` body `{code, mode, code_verifier,
+   redirect_uri, connection_id?, nonce?, signup_consent_version?}`; oidc
+   `/api/auth1/oidc/exchange`; saml `/api/auth1/saml/request` +
+   `/saml/consume`; openai link `/api/auth1/openai/link`. Success:
+   `{status:"authenticated", token:"auth1_...", user_id, email, ...}`.
+5. **Redirect URIs:** external OAuth → `https://auth.devin.ai/login/callback`;
+   Auth0 webapp → `https://app.devin.ai/post-auth`.
+6. **Auth1 token ≠ full access.** Every `api.devin.ai` endpoint (including
+   `/v1/models`) returns **401 `{"detail":"No organizations found for auth1 user"}`**
+   until the account has an org. Create/join org first.
+
+Probe scripts: `scripts/provider-probing/devin/devin-oauth-capture.mjs`
+(print link / capture / flow), `devin-oauth-exchange.mjs`, `probe-devin-v1-models.mjs`,
+`probe-devin-api.mjs`, `probe-devin-org.mjs`.
+
 ## 2. String scanning
 
 - Use a **streamed string scanner** (Bun) over the binary/bundles to dump
@@ -306,7 +343,7 @@ The evidence ledgers produced with these techniques are consolidated in
 | Grok | `documentation/research/grok/2026-11-02-grok-build-1.0.70-unpack.md` |
 | Copilot | `documentation/research/copilot/` — `2026-10-15-copilot-chat-capability-map.md`, `-context-probe`, `-auto-routing`, `-auto-responses-500-repair-throw` |
 | Antigravity | unpack complete (Inno Setup 6.4 manual two-payload recovery, §1; `product.json` 44,752B carved; extension `google-antigravity` v0.0.1 located; OAuth endpoints `accounts.google.com`/`oauth2.googleapis.com` found). Wire-protocol research → `documentation/research/antigravity/` when written |
-| Devin | unpack complete (Inno Setup 6.4, `innounp 2.70.1`, 14,616 files / ~1.31 GB → `D:\tmp\unpacked\devin\`; VS Code fork + `devin-webapp-host` + appx). Audit → `documentation/research/devin/` when written |
+| Devin | unpack complete (Inno Setup 6.4, `innounp 2.70.1`, 14,616 files / ~1.31 GB → `D:\tmp\unpacked\devin\`; VS Code fork + `devin-webapp-host` + appx). **OAuth captured live** (Google, 2026-11-06): `POST /api/auth1/connections` → client_ids; PKCE S256; `POST /api/auth1/google/exchange` → `{status:"authenticated", token:"auth1_…"}`; auth1 token alone 401 "No organizations found" until org exists. Docs → `documentation/research/devin/2026-11-06-devin-desktop-audit.md` |
 
 ## Cleanup
 

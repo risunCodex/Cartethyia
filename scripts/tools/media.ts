@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { dirname, extname, resolve } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { buildWorkBuddyUserAgent } from "../../src/providers/operations/client-versions";
+import { buildCodeBuddyUserAgent } from "../../src/providers/operations/client-versions";
 
 type MediaCommand = "image" | "video" | "video-status";
 
@@ -200,7 +200,7 @@ function requestHeaders(token: string, accept: string): Headers {
     authorization: `Bearer ${token}`,
     accept,
     "content-type": "application/json",
-    "user-agent": buildWorkBuddyUserAgent(),
+    "user-agent": buildCodeBuddyUserAgent("IDE"),
     "x-product": "SaaS",
     "x-ide-type": "IDE",
     "x-ide-name": "IDE",

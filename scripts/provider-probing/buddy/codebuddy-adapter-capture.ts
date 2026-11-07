@@ -14,8 +14,6 @@ import type { ProviderDispatchContext } from "../../../src/providers/provider-co
 import { readAccountsFile, pickAccount, requireAccountToken, maskSecret } from "../lib/accounts";
 import { createCodeBuddyAdapter } from "../../../src/providers/integrations/buddy/codebuddy/provider";
 import { createCodeBuddyCnAdapter } from "../../../src/providers/integrations/buddy/codebuddy/cn-provider";
-import { createWorkBuddyAdapter } from "../../../src/providers/integrations/buddy/workbuddy/provider";
-import { createWorkBuddyCnAdapter } from "../../../src/providers/integrations/buddy/workbuddy/cn-provider";
 import type { CanonicalRequest } from "../../../src/protocol/canonical-model";
 
 const { values } = parseArgs({
@@ -73,11 +71,7 @@ const adapter =
     ? createCodeBuddyAdapter()
     : provider === "cbcn"
       ? createCodeBuddyCnAdapter()
-      : provider === "workbuddy"
-        ? createWorkBuddyAdapter()
-        : provider === "workbuddycn"
-          ? createWorkBuddyCnAdapter()
-          : undefined;
+      : undefined;
 if (adapter === undefined) throw new Error(`Unsupported --provider ${provider}`);
 
 const request: CanonicalRequest = {

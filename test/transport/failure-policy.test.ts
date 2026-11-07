@@ -651,7 +651,7 @@ describe("extractUpstreamMessage", () => {
   });
 
   test("reads the WorkBuddy/CodeBuddy `msg` field, nested or top level", () => {
-    expect(extractUpstreamMessage({ msg: "workbuddy msg" })).toBe("workbuddy msg");
+    expect(extractUpstreamMessage({ msg: "cb msg" })).toBe("cb msg");
     expect(extractUpstreamMessage({ error: { msg: "nested msg" } })).toBe("nested msg");
     expect(extractUpstreamMessage({ error: { message: "  " }, msg: "outer msg" })).toBe("outer msg");
     expect(extractUpstreamMessage({ error: { msg: "inner" }, msg: "outer" })).toBe("outer");

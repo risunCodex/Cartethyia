@@ -83,8 +83,8 @@ const ALLOW_LIST: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     CARTETHYIA_TELEMETRY_PAYLOAD_DIR: "telemetry storage path override",
     CARTETHYIA_TELEMETRY_PAYLOAD_FILE_MAX_BYTES: "telemetry file-size override",
   },
-  "src/providers/integrations/buddy/workbuddy/shared.ts": {
-    // Buddy donor-token file path, injected by the deployment image, not an
+  "src/providers/integrations/buddy/buddy-identity.ts": {
+    // Buddy device-token file path, injected by the deployment image, not an
     // operator-facing knob — kept in the integration so it is reviewed with
     // the rest of the buddy credential surface.
     CARTETHYIA_DEVICE_TOKEN_FILE: "buddy device-token file path, deployment-level injection",
@@ -94,11 +94,6 @@ const ALLOW_LIST: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     // bundle on Linux (containers auto-detect). Read directly in the bridge
     // because it decides which binary to spawn at mint time.
     CARTETHYIA_QODER_UMID_MINI: "UMID bridge mode override (1=mini, 0=native, absent=auto)",
-  },
-  "src/providers/integrations/buddy/turing-device-token.ts": {
-    // TuringShield native SDK directory (turing_sdk.node + TuringShieldSDK.dll),
-    // injected by the deployment — proprietary binary, not shipped in-repo.
-    CARTETHYIA_TURING_SDK_PATH: "turing SDK native addon directory, deployment-level injection",
   },
   "src/providers/integrations/cursor/cursor.ts": {
     // Cursor heartbeat tuning; subsystem-specific, only meaningful if the

@@ -54,10 +54,10 @@ function recordingFetcher(allowed: readonly string[]) {
 }
 
 const base = {
-  siteUrl: "https://www.workbuddy.ai",
-  providerId: "workbuddy",
+  siteUrl: "https://www.codebuddy.ai/v2",
+  providerId: "cb",
   credential: "token",
-  endpoint: "/v2/chat/completions",
+  endpoint: "/chat/completions",
 };
 
 describe("buddy model discovery", () => {
@@ -102,11 +102,11 @@ describe("buddy model discovery", () => {
     // 500 from the edge rather than 404, which reads as an upstream outage.
     const { calls, fetcher } = recordingFetcher([BUDDY_CN_MODELS_PATH]);
     const models = await fetchBuddyDirectoryModels({
-      siteUrl: "https://www.workbuddy.cn",
-      providerId: "workbuddycn",
+      siteUrl: "https://copilot.tencent.com/v2",
+      providerId: "cbcn",
       credential: "token",
       modelsPath: BUDDY_CN_MODELS_PATH,
-      endpoint: "/v2/chat/completions",
+      endpoint: "/chat/completions",
       fetcher,
     });
     expect(models?.length).toBe(2);

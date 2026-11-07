@@ -1,13 +1,12 @@
 /**
  * Buddy-family media generation: image and video.
  *
- * CodeBuddy (intl) and WorkBuddy serve media through the same facade, so shared
- * request shaping lives here. Their image endpoint can differ by provider;
+ * CodeBuddy (intl + CN) serves media through the same facade, so shared
+ * request shaping lives here. Their image endpoint can differ by realm;
  * identity headers come from {@link codebuddyHeaders} keyed on the variant.
  *
- * Two image paths are supported: CodeBuddy can use its native
- * `/images/generations` API, while WorkBuddy keeps its chat-completion image
- * path. The configured provider path selects the wire format.
+ * The image path is CodeBuddy's native `/images/generations` API. The
+ * configured provider path selects the wire format.
  *
  * - **Video** (`seedance-2.5`) is implemented as an async task: submission
  *   expects a task ID, then the adapter polls a sibling task URL until a clip

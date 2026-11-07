@@ -1,10 +1,10 @@
 import { asNumber as sharedAsNumber, asRecord } from "../../../shared/coerce";
 
 /**
- * Model discovery for the buddy family (CodeBuddy intl / CN, WorkBuddy).
+ * Model discovery for the buddy family (CodeBuddy intl / CN).
  *
- * The three sites are protocol-isomorphic but NOT path-isomorphic, and the
- * difference is load-bearing: the international sites answer
+ * The two sites are protocol-isomorphic but NOT path-isomorphic, and the
+ * difference is load-bearing: the international site answers
  * `/v2/enterprises/personal/models`, while the CN site answers
  * `/console/enterprises/personal/models`. Probing the CN path on an
  * international host returns HTTP 500 from the edge (APISIX) rather than 404 —
@@ -34,8 +34,8 @@ import { buddyAccountUid } from "./buddy-oauth-shared";
 export const BUDDY_CN_MODELS_PATH = "/console/enterprises/personal/models" as const;
 
 /**
- * Console directory path on the international sites (`codebuddy.ai`,
- * `workbuddy.ai`). The CN path above answers 500 on these hosts.
+ * Console directory path on the international site (`codebuddy.ai`). The CN
+ * path above answers 500 on these hosts.
  */
 export const BUDDY_INTL_MODELS_PATH = "/v2/enterprises/personal/models" as const;
 

@@ -269,10 +269,10 @@ describe("formatPublicErrorMessage", () => {
     expect(
       formatPublicErrorMessage(
         "accounts_unavailable",
-        "No account in the pool can serve 'workbuddy/glm-5.3' right now (credit or quota is exhausted).",
+        "No account in the pool can serve 'cb/glm-5.3' right now (credit or quota is exhausted).",
       ),
     ).toBe(
-      "No account in the pool can serve 'workbuddy/glm-5.3' right now (credit or quota is exhausted).",
+      "No account in the pool can serve 'cb/glm-5.3' right now (credit or quota is exhausted).",
     );
   });
 

@@ -109,18 +109,6 @@ async function kimiVersion(response: Response): Promise<string | null> {
   return isSemverish(data.info?.version) ? data.info.version.trim() : null;
 }
 
-async function workbuddyDesktopVersion(response: Response): Promise<string | null> {
-  try {
-    const data = (await response.json()) as { version?: unknown; productVersion?: unknown };
-    const candidate = data.productVersion ?? data.version;
-    return typeof candidate === "string" && /^\d+\.\d+\.\d+(?:\.\d+)?(?:[-+][\w.-]+)?$/.test(candidate.trim())
-      ? candidate.trim()
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 async function kiroCaskVersion(response: Response): Promise<string | null> {
   try {
     const data = (await response.json()) as { version?: unknown };
@@ -307,42 +295,6 @@ export const VERSION_SOURCES = {
     fallback: "0.166.0",
     sources: [{ url: "https://registry.npmjs.org/@openai/codex/latest" }],
   },
-  workbuddyClient: {
-    key: "workbuddy-client",
-    fallback: "5.9.4.42593613",
-    sources: [
-      {
-        url: "https://www.workbuddy.ai/v2/update?platform=workbuddy-win32-x64-user",
-        extract: workbuddyDesktopVersion,
-      },
-      {
-        url: "https://www.workbuddy.ai/v2/update?platform=workbuddy-darwin-arm64",
-        extract: workbuddyDesktopVersion,
-      },
-    ],
-  },
-  workbuddyCnClient: {
-    key: "workbuddy-cn-client",
-    fallback: "5.9.3.42398134",
-    sources: [
-      {
-        url: "https://www.workbuddy.cn/v2/update?platform=workbuddy-win32-x64-user",
-        extract: workbuddyDesktopVersion,
-      },
-      {
-        url: "https://www.workbuddy.cn/v2/update?platform=workbuddy-darwin-arm64",
-        extract: workbuddyDesktopVersion,
-      },
-    ],
-  },
-  workbuddyCli: {
-    key: "workbuddy",
-    fallback: "2.178.1",
-    sources: [
-      { url: "https://registry.npmjs.org/@tencent-ai/codebuddy-code/latest" },
-      { url: "https://registry.npmmirror.com/@tencent-ai/codebuddy-code/latest" },
-    ],
-  },
   kimiCli: {
     key: "kimi-cli",
     fallback: "1.52.0",
@@ -490,9 +442,6 @@ const resolvers = {
   clineSdk: createClientVersionResolver({ ...VERSION_SOURCES.clineSdk, client: "cline-sdk" }),
   clineCli: createClientVersionResolver({ ...VERSION_SOURCES.clineCli, client: "cline-cli" }),
   codex: createClientVersionResolver({ ...VERSION_SOURCES.codex, client: "codex" }),
-  workbuddyClient: createClientVersionResolver({ ...VERSION_SOURCES.workbuddyClient, client: "workbuddy" }),
-  workbuddyCnClient: createClientVersionResolver({ ...VERSION_SOURCES.workbuddyCnClient, client: "workbuddy-cn" }),
-  workbuddyCli: createClientVersionResolver({ ...VERSION_SOURCES.workbuddyCli, client: "codebuddy" }),
   kimiCli: createClientVersionResolver({ ...VERSION_SOURCES.kimiCli, client: "kimi" }),
   codebuddy: createClientVersionResolver({ ...VERSION_SOURCES.codebuddy, client: "codebuddy" }),
   codebuddyCn: createClientVersionResolver({ ...VERSION_SOURCES.codebuddyCn, client: "codebuddy" }),
@@ -522,8 +471,6 @@ const PROVIDER_VERSION_RESOLVERS: Readonly<Record<string, ClientVersionResolver>
   traecn: resolvers.trae,
   cursor: resolvers.cursor,
   commandcode: resolvers.commandcode,
-  workbuddy: resolvers.workbuddyClient,
-  workbuddycn: resolvers.workbuddyCnClient,
   cb: resolvers.codebuddy,
   cbcn: resolvers.codebuddyCn,
   kimi: resolvers.kimiCli,
@@ -642,33 +589,6 @@ export const getClineCliVersion = accessor("clineCli").get;
 export const _resetClineCliVersionCache = accessor("clineCli").reset;
 
 export const getCodexVersion = accessor("codex").get;
-
-export const getWorkBuddyClientVersion = accessor("workbuddyClient").get;
-export const getWorkBuddyCnClientVersion = accessor("workbuddyCnClient").get;
-export const getWorkBuddyCliVersion = accessor("workbuddyCli").get;
-
-export function buildWorkBuddyUserAgent(
-  identity = "WB",
-  clientVersion = getWorkBuddyClientVersion(),
-  cliVersion = getWorkBuddyCliVersion(),
-): string {
-  // 1:1 with codebuddy2api. The CLI profile is `CLI/<v> CodeBuddy/<v>` and the
-  // WorkBuddy profile is `WorkBuddy/<wb> workbuddy-ai/<wb> CLI/<cli>`, which
-  // sends NO SDK headers — two separate profiles, not one string with a switch.
-  // Whether SDK headers ride along is decided by `workbuddyHeaders`, not here, so
-  // this builder only decides the UA text.
-  //
-  // The second token is the wire spelling `workbuddy-ai`, NOT the display
-  // brand `WorkBuddy AI`. This is what an official client actually sends; the
-  // product is branded with a space in the UI and in docs, and copying that
-  // branding into the header produced a UA no real client emits — which the
-  // intl gateway answers with 403 `11140`, the same refusal it gives a
-  // wrong-brand header. Product name ≠ wire token.
-  if (identity === "CLI") return `CLI/${cliVersion} CodeBuddy/${cliVersion}`;
-  return `WorkBuddy/${clientVersion} workbuddy-ai/${clientVersion} CLI/${cliVersion}`;
-}
-
-export const _resetWorkBuddyCnClientVersionCache = accessor("workbuddyCnClient").reset;
 
 export const getKimiCliVersion = accessor("kimiCli").get;
 

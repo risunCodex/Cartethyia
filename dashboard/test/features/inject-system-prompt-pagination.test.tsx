@@ -56,16 +56,6 @@ function provider(i: number): ProviderResponse {
   };
 }
 
-function model(i: number) {
-  return {
-    modelId: `model-${i}`,
-    route: `prov-0/model-${i}`,
-    provider: "prov-0",
-    label: `Model ${i}`,
-    enabled: true,
-  };
-}
-
 const EMPTY: TenantSystemPrompts = {
   global: null,
   presets: {},
@@ -78,7 +68,6 @@ const EMPTY: TenantSystemPrompts = {
 function seed() {
   const client = createTestQueryClient();
   client.setQueryData(queryKeys.providers.all, Array.from({ length: 12 }, (_, i) => provider(i)));
-  client.setQueryData(queryKeys.providers.models("prov-0"), Array.from({ length: 12 }, (_, i) => model(i)));
   client.setQueryData(queryKeys.modelRouting.combos, Array.from({ length: 12 }, (_, i) => comboRow(i)));
   client.setQueryData(queryKeys.modelRouting.aliases, Array.from({ length: 12 }, (_, i) => aliasRow(i)));
   client.setQueryData(queryKeys.systemPrompt.config, EMPTY);
@@ -116,8 +105,8 @@ test("combos & aliases area paginates and searches", async () => {
   const view = await mountDialog();
   try {
     // The surfaced list is a responsive 2-column grid (1 column at narrow
-    // widths), matching the per-model and per-provider sections instead of a
-    // full-width vertical stack.
+    // widths), matching the per-provider section instead of a full-width
+    // vertical stack.
     const grid = view.findAll('[data-testid="isp-named-grid"]')[0];
     expect(grid?.className).toContain("grid-cols-2");
     expect(grid?.className).toContain("max-small:grid-cols-1");
@@ -144,7 +133,7 @@ test("provider section paginates", async () => {
   try {
     expect(view.findAll('[data-testid="isp-provider-pagination"]').length).toBe(1);
     // Use the display name, not the provider id: `prov-0` also appears in the
-    // per-model routes, and `Provider 0` is a substring of the count header
+    // provider routes, and `Provider 0` is a substring of the count header
     // ("Provider 012 models"). `Provider 7` / `Provider 8` are unique.
     expect(document.body.textContent).toContain("Provider 7");
     expect(document.body.textContent).not.toContain("Provider 8");
@@ -153,23 +142,6 @@ test("provider section paginates", async () => {
     expect(document.body.textContent).toContain("Provider 8");
     expect(document.body.textContent).toContain("Provider 9");
     expect(document.body.textContent).not.toContain("Provider 7");
-  } finally {
-    view.unmount();
-  }
-});
-
-test("per-model grid paginates", async () => {
-  const view = await mountDialog();
-  try {
-    expect(view.findAll('[data-testid="isp-model-pagination"]').length).toBe(1);
-    expect(document.body.textContent).toContain("model-0");
-    expect(document.body.textContent).toContain("model-7");
-    expect(document.body.textContent).not.toContain("model-8");
-
-    await clickNext(view, "isp-model-pagination");
-    expect(document.body.textContent).toContain("model-8");
-    expect(document.body.textContent).toContain("model-9");
-    expect(document.body.textContent).not.toContain("model-0");
   } finally {
     view.unmount();
   }

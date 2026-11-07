@@ -52,7 +52,7 @@ describe("bundled providers are untouched", () => {
   test("a bundled provider that did not opt in still uses the proxy", () => {
     // The regression that matters: routing through the proxy is the working
     // setup for these, and it must not change.
-    for (const id of ["workbuddy", "cb", "openai"]) {
+    for (const id of ["cb", "openai"]) {
       expect(isBundledProviderId(id)).toBe(true);
       expect(defaultSkipProxy(id)).toBe(false);
     }

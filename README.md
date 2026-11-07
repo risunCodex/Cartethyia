@@ -136,7 +136,7 @@ and change routing without restarting anything.
 Generation routes take an opaque body and let the provider's own adapter shape
 it, so what a given model accepts is whatever that provider accepts. Images are
 served by Gemini, Antigravity, Codex, and the Buddy family. Video is narrower:
-among bundled providers only CodeBuddy and WorkBuddy declare it, via
+among bundled providers only CodeBuddy declares it, via
 `seedance-2.5`, submitted as an async task the adapter polls to completion
 rather than returning a clip inline. A custom provider is not restricted to
 those: any upstream you point it at can serve either route, and the remote's

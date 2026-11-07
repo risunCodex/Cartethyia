@@ -160,7 +160,7 @@ async function hitCosy(): Promise<void> {
 }
 
 // ---------------------------------------------------------------- IDE/HTTP ----
-const IDE_URL = "https://api2-v2.qoder.sh/model/v1/chat/completions";
+const IDE_URL = "https://api1.qoder.sh/model/v1/chat/completions";
 
 function ideHeaders(): Record<string, string> {
   return {

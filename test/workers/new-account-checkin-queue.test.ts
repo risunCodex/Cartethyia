@@ -83,7 +83,7 @@ beforeEach(() => {
 
 describe("enqueueCheckin — only accounts the check-in can serve", () => {
   test("a buddy provider is queued", () => {
-    expect(enqueueCheckin({ accountId: "a1", providerId: "workbuddy", tenantId: null })).toBe(true);
+    expect(enqueueCheckin({ accountId: "a1", providerId: "cb", tenantId: null })).toBe(true);
     expect(pendingCheckinCount()).toBe(1);
   });
 
@@ -114,9 +114,9 @@ describe("quotaRefreshSweep — a queued new account is admitted while fresh", (
   test("an account newer than the freshness gate still gets its check-in", async () => {
     // The account's cached reading is seconds old and `minAgeMs` is an hour, so
     // the usual gate would drop it. Being queued is what admits it.
-    const targets = [target("new-1", "workbuddy")];
+    const targets = [target("new-1", "cb")];
     await seedCacheAge("new-1", new Date(NOW));
-    enqueueCheckin({ accountId: "new-1", providerId: "workbuddy", tenantId: null });
+    enqueueCheckin({ accountId: "new-1", providerId: "cb", tenantId: null });
     const attempted: string[] = [];
     await quotaRefreshSweep({
       ...sweepDeps(targets, 60 * 60_000),
@@ -138,7 +138,7 @@ describe("quotaRefreshSweep — a queued new account is admitted while fresh", (
   test("a fresh account that was not queued is still skipped", async () => {
     // Proves the queue is what admitted it above, not a blanket removal of the
     // freshness gate.
-    const targets = [target("fresh-1", "workbuddy")];
+    const targets = [target("fresh-1", "cb")];
     await seedCacheAge("fresh-1", new Date(NOW));
     const attempted: string[] = [];
     await quotaRefreshSweep({

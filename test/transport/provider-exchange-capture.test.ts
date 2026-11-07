@@ -120,7 +120,7 @@ describe("provider exchange capture", () => {
       capture,
     );
 
-    await fetcher("https://www.workbuddy.ai/v2/chat/completions", {
+    await fetcher("https://www.codebuddy.ai/v2/chat/completions", {
       method: "POST",
       headers: {
         authorization: "******",

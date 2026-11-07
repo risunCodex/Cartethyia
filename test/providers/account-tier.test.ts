@@ -20,7 +20,6 @@ describe("mapPlanToTier", () => {
     expect(mapPlanToTier("traecn", "Free Plan Subscription")).toBe("free");
     expect(mapPlanToTier("cb", "personal_free_user")).toBe("free");
     expect(mapPlanToTier("cbcn", "personal_free_user_lite")).toBe("free");
-    expect(mapPlanToTier("workbuddy", "personal_free_user")).toBe("free");
     expect(mapPlanToTier("qoder", "free")).toBe("free");
     expect(mapPlanToTier("cursor", "FREE")).toBe("free");
   });
@@ -33,7 +32,6 @@ describe("mapPlanToTier", () => {
 
   test("buddy-family paid plans map to paid; enterprise/team map to pro", () => {
     expect(mapPlanToTier("cb", "Professional")).toBe("paid");
-    expect(mapPlanToTier("workbuddy", "Enterprise")).toBe("pro");
     expect(mapPlanToTier("cbcn", "Team")).toBe("pro");
   });
 

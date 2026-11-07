@@ -318,6 +318,20 @@ export const PROVIDER_CAPABILITIES = {
         ...(fetcher === undefined ? {} : { fetcher }),
       }),
   },
+  devin: {
+    // Devin's chat wire is a Connect-RPC protobuf stream; the path is pinned
+    // here so a probe verifies dispatch actually calls it.
+    endpointPathsByWireFamily: { chat: "/exa.api_server_pb.ApiServerService/GetChatMessage" },
+    loadAdapter: async () => (await import("./integrations/devin/devin")).devinAdapter,
+    loadModels: async () => (await import("./integrations/devin/devin-catalog")).DEVIN_MODELS,
+    loadAuthentication: oauthCapability(() => import("./integrations/devin/devin-auth"), "devinOAuthClient"),
+    loadQuotaCollector: quotaCapability(() => import("./integrations/devin/devin-quota"), "fetchDevinQuota"),
+    loadModelDiscovery: async () => async ({ credential, fetcher }) =>
+      (await import("./integrations/devin/devin-catalog")).discoverDevinModels({
+        credential,
+        ...(fetcher === undefined ? {} : { fetcher }),
+      }),
+  },
   cerebras: {
     endpointPathsByWireFamily: { chat: "/chat/completions" },
     loadAdapter: async () => createApiKeyAdapter((await import("./integrations/cerebras")).CEREBRAS_SPEC),

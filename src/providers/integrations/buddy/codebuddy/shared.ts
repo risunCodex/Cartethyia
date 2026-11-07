@@ -13,8 +13,7 @@ import {
   resolveBuddyIdentity,
 } from "../buddy-identity";
 import { buildCodeBuddyUserAgent, getCodeBuddyCnVersion, getCodeBuddyVersion } from "../../../operations/client-versions";
-import { buddyDeviceTokenHeaders } from "../workbuddy/shared";
-import { CODEBUDDY_TURING_CONFIG } from "../turing-device-token";
+import { buddyDeviceTokenHeaders } from "../buddy-identity";
 import { buddyCliHeaders, buddyCliTraceHeaders } from "../buddy-cli-headers";
 
 /** Client identity variant behind the per-request CodeBuddy headers. */
@@ -105,25 +104,22 @@ export async function codebuddyHeaders(
     // The reference does not invent `conversation`; it sends the purpose only
     // when one exists.
     ...(purpose === undefined ? {} : { "X-Agent-Purpose": purpose }),
-    // Same family WorkBuddy sends: the upstream's channel check reads the
-    // turn-level aggregation key, and a chat request without it is refused for a
-    // missing conversation id.
+    // The upstream's channel check reads the turn-level aggregation key, and a
+    // chat request without it is refused for a missing conversation id.
     ...conversation,
     // Per-account device binding (qimei36) — distinct device per account.
     ...(() => {
       const binding = resolveBuddyDeviceBinding(context);
       return binding === undefined ? {} : { "X-Device-Id-List": JSON.stringify({ qimei36: binding }) };
     })(),
-    // The desktop client sends the device-token pair on both realms. SDK
-    // token when configured, captured token otherwise, or the official failure
-    // placeholder. CodeBuddy uses its own SDK payload profile (same SDK,
-    // distinct product identity). (CLI branch above already returned without
+    // The desktop client sends the device-token pair on both realms. Captured
+    // token (auth_state / device-token file) when present, otherwise the
+    // official failure placeholder. (CLI branch above already returned without
     // device headers.)
     ...(await buddyDeviceTokenHeaders({
       realm: identity === "IDE" ? "intl" : "cn",
       context,
       cliIdentity,
-      turingConfig: CODEBUDDY_TURING_CONFIG,
     })),
   };
 }

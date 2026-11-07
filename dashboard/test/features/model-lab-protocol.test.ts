@@ -192,7 +192,7 @@ describe("buildLabRequest", () => {
   });
 
   test("an explicit media request forces only its independently selected worker", () => {
-    const videoModel = "workbuddy/seedance-2.5";
+    const videoModel = "cb/seedance-2.5";
     const imageModel = "gemini/gemini-3-pro-image-preview";
     const imageBuilt = buildLabRequest(
       [{ role: "user", text: "Generate an image of a red kite." }],
@@ -579,7 +579,7 @@ describe("buildLabRequest", () => {
         updatedAt: 2,
         model: "openai/gpt-4.1",
         imageWorkerModel: "gemini/gemini-3-pro-image-preview",
-        videoWorkerModel: "workbuddy/seedance-2.5",
+        videoWorkerModel: "cb/seedance-2.5",
         imageSize: "1536x1024",
         imageCount: "3",
         videoSize: "720p",
@@ -590,7 +590,7 @@ describe("buildLabRequest", () => {
           role: "assistant",
           text: "Generated",
           videos: [{ name: "clip.mp4", src: "https://cdn.example/clip.mp4" }],
-          workerModels: ["workbuddy/seedance-2.5"],
+          workerModels: ["cb/seedance-2.5"],
           toolCalls: [{ id: "question-1", name: "ask_user_question", arguments: "{}" }],
           toolRounds: [{
             text: "",
@@ -607,7 +607,7 @@ describe("buildLabRequest", () => {
       });
       expect(configured).toMatchObject({
         imageWorkerModel: "gemini/gemini-3-pro-image-preview",
-        videoWorkerModel: "workbuddy/seedance-2.5",
+        videoWorkerModel: "cb/seedance-2.5",
         imageSize: "1536x1024",
         imageCount: "3",
         videoSize: "720p",
@@ -615,7 +615,7 @@ describe("buildLabRequest", () => {
         toolPermission: "yolo",
         messages: [{
           videos: [{ name: "clip.mp4", src: "https://cdn.example/clip.mp4" }],
-          workerModels: ["workbuddy/seedance-2.5"],
+          workerModels: ["cb/seedance-2.5"],
           toolRounds: [{
             reasoning: "I should search for current information first.",
             toolResults: [{ toolCallId: "question-1", text: "{\"selected\":{\"id\":\"minimal\"}}" }],

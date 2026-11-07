@@ -49,7 +49,7 @@ interface WireTokenBound {
  * The output limit assumed when the caller states none, for wires that need
  * the field present.
  *
- * PROVEN, not assumed: a 3.16M-char prompt to WorkBuddy/CodeBuddy
+ * PROVEN, not assumed: a 3.16M-char prompt to CodeBuddy
  * (`bansos/deepseek-v4.1-flash`) answered `400 model_param_invalid` whenever
  * `max_tokens` was absent, and answered 200 with the *same* body plus any
  * explicit value — `1`, `16`, `1000`, `8000`, `64000`, `384000` all passed.

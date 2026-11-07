@@ -248,7 +248,7 @@ export function canonicalToChatPayload(
       // to be replayed, and the tool-call turn is exactly where a thinking
       // model emits it — dropping it here made the next request fail with
       // "the reasoning content from the previous turn must be passed back in
-      // thinking mode" (WorkBuddy/CodeBuddy 400). Chat Completions has no
+      // thinking mode" (CodeBuddy 400). Chat Completions has no
       // reasoning content part, so it travels in the provider-native
       // `reasoning_content` side channel, same as the branches below.
       const reasoningContent = m.content
@@ -365,7 +365,7 @@ export function canonicalToChatPayload(
         // nothing left to say: emitting it as an empty-content `user` message
         // right after the tool results breaks strict upstreams (a bare `user`
         // turn between a result and the next assistant turn reads as a broken
-        // tool sequence — WorkBuddy/CodeBuddy `11148`). Fold the leftover
+        // tool sequence — CodeBuddy `11148`). Fold the leftover
         // reasoning into the last tool message's side channel when one was
         // just emitted, and skip the turn otherwise; a turn that still
         // carries text or rich parts emits below as usual.
@@ -382,7 +382,7 @@ export function canonicalToChatPayload(
           // or a non-empty serialised payload. Pushing `{content:"",
           // reasoning_content:""}` is the opposite of load-bearing — the
           // upstream reads it as "thinking mode with the reasoning stripped"
-          // and rejects the whole request (`WorkBuddy/CodeBuddy 11151 "history
+          // and rejects the whole request (`CodeBuddy 11151 "history
           // not found"`). The canonical form that reaches this branch with no
           // trace is an input `reasoning` item whose `summary` was absent and
           // whose `payload` was `null` — a signature-less thinking block
@@ -570,7 +570,7 @@ export function canonicalToChatPayload(
   // Resolved unconditionally, not only when the caller sent a value: the bound
   // table now carries a `defaultMaxTokens` for this wire, and an omitted limit
   // must reach the upstream as a real number. Upstreams that require the field
-  // reject a large prompt whose `max_tokens` is absent outright (WorkBuddy
+  // reject a large prompt whose `max_tokens` is absent outright (CodeBuddy
   // `400 model_param_invalid`, reproduced through the gateway).
   const bounded = resolveWireMaxTokens("chat", { max_tokens: requestedMaxTokens }, {
     ...(options.maxOutputTokens === undefined ? {} : { maxOutputTokens: options.maxOutputTokens }),

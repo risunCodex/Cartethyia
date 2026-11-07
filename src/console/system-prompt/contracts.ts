@@ -115,7 +115,6 @@ export const SYSTEM_PROMPT_ALIAS_LIMIT = 512;
 const WRAPPED_INJECTION_PROVIDERS: ReadonlySet<string> = new Set([
   "cb", // CodeBuddy International
   "cbcn", // CodeBuddy CN
-  "workbuddy",
 ]);
 
 /** Whether a provider's tenant text rides wrapped after the fixed identity prompt. */

@@ -1,6 +1,7 @@
 import { ArrowRight, Copy, CopyPlus, HelpCircle, Image as ImageIcon, Layers, Pencil, Plus, Route, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "../../components/ui/button";
+import { Badge } from "../../components/ui/badge";
 import { Card, CardBody, CardHeader } from "../../components/ui/card";
 import { Dialog } from "../../components/ui/dialog";
 import { DialogActions } from "../../components/ui/dialog-actions";
@@ -23,7 +24,7 @@ import { useClipboard } from "../../hooks/use-clipboard";
 import { toast } from "../../lib/toast";
 import { useRuntimeSettings, useUpdateRuntimeSettings } from "../../hooks/settings";
 import type { ComboStrategy, ModelAliasRow, ModelComboRow, UpdateRuntimeSettingsRequest } from "../../data/contracts";
-import type { ScopePromptRef } from "../../../../src/console/system-prompt/contracts";
+import type { ScopePromptRef, SystemPromptPreset } from "../../../../src/console/system-prompt/contracts";
 import { COMBO_STRATEGY_OPTIONS } from "./combo-strategy";
 import {
   useCloneModelCombo,
@@ -43,6 +44,24 @@ import {
  *  not be unique across page lifetime — they only need to survive one drag. */
 const makeId = (): string =>
   `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+/** Resolves one scope ref to its effective active state + display label. */
+function scopePromptStatus(
+  ref: ScopePromptRef | undefined,
+  presets: Readonly<Record<string, SystemPromptPreset>>,
+): { readonly active: boolean; readonly label: string } {
+  if (ref === undefined) return { active: false, label: "System prompt" };
+  if (ref.kind === "off") return { active: false, label: "System prompt" };
+  if (ref.kind === "global") return { active: false, label: "System prompt" };
+  if (ref.kind === "preset") {
+    const preset = presets[ref.presetId];
+    const active = preset?.enabled === true;
+    return { active, label: `Preset · ${preset?.name ?? ref.presetId}` };
+  }
+  const active = ref.setting.enabled;
+  const mode = ref.setting.mode === "override" ? "Override" : "Append";
+  return { active, label: `Custom · ${mode}` };
+}
 
 // ── Aliases Section ──────────────────────────────────────────────────────────
 
@@ -217,6 +236,14 @@ function AliasesSection(): ReactNode {
                   className="flex items-center gap-4 flex-wrap min-w-0"
                 >
                   <CodeChip value={a.alias} tone="accent" />
+                  {(() => {
+                    const status = scopePromptStatus(spState.aliases[a.alias], spState.presets);
+                    return status.active ? (
+                      <Badge tone="ok" dot title={status.label}>
+                        {status.label}
+                      </Badge>
+                    ) : null;
+                  })()}
                   <ArrowRight size={13} className="text-text-tertiary shrink-0" />
                   <CodeChip value={a.targetModel} tone="plain" />
                 </div>
@@ -775,7 +802,17 @@ function CombosSection(): ReactNode {
                 >
                   {/* The strategy is already shown by the Select beside it; a
                       badge repeating the same value was redundant. */}
-                  <strong className="text-body">{c.name}</strong>
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <strong className="text-body">{c.name}</strong>
+                    {(() => {
+                      const status = scopePromptStatus(spState.combos[c.name], spState.presets);
+                      return status.active ? (
+                        <Badge tone="ok" dot title={status.label}>
+                          {status.label}
+                        </Badge>
+                      ) : null;
+                    })()}
+                  </span>
                 </div>
 
                 <Inline gap="6px" className="w-full flex-wrap">

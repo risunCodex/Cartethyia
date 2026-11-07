@@ -91,7 +91,7 @@ export function repairMissingToolResponses(
  * fully answered by matching `tool` results is stripped of its calls (kept when
  * it still carries content), and the dangling results go with it.
  *
- * This is the buddy-family policy (WorkBuddy/CodeBuddy code `11148`): a partial
+ * This is the buddy-family policy (CodeBuddy code `11148`): a partial
  * batch `assistant[c1 c2] + tool[c1]` is a broken sequence the upstream rejects,
  * and a synthesized placeholder cannot stand in for a real execution the model
  * never saw. Contrast `repairMissingToolResponses`, which synthesizes an
@@ -188,7 +188,7 @@ export function repairRequestToolCalls(request: CanonicalRequest): CanonicalRequ
  * True when a `toolResult` part is a `tool`-role turn whose `toolCall` is
  * absent from the whole history, or when results for one batch of calls are
  * not contiguous. Upstreams reject both with `tool_call_sequence_broken`
- * (WorkBuddy/CodeBuddy code `11148`), and a broken history stays broken: the
+ * (CodeBuddy code `11148`), and a broken history stays broken: the
  * client replays it on every later turn, so the whole conversation dies.
  */
 function toolCallIdsIn(message: CanonicalMessage): string[] {

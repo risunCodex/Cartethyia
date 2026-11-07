@@ -1,7 +1,7 @@
 /**
  * Chat-wire payload and message normalization shared by the Tencent "buddy"
- * family providers — CodeBuddy International (`cb`), CodeBuddy CN (`cbcn`),
- * and WorkBuddy. All three speak the same upstream contract for this part of
+ * family providers — CodeBuddy International (`cb`) and CodeBuddy CN (`cbcn`).
+ * Both speak the same upstream contract for this part of
  * the payload, so the rules live here once instead of being copied per
  * variant:
  *
@@ -332,10 +332,10 @@ function buddyTemplatePattern(text: string): RegExp {
   return new RegExp(`(?<!\\w)${buddyTemplateSource(text)}(?!\\w)`, "i");
 }
 
-// DeepSeek Harness (DSH) role identities. DSH is the harness behind WorkBuddy;
-// a history that still carries its self-description reads to the upstream as a
-// foreign channel, so the hardened client rewrites it back to the WorkBuddy
-// identity rather than forwarding a competing one.
+// DeepSeek Harness (DSH) role identities. DSH is the harness behind the buddy
+// family; a history that still carries its self-description reads to the
+// upstream as a foreign channel, so the hardened client rewrites it back to
+// the CodeBuddy identity rather than forwarding a competing one.
 const DSH_CODING_PATTERN = new RegExp(
   `(?<!\\w)${buddyTemplateSource("You are a coding agent powered by the")}` +
     `[\\s${BUDDY_ZWSP}]+([^\\r\\n]{1,200}?)[\\s${BUDDY_ZWSP}]+` +
@@ -350,17 +350,17 @@ const DSH_DIRECT_PATTERN = buddyTemplatePattern("You are DeepSeek Harness");
 const DSH_WEB_GUI_PATTERN = buddyTemplatePattern("DeepSeek Harness Web GUI");
 
 /** The identity DSH role prompts are rewritten to; neutral and minimal. */
-const DSH_WORKBUDDY_IDENTITY = "You are a helpful assistant";
+const DSH_CODEBUDDY_IDENTITY = "You are a helpful assistant";
 
 /**
  * Rewrites DeepSeek Harness role identities in one message's text back to the
- * WorkBuddy identity. Port of the donor gateway's always-on
+ * CodeBuddy identity. Port of the donor gateway's always-on
  * `desensitize_channel_body`, scoped to text the wire actually carries.
  *
  * This normalizes a replayed history (or a surviving system turn) that still
- * claims the DSH harness, so a WorkBuddy request never advertises a competing
+ * claims the DSH harness, so a buddy request never advertises a competing
  * channel identity upstream. The coding persona keeps the model it named:
- * "You are a coding agent powered by the X model" becomes the WorkBuddy
+ * "You are a coding agent powered by the X model" becomes the CodeBuddy
  * identity plus "powered by the X model".
  */
 export function scrubBuddyChannelIdentityText(text: string): string {
@@ -368,13 +368,13 @@ export function scrubBuddyChannelIdentityText(text: string): string {
   const withCodingPersona = text.replace(
     DSH_CODING_PATTERN,
     (_match, model: string) =>
-      `${DSH_WORKBUDDY_IDENTITY}. This conversation is powered by the ${model.trim()} model`,
+      `${DSH_CODEBUDDY_IDENTITY}. This conversation is powered by the ${model.trim()} model`,
   );
   return withCodingPersona
-    .replace(DSH_CHANNEL_IDENTITY_PATTERN, DSH_WORKBUDDY_IDENTITY)
-    .replace(DSH_MINIMAL_PATTERN, DSH_WORKBUDDY_IDENTITY)
-    .replace(DSH_DIRECT_PATTERN, DSH_WORKBUDDY_IDENTITY)
-    .replace(DSH_WEB_GUI_PATTERN, "WorkBuddy Web GUI");
+    .replace(DSH_CHANNEL_IDENTITY_PATTERN, DSH_CODEBUDDY_IDENTITY)
+    .replace(DSH_MINIMAL_PATTERN, DSH_CODEBUDDY_IDENTITY)
+    .replace(DSH_DIRECT_PATTERN, DSH_CODEBUDDY_IDENTITY)
+    .replace(DSH_WEB_GUI_PATTERN, "CodeBuddy Web GUI");
 }
 
 function scrubBuddyMessageText(message: Record<string, unknown>, field: string): void {
@@ -504,8 +504,8 @@ export function buddyPrePayloadCommon(
     cleanupBuddyOrphanToolPairs(arr);
     coalesceConsecutiveAssistantMessages(arr);
     // Normalize a replayed harness history before the blocked-code rewrite
-    // below: DSH role identities are replaced with the WorkBuddy identity, so
-    // a WorkBuddy-family request never forwards a competing channel identity.
+    // below: DSH role identities are replaced with the CodeBuddy identity, so
+    // a buddy-family request never forwards a competing channel identity.
     scrubBuddyChannelIdentity(arr);
     // After every merge: a quoted `11128` in any surviving text blocks the
     // whole request, and the merges above are what produce the final text.
@@ -1138,7 +1138,7 @@ export interface BuddyMessageFinalizeOptions {
  * The single authoritative buddy message-shape pipeline. Every variant runs
  * the same sequence — coalesce, drop empty turns, guarantee the leading system
  * turn, omit content on tool_calls-only assistant turns, then auto-cache — so
- * the wire shape cannot drift between CodeBuddy intl, CN, and WorkBuddy.
+ * the wire shape cannot drift between CodeBuddy intl and CN.
  */
 export function finalizeBuddyMessages(
   messages: Array<Record<string, unknown>>,

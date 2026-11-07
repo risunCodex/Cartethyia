@@ -2,7 +2,7 @@ import { asNumber as sharedAsNumber } from "../../../shared/coerce";
 
 /**
  * Shared Tencent billing-meter parsing for the CodeBuddy family
- * (`cb`, `cbcn`, `workbuddy`).
+ * (`cb`, `cbcn`).
  *
  * All three read the same endpoint shape — POST
  * `{base}/v2/billing/meter/get-user-resource` answering

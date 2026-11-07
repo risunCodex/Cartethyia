@@ -119,7 +119,7 @@ export function resolveAccountAuthRejectedCooldownMs(): number {
  * Deliberately a *base*, not the 24h flat penalty it replaced. `11140` has two
  * documented causes our classifier cannot separate from the response alone: the
  * user's prompt failed a safety review, **and** sending the wrong desktop
- * `User-Agent` brand (`workbuddy/shared.ts`). A flat 24h meant that after we
+ * `User-Agent` brand (`codebuddy/shared.ts`). A flat 24h meant that after we
  * fixed a header regression every buddy account stayed dead for up to a further
  * day, and one unsafe prompt cost a whole account a day.
  *

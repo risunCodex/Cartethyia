@@ -16,7 +16,6 @@
  */
 import { describe, expect, test } from "bun:test";
 import { codebuddyHeaders } from "../../src/providers/integrations/buddy/codebuddy/shared";
-import { workbuddyHeaders } from "../../src/providers/integrations/buddy/workbuddy/shared";
 import type { ProviderDispatchContext } from "../../src/providers/provider-contracts";
 
 /** No browser *transport* header survives into the CLI identity. */
@@ -24,8 +23,6 @@ const BROWSER_HEADERS = ["origin", "referer", "accept-language"] as const;
 
 /** Request-shape markers the reference sends on every call, CLI included. */
 const REQUEST_MARKERS = ["x-requested-with", "x-codebuddy-request"] as const;
-
-const AGENT_ENVELOPE = ["X-Agent-Intent", "X-Agent-Type", "X-Agent-Runtime"] as const;
 
 const STAINLESS = [
   "x-stainless-lang",
@@ -161,90 +158,3 @@ describe("CodeBuddy CLI identity", () => {
   });
 });
 
-describe("WorkBuddy CLI identity", () => {
-  test("carries the agent envelope, drops browser transport, keeps the markers", async () => {
-    const headers = await workbuddyHeaders(context, undefined, "www.workbuddy.ai", "5.8.4", true);
-    for (const name of AGENT_ENVELOPE) expect(headers[name]).toBeDefined();
-    for (const name of BROWSER_HEADERS) expect(headers[name]).toBeUndefined();
-    for (const name of REQUEST_MARKERS) expect(headers[name]).toBeDefined();
-    expect(headers["x-requested-with"]).toBe("XMLHttpRequest");
-    expect(headers["x-codebuddy-request"]).toBe("1");
-    expect(headers["x-device-token"]).toBeUndefined();
-    expect(headers["accept"]).toBe("application/json");
-    // The CLI of chat transport is axios, so the stainless fingerprint is absent.
-    for (const name of STAINLESS) expect(headers[name]).toBeUndefined();
-  });
-
-  test("presents itself as CLI rather than the desktop product", async () => {
-    const headers = await workbuddyHeaders(context, undefined, "www.workbuddy.ai", "5.8.4", true);
-    expect(headers["x-ide-name"]).toBe("CLI");
-    expect(headers["x-ide-type"]).toBe("CLI");
-    // The upstream gates chat on the desktop UA brand; the CLI has its own.
-    expect(headers["user-agent"]).toMatch(/^CLI\/\S+ CodeBuddy\/\S+$/);
-  });
-
-  test("omits the desktop device pair the CLI has no equivalent for", async () => {
-    const headers = await workbuddyHeaders(context, undefined, "www.workbuddy.ai", "5.8.4", true);
-    expect(headers["x-machine-id"]).toBeUndefined();
-    expect(headers["x-session-id"]).toBeUndefined();
-  });
-});
-
-describe("the desktop identity is unchanged", () => {
-  test("x-product is the official SaaS value on both realms", async () => {
-    // `WorkBuddy` was a value this repo invented; both references send `SaaS`.
-    expect((await workbuddyHeaders(context, undefined, "www.workbuddy.ai", "5.8.4"))["x-product"]).toBe("SaaS");
-    expect((await workbuddyHeaders(context, undefined, "www.workbuddy.cn", "5.8.3"))["x-product"]).toBe("SaaS");
-  });
-
-  test("an unset flag leaves the desktop headers exactly as they were", async () => {
-    const headers = await workbuddyHeaders(context, undefined, "www.workbuddy.ai", "5.8.4");
-    expect(headers["origin"]).toBe("https://www.workbuddy.ai");
-    expect(headers["referer"]).toBe("https://www.workbuddy.ai/");
-    expect(headers["accept-language"]).toBe("en-US");
-    expect(headers["x-requested-with"]).toBe("XMLHttpRequest");
-    expect(headers["x-codebuddy-request"]).toBe("1");
-    // The desktop client sends either a real device token (bundled Turing SDK)
-    // or the failure placeholder — never neither. Intl included.
-    expect(headers["x-device-token"] !== undefined || headers["x-device-token-error"] !== undefined).toBe(true);
-    expect(headers["x-ide-name"]).toBe("WorkBuddy");
-    expect(headers["accept"]).toBe("application/json, text/event-stream");
-    // Not one CLI-only header leaks into the default identity.
-    for (const name of AGENT_ENVELOPE) expect(headers[name]).toBeUndefined();
-    for (const name of STAINLESS) expect(headers[name]).toBeUndefined();
-  });
-
-  test("CN desktop sends a device token (SDK) or the captured token", async () => {
-    const headers = await workbuddyHeaders(context, undefined, "www.workbuddy.cn", "5.7.7.40774747");
-    expect(headers["x-device-token"] !== undefined || headers["x-device-token-error"] !== undefined).toBe(true);
-  });
-
-  test("desktop with no captured token still presents token or error", async () => {
-    const headers = await workbuddyHeaders(anonymous, undefined, "www.workbuddy.ai", "5.8.4");
-    expect(headers["x-device-token"] !== undefined || headers["x-device-token-error"] !== undefined).toBe(true);
-  });
-
-  test("an account authorized as CLI overrides the desktop default", async () => {
-    const cliAccount = {
-      credential: { account_id: "a1", auth_state: { cliIdentity: true } },
-    } as unknown as ProviderDispatchContext;
-    const headers = await workbuddyHeaders(cliAccount, undefined, "www.workbuddy.ai", "5.8.4");
-    expect(headers["x-ide-name"]).toBe("CLI");
-    expect(headers["x-device-token"]).toBeUndefined();
-  });
-
-  test("desktop message ids are dashed UUIDs while CLI message ids stay hex", async () => {
-    // The reference emits dashed-UUID message/request ids on the WorkBuddy
-    // desktop product and 32-hex on CLI traffic.
-    const desktop = await workbuddyHeaders(context, undefined, "www.workbuddy.ai", "5.8.4");
-    expect(desktop["x-conversation-message-id"]).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    );
-    expect(desktop["x-request-id"]).toBe(desktop["x-conversation-message-id"]);
-    // The turn aggregation key stays hex even on desktop.
-    expect(desktop["x-conversation-request-id"]).toMatch(/^[0-9a-f]{32}$/);
-    const cli = await workbuddyHeaders(context, undefined, "www.workbuddy.ai", "5.8.4", true);
-    expect(cli["x-conversation-message-id"]).toMatch(/^[0-9a-f]{32}$/);
-    expect(cli["x-request-id"]).toBe(cli["x-conversation-message-id"]);
-  });
-});

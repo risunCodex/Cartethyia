@@ -884,9 +884,7 @@ export function createProviderCatalogOperations(config: ProviderCatalogConfig) {
                 // channel check (11128) rejects the imported account.
                 const materialized =
                   account.providerId === "cb" ||
-                  account.providerId === "cbcn" ||
-                  account.providerId === "workbuddy" ||
-                  account.providerId === "workbuddycn"
+                  account.providerId === "cbcn"
                     // dynamic-import: B-02 lazy graph — buddy device-binding materializer, buddy-family only.
                     // The buddy-identity graph is lazy-loaded: the device-binding
                     // materializer only runs for buddy-family accounts (B-02).

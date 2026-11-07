@@ -1,14 +1,13 @@
 /**
  * Qoder adapter — transport selection, credential resolution, dispatch.
  *
- * Surface contract (2026-11-05):
- * - `grpc` (default, production): `model.chat.ChatService/ChatCompletionStream`
- *   — the only proven carrier of real 1M-token context (HTTP IDE caps at
- *   ~256 KiB). Serves billed rows; a free-tier row (`lite`) is refused there
- *   (`quota exceeded` 116) and must use legacy COSY.
- * - `cosy` (free/lite + forced legacy): `/algo/.../agent_chat_generation` —
- *   the only surface that accepts free-tier rows. Signing is the COSY Bearer
- *   scheme (AES/RSA + alphabet-scrambled body).
+ * Surface contract (2026-11-07):
+ * - `cosy` (default, production): `/algo/.../agent_chat_generation` on
+ *   `api1` → `api2` → `api3.qoder.sh` (legacy COSY) — the only surface
+ *   verified alive. Accepts free-tier rows (`lite`).
+ * - `grpc` (`model.chat.ChatService/ChatCompletionStream`): **not the
+ *   default anymore** — its host (`api2-v2.qoder.sh`) is NXDOMAIN since
+ *   2026-11-07. Kept as an explicit override for probes.
  * - `ide` (`/model/v1/chat/completions`): **probe/testing only — never
  *   production.** It is the only surface that echoes strategy metadata
  *   (`raw_usage` → provider_model/target) and it streams immediately, but its
@@ -56,17 +55,16 @@ interface QoderAdapterOptions {
   /**
    * Which chat transport to dispatch on.
    *
-   * `grpc` (default) uses the gRPC model-server surface
-   * (`model.chat.ChatService/ChatCompletionStream`) — the only proven carrier
-   * of real 1M-token context (the HTTP IDE surface caps at ~256 KiB). gRPC
-   * serves billed models; a free-tier row (`lite`) is refused there
-   * (`quota exceeded` 116) and must use the legacy COSY surface.
+   * `cosy` (default) = legacy COSY (`/algo/.../agent_chat_generation`) on
+   * `api1` → `api2` → `api3.qoder.sh` — the only surface verified alive
+   * (2026-11-07; the `api2-v2` model-server host is NXDOMAIN). This path also
+   * accepts free-tier rows (`lite`).
    *
-   * `cosy` forces only the legacy surface (`/algo/.../agent_chat_generation`)
-   * — the free-tier path and the pre-gRPC behavior.
+   * `grpc` forces the gRPC surface (`model.chat.ChatService/ChatCompletionStream`)
+   * — **no longer the default**; its host is not verified alive.
    *
-   * `ide` forces the modern `/model/v1` surface — **probe/testing only, never
-   * production** (see module doc).
+   * `ide` forces `/model/v1` — **probe/testing only, never production**
+   * (see module doc).
    */
   readonly surface?: "grpc" | "cosy" | "ide";
 }
@@ -76,7 +74,7 @@ export function resolveQoderTransport(
   surface: "grpc" | "cosy" | "ide" | undefined,
   modelConfig: QoderModelConfig,
 ): "grpc" | "cosy" | "ide" {
-  const chosen = surface ?? "grpc";
+  const chosen = surface ?? "cosy";
   // `ide` is an explicit testing override — never auto-selected, and it does
   // not apply the free-tier rule (a forced IDE call is a test call).
   if (chosen === "ide") return "ide";
@@ -270,12 +268,31 @@ class QoderAdapter implements ProviderAdapter {
         return;
       }
 
-      const cosyUrl = candidate.endpoint_path?.startsWith("http")
-        ? candidate.endpoint_path
-        : `${qoderInferenceCandidates(this.realm, auth.securityOauthToken)[0] ?? ""}${QODER_CHAT_PATH}`;
-      const cosyRequest = () =>
-        callQoder(cosyUrl, buildQoderRequest(modelId, request, modelConfig, auth, this.realm), modelId, auth, lifecycle.signal, fetcher, version);
-      const response = await cosyRequest();
+      // Legacy COSY hosts are tried in order (api1 → api2 → api3) with the
+      // endpoint path from discovery when present. A network-level failure on
+      // one host falls through to the next; an HTTP error response surfaces as-is.
+      const cosyCandidates = candidate.endpoint_path?.startsWith("http")
+        ? [candidate.endpoint_path]
+        : qoderInferenceCandidates(this.realm, auth.securityOauthToken).map(
+            (host) => `${host}${QODER_CHAT_PATH}`,
+          );
+      let response: Response | undefined;
+      let lastError: unknown;
+      for (const cosyUrl of cosyCandidates) {
+        try {
+          const attempt = () =>
+            callQoder(cosyUrl, buildQoderRequest(modelId, request, modelConfig, auth, this.realm), modelId, auth, lifecycle.signal, fetcher, version);
+          response = await attempt();
+          break;
+        } catch (err: unknown) {
+          lastError = err;
+        }
+      }
+      if (response === undefined) {
+        throw lastError instanceof Error
+          ? lastError
+          : new GatewayError("transport_unavailable", 502, "Qoder legacy COSY hosts are unreachable (request {requestId}). The connection ghosted us — come back in a moment 👻", {}, "upstream");
+      }
       if (!response.ok) throw await mapUpstreamHttpError(response, "qoder");
       if (!response.body) throw new GatewayError("platform_unavailable", 502, "Qoder returned empty body (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
       // Headers arrived: the pre-stream deadline has served its purpose.

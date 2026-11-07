@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Cpu, FileText, FileUp, Globe2, Layers, Settings2, Trash2, Plus, Pencil, Search } from "lucide-react";
+import { Check, ChevronDown, Eye, FileText, FileUp, Globe2, Layers, Settings2, Trash2, Plus, Pencil, Search } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Badge } from "./ui/badge";
 import { Banner } from "./patterns/banner";
@@ -13,7 +13,7 @@ import { Stack } from "./ui/stack";
 import { ErrorState, LoadingState } from "./ui/state";
 import { Switch } from "./ui/switch";
 import { ProviderIcon } from "./ProviderIcon";
-import { useProviderModels, useProviders } from "../hooks/providers";
+import { useProviders } from "../hooks/providers";
 import { useModelAliases, useModelCombos } from "../hooks/routing";
 import { useSystemPrompt, useUpdateSystemPrompt } from "../hooks/system-prompt";
 import { useDialogDirty } from "../hooks/use-dialog-dirty";
@@ -36,10 +36,6 @@ export { EMPTY_STATE };
 
 /** How many rows a surfaced list shows before pagination kicks in. */
 const PAGE_SIZE = 8;
-
-function modelKey(providerId: string, modelId: string): string {
-  return `${providerId}::${modelId}`;
-}
 
 const MODE_OPTIONS = [
   { value: "append", label: "Append" },
@@ -336,7 +332,7 @@ function GlobalScopeSection({
             </Badge>
           </div>
           <p className="mt-1 text-badge leading-normal text-text-tertiary">
-            Applied to every request regardless of provider, model, combo, or alias. Choose a preset or a
+            Applied to every request regardless of provider, combo, or alias. Choose a preset or a
             custom prompt; turn it off to stop global injection.
           </p>
         </div>
@@ -351,6 +347,17 @@ function GlobalScopeSection({
             >
               Clear
             </Button>
+          ) : null}
+          {ref.kind === "custom" ? (
+            <Select
+              aria-label="Global injection mode"
+              value={ref.setting.mode}
+              onValueChange={(next) =>
+                onChange({ kind: "custom", setting: { ...ref.setting, mode: next as PromptSetting["mode"] } })
+              }
+              options={MODE_OPTIONS}
+              size="sm"
+            />
           ) : null}
           <Switch
             id="isp-global"
@@ -394,6 +401,7 @@ function PresetSection({
   const [editing, setEditing] = useState<SystemPromptPreset | null>(null);
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<SystemPromptPreset | null>(null);
+  const [preview, setPreview] = useState<SystemPromptPreset | null>(null);
 
   const upsert = (draft: SystemPromptPreset) => {
     onChange({ ...presets, [draft.id]: draft });
@@ -412,7 +420,7 @@ function PresetSection({
         <div>
           <p className="text-body font-semibold">Presets</p>
           <p className="text-badge leading-normal text-text-tertiary">
-            Reusable prompts any scope can reference — global, provider, model, combo, or alias.
+            Reusable prompts any scope can reference — global, provider, combo, or alias.
           </p>
         </div>
         <Button variant="secondary" size="sm" icon={<Plus size={14} />} onClick={() => setCreating(true)}>
@@ -438,11 +446,21 @@ function PresetSection({
                       <Badge tone="info">Built-in</Badge>
                     ) : null}
                   </div>
-                  <p className="mt-1 text-badge text-text-tertiary">
-                    {preset.mode === "override" ? "Override" : "Append"} · {preset.text.length.toLocaleString()} chars
-                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <Select
+                      aria-label={`Mode for preset ${preset.name}`}
+                      value={preset.mode}
+                      onValueChange={(next) => upsert({ ...preset, mode: next as PromptSetting["mode"] })}
+                      options={MODE_OPTIONS}
+                      size="sm"
+                    />
+                    <span className="text-badge text-text-tertiary">
+                      {preset.text.length.toLocaleString()} chars
+                    </span>
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
+                  <Button variant="ghost" size="icon" icon={<Eye size={14} />} aria-label={`Preview preset ${preset.name}`} onClick={() => setPreview(preset)} />
                   <Switch
                     id={`isp-preset-${preset.id}-enabled`}
                     checked={preset.enabled}
@@ -478,6 +496,38 @@ function PresetSection({
             setEditing(null);
           }}
         />
+      ) : null}
+
+      {preview !== null ? (
+        <Dialog
+          open
+          onClose={() => setPreview(null)}
+          title={`Preview — ${preview.name}`}
+          size="md"
+          footer={
+            <Button variant="secondary" onClick={() => setPreview(null)}>
+              Close
+            </Button>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={preview.enabled ? "ok" : "default"} dot>
+                {preview.enabled ? "Active" : "Off"}
+              </Badge>
+              {BUILTIN_PRESET_BY_ID[preview.id] !== undefined ? (
+                <Badge tone="info">Built-in</Badge>
+              ) : null}
+              <Badge tone="default">{preview.mode === "override" ? "Override" : "Append"}</Badge>
+              <span className="text-badge tabular-nums text-text-tertiary">
+                {preview.text.length.toLocaleString()} chars
+              </span>
+            </div>
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-control border border-inner-border bg-surface-2 p-4 text-caption leading-relaxed text-text-primary">
+              {preview.text}
+            </pre>
+          </div>
+        </Dialog>
       ) : null}
 
       {confirmDelete !== null ? (
@@ -676,71 +726,6 @@ function ProviderScopeCard({
   );
 }
 
-/** One model card in the per-model grid. */
-function ModelScopeRow({
-  providerId,
-  modelId,
-  route,
-  value,
-  presets,
-  onChange,
-}: {
-  readonly providerId: string;
-  readonly modelId: string;
-  readonly route: string;
-  readonly value: ScopePromptRef | undefined;
-  readonly presets: Readonly<Record<string, SystemPromptPreset>>;
-  readonly onChange: (next: ScopePromptRef | undefined) => void;
-}): ReactNode {
-  const ref = value ?? globalRef();
-  const key = modelKey(providerId, modelId);
-
-  const customSetting = ref.kind === "custom" ? ref.setting : undefined;
-  const active = ref.kind === "custom" && customSetting?.enabled === true;
-  const presetActive = ref.kind === "preset" ? presets[ref.presetId]?.enabled === true : false;
-  const isOff = ref.kind === "off";
-  const isActive = active || presetActive;
-
-  return (
-    <div
-      className={`rounded-control border p-4 ${
-        isActive ? "border-inner-border bg-green-soft/40" : "border-inner-border bg-surface-2"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-caption font-semibold text-text-primary">{modelId}</p>
-          <p className="truncate text-badge text-text-tertiary">{route}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {isActive ? (
-            <Badge tone="ok" dot>
-              Active
-            </Badge>
-          ) : isOff ? (
-            <Badge tone="default" dot>
-              Off
-            </Badge>
-          ) : null}
-          <Switch
-            id={`isp-model-${key}`}
-            checked={ref.kind === "custom" && customSetting?.enabled === true}
-            onChange={(next) =>
-              onChange(
-                next
-                  ? customRef(enabledSetting(ref.kind === "custom" ? ref.setting.text : "", "append"))
-                  : { kind: "off" },
-              )
-            }
-            aria-label={`Enable injection for ${modelId}`}
-          />
-        </div>
-      </div>
-      <ScopeSourcePicker id={`isp-model-${key}`} ref={ref} presets={presets} onChange={onChange} rows={3} allowOff />
-    </div>
-  );
-}
-
 /** One combo/alias row. */
 function NamedScopeRow({
   name,
@@ -806,7 +791,7 @@ function NamedScopeRow({
 
 /**
  * The modal for configuring system-prompt injection at multiple scopes:
- * Presets → Global → Per model → Per provider → Combos & Aliases. Every scope
+ * Presets → Global → Per provider → Combos & Aliases. Every scope
  * can follow global, reference a named preset, or carry a custom prompt.
  * Persists via `PUT /system-prompt`.
  */
@@ -841,16 +826,6 @@ export function InjectSystemPromptDialog({
             .includes(query),
         );
 
-  const [modelProviderId, setModelProviderId] = useState("");
-  const modelsQuery = useProviderModels(modelProviderId || undefined);
-  const modelRows = modelsQuery.data ?? [];
-
-  useEffect(() => {
-    if (modelProviderId === "" && providerRows.length > 0) {
-      setModelProviderId(providerRows[0]!.providerId);
-    }
-  }, [providerRows, modelProviderId]);
-
   const aliasesQuery = useModelAliases();
   const combosQuery = useModelCombos();
   const aliases = aliasesQuery.data ?? [];
@@ -872,11 +847,6 @@ export function InjectSystemPromptDialog({
   const providerPaged = usePaged(filteredProviders.length, providerPage, setProviderPage);
   useEffect(() => providerPaged.clamp(), [providerPaged.pageCount, providerPage]);
   const visibleProviders = providerPaged.slice(filteredProviders) as ProviderResponse[];
-
-  const [modelPage, setModelPage] = useState(1);
-  const modelPaged = usePaged(modelRows.length, modelPage, setModelPage);
-  useEffect(() => modelPaged.clamp(), [modelPaged.pageCount, modelPage]);
-  const visibleModels = modelPaged.slice(modelRows) as typeof modelRows;
 
   const [comboPage, setComboPage] = useState(1);
   const [namedSearch, setNamedSearch] = useState("");
@@ -912,17 +882,6 @@ export function InjectSystemPromptDialog({
         return providers;
       })(),
     });
-  const patchModel = (providerId: string, modelId: string, next: ScopePromptRef | undefined) =>
-    commit({
-      ...draft,
-      models: (() => {
-        const models = { ...draft.models };
-        const key = modelKey(providerId, modelId);
-        if (next === undefined) delete models[key];
-        else models[key] = next;
-        return models;
-      })(),
-    });
   const patchNamed = (kind: "combo" | "alias", name: string, next: ScopePromptRef | undefined) =>
     commit({
       ...draft,
@@ -945,11 +904,6 @@ export function InjectSystemPromptDialog({
           }),
     });
 
-  const providerOptions = providerRows.map((provider) => ({
-    value: provider.providerId,
-    label: provider.label ?? provider.displayName,
-  }));
-
   return (
     <Dialog
       open={open}
@@ -966,13 +920,6 @@ export function InjectSystemPromptDialog({
     >
       <Stack gap="20px">
         <section>
-          <h4 className="flex items-center gap-2.5 text-caption font-semibold text-text-primary">
-            <FileText size={14} className="text-text-secondary" aria-hidden="true" />
-            Presets
-          </h4>
-          <p className="mb-3 mt-1 text-badge leading-normal text-text-tertiary">
-            Create reusable prompts, then reference them from any scope below.
-          </p>
           <PresetSection presets={draft.presets} onChange={patchPresets} />
         </section>
 
@@ -982,88 +929,9 @@ export function InjectSystemPromptDialog({
             Global
           </h4>
           <p className="mb-3 mt-1 text-badge leading-normal text-text-tertiary">
-            Applied to every request regardless of provider, model, combo, or alias.
+            Applied to every request regardless of provider, combo, or alias.
           </p>
           <GlobalScopeSection value={draft.global} presets={draft.presets} onChange={patchGlobal} />
-        </section>
-
-        <section className="border-t border-inner-border pt-6">
-          <h4 className="flex items-center gap-2.5 text-caption font-semibold text-text-primary">
-            <Cpu size={14} className="text-text-secondary" aria-hidden="true" />
-            Per model
-          </h4>
-          <p className="mb-3 mt-1 text-badge leading-normal text-text-tertiary">
-            Only that exact model of a provider gets this prompt; it wins over the provider and
-            global injections.
-          </p>
-          <SearchableSelect
-            label="Provider"
-            id="isp-model-provider"
-            value={modelProviderId}
-            onValueChange={setModelProviderId}
-            options={providerOptions}
-            placeholder="Select provider…"
-          />
-          <div className="mt-3">
-            {modelProviderId === "" ? (
-              <p className="text-badge leading-normal text-text-tertiary">
-                Select a provider to configure per-model injections.
-              </p>
-            ) : modelsQuery.isPending ? (
-              <LoadingState label="Loading models…" />
-            ) : modelsQuery.isError ? (
-              <ErrorState message="Failed to load models" onRetry={() => void modelsQuery.refetch()} />
-            ) : modelRows.length === 0 ? (
-              <p className="text-badge leading-normal text-text-tertiary">
-                No models configured for this provider.
-              </p>
-            ) : (
-              <>
-                {(() => {
-                  const activeModels = modelRows.filter(
-                    (model) => {
-                      const ref = draft.models[modelKey(modelProviderId, model.modelId)];
-                      return ref?.kind === "custom"
-                        ? ref.setting.enabled
-                        : ref?.kind === "preset"
-                          ? draft.presets[ref.presetId]?.enabled === true
-                          : false;
-                    },
-                  ).length;
-                  return (
-                    <p className="mb-3 text-badge leading-normal text-text-tertiary">
-                      {activeModels > 0
-                        ? `${activeModels} of ${modelRows.length} models active for this provider.`
-                        : `${modelRows.length} models — none active yet.`}
-                    </p>
-                  );
-                })()}
-                <div className="grid grid-cols-3 gap-4 max-medium:grid-cols-2 max-small:grid-cols-1">
-                  {visibleModels.map((model) => (
-                    <ModelScopeRow
-                      key={modelKey(modelProviderId, model.modelId)}
-                      providerId={modelProviderId}
-                      modelId={model.modelId}
-                      route={model.route}
-                      value={draft.models[modelKey(modelProviderId, model.modelId)]}
-                      presets={draft.presets}
-                      onChange={(next) => patchModel(modelProviderId, model.modelId, next)}
-                    />
-                  ))}
-                </div>
-                {modelPaged.pageCount > 1 ? (
-                  <div className="mt-4">
-                    <PaginationControls
-                      page={modelPaged.safePage}
-                      pageCount={modelPaged.pageCount}
-                      onPageChange={setModelPage}
-                      testId="isp-model-pagination"
-                    />
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
         </section>
 
         <section className="border-t border-inner-border pt-6">
@@ -1072,8 +940,7 @@ export function InjectSystemPromptDialog({
             Per provider
           </h4>
           <p className="mb-3 mt-1 text-badge leading-normal text-text-tertiary">
-            Follow the global prompt, reference a preset, or carry a custom one — models under a
-            custom provider can still override per-model.
+            Follow the global prompt, reference a preset, or carry a custom one.
           </p>
           {providersQuery.isPending ? (
             <LoadingState label="Loading providers…" />
@@ -1335,7 +1202,7 @@ export function InjectSystemPromptPanel(): ReactNode {
             </Banner>
           ) : null}
           <p className="text-caption leading-normal text-text-secondary">
-            Add custom system prompts at many levels — global, presets, per provider, per model,
+            Add custom system prompts at many levels — global, presets, per provider,
             or per combo/alias — handy for enforcing tone, rules, or context where you need it.
           </p>
         </Stack>

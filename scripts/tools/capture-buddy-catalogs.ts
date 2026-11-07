@@ -104,15 +104,13 @@ const IDENTITY_USER_AGENT =
 /** Hosts to probe, with the provider id their roster is stored under. */
 const SITES: readonly { providerId: string; host: string }[] = [
   { providerId: "cb", host: "www.codebuddy.ai" },
-  { providerId: "workbuddy", host: "www.workbuddy.ai" },
   // CN realm. A separate credential export: the CN sites are a different
   // account realm and reject an intl token. Passed via --creds-cn.
   { providerId: "cbcn", host: "copilot.tencent.com" },
-  { providerId: "workbuddycn", host: "www.workbuddy.cn" },
 ];
 
 /** Which credential each site needs: CN sites take the CN token. */
-const CN_PROVIDER_IDS: ReadonlySet<string> = new Set(["cbcn", "workbuddycn"]);
+const CN_PROVIDER_IDS: ReadonlySet<string> = new Set(["cbcn"]);
 
 /**
  * Every path that answers, captured — not just the one we trust.

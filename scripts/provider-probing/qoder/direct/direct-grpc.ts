@@ -87,7 +87,7 @@ metadata.set("cosy-machineos", machineOs());
 const hostname = machineHostname();
 if (hostname.length > 0) metadata.set("cosy-machinehostname", hostname);
 
-console.log(`grpc host=${realm === "cn" ? "gateway.qoder.com.cn" : "api2-v2.qoder.sh"}:443`);
+console.log(`grpc host=${realm === "cn" ? "gateway.qoder.com.cn" : "api1.qoder.sh"}:443`);
 console.log(`model=${values.model} promptChars=${promptText.length}`);
 
 // --- Stream ---

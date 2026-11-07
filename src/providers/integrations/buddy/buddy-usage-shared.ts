@@ -1,7 +1,5 @@
 /**
- * Real credit deductions for the Tencent "buddy" family (`cb`, `cbcn`,
- * `workbuddy`, `workbuddycn`).
- *
+ * Real credit deductions for the Tencent "buddy" family (`cb`, `cbcn`). *
  * Every provider in the family reads the same usage-detail endpoint —
  * `POST {billingHost}/billing/meter/get-user-request-usage` — which answers the
  * actual per-request deductions the billing meter recorded: when the request

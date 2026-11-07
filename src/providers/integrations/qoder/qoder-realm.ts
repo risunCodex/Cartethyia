@@ -74,22 +74,25 @@ export const QODER_MODELS_PATH = "/algo/api/v2/model/list?Encode=1";
  */
 export const QODER_IDE_CHAT_PATH = "/model/v1/chat/completions";
 
-/** The model-server host for one realm (intl: `api2-v2`, cn: gateway). */
+/** The model-server host for one realm (intl: `api1`, cn: gateway). */
 export function qoderIdeChatUrl(realm: QoderRealm): string {
   return realm === "cn"
     ? `https://gateway.qoder.com.cn${QODER_IDE_CHAT_PATH}`
-    : `https://api2-v2.qoder.sh${QODER_IDE_CHAT_PATH}`;
+    : `https://api1.qoder.sh${QODER_IDE_CHAT_PATH}`;
 }
 
 /**
  * The gRPC model-server host for one realm.
  *
- * Matches the desktop client's prod host (`wYA` in `qoder-worker-runtime.mjs`:
- * intl `api2-v2.qoder.sh`, CN `gateway.qoder.com.cn`). The gRPC service path
- * is `/model.chat.ChatService/ChatCompletionStream` on port 443.
+ * Intl default is `api1.qoder.sh` (first host from `qoderInferenceCandidates`;
+ * the old `api2-v2.qoder.sh` has been NXDOMAIN since 2026-11-07 — see
+ * `documentation/research/qoder/live/
+ * 2026-11-07-qoder-host-inference-fallback.md`). The gRPC service is no
+ * longer verified alive on any host that resolves (UNIMPLEMENTED); this host
+ * is kept as the target so probes/gRPC still have an address.
  */
 export function qoderGrpcHost(realm: QoderRealm): string {
-  return realm === "cn" ? "gateway.qoder.com.cn" : "api2-v2.qoder.sh";
+  return realm === "cn" ? "gateway.qoder.com.cn" : "api1.qoder.sh";
 }
 
 /**

@@ -44,10 +44,10 @@ test("qoderGrpcMetadata sends exactly the donor's gRPC key set", () => {
 });
 
 test("qoderGrpcChannelOptions mirrors the donor channel options", () => {
-  const opts = qoderGrpcChannelOptions("api2-v2.qoder.sh");
+  const opts = qoderGrpcChannelOptions("api1.qoder.sh");
   expect(opts["grpc.enable_http_proxy"]).toBe(0);
-  expect(opts["grpc.default_authority"]).toBe("api2-v2.qoder.sh");
-  expect(opts["grpc.ssl_target_name_override"]).toBe("api2-v2.qoder.sh");
+  expect(opts["grpc.default_authority"]).toBe("api1.qoder.sh");
+  expect(opts["grpc.ssl_target_name_override"]).toBe("api1.qoder.sh");
   expect(opts["grpc.max_receive_message_length"]).toBe(32 * 1024 * 1024);
   expect(opts["grpc.max_send_message_length"]).toBe(32 * 1024 * 1024);
 });

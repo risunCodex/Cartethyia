@@ -34,7 +34,7 @@ export function applyOpenAIReasoning(payload: Record<string, unknown>, request: 
   payload["reasoning_effort"] = effort;
 }
 
-/** Applies the DeepSeek chat contract shared by CodeBuddy and WorkBuddy. */
+/** Applies the DeepSeek chat contract shared by CodeBuddy. */
 export function applyDeepSeekReasoning(payload: Record<string, unknown>): void {
   const model = typeof payload["model"] === "string" ? payload["model"].trim().toLowerCase() : "";
   if (!model.startsWith("deepseek")) return;

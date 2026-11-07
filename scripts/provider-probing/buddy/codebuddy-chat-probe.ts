@@ -16,10 +16,7 @@ import type { ProviderDispatchContext } from "../../../src/providers/provider-co
 import { readAccountsFile, pickAccount, requireAccountToken, maskSecret } from "../lib/accounts";
 import { codebuddyHeaders } from "../../../src/providers/integrations/buddy/codebuddy/shared";
 import { CODEBUDDY_SYSTEM_PROMPT } from "../../../src/providers/integrations/buddy/codebuddy/provider";
-import { workbuddyHeaders, WORKBUDDY_CHAT_PATH } from "../../../src/providers/integrations/buddy/workbuddy/shared";
-import { WORKBUDDY_SYSTEM_PROMPT } from "../../../src/providers/integrations/buddy/workbuddy/provider";
 import { buddyPrePayloadCommon, applyBuddySystemPrompt } from "../../../src/providers/integrations/buddy/buddy-chat-shared";
-import { getWorkBuddyCnClientVersion } from "../../../src/providers/operations/client-versions";
 
 const { values } = parseArgs({
   options: {
@@ -86,32 +83,8 @@ switch (provider) {
     };
     break;
   }
-  case "workbuddy": {
-    const baseUrl = "https://www.workbuddy.ai";
-    target = {
-      baseUrl,
-      path: WORKBUDDY_CHAT_PATH,
-      endpoint: `${baseUrl}${WORKBUDDY_CHAT_PATH}`,
-      headers: workbuddyHeaders(context, undefined, "www.workbuddy.ai", undefined, true),
-      systemPrompt: WORKBUDDY_SYSTEM_PROMPT,
-      realm: "intl",
-    };
-    break;
-  }
-  case "workbuddycn": {
-    const baseUrl = "https://www.workbuddy.cn";
-    target = {
-      baseUrl,
-      path: WORKBUDDY_CHAT_PATH,
-      endpoint: `${baseUrl}${WORKBUDDY_CHAT_PATH}`,
-      headers: workbuddyHeaders(context, undefined, "www.workbuddy.cn", getWorkBuddyCnClientVersion()),
-      systemPrompt: WORKBUDDY_SYSTEM_PROMPT,
-      realm: "intl",
-    };
-    break;
-  }
   default:
-    throw new Error(`Unsupported --provider ${provider} (cb|cbcn|workbuddy|workbuddycn)`);
+    throw new Error(`Unsupported --provider ${provider} (cb|cbcn)`);
 }
 
 const payload: Record<string, unknown> = {

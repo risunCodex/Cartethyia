@@ -27,7 +27,7 @@ The split matters because a provider is reached through *dynamic* `import()`:
 `integrations/` is evaluated until dispatch/probe/refresh — so "grep finds no
 static import" is not evidence a module is dead. Ordinary API-key integration
 files stay directly under `integrations/`; subfolders group families with
-multiple related modules (Buddy: `buddy/codebuddy/`, `buddy/workbuddy/`).
+multiple related modules (Buddy: `buddy/codebuddy/`).
 
 ## Boot, and bundled vs BYOK
 
@@ -85,7 +85,7 @@ Three auth client shapes:
 | Shape | Base class | Family examples |
 | --- | --- | --- |
 | Browser PKCE | `OAuthClient.buildAuthorizeUrl`/`exchangeCode` (`authentication/oauth-client.ts`) | claude, antigravity, openrouter, zcode, kiro |
-| Device code (RFC 8628) | `OAuthDeviceFlow` (`authentication/oauth-device-flow.ts`) | codex, github, grok, xai, kimi, cline, kilo, muse, qoder, factory, kiro, cb/cbcn/workbuddy/workbuddycn |
+| Device code (RFC 8628) | `OAuthDeviceFlow` (`authentication/oauth-device-flow.ts`) | codex, github, grok, xai, kimi, cline, kilo, muse, qoder, factory, kiro, cb/cbcn |
 | No OAuth | plain key path; `probeApiKeyConnectivity` is the account test (`quota/quota-support.ts`) | openai, anthropic, mistral, meta, most compatible API-key providers |
 
 Whether a refresher is registered is per-family and deliberate: a grant that is
@@ -175,7 +175,7 @@ Verified in code only. `bespokeWire` = the adapter frames its own protocol, not 
 | cline | Discovery reads only `recommended` + `free` — the pass roster would write subscription rows an operator's account can only 401 on. |
 | openrouter / zcode | PKCE ends by minting a **durable API key**, not an access token; no refresher. |
 | xiaomi-mimo | Two ids: `xiaomipg`, `xiaomitp`, both key-based. MiMo Studio browser-cookie login is not supported. |
-| cb / cbcn / workbuddy / workbuddycn | One billing system: `BUDDY_PROVIDER_IDS` names the family for health, request prep, and daily check-in. WorkBuddy CN mirrors WorkBuddy on `www.workbuddy.cn` plus recent CN model additions. See the [catalog-fetch procedure](../../.skills/cartethyia-provider-catalog/SKILL.md#fetch-a-buddy-model-catalog). |
+| cb / cbcn | One billing system: `BUDDY_PROVIDER_IDS` names the family for health, request prep, and daily check-in. CN mirrors intl on `copilot.tencent.com` plus recent CN model additions. See the [catalog-fetch procedure](../../.skills/cartethyia-provider-catalog/SKILL.md#fetch-a-buddy-model-catalog). |
 | opencode / opencode-zen / opencode-go | Three tiers on `opencode.ai`: free and Zen dispatch on `/inference/v1` (free: `requires_account: false`, `ipScopedRateLimit: true` — 429 cools the pool, not the account; Zen: billed), Go on the separate `/zen/go/v1` base. The `/zen/v1/models` listing is the catalog surface for free/Zen (`/inference/v1/models` answers 404), see `integrations/opencode/provider.ts`. A dispatch carrying more than 128 tool definitions is clamped before it is sent: definitions the conversation already called are kept, and the rest fill the remaining slots in their original order. Upstream refuses the unclamped list. Every tier's dispatch carries the client-identity fingerprint (`integrations/opencode/fingerprint.ts`). The free tier requires the 11-tool agent set and `stream: true`; it sends **no `Authorization` header** (the anonymous `Bearer public` sentinel is no longer sent — verified live 2026-11-02: the same captured flow answers 200 with or without it). Upstream refuses a free dispatch outright from a blocked egress IP — a datacenter address is refused, so free-tier dispatch needs an egress proxy, not a header change. |
 | exa / parallel | `serviceKinds: ["websearch"]` only; served by `/v1/search`, never the chat pipeline. No account uses the public MCP; a stored API key uses the higher-limit HTTP API. |
 | deepseek | Bundled API-key provider on the Anthropic Messages adapter at `/anthropic/v1/messages`; its OpenAI-compatible `/v1/models` discovery is separate (`deepseek.ts`). |

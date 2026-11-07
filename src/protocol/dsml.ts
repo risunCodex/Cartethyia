@@ -5,7 +5,7 @@
  * markup inside the plain-text content stream instead of the structured
  * `tool_calls` field. The gateway sees it from one upstream family:
  *
- * - CodeBuddy/WorkBuddy emit strict blocks (`<｜DSML｜ calls>…</｜DSML｜ calls>`)
+ * - CodeBuddy emits strict blocks (`<｜DSML｜ calls>…</｜DSML｜ calls>`)
  *   that must be parsed exactly, with declared-tool allowlisting.
  */
 export interface DsmlToolCall {

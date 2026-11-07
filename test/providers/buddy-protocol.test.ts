@@ -7,15 +7,10 @@ import {
   scrubBuddyChannelIdentityText,
 } from "../../src/providers/integrations/buddy/buddy-chat-shared";
 import { CODEBUDDY_SYSTEM_PROMPT } from "../../src/providers/integrations/buddy/codebuddy/provider";
-import {
-  workbuddyPrePayload,
-  WORKBUDDY_SYSTEM_PROMPT,
-} from "../../src/providers/integrations/buddy/workbuddy/provider";
 import { codeBuddyCnPrePayload } from "../../src/providers/integrations/buddy/codebuddy/cn-provider";
-import { readBuddyDeviceToken, workbuddyHeaders } from "../../src/providers/integrations/buddy/workbuddy/shared";
+import { readBuddyDeviceToken } from "../../src/providers/integrations/buddy/buddy-identity";
 import { resolveBuddyDeviceBinding } from "../../src/providers/integrations/buddy/buddy-identity";
 import { fetchTencentBillingQuota } from "../../src/providers/integrations/buddy/buddy-quota-shared";
-import { fetchWorkBuddyCnQuota } from "../../src/providers/integrations/buddy/workbuddy/quota";
 import { parseDsmlToolCalls } from "../../src/protocol/dsml";
 import { parseChatResponseToEvents } from "../../src/protocol/response/chat";
 import { decodeChatSseStream } from "../../src/protocol/response/chat";
@@ -315,18 +310,6 @@ describe("Buddy upstream protocol alignment", () => {
     expect(content).toContain("[Image omitted by request image limit.]");
   });
 
-  test("sends the desktop device token only when the account has one", async () => {
-    // If the bundled Turing SDK is loadable it wins (real token), otherwise the
-    // captured auth_state token is the fallback. Both are valid outcomes; what
-    // must never happen is neither a token nor an error header.
-    const headers = await workbuddyHeaders(context, request);
-    const token = headers["x-device-token"];
-    const err = headers["x-device-token-error"];
-    expect(token !== undefined || err !== undefined).toBe(true);
-    if (token === undefined) expect(err).toBe("sdk_not_initialized");
-    expect(readBuddyDeviceToken({ credential: { auth_state: {} } } as unknown as ProviderDispatchContext)).toBeUndefined();
-  });
-
   test("resolves a stable, per-account device binding (qimei36)", () => {
     // Deterministic from the account id: stable across restarts, and distinct
     // between accounts — so each account in a pool presents its own device.
@@ -348,41 +331,9 @@ describe("Buddy upstream protocol alignment", () => {
     expect(resolveBuddyDeviceBinding(account)).toBe("manual-binding-123");
   });
 
-  test("the desktop request carries X-Device-Id-List with the account binding", async () => {
-    const headers = await workbuddyHeaders(context, request);
-    const list = headers["x-device-id-list"];
-    expect(list).toBeDefined();
-    const parsed = JSON.parse(list as string) as { qimei36?: string };
-    expect(parsed.qimei36).toBeDefined();
-    expect(parsed.qimei36).toMatch(/^[0-9a-f]{32}$/);
-  });
-
-  test("an account with no captured token and no SDK mirrors the failure placeholder", async () => {
-    // When the SDK cannot produce a token (unavailable, or a device that cannot
-    // complete the exchange) the desktop contract is token || error — never
-    // neither. Here the captured token is absent; if the bundled SDK is active
-    // it will produce a real token instead, which is fine.
-    const headers = await workbuddyHeaders(
-      { credential: { auth_state: {} } } as unknown as ProviderDispatchContext,
-      request,
-    );
-    expect(headers["x-device-token"] !== undefined || headers["x-device-token-error"] !== undefined).toBe(true);
-  });
-
-  test("WorkBuddy CN changes only the host identity in the shared headers", async () => {
-    const cnHeaders = await workbuddyHeaders(context, request, "www.workbuddy.cn", "5.7.7.40774747");
-    const intlHeaders = await workbuddyHeaders(context, request);
-    expect(cnHeaders["origin"]).toBe("https://www.workbuddy.cn");
-    expect(cnHeaders["referer"]).toBe("https://www.workbuddy.cn/");
-    expect(cnHeaders["x-domain"]).toBe("www.workbuddy.cn");
-    // The WorkBuddy profile: brand, then the wire token `workbuddy-ai` (NOT
-    // the display brand "WorkBuddy AI" — the gateway 403s on the branded
-    // spelling), then the CLI suffix. Versions come from the monitor rather
-    // than a pinned build.
-    expect(cnHeaders["user-agent"]).toMatch(/^WorkBuddy\/\S+ workbuddy-ai\/\S+ CLI\/\S+$/);
-    // CN and international differ only in host identity, so the profile is the same.
-    expect(intlHeaders["user-agent"]).toMatch(/^WorkBuddy\/\S+ workbuddy-ai\/\S+ CLI\/\S+$/);
-    expect(cnHeaders["x-product"]).toBe(intlHeaders["x-product"]);
+  test("reads a captured device token from auth_state", () => {
+    expect(readBuddyDeviceToken(context)).toBe("desktop-token");
+    expect(readBuddyDeviceToken({ credential: { auth_state: {} } } as unknown as ProviderDispatchContext)).toBeUndefined();
   });
 
   test("recovers a complete DSML block as a tool call", () => {
@@ -513,53 +464,18 @@ describe("Buddy upstream protocol alignment", () => {
         : { code: 0, data: { credit: 200, limitNum: 1000, cycleEndTime: "2026-10-26 23:59:59" } },
     ), { status: 200 })) as unknown as typeof fetch;
     const result = await fetchTencentBillingQuota({
-      source: "workbuddy",
-      display: "WorkBuddy",
-      url: "https://www.workbuddy.ai/v2/billing/meter/get-user-resource",
+      source: "cb",
+      display: "CodeBuddy",
+      url: "https://www.codebuddy.ai/v2/billing/meter/get-user-resource",
       headers: { "X-Enterprise-Id": "ent-1" },
       credential: "token",
       fetcher,
-      defaultPlan: "WorkBuddy",
+      defaultPlan: "CodeBuddy",
     });
 
     expect(result.plan).toBe("Enterprise");
     expect(result.windows[0]?.remaining).toBe(800);
     expect(result.windows[0]?.limit).toBe(1000);
-  });
-
-  test("WorkBuddy CN quota uses its own host and client version", async () => {
-    let capturedUrl = "";
-    let capturedHeaders: Headers | undefined;
-    const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
-      capturedUrl = String(url);
-      capturedHeaders = new Headers(init?.headers);
-      return new Response(JSON.stringify({
-        code: 0,
-        data: {
-          Response: {
-            Data: {
-              Accounts: [{
-                PackageName: "WorkBuddy CN",
-                CapacityUsed: 10,
-                CapacitySize: 100,
-                CycleEndTime: "2026-11-01T00:00:00.000Z",
-              }],
-            },
-          },
-        },
-      }), { status: 200 });
-    }) as unknown as typeof fetch;
-
-    const result = await fetchWorkBuddyCnQuota("token", fetcher);
-
-    expect(result.source).toBe("workbuddycn");
-    // The reference bills the CN realm on `www.codebuddy.cn`; `X-Domain` stays
-    // the domain recorded at login, so changing the host must not move it.
-    expect(capturedUrl).toBe("https://www.codebuddy.cn/v2/billing/meter/get-user-resource");
-    expect(capturedHeaders?.get("x-domain")).toBe("www.workbuddy.cn");
-    // WorkBuddy profile shape; the version comes from the monitor, not a pin.
-    // The second token is the wire spelling `workbuddy-ai`.
-    expect(capturedHeaders?.get("user-agent")).toMatch(/^WorkBuddy\/\S+ workbuddy-ai\/\S+ CLI\/\S+$/);
   });
 
   test("classifies refill and bonus packages into the same spendable credit pool", async () => {
@@ -609,7 +525,7 @@ describe("Buddy empty-reasoning drop (upstream 11151 'history not found')", () =
   // stripped on an earlier hop. The chat encoder produced
   // `{role:"assistant", content:"", reasoning_content:""}`; the previous
   // `dropEmptyBuddyMessages` guard treated `reasoning_content` of ANY
-  // string length as load-bearing and kept the stub. WorkBuddy / Kimi then
+  // string length as load-bearing and kept the stub. CodeBuddy / Kimi then
   // rejected the whole request with code 11151 ("history not found").
 
   test("drops an assistant turn whose reasoning_content is the empty string", () => {
@@ -633,7 +549,7 @@ describe("Buddy empty-reasoning drop (upstream 11151 'history not found')", () =
     // text: "reasoning unavailable"}]}`. The chat encoder dutifully forwards
     // that text as `reasoning_content: "reasoning unavailable"`, but no model
     // in the receiving install issued that signature — so forwarding it to
-    // WorkBuddy/Kimi gets rejected with the same 11151 as the empty case.
+    // CodeBuddy/Kimi gets rejected with the same 11151 as the empty case.
     // A `content: ""` assistant turn with no `tool_calls` and no
     // `tool_call_id` is unverifiable regardless of `reasoning_content` value
     // and must be dropped.
@@ -667,12 +583,12 @@ describe("Buddy empty-reasoning drop (upstream 11151 'history not found')", () =
     expect(messages[0]?.["role"]).toBe("assistant");
   });
 
-  test("full WorkBuddy envelope still drops the stub after applyBuddySystemPrompt runs", () => {
-    // The real pipeline the production bug followed: the WorkBuddy
-    // pre-payload hook calls `applyBuddySystemPrompt`, which installs the
-    // fixed system prompt, rebuilds user content shapes, then runs
-    // `finalizeBuddyMessages` → `dropEmptyBuddyMessages`. The stub must be
-    // gone before the request leaves the gateway.
+  test("full buddy envelope still drops the stub after applyBuddySystemPrompt runs", () => {
+    // The real pipeline the production bug followed: the pre-payload hook
+    // calls `applyBuddySystemPrompt`, which installs the fixed system prompt,
+    // rebuilds user content shapes, then runs `finalizeBuddyMessages` →
+    // `dropEmptyBuddyMessages`. The stub must be gone before the request
+    // leaves the gateway.
     const messages: Array<Record<string, unknown>> = [
       { role: "user", content: "halo" },
       // Assistant tool-call turn (real) — must survive.
@@ -713,51 +629,23 @@ describe("Buddy empty-reasoning drop (upstream 11151 'history not found')", () =
 });
 
 describe("Buddy client-identity hardening", () => {
-  const wbCandidate = {
-    provider_id: "workbuddy",
+  const cnCandidate = {
+    provider_id: "cbcn",
     model_id: "m",
     wire_family: "openai-chat",
-    endpoint_path: "/v2/chat/completions",
+    endpoint_path: "/chat/completions",
     capabilities: {},
   } as unknown as ProviderDispatchTarget;
-  const wbRequest = { model: "m", messages: [] } as unknown as CanonicalRequest;
-  const wbContext = {
+  const cnRequest = { model: "m", messages: [] } as unknown as CanonicalRequest;
+  const cnContext = {
     credential: { account_id: "acct123456", auth_state: {} },
   } as unknown as ProviderDispatchContext;
 
-  test("the intl variants install a neutral helpful-assistant prompt", () => {
+  test("the intl variant installs a neutral helpful-assistant prompt", () => {
     // The leading system turn is a wire contract, but its text is deliberately
     // neutral: a simple helpful-assistant persona with no client/CLI branding.
     expect(CODEBUDDY_SYSTEM_PROMPT).toBe("You are a helpful assistant.");
-    expect(WORKBUDDY_SYSTEM_PROMPT).toBe("You are a helpful assistant.");
     expect(CODEBUDDY_SYSTEM_PROMPT).not.toMatch(/CodeBuddy|CLI|tool/i);
-    expect(WORKBUDDY_SYSTEM_PROMPT).not.toMatch(/WorkBuddy|assistant\.\n/i);
-  });
-
-  test("a replayed DeepSeek Harness history is rewritten to the WorkBuddy identity", () => {
-    const payload: Record<string, unknown> = {
-      model: "m",
-      messages: [
-        { role: "system", content: "You are DeepSeek Harness" },
-        { role: "user", content: "hi" },
-        { role: "assistant", content: "You are DeepSeek Harness. Understood." },
-        { role: "assistant", reasoning_content: "You are a coding agent powered by the deepseek-v4 model" },
-      ],
-    };
-    workbuddyPrePayload(payload, wbRequest, wbCandidate, wbContext);
-    const messages = payload["messages"] as Array<Record<string, unknown>>;
-    // The caller's DSH system turn is dropped and the official prompt installed.
-    expect(messages[0]?.["role"]).toBe("system");
-    expect(messages[0]?.["content"]).toBe(WORKBUDDY_SYSTEM_PROMPT);
-    // Assistant identity and the coding-persona reasoning are scrubbed; the
-    // named model survives in the rewrite.
-    const assistantText = messages
-      .filter((m) => m["role"] === "assistant")
-      .map((m) => `${typeof m["content"] === "string" ? m["content"] : ""}${typeof m["reasoning_content"] === "string" ? m["reasoning_content"] : ""}`)
-      .join(" ");
-    expect(assistantText).toContain("You are a helpful assistant");
-    expect(assistantText).not.toContain("DeepSeek Harness");
-    expect(assistantText).toContain("deepseek-v4");
   });
 
   test("the DSH identity scrub tolerates zero-width-space splitting", () => {
@@ -766,7 +654,7 @@ describe("Buddy client-identity hardening", () => {
     const scrubbed = scrubBuddyChannelIdentityText("You\u200bare DeepSeek\u200b Harness");
     expect(scrubbed).toBe("You are a helpful assistant");
     const gui = scrubBuddyChannelIdentityText("Open the DeepSeek Harness Web GUI");
-    expect(gui).toBe("Open the WorkBuddy Web GUI");
+    expect(gui).toBe("Open the CodeBuddy Web GUI");
   });
 
   test("the scrub leaves unrelated text untouched", () => {
@@ -782,7 +670,7 @@ describe("Buddy client-identity hardening", () => {
       model: "m",
       messages: [{ role: "user", content: "hi" }],
     };
-    codeBuddyCnPrePayload(payload, wbRequest, wbCandidate, wbContext);
+    codeBuddyCnPrePayload(payload, cnRequest, cnCandidate, cnContext);
     const messages = payload["messages"] as Array<Record<string, unknown>>;
     expect(messages[0]?.["role"]).toBe("system");
     expect(messages[0]?.["content"]).toBe("You are a helpful assistant.");

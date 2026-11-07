@@ -12,6 +12,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Routing: a qualified `provider/model` not in the catalog now routes via
+  the provider's sibling candidate.** Previously any model missing from the
+  catalog was refused with `model_not_found` (404), even when the provider was
+  explicitly qualified and could serve arbitrary model ids (BYOK, custom
+  gateways, unfetched models). The engine now clones the provider's first live
+  candidate (inheriting endpoint, wire family, dialect, capabilities, tenant
+  scope) and retargets it at the requested model. Bare-model misses and
+  providers with no candidates still 404.
+- **Inject System Prompt: preset preview + mode select, per-model removed.**
+  Every preset card (built-in and custom) now has a Preview button showing the
+  full prompt text in a dialog. Append/Override mode is selectable directly on
+  preset cards and on the global custom prompt (previously display-only). The
+  per-model scope section is removed from the dialog; global, provider, combo,
+  and alias scopes remain.
+- **Combos page: system-prompt active pill on combo/alias rows.** A combo or
+  alias with an active injection (preset or custom) shows a green `Active`
+  pill next to its name with the preset name or Append/Override label.
 - **Cursor model sweep live (2026-11-06): 1/47 PASS, 46/47 refused.**
   Probe (`scripts/provider-probing/cursor/probe-cursor.ts`) now parses the
   typed error detail (`Model unavailable on Free: …`) and resolves on
@@ -82,6 +99,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **WorkBuddy removed; data migrates to CodeBuddy automatically.** The buddy
+  family is now `cb`/`cbcn` only — `workbuddy` and `workbuddycn` providers and
+  the TuringShield SDK (`vendor/turing-sdk/`, `turing-device-token.ts`) are
+  deleted. Migration `0045` repoints every dependent row (accounts, models,
+  routing settings, telemetry) from `workbuddy` → `cb` and `workbuddycn` →
+  `cbcn`, mirroring the opencode rename pattern. Device-token headers now fall
+  back to the captured token (auth_state / `CARTETHYIA_DEVICE_TOKEN_FILE`);
+  the qimei36 device binding is not carried over and is re-derived per account.
+  Cross-channel credential warning removed from the dashboard.
 - **Assets: all raster images converted to WebP and resized to display
   needs.** The bundle drops from ~30 MB to ~3.4 MB (-89%). Console background
   3840×2160 JPEG (12.9 MB) → 1920×1080 WebP (179 KB); share backdrop
@@ -161,6 +187,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   this restores usage telemetry and powers the estimate. Chat/Responses/
   Messages surfaces all read `cached_input_tokens`, so the estimate shows up
   everywhere usage does.
+- **Qoder: model-server host `api2-v2.qoder.sh` is dead and routing now
+  falls back to the alive gateway set.** Live DNS verification (2026-11-07):
+  `api2-v2.qoder.sh` is NXDOMAIN on every resolver (Google/Cloudflare DoH,
+  local, CN), so the gRPC model-server and IDE `/model/v1` surfaces are
+  unreachable. The region endpoint sync
+  (`/algo/api/v3/service/region/endpoints`) decrypted to `inferNodes = [api1]`
+  etc. The adapter default surface is now legacy COSY (`cosy`), hosts are
+  tried in order (`api1` → `api2` → `api3`), and the intl gRPC/IDE host
+  constants point at `api1` instead of the dead `api2-v2`. Legacy COSY on
+  `api1`/`api2` verified live: 200 + full stream with model `auto`. Evidence:
+  `documentation/research/qoder/live/2026-11-07-qoder-host-inference-fallback.md`.
+
+### Removed
+
+- **WorkBuddy providers and the TuringShield SDK.** `workbuddy` /
+  `workbuddycn` integration folders, `turing-device-token.ts`, and
+  `vendor/turing-sdk/` are deleted. The device-token header path now uses the
+  captured token only; migration `0045` moves any stored WorkBuddy data onto
+  CodeBuddy (`cb`/`cbcn`).
+- **Per-model system-prompt scope from the dashboard dialog.** The per-model
+  section is gone; custom prompts for models are no longer editable in the UI
+  (stored rows are untouched).
+- **Dashboard cross-channel credential warning.** The interchangeable-token
+  warning (CodeBuddy/WorkBuddy) is removed along with the provider pair that
+  motivated it.
 
 ## [2.7.8] - 2026-11-05
 

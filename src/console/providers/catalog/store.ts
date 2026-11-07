@@ -1827,20 +1827,25 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
     const ids = new Set(
       (registered.get(providerId) ?? []).map((entry) => entry.modelId),
     );
-    const candidates: DiscoverModelCandidate[] = discovery.models.map((definition) => ({
-      modelId: definition.modelId,
-      wireFamily: definition.wireFamily,
-      serviceKind: definition.serviceKind ?? "llm",
-      endpointPath: definition.endpointPath,
-      contextLimit: definition.contextLimit,
-      outputLimit: definition.outputLimit,
-      modalities: definition.modalities,
-      reasoning: definition.reasoning,
-      toolCall: definition.toolCall,
-      ...(definition.freeTier === undefined ? {} : { freeTier: definition.freeTier }),
-      ...(definition.proOnly === undefined ? {} : { proOnly: definition.proOnly }),
-      alreadyRegistered: ids.has(definition.modelId),
-    }));
+    // The picker exists to add models, so rows already on the roster are
+    // excluded rather than listed disabled — a fully-registered catalog would
+    // otherwise render an all-"Registered" list that reads as empty.
+    const candidates: DiscoverModelCandidate[] = discovery.models
+      .filter((definition) => !ids.has(definition.modelId))
+      .map((definition) => ({
+        modelId: definition.modelId,
+        wireFamily: definition.wireFamily,
+        serviceKind: definition.serviceKind ?? "llm",
+        endpointPath: definition.endpointPath,
+        contextLimit: definition.contextLimit,
+        outputLimit: definition.outputLimit,
+        modalities: definition.modalities,
+        reasoning: definition.reasoning,
+        toolCall: definition.toolCall,
+        ...(definition.freeTier === undefined ? {} : { freeTier: definition.freeTier }),
+        ...(definition.proOnly === undefined ? {} : { proOnly: definition.proOnly }),
+        alreadyRegistered: false,
+      }));
     return {
       supported: true,
       candidates,

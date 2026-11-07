@@ -143,7 +143,7 @@ function toolsFor(caseName: string): unknown[] {
 }
 
 // ---------------------------------------------------------------- IDE -------
-const IDE_URL = "https://api2-v2.qoder.sh/model/v1/chat/completions";
+const IDE_URL = "https://api1.qoder.sh/model/v1/chat/completions";
 
 interface MatrixResult {
   model: string;

@@ -84,7 +84,7 @@ function codeBuddyIntlPrePayload(
   void request;
 }
 
-// Model catalog — shared CodeBuddy / WorkBuddy international roster
+// Model catalog — shared CodeBuddy international roster
 
 const CODEBUDDY_INTL_RAW: readonly BuddyRawEntry[] = BUDDY_SHARED_RAW;
 
@@ -95,7 +95,7 @@ const CODEBUDDY_INTL_RAW: readonly BuddyRawEntry[] = BUDDY_SHARED_RAW;
  * why they were unreachable as image models: nothing downstream could tell a
  * chat model from one that returns an image, so `mediaGeneration` was false for
  * every catalog row. The roster and the declared capabilities come from
- * {@link makeBuddyImageModels} so cb and WorkBuddy cannot drift.
+ * {@link makeBuddyImageModels} so cb and cbcn cannot drift.
  */
 export const CODEBUDDY_IMAGE_MODELS: readonly ModelDefinition[] = makeBuddyImageModels(
   "cb",
