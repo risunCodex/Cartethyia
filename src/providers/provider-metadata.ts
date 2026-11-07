@@ -32,6 +32,14 @@ export interface CompatibilityProfile {
    * bundled specs declare it on `ApiKeyProviderSpec.gatewayUserAgent`.
    */
   readonly gateway_user_agent?: boolean;
+  /**
+   * Which service surfaces this custom provider may serve. Absent means every
+   * kind is enabled (the historical default). The operator narrows this by
+   * checking only the capabilities their upstream actually answers — agentic
+   * (LLM) is always on when the list is present, and a kind the upstream
+   * cannot serve stays out of the provider's tab set.
+   */
+  readonly service_kinds?: readonly ServiceKind[];
 }
 
 /** Identity and routing defaults for every builtin provider. */
@@ -660,6 +668,24 @@ export function providerServiceKinds(providerId: string): readonly ServiceKind[]
   // bundled provider without the declaration serves LLM only.
   if (declared !== undefined) return declared;
   return SERVICE_KINDS;
+}
+
+/**
+ * Resolves the service kinds for a custom (BYOK) provider row.
+ *
+ * The operator may narrow the surface set via `compatibilityProfile.service_kinds`
+ * (the Advanced Capabilities checkboxes in the Add Custom Provider modal). Absent,
+ * every kind is allowed — the historical default. A present list never drops
+ * `llm` (agentic is the floor of a custom provider).
+ */
+export function customProviderServiceKinds(
+  compatibilityProfile: CompatibilityProfile | null | undefined,
+): readonly ServiceKind[] {
+  const kinds = compatibilityProfile?.service_kinds;
+  if (kinds === undefined || kinds.length === 0) return SERVICE_KINDS;
+  const set = new Set<ServiceKind>(SERVICE_KINDS.filter((kind) => kinds.includes(kind)));
+  set.add("llm");
+  return SERVICE_KINDS.filter((kind) => set.has(kind));
 }
 
 

@@ -9,7 +9,7 @@ import { createHash, randomBytes } from "node:crypto";
  * can pin the exact identity sent before discovery resolves. Keep both in
  * lockstep when the CLI releases.
  */
-export const OPENCODE_CLIENT_VERSION = "2.2.5";
+export const OPENCODE_CLIENT_VERSION = "2.2.6";
 
 let lastTimestamp = 0;
 let sequenceCounter = 0;

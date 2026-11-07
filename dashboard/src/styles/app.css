@@ -1908,3 +1908,13 @@ label.settings-row-label {
   gap: 12px;
   min-width: 0;
 }
+
+/* Flash highlight when a Test-all result row jumps to a model card. */
+.model-flash {
+  animation: model-flash-pulse 1.6s ease-out;
+}
+@keyframes model-flash-pulse {
+  0% { box-shadow: 0 0 0 2px var(--accent); }
+  60% { box-shadow: 0 0 0 4px var(--accent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}

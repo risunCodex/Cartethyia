@@ -67,8 +67,7 @@ export type {
   ProviderResponse,
   CreateProviderRequest,
   UpdateProviderRequest,
-  ModelCatalogResponse,
-  FlatModelCatalogEntry,
+  ModelCatalogResponse,  FlatModelCatalogEntry,
   OAuthDevicePollResponse,
   ProviderRoutingResponse,
   UpdateProviderRoutingRequest,
@@ -103,6 +102,8 @@ export type {
   ModelWarningSeverity,
   ModelCatalogEntry,
 } from "../../../src/console/providers/catalog/contracts";
+
+export type { CompatibilityProfile } from "../../../src/providers/provider-metadata";
 export { DISCOVER_MODEL_COMMIT_MAX } from "../../../src/console/providers/catalog/contracts";
 
 /** Convenience alias for the discovery envelope; canonical name is C3's. */

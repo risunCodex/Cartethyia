@@ -513,7 +513,9 @@ export interface ProbeReasoning {
 /** Default fast-probe timeout, in seconds (D39/D40). */
 export const PROBE_FAST_DEFAULT_TIMEOUT_SECONDS = 10;
 /** Default fast-probe output allowance, in tokens (D40). */
-export const PROBE_FAST_MAX_OUTPUT_TOKENS = 32;
+export const PROBE_FAST_MAX_OUTPUT_TOKENS = 64;
+/** Fast-probe default prompt: a neutral greeting, not an identity question. */
+export const PROBE_FAST_DEFAULT_PROMPT = "How are you?";
 /** Fast-probe sample bound, in characters (D40). */
 export const PROBE_FAST_SAMPLE_MAX_CHARS = 80;
 
@@ -644,30 +646,6 @@ export async function loadProbePreferences(args: {
 }
 
 /**
- * The probe's default identity prompt (`What model are you...`) works for
- * every Qoder roster row except `cmodel` (virtual id `cantus`): that row's
- * gRPC surface answers the identity question with `406 Upstream error [stream]`
- * from the upstream proxy (verified live 2026-11-04; dmodel/qmodel/smodel all
- * accept it). Returns the neutral replacement prompt when the probe targets
- * that row with no explicit prompt, `undefined` otherwise.
- *
- * The replacement prompt must never *ask* an identity question: the upstream
- * guardrail is content-based and swallows the reply (empty sample) for any
- * phrasing that interrogates identity — even indirect ones (`what would you
- * call yourself`, `which model are you`, `perkenalkan dirimu`). A plain
- * greeting that *asserts* the wrong identity (`halo gpt`) makes the model
- * correct us on its own, and returns a sample 3/3 runs (verified live
- * 2026-11-04). We keep that phrasing — it is 100% consistent and the model
- * names itself ("saya Claude... buatan Anthropic") without us ever asking.
- */
-export function qoderCmodelProbePrompt(providerId: string, modelId: string, prompt: string | undefined): string | undefined {
-  if (prompt !== undefined) return undefined;
-  if (providerId !== "qoder" && providerId !== "qodercn") return undefined;
-  if (modelId !== "cmodel" && modelId !== "cantus") return undefined;
-  return "halo gpt";
-}
-
-/**
  * Phase 5 — build the canonical probe request. The probe prompt must pass every
  * provider's content-policy review (a bare "hi" trips CodeBuddy's 11140 safety
  * filter) AND produce a useful sample: ask the model to identify itself and
@@ -683,6 +661,7 @@ export function buildProbeCanonicalRequest(args: {
   readonly maxOutputTokens?: number;
 }): CanonicalRequest {
   const { modelId, request, probeReasoning, sourceSurface, maxOutputTokens } = args;
+  const fast = maxOutputTokens === PROBE_FAST_MAX_OUTPUT_TOKENS;
   return {
     model: modelId,
     messages: [
@@ -693,7 +672,7 @@ export function buildProbeCanonicalRequest(args: {
             kind: "text",
             text:
               request.prompt ??
-              "What model are you, and what is your knowledge cutoff date? Answer in one sentence.",
+              (fast ? PROBE_FAST_DEFAULT_PROMPT : "What model are you, and what is your knowledge cutoff date? Answer in one sentence."),
           },
         ],
       },

@@ -48,7 +48,6 @@ import {
   hasMeaningfulOutput,
   loadProbePreferences,
   PROBE_FAST_SAMPLE_MAX_CHARS,
-  qoderCmodelProbePrompt,
   recordProbeHealth,
   resolveProbeAdapter,
   resolveProbeTarget,
@@ -189,14 +188,16 @@ export class ProviderProbingService {
     request: ProbeModelRequest,
   ): Promise<ProbeModelResult> {
     const startedAt = Date.now();
-    // Qoder's IDE surface is the only transport that echoes provider metadata
-    // (`provider_model`, `target`, …) in its raw_usage, so probes for Qoder
-    // default to it unless the operator picked a surface explicitly. This
-    // covers every entry point (single model, all models, all accounts).
+    // Qoder's legacy COSY surface is the only live chat transport since
+    // 2026-11-07 (the gRPC host is NXDOMAIN and the IDE `/model/v1` surface
+    // answers 404 on every alive host). Probes for Qoder default to it unless
+    // the operator picked a surface explicitly. The IDE surface also echoes
+    // provider metadata, but that is worthless when the surface itself is
+    // dead — a probe must report what live traffic would do.
     const normalizedRequest: ProbeModelRequest =
       (providerId === "qoder" || providerId === "qodercn") &&
       (request.surface === undefined || request.surface === "default")
-        ? { ...request, surface: "ide" }
+        ? { ...request, surface: "cosy" }
         : request;
     const modelId = normalizedRequest.modelId;
     // One provider snapshot per probe: the contract gate, the account gate, the
@@ -254,16 +255,9 @@ export class ProviderProbingService {
     const fast = preferences.mode === "fast";
     const probeTimeoutMs = preferences.timeoutMs ?? 30_000;
     const probeSignal = AbortSignal.timeout(probeTimeoutMs);
-    // Qoder's gRPC surface refuses a probe that asks a model to identify
-    // itself (406 from the upstream proxy) for one roster row (`cmodel`,
-    // virtual id `cantus`). dmodel/qmodel/smodel accept the identity prompt
-    // fine — only cmodel refuses it — so the workaround is scoped to that
-    // row, not to every Qoder probe, and never overrides an explicit prompt.
-    const qoderCmodelPrompt = qoderCmodelProbePrompt(providerId, modelId, normalizedRequest.prompt);
-    const probeRequest = qoderCmodelPrompt === undefined ? normalizedRequest : { ...normalizedRequest, prompt: qoderCmodelPrompt };
     const canonicalRequest = buildProbeCanonicalRequest({
       modelId,
-      request: probeRequest,
+      request: normalizedRequest,
       probeReasoning,
       sourceSurface,
       ...(preferences.maxOutputTokens === undefined

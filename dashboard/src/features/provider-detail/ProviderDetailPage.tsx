@@ -59,12 +59,9 @@ import {
 } from "./sections/ImportCredentialDialog";
 import {
   AddModelModal,
-  ModeSelect,
   ModelGrid,
   ShowSelect,
   ThinkingSelect,
-  readProbeMode,
-  writeProbeMode,
   type ModelShowFilter,
 } from "./sections/Models";
 import { PROBE_REASONING_EFFORTS, type ModelProbeMode, type ProbeReasoningEffort } from "../../data/contracts";
@@ -152,26 +149,15 @@ export default function ProviderDetail(): ReactNode {
     const raw = window.localStorage.getItem(CARTETHYIA_PROVIDER_SHOW_KEY(pid));
     return raw === "free" ? "free" : "all";
   };
-  // Probe mode follows the same per-provider localStorage rule as the thinking
-  // effort, but falls back to the tenant's global default (`detail` when unset)
-  // instead of a hard-coded value, so a Settings change reaches every provider
-  // that has not overridden it.
+  // Probe mode is a tenant-wide setting (Settings → Model testing); every
+  // provider follows the same mode. There is no per-provider override.
   const runtimeSettings = useRuntimeSettings();
   const globalProbeMode: ModelProbeMode = runtimeSettings.data?.modelProbeMode ?? "detail";
-  const [probeMode, setProbeMode] = useState<ModelProbeMode>(() => readProbeMode(id, globalProbeMode));
-  const [probeModeTouched, setProbeModeTouched] = useState(false);
-  useEffect(() => {
-    if (!id) return;
-    const stored = typeof window === "undefined" || !window.localStorage
-      ? null
-      : window.localStorage.getItem(`cartethyia:provider:${id}:probe-mode`);
-    const next = stored === "fast" || stored === "detail" ? stored : globalProbeMode;
-    if (next !== probeMode) setProbeMode(next);
-  }, [id, globalProbeMode]);
-  useEffect(() => {
-    if (probeModeTouched && id) writeProbeMode(id, probeMode);
-  }, [id, probeMode, probeModeTouched]);
   const probeAllModels = useProbeAllModels();
+  // The Models grid exposes its aggregate "test every card" runner here so the
+  // header button calls each card's own Test (verdicts paint in place) — the
+  // batch API stays as a fallback only when no grid is mounted.
+  const runAllCardProbesRef = useRef<(() => void) | undefined>(undefined);
   const [showFilter, setShowFilter] = useState<ModelShowFilter>(() => readShowFilter(id));
   useEffect(() => {
     if (!id) return;
@@ -666,32 +652,33 @@ export default function ProviderDetail(): ReactNode {
                 onChange={setThinkingEffort}
                 size="sm"
               />
-              <ModeSelect
-                id="models-section-probe-mode"
-                value={probeMode}
-                onChange={(next) => {
-                  setProbeModeTouched(true);
-                  setProbeMode(next);
-                }}
-                size="sm"
-              />
-              {/* One batch request for the whole registered catalog; the
-                  per-model verdicts land in a collapsible panel under the grid. */}
+              {/* One click fires every card's own Test — the cards own their
+                  probe state, so each verdict paints on its card live. The
+                  batch path (mutate) is only a fallback when no grid is
+                  mounted (websearch section). */}
               <Button
                 variant="secondary"
                 size="sm"
                 icon={<FlaskConical size={13} className={probeAllModels.isPending ? "animate-spin" : ""} />}
                 disabled={probeAllModels.isPending || llmModels.length === 0}
-                onClick={() =>
-                  probeAllModels.mutate(
-                    { providerId: id, mode: probeMode },
-                    {
-                      onError: (error) =>
-                        toast.error("Test all models failed", (error as { message?: string }).message ?? "Probe failed"),
-                    },
-                  )
-                }
-                title={`Test every registered model in ${probeMode} mode`}
+                onClick={() => {
+                  const runAll = runAllCardProbesRef.current;
+                  if (runAll !== undefined) {
+                    runAll();
+                  } else {
+                    probeAllModels.mutate(
+                      { providerId: id, mode: globalProbeMode },
+                      {
+                        onError: (error) =>
+                          toast.error(
+                            "Test all models failed",
+                            (error as { message?: string }).message ?? "Probe failed",
+                          ),
+                      },
+                    );
+                  }
+                }}
+                title={`Test every registered model in ${globalProbeMode} mode`}
               >
                 {probeAllModels.isPending ? "Testing…" : "Test all models"}
               </Button>
@@ -790,13 +777,16 @@ export default function ProviderDetail(): ReactNode {
               models={llmModels}
               serviceKind="llm"
               thinkingEffort={thinkingEffort}
-              probeMode={probeMode}
+              probeMode={globalProbeMode}
               showFilter={showFilter}
               searchCapable={provider?.supportsWebSearch === true}
               testAll={{
                 pending: probeAllModels.isPending,
-                onRun: () => probeAllModels.mutate({ providerId: id, mode: probeMode }),
+                onRun: () => probeAllModels.mutate({ providerId: id, mode: globalProbeMode }),
                 results: probeAllModels.data?.results ?? null,
+              }}
+              onReady={(runAll) => {
+                runAllCardProbesRef.current = runAll;
               }}
             />
           )}

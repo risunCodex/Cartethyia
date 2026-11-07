@@ -33,7 +33,7 @@ export const CURSOR_OAUTH_CLIENT_ID = "KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB";
  * operator was not what the request carried. Discovery supersedes both on its
  * first successful fetch.
  */
-export const FALLBACK_CLIENT_VERSION = "cli-2026.11.05-86047df";
+export const FALLBACK_CLIENT_VERSION = "cli-3.29.9-306d153";
 
 /** Connect-RPC paths. Run is served by the discovered agent origin, not the API host. */
 export const RUN_PATH = "/agent.v1.AgentService/Run";

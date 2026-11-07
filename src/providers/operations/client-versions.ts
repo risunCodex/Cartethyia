@@ -220,7 +220,7 @@ const KIRO_NODE_VERSION = "24.18.0";
 export const VERSION_SOURCES = {
   antigravity: {
     key: "antigravity",
-    fallback: "2.28.2",
+    fallback: "2.29.0",
     sources: [
       {
         url: "https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/manifest/latest-arm64-mac.yml",
@@ -249,21 +249,21 @@ export const VERSION_SOURCES = {
     // under `@opencode/cli`, and this feed is what its own installer reads.
     // Fallback = the current latest release; raise it whenever the package
     // moves so a cold process does not present a stale client build.
-    fallback: "2.2.5",
+    fallback: "2.2.6",
     minVersion: "2.0.0",
     sources: [{ url: "https://opencode.ai/update/api/latest/cli/npm" }],
   },
   commandcode: {
     key: "commandcode",
-    // npm `command-code` latest as of 2026-10-30. The CLI sends this as
+    // npm `command-code` latest as of 2026-11-07. The CLI sends this as
     // `x-command-code-version`, so a stale fallback presents a client build
     // the upstream no longer ships — raise it whenever the package moves.
-    fallback: "1.88.2",
+    fallback: "1.88.5",
     sources: [{ url: "https://registry.npmjs.org/command-code/latest" }],
   },
   grok: {
     key: "grok",
-    fallback: "1.0.70",
+    fallback: "1.0.77",
     sources: [
       { url: "https://storage.googleapis.com/grok-build-public-artifacts/cli/stable" },
       { url: "https://registry.npmjs.org/@xai-official/grok/latest" },
@@ -292,7 +292,7 @@ export const VERSION_SOURCES = {
   },
   codex: {
     key: "codex",
-    fallback: "0.166.0",
+    fallback: "0.167.0",
     sources: [{ url: "https://registry.npmjs.org/@openai/codex/latest" }],
   },
   kimiCli: {
@@ -302,7 +302,7 @@ export const VERSION_SOURCES = {
   },
   kiro: {
     key: "kiro",
-    fallback: "1.4.62",
+    fallback: "1.4.121",
     sources: [
       {
         // Kiro's downloads page exposes no stable version string. Homebrew
@@ -316,7 +316,7 @@ export const VERSION_SOURCES = {
   },
   codebuddy: {
     key: "codebuddy",
-    fallback: "2.178.1",
+    fallback: "2.181.0",
     sources: [
       { url: "https://registry.npmjs.org/@tencent-ai/codebuddy-code/latest" },
       { url: "https://registry.npmmirror.com/@tencent-ai/codebuddy-code/latest" },
@@ -324,7 +324,7 @@ export const VERSION_SOURCES = {
   },
   codebuddyCn: {
     key: "codebuddy-cn",
-    fallback: "4.12.2.41207131",
+    fallback: "4.12.3.42658816",
     sources: [
       {
         // Official CN builds are listed by Homebrew's maintained cask feed;
@@ -339,7 +339,7 @@ export const VERSION_SOURCES = {
     // Current `@anthropic-ai/claude-code` release, so the billing
     // `cc_version=` suffix and the `claude-cli/` User-Agent stay on what
     // upstream ships.
-    fallback: "2.1.314",
+    fallback: "2.1.319",
     sources: [{ url: "https://registry.npmjs.org/@anthropic-ai/claude-code/latest" }],
   },
   claudeSdk: {
@@ -356,7 +356,7 @@ export const VERSION_SOURCES = {
   },
   github: {
     key: "github-copilot-chat",
-    fallback: "0.43.0",
+    fallback: "0.43.2026040705",
     sources: [
       {
         url: "https://api.github.com/repos/microsoft/vscode-copilot-chat/releases/latest",
@@ -366,7 +366,7 @@ export const VERSION_SOURCES = {
   },
   kilo: {
     key: "kilo-code",
-    fallback: "7.8.25",
+    fallback: "7.8.27",
     sources: [{ url: "https://open-vsx.org/api/kilocode/kilo-code" }],
   },
   muse: {
@@ -390,12 +390,12 @@ export const VERSION_SOURCES = {
   },
   cursor: {
     key: "cursor",
-    // Fallback = the last observed wire version (CLI ~2026.11.05-86047df).
+    // Fallback = the last observed wire version (CLI ~2026.11.07-306d153).
     // Discovery replaces it within one monitor tick; it is only what a cold
     // process sends before the first successful fetch. Kept equal to
     // `FALLBACK_CLIENT_VERSION` in the cursor adapter so the badge and the
     // request header always send one identity.
-    fallback: "cli-2026.11.05-86047df",
+    fallback: "cli-3.29.9-306d153",
     sources: [
       {
         url: "https://cursor.com/api/download?platform=win32-x64-user&releaseTrack=stable",
@@ -409,7 +409,7 @@ export const VERSION_SOURCES = {
     // comment this replaced claimed no semver existed and pinned a date tag
     // (`v2026.9.24`) as the version — a tag, not a release, and not the
     // identity the client sends.
-    fallback: "0.22.5",
+    fallback: "0.23.0",
     sources: [
       {
         url: "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest",
@@ -419,7 +419,7 @@ export const VERSION_SOURCES = {
   },
   zcode: {
     key: "zcode",
-    fallback: "3.14.3",
+    fallback: "3.17.2",
     sources: [
       {
         url: "https://api.github.com/repos/zai-org/ZCode/releases/latest",
@@ -594,6 +594,7 @@ export const getKimiCliVersion = accessor("kimiCli").get;
 
 export const getCodeBuddyVersion = accessor("codebuddy").get;
 export const getCodeBuddyCnVersion = accessor("codebuddyCn").get;
+
 /**
  * The CodeBuddy User-Agent.
  *

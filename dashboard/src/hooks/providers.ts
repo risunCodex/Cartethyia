@@ -1,4 +1,4 @@
-import { consoleRequest } from "../data/api";
+import { consoleRequest, getErrorMessage } from "../data/api";
 import type { ApiErrorShape } from "../data/api";
 // Console-owned device-poll DTO; token material remains provider-internal.
 import type { AccountHealthEventRecord, ByokConnectionTestRequest, ByokConnectionTestResult, CreateProviderAccountBatchResult, CreateProviderAccountRequest, CreateProviderRequest, DiscoverCommitResult, ModelProbeMode, OAuthDevicePollResponse as OAuthDevicePollResult, ProbeAllAccountsResult, ProbeAllModelsRun, ProbeModelRequest, ProbeModelResult, ProviderAccountBulkActionResult, ProviderAccountResponse, ProviderAccountsExportResponse, ProviderResponse, SetModelEnabledRequest, UpdateProviderAccountRequest, UpdateProviderRequest } from "../data/contracts";
@@ -6,7 +6,6 @@ import { queryKeys } from "../data/query-keys";
 import { assertModels, assertProvider, assertProviders, querySignal } from "../data/assert";
 import { assertDiscoverModels } from "../data/assert";
 import { DASHBOARD_QUERY_OPTIONS, POLL } from "../data/query-policy";
-import { getErrorMessage } from "../data/api";
 import { toast } from "../lib/toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
@@ -516,58 +515,6 @@ export function useRecoverAccount() {
     },
     onError: (error) => {
       toast.error("Could not recover the account.", getErrorMessage(error));
-    },
-  });
-}
-
-/** Result of a manual OAuth token refresh (`POST .../refresh-token`). */
-export interface RefreshAccountTokenResult {
-  readonly ok: boolean;
-  /** Status re-read server-side after the attempt; never assumed. */
-  readonly statusAfter: string;
-  readonly tokenRefreshed?: boolean;
-  readonly expiresAt?: string;
-  readonly refreshedAt?: string;
-  readonly error?: string;
-  readonly category?: string;
-}
-
-/**
- * Manually refreshes one OAuth account's token. Available for every status,
- * `disabled` included — the server never re-enables an account from a refresh,
- * so the caller must re-read the account list (the toast for a disabled
- * account says "remains disabled").
- */
-export function useRefreshAccountToken() {
-  const queryClient = useQueryClient();
-  return useMutation<
-    RefreshAccountTokenResult,
-    ApiErrorShape,
-    { providerId: string; accountId: string }
-  >({
-    mutationFn: ({ providerId, accountId }) =>
-      consoleRequest<RefreshAccountTokenResult>(
-        `/providers/${encodeURIComponent(providerId)}/accounts/${encodeURIComponent(accountId)}/refresh-token`,
-        { method: "POST", body: "{}" },
-      ),
-    onSuccess: async (result, variables) => {
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.providers.accounts(variables.providerId),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.providers.healthEvents(variables.providerId, variables.accountId),
-        }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.providers.all }),
-      ]);
-      toast.success(
-        result.statusAfter === "disabled"
-          ? "Token refreshed — account remains disabled"
-          : "Token refreshed",
-      );
-    },
-    onError: (error) => {
-      toast.error("Could not refresh the token.", getErrorMessage(error));
     },
   });
 }

@@ -96,8 +96,47 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   `usage=chat_completion`) and only rows already in the static roster are kept —
   a discovered id outside the roster is dropped instead of cloned from a
   template, so a sync/update cannot republish models the account cannot serve.
+- **Provider detail: one "Test all models" button drives per-card tests.** The
+  button directly triggers each model card's own test runner (cards register
+  their probe via the card→grid registry), so every card reports its own live
+  status inline. There is no dedicated batch API or SSE probe path — the
+  earlier experimental SSE batch route was fully reverted from the probing
+  service, store, and contracts.
+- **Custom providers: advanced capability checklist saved into
+  `service_kinds`.** The dashboard's advanced capabilities (vision, tool
+  calling, reasoning, …) are stored on `CompatibilityProfile.service_kinds`
+  and enforced by backend validation. An absent `service_kinds` means "all
+  kinds" for backward compatibility; `llm` is always included, so an older
+  custom provider without capabilities still routes as a chat model.
 
 ### Changed
+
+- **Probe mode is global (Settings), not per-provider.** The fast/minimal vs
+  detail probe toggle now lives in the runtime settings
+  (`useRuntimeSettings().modelProbeMode`); per-provider headers and
+  localStorage flags were removed.
+- **Fast probe uses a short greeting with 64 max output tokens.** The fast
+  probe prompt is now `"How are you?"` and `PROBE_FAST_MAX_OUTPUT_TOKENS`
+  is 64 (was 32), so quick checks stay cheaper while remaining above entropy
+  thresholds. The detail probe keeps the identity prompt at 256 tokens.
+- **Qoder probes default to the COSY surface.** The adapter and probe default
+  `surface` changed from `grpc`/`ide` to `cosy`; the `cmodel` identity-prompt
+  probe workaround is removed. `deepseek-v4.1-flash` and
+  `qwen3.8-flash` verified live (2026-11-07) at 200 via COSY.
+- **Client-version fallbacks refreshed for every provider except Devin.** The
+  shared cursor client-version fallback and opencode fingerprint now match the
+  pinned versions; Devin stays static (its version is not fetched). The
+  version monitor tests were updated accordingly.
+- **Recover surfaces for active accounts with per-model cooldowns.**
+  `isRecoverable` now includes cooldown state (`cooldownUntil` and a present
+  `activeModelCooldowns`), so Recover appears exactly where a refresh would
+  otherwise hit a per-model cooldown.
+- **Refresh-token button removed from the dashboard.** The separate "Refresh
+  token" button and its hook/type are gone from the account row; the backend
+  `/console/api` refresh route is retained so API consumers and older
+  dashboards keep working.
+
+### Fixed
 
 - **WorkBuddy removed; data migrates to CodeBuddy automatically.** The buddy
   family is now `cb`/`cbcn` only — `workbuddy` and `workbuddycn` providers and

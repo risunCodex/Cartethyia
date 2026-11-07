@@ -121,7 +121,7 @@ describe("opencode client version fallback", () => {
   test("the fallback is the current latest release", () => {
     // A cold process sends this before discovery resolves; if it lags the
     // upstream release the UA advertises a client build that no longer ships.
-    expect(VERSION_SOURCES.opencode.fallback).toBe("2.2.5");
+    expect(VERSION_SOURCES.opencode.fallback).toBe("2.2.6");
   });
 });
 
@@ -167,13 +167,13 @@ describe("client version monitor snapshot", () => {
   });
 
   test("uses current client feeds for Claude Code and Kiro", async () => {
-    expect(VERSION_SOURCES.claudeCli.fallback).toBe("2.1.314");
+    expect(VERSION_SOURCES.claudeCli.fallback).toBe("2.1.319");
     expect(VERSION_SOURCES.claudeCli.sources[0]?.url).toBe(
       "https://registry.npmjs.org/@anthropic-ai/claude-code/latest",
     );
     expect(VERSION_SOURCES.claudeSdk.fallback).toBe("0.128.0");
     expect(VERSION_SOURCES.claudeSdk.sources).toEqual([]);
-    expect(VERSION_SOURCES.kiro.fallback).toBe("1.4.62");
+    expect(VERSION_SOURCES.kiro.fallback).toBe("1.4.121");
     expect(VERSION_SOURCES.kiro.sources[0]?.url).toBe(
       "https://formulae.brew.sh/api/cask/kiro.json",
     );

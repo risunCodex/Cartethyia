@@ -69,7 +69,7 @@ describe("loadProbePreferences", () => {
     expect(prefs.mode).toBe("fast");
     expect(prefs.timeoutMs).toBe(7_000);
     expect(prefs.maxOutputTokens).toBe(PROBE_FAST_MAX_OUTPUT_TOKENS);
-    expect(PROBE_FAST_MAX_OUTPUT_TOKENS).toBe(32);
+    expect(PROBE_FAST_MAX_OUTPUT_TOKENS).toBe(64);
     expect(prefs.compactTelemetry).toBe(true);
     expect(prefs.payloadCapture.enabled).toBe(false);
     expect(prefs.payloadCapture.mode).toBe("none");
@@ -87,7 +87,7 @@ describe("loadProbePreferences", () => {
 });
 
 describe("fast canonical probe request", () => {
-  test("keeps the same identity prompt and only shrinks the token budget", () => {
+  test("keeps the identity prompt in detail mode; fast uses a neutral greeting and a smaller token budget", () => {
     const detail = buildProbeCanonicalRequest({
       modelId: "a-model",
       request: base,
@@ -101,9 +101,12 @@ describe("fast canonical probe request", () => {
       sourceSurface: "chat",
       maxOutputTokens: PROBE_FAST_MAX_OUTPUT_TOKENS,
     });
-    expect(fast.messages).toEqual(detail.messages);
-    expect(fast.generation_controls.max_tokens).toBe(32);
-    expect(fast.generation_controls.max_output_tokens).toBe(32);
+    expect(detail.messages[0]?.content).toEqual([
+      { kind: "text", text: "What model are you, and what is your knowledge cutoff date? Answer in one sentence." },
+    ]);
+    expect(fast.messages[0]?.content).toEqual([{ kind: "text", text: "How are you?" }]);
+    expect(fast.generation_controls.max_tokens).toBe(64);
+    expect(fast.generation_controls.max_output_tokens).toBe(64);
     expect(detail.generation_controls.max_tokens).toBe(256);
   });
 

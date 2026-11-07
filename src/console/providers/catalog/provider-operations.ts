@@ -25,7 +25,7 @@ import { isBundledProviderId } from "../../../providers/provider-contracts";
 import type { ProviderRegistry } from "../../../providers/provider-registry";
 import { getProviderClientVersion, getRouteIdentityVersions } from "../../../providers/operations/client-versions";
 import type { OAuthLoginField } from "../../../providers/authentication/oauth-flow-store";
-import { providerCredentialHint, providerCredentialUrl, providerDisplayName, providerHasAdapterUserAgent, providerOperatorNotice, providerServiceKinds, type CompatibilityProfile } from "../../../providers/provider-metadata";
+import { providerCredentialHint, providerCredentialUrl, providerDisplayName, providerHasAdapterUserAgent, providerOperatorNotice, providerServiceKinds, customProviderServiceKinds, type CompatibilityProfile } from "../../../providers/provider-metadata";
 import type { AccountHealthEventRecord } from "../../../providers/operations/account-health-service";
 import { healthEventBuffer } from "../../../persistence/health-event-flush";
 import { CREDENTIAL_MODES, PROVIDER_READ_SCOPES, PROVIDER_WRITE_SCOPES, type BuddyGrowthTaskLedgerEntry, type ProviderAccountBulkActionResult, type RefreshAccountTokenResponse } from "./contracts";
@@ -89,12 +89,16 @@ export function sanitizeProviderResponse(
   const credentialHint = providerCredentialHint(p.providerId);
   const operatorNotice = providerOperatorNotice(p.providerId);
   const clientVersion = getProviderClientVersion(p.providerId);
+  const compatibilityProfile = p.compatibilityProfile as CompatibilityProfile | undefined;
+  const isBuiltIn = (p.isBuiltIn as boolean | undefined) ?? false;
   const response: ProviderResponse = {
     providerId: p.providerId,
-    serviceKinds: providerServiceKinds(p.providerId),
+    serviceKinds: isBuiltIn
+      ? providerServiceKinds(p.providerId)
+      : customProviderServiceKinds(compatibilityProfile),
     displayName: providerDisplayName(p.providerId),
     enabled: (p.enabled as boolean | undefined) ?? true,
-    isBuiltIn: (p.isBuiltIn as boolean | undefined) ?? false,
+    isBuiltIn,
     requiresAccount: (p.requiresAccount as boolean | undefined) ?? true,
     hasAdapterUserAgent: providerHasAdapterUserAgent(p.providerId),
     // No model advertises search; see the note in provider-metadata.ts.
@@ -104,7 +108,7 @@ export function sanitizeProviderResponse(
     ...(operatorNotice === undefined ? {} : { operatorNotice }),
     ...(clientVersion === undefined ? {} : { clientVersion }),
     routeIdentityVersions: getRouteIdentityVersions(),
-    supportsModelDiscovery: (p.supportsModelDiscovery as boolean | undefined) ?? !p.isBuiltIn,
+    supportsModelDiscovery: (p.supportsModelDiscovery as boolean | undefined) ?? !isBuiltIn,
     ...(typeof p.createdAt === "string" ? { createdAt: p.createdAt } : {}),
     ...(typeof p.updatedAt === "string" ? { updatedAt: p.updatedAt } : {}),
   };

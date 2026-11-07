@@ -17,7 +17,7 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
-import { memo, useMemo, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Search, X } from "lucide-react";
 import { useGatewaySignedModelTest } from "./gateway-model-test";
 import { Button } from "../../../components/ui/button";
@@ -184,53 +184,8 @@ export function probeThinkingOptions(): { value: ProbeReasoningEffort; label: st
   }));
 }
 
-/** Per-provider probe mode, next to the Thinking selector in the Models header. */
-export function ModeSelect({
-  value,
-  onChange,
-  disabled,
-  size = "md",
-  id = "models-probe-mode",
-}: {
-  readonly value: ModelProbeMode;
-  readonly onChange: (value: ModelProbeMode) => void;
-  readonly disabled?: boolean;
-  readonly size?: "sm" | "md";
-  readonly id?: string;
-}): ReactNode {
-  return (
-    <div
-      title="Fast minimal sends a small token budget with a short deadline; Ask detail keeps the full sample."
-      className="min-w-56 shrink-0 max-sm:min-w-44"
-    >
-      <Select
-        id={id}
-        aria-label="Probe mode"
-        value={value}
-        disabled={disabled}
-        size={size}
-        onValueChange={(next) => onChange(next === "fast" ? "fast" : "detail")}
-        options={[
-          { value: "fast", label: "Fast minimal" },
-          { value: "detail", label: "Ask detail" },
-        ]}
-      />
-    </div>
-  );
-}
-
-/** Reads the per-provider probe-mode preference; `detail` when unset (D39). */
-export function readProbeMode(pid: string, globalDefault: ModelProbeMode = "detail"): ModelProbeMode {
-  if (typeof window === "undefined" || !window.localStorage) return globalDefault;
-  const raw = window.localStorage.getItem(`cartethyia:provider:${pid}:probe-mode`);
-  return raw === "fast" ? "fast" : raw === "detail" ? "detail" : globalDefault;
-}
-
-/** Writes the per-provider probe-mode preference. */
-export function writeProbeMode(pid: string, mode: ModelProbeMode): void {
-  if (typeof window === "undefined" || !window.localStorage || !pid) return;
-  window.localStorage.setItem(`cartethyia:provider:${pid}:probe-mode`, mode);
-}
+/** Per-provider probe mode is gone: the tenant-wide setting (Settings → Model
+ * testing) decides fast vs detail for every provider. */
 
 export function ThinkingSelect({
   value,
@@ -386,10 +341,9 @@ function ManualAddModelForm({
     setTestState("testing");
     setTestError("");
     setTestMeta(null);
-    // Qoder's IDE surface is the only transport that echoes the real serving
-    // model (provider_model/target) in its raw_usage, so a probe against it
-    // reports what actually ran instead of the opaque roster key.
-    const qoderIde = providerId === "qoder" || providerId === "qodercn";
+    // Qoder probes default to the legacy COSY surface (the only live chat
+    // transport since 2026-11-07); the IDE `/model/v1` surface is dead and
+    // answers 404 on every alive host.
     probe.mutate(
       {
         providerId,
@@ -398,7 +352,6 @@ function ManualAddModelForm({
           wireFamily,
           reasoningEffort: thinking,
           serviceKind: "llm",
-          ...(qoderIde ? { surface: "ide" } : {}),
         },
       },
       {
@@ -1197,6 +1150,7 @@ function ModelCard({
   onDeleteRequest,
   onEditRequest,
   deletePending,
+  onRegisterProbe,
 }: {
   readonly providerId: string;
   readonly model: ModelCatalogEntry;
@@ -1213,6 +1167,9 @@ function ModelCard({
   /** Absent for a shared/built-in row, which the tenant cannot edit. */
   readonly onEditRequest?: ((model: ModelCatalogEntry) => void) | undefined;
   readonly deletePending: boolean;
+  /** Registers this card's probe runner so the section's Test-all button can
+   * fire every card's own Test at once — no separate batch API. */
+  readonly onRegisterProbe?: (modelId: string, run: () => void) => void;
 }): ReactNode {
   const gatewayTest = useGatewaySignedModelTest();
   const probeConsole = useProbeModel();
@@ -1237,10 +1194,11 @@ function ModelCard({
   const copyId = `${providerId}/${qualifiedId}`;
   const pendingLabel = serviceKind === "websearch" ? "Searching…" : "Thinking…";
   const runProbe = () => {
-    // Qoder's probe console path defaults to the IDE surface, which echoes the
-    // real serving model metadata (provider_model/target); the gateway test
-    // path only sees the opaque roster echo (`auto`/`lite`). For Qoder the
-    // console probe is the trusted source, so use it directly.
+    // Qoder's probe console path defaults to the legacy COSY surface (the
+    // only live chat transport since 2026-11-07; the IDE `/model/v1` surface
+    // answers 404 on every alive host). The gate test path sees the same
+    // transport. For Qoder the console probe is the trusted source, so use it
+    // directly.
     setShowMetaDetails(false);
     const qoder = providerId === "qoder" || providerId === "qodercn";
     if (qoder) {
@@ -1344,6 +1302,13 @@ function ModelCard({
     });
   };
 
+  // Expose this card's probe runner to the section's Test-all button. The
+  // registry is keyed by model id; re-registering on every render keeps it
+  // current (thinking/probe mode changes rebind the runner).
+  useEffect(() => {
+    onRegisterProbe?.(model.modelId, runProbe);
+  });
+
   const toggleEnabled = () => {
     const nextEnabled = !model.enabled;
     setEnabled.mutate(
@@ -1363,6 +1328,7 @@ function ModelCard({
     <>
       <div
         className={`model-card box-border flex w-full min-w-0 flex-1-auto flex-col gap-5 rounded-panel border border-inner-border p-6 ${model.enabled ? "bg-surface-2" : "bg-surface-1 opacity-72"}`}
+        data-model-id={model.modelId}
       >
         {/* Header: icon tile + name (single-line ellipsis, no mid-token wrap) + copy */}
         <div className="flex items-start gap-4 min-w-0">
@@ -1736,6 +1702,7 @@ export function ModelGrid({
   serviceKind = "llm",
   searchCapable = false,
   testAll,
+  onReady,
 }: {
   readonly providerId: string;
   readonly models: readonly ModelCatalogEntry[];
@@ -1752,6 +1719,8 @@ export function ModelGrid({
     readonly onRun: () => void;
     readonly results: readonly { readonly modelId: string; readonly ok: boolean; readonly latencyMs: number; readonly error?: string }[] | null;
   };
+  /** Receives the aggregate "run every card's probe" callback for the header button. */
+  readonly onReady?: (runAll: () => void) => void;
 }): ReactNode {
   const deleteModel = useDeleteProviderModel();
   const [deleteTarget, setDeleteTarget] = useState<ModelCatalogEntry | null>(null);
@@ -1767,7 +1736,29 @@ export function ModelGrid({
   // routed. `enabled` defaults to true for a row written before the column
   // existed, matching the backend's own reading.
   const isRoutable = (model: ModelCatalogEntry): boolean => model.enabled !== false;
-  // The Show filter applies before grouping, so a hidden row never reaches any
+  // Registry of each card's probe runner, keyed by model id. Test-all fires
+  // every card's own Test button (no separate batch API, no extra route): the
+  // cards already own their test state, so the results paint in place.
+  const probeRunnersRef = useRef(new Map<string, () => void>());
+  const registerProbe = useCallback((modelId: string, run: () => void) => {
+    probeRunnersRef.current.set(modelId, run);
+  }, []);
+  const runAllProbes = useCallback(() => {
+    for (const run of probeRunnersRef.current.values()) {
+      try {
+        run();
+      } catch {
+        // A single card's runner must never break the whole batch.
+      }
+    }
+  }, []);
+  // Expose the aggregate runner to the header's Test-all button (outside this
+  // component) so one click fires every card's own probe — verdicts paint in
+  // place on each card, no separate batch API.
+  useEffect(() => {
+    if (onReady !== undefined) onReady(runAllProbes);
+  }, [onReady, runAllProbes]);
+  // The visible Show filter applies before grouping, so a hidden row never reaches any
   // section — including the disabled group at the end.
   const visibleModels =
     showFilter === "free" ? models.filter((model) => model.freeTier === true) : models;
@@ -1791,6 +1782,7 @@ export function ModelGrid({
       // backend refuses to edit it. Offering the pencil there would let the
       // operator fill in a form that always fails.
       onEditRequest={model.source === "builtin" ? undefined : setEditTarget}
+      onRegisterProbe={registerProbe}
     />
   );
   return (

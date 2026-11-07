@@ -11,7 +11,7 @@
 import { isBundledProviderId } from "../../../providers/provider-contracts";
 import { BUILTIN_DEFAULT_ENDPOINTS } from "../../../protocol/codecs";
 
-import { providerDisplayName, providerServiceKinds } from "../../../providers/provider-metadata";
+import { providerDisplayName, providerServiceKinds, customProviderServiceKinds } from "../../../providers/provider-metadata";
 import type { CompatibilityProfile } from "../../../providers/provider-metadata";
 import { supportedWireFamiliesForProvider } from "../../../providers/discovery/probe-wire";
 import { providers } from "../../../persistence/schema";
@@ -74,6 +74,7 @@ export function mapProviderRow(
     row.wireFamilyDefault,
     row.compatibilityProfile,
   );
+  const compatibilityProfile = row.compatibilityProfile as CompatibilityProfile | null;
   return {
     providerId: row.id,
     displayName: providerDisplayName(row.id),
@@ -82,7 +83,9 @@ export function mapProviderRow(
     isBuiltIn: isBundledProviderId(row.id),
     configured: false,
     requiresAccount: row.requiresAccount,
-    serviceKinds: providerServiceKinds(row.id),
+    serviceKinds: isBundledProviderId(row.id)
+      ? providerServiceKinds(row.id)
+      : customProviderServiceKinds(compatibilityProfile),
     // No model advertises search; see the note in provider-metadata.ts.
     supportsWebSearch: false,
     supportsModelDiscovery:

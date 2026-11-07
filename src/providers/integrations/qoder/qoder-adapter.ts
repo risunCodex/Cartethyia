@@ -103,7 +103,14 @@ class QoderAdapter implements ProviderAdapter {
   constructor(options: QoderAdapterOptions = {}) {
     this.provider_id = (options.providerId ?? QODER_PROVIDER_ID) as ProviderId;
     this.realm = options.realm ?? "intl";
-    this.surface = options.surface ?? "grpc";
+    // The legacy COSY surface is the production default (2026-11-07): the
+    // gRPC host is NXDOMAIN and the IDE surface is probe-only. The constructor
+    // must default to it too, or every billed model dispatches to the dead
+    // gRPC path while free-tier rows get cosy via the is_free rule — the
+    // mismatch that made `deepseek-v4.1-flash` fail while `qwen3.8-flash`
+    // passed. This is the same default `resolveQoderTransport(undefined)`
+    // already returns.
+    this.surface = options.surface ?? "cosy";
     this.fetchFn = options.fetch ?? globalThis.fetch;
   }
 

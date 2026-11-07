@@ -187,6 +187,16 @@ const ADAPTER_OWNED: Record<string, true> = {
 };
 
 export function validateCompatibilityProfile(profile: CompatibilityProfile): void {
+  if (profile.service_kinds !== undefined) {
+    if (!Array.isArray(profile.service_kinds)) {
+      throw new GatewayError("invalid_request", 400, "service_kinds must be an array (request {requestId}). Check the shape of what you sent — then resend 🪞");
+    }
+    for (const kind of profile.service_kinds) {
+      if (!isServiceKind(kind)) {
+        throw new GatewayError("invalid_request", 400, `unknown service kind ${String(kind)} (request {requestId}). Check the shape of what you sent — then resend 🪞`);
+      }
+    }
+  }
   if (profile.cli_identity !== undefined) {
     if (typeof profile.cli_identity !== "boolean") {
       throw new GatewayError("invalid_request", 400, "cli_identity must be boolean (request {requestId}). Check the shape of what you sent — then resend 🪞");

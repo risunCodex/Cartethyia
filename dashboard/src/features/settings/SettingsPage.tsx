@@ -845,7 +845,7 @@ function ModelTestingPanel(): ReactNode {
       <SettingsRow
         label="Default probe mode"
         labelFor="default-probe-mode"
-        hint="Which test a provider model gets when the operator has not chosen a per-provider mode. Ask detail is the default and keeps the full sample; Fast minimal asks the same identity prompt with a small token budget, no retry, and a short deadline."
+        hint="Which test every provider model gets. Ask detail is the default and keeps the full sample; Fast minimal asks a simple greeting with a small token budget, no retry, and a short deadline."
         control={
           <Select
             aria-label="Default probe mode"

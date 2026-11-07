@@ -9,11 +9,8 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import {
-  ModeSelect,
   ModelGrid,
   TestAllModelsPanel,
-  readProbeMode,
-  writeProbeMode,
 } from "../../src/features/provider-detail/sections/Models";
 import {
   FAST_TEST_MAX_TOKENS,
@@ -81,30 +78,6 @@ function stubSettings() {
     { preconnect: originalFetch.preconnect },
   ) as typeof globalThis.fetch;
 }
-
-describe("ModeSelect and per-provider preference", () => {
-  test("offers exactly fast minimal and ask detail", () => {
-    const markup = renderMarkup(
-      createElement(ModeSelect, { value: "detail", onChange: () => undefined }),
-    );
-    expect(markup).toContain('aria-label="Probe mode"');
-    expect(markup).toContain("Ask detail");
-  });
-
-  test("localStorage is per provider and the global default applies when unset", () => {
-    expect(readProbeMode("demo", "fast")).toBe("fast");
-    writeProbeMode("demo", "detail");
-    expect(readProbeMode("demo", "fast")).toBe("detail");
-    expect(readProbeMode("other", "fast")).toBe("fast");
-    expect(window.localStorage.getItem("cartethyia:provider:demo:probe-mode")).toBe("detail");
-    expect(readProbeMode("demo", "detail")).toBe("detail");
-  });
-
-  test("a corrupt stored value falls back to the global default", () => {
-    window.localStorage.setItem("cartethyia:provider:demo:probe-mode", "banana");
-    expect(readProbeMode("demo", "fast")).toBe("fast");
-  });
-});
 
 describe("settings model-testing section", () => {
   test("the section and both rows render", async () => {

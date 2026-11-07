@@ -26,12 +26,12 @@ export interface GatewayModelTestResult {
 const TEST_TIMEOUT_MS = 20_000;
 /** Fast mode: a short abort deadline and a tiny token budget, no retry (area 07). */
 export const FAST_TEST_TIMEOUT_MS = 10_000;
-export const FAST_TEST_MAX_TOKENS = 32;
+export const FAST_TEST_MAX_TOKENS = 64;
 export const FAST_TEST_SAMPLE_CHARS = 80;
-// Same probe prompt the model test always used (see buildProbeCanonicalRequest):
-// it passes content-policy review and produces a useful sample — the model
-// identifies itself and states its knowledge cutoff, instead of echoing a
-// canned reply.
+// Neutral greeting for the fast model test — no identity question, which some
+// providers treat as a guardrail trigger (see probe-phases PROBE_FAST_DEFAULT_PROMPT).
+const FAST_TEST_PROMPT = "How are you?";
+// Prompt the model test always used; detail mode keeps it (see buildProbeCanonicalRequest).
 const TEST_PROMPT = "What model are you, and what is your knowledge cutoff date? Answer in one sentence.";
 
 /** Options for one gateway test; `fast` keeps the same signed gateway path. */
@@ -91,13 +91,13 @@ export function useGatewaySignedModelTest() {
           },
           body: JSON.stringify({
             model,
-            messages: [{ role: "user", content: TEST_PROMPT }],
+            messages: [{ role: "user", content: fast ? FAST_TEST_PROMPT : TEST_PROMPT }],
             // Use the model's catalog output limit when known, otherwise omit the
             // field so the gateway applies its own default. A hard-coded small
             // ceiling made reasoning-heavy models exhaust the budget on the
             // thinking phase and return an empty answer ("No sample text").
             // Fast mode deliberately takes the other side of that trade: the
-            // answer is only a smoke signal, so 32 tokens is enough.
+            // answer is only a smoke signal, so 64 tokens is enough.
             ...(fast
               ? { max_tokens: FAST_TEST_MAX_TOKENS }
               : maxTokens === undefined
