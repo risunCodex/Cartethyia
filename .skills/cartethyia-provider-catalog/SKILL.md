@@ -76,7 +76,7 @@ Orthogonally, the **thinking ladder** (`dialect/thinking-ladder.ts` +
 
 ## Qoder identity, campaigns, and claim surfaces
 
-Qoder's identity mint (`P1gA…` genuine tokens, seeds, umidpack bridge), the
+Qoder's identity mint (OS-derived, donor-style deterministic derivation), the
 daily-credit campaign probe, the activity-claim family, and the proven-dead
 `pro-upgrade` trial surface are
 [`references/qoder-identity-and-claims.md`](references/qoder-identity-and-claims.md).

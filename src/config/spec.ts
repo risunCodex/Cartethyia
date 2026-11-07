@@ -174,12 +174,6 @@ export const CONFIG_SPEC = {
   CARTETHYIA_DISABLED_TASKS: { kind: "list" },
 
   /**
-   * Force the Qoder UMID bridge to the mini-ELF bundle on Linux
-   * (`1` = always mini, `0` = never mini; absent = auto-detect containers).
-   */
-  CARTETHYIA_QODER_UMID_MINI: { kind: "int", default: 0, min: 0, max: 1 },
-
-  /**
    * How long a day's telemetry is kept, in days.
    *
    * Whole raw event files past this age are removed. No summary or compacted

@@ -115,17 +115,14 @@ export type { QoderUserInfo, QoderOAuthState } from "./qoder-oauth";
 // Quota
 export { fetchQoderQuota, fetchQoderCnQuota } from "./qoder-quota";
 
-// UMID / native identity
+// UMID / OS-derived machine identity
 export {
+  mintQoderOsIdentity,
+  collectOsFingerprint,
   mintQoderNativeIdentity,
   replayQoderNativeIdentity,
   mintQoderGeneratedIdentity,
   qoderMachineHeaders,
-  ensurePosixExecutable,
-  umidpackDir,
-  umidMiniTarball,
-  umidMiniDir,
-  ensureUmidMiniExtracted,
 } from "./qoder-umid";
 export type { QoderNativeIdentity } from "./qoder-umid";
 export {

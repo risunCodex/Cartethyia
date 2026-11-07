@@ -90,10 +90,7 @@ const ALLOW_LIST: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     CARTETHYIA_DEVICE_TOKEN_FILE: "buddy device-token file path, deployment-level injection",
   },
   "src/providers/integrations/qoder/qoder-umid.ts": {
-    // Deployment-level bridge override: force/disable the mini-ELF UMID
-    // bundle on Linux (containers auto-detect). Read directly in the bridge
-    // because it decides which binary to spawn at mint time.
-    CARTETHYIA_QODER_UMID_MINI: "UMID bridge mode override (1=mini, 0=native, absent=auto)",
+    // (no environment reads — the OS identity is derived from host state)
   },
   "src/providers/integrations/cursor/cursor.ts": {
     // Cursor heartbeat tuning; subsystem-specific, only meaningful if the

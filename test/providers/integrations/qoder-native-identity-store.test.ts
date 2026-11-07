@@ -69,7 +69,7 @@ async function fixture() {
 function fakeMinter(collideWith?: string) {
   let n = 0;
   return {
-    mint: (_accountId: string): { identity: QoderNativeIdentity; seed: string } => {
+    mint: (_accountId?: string): { identity: QoderNativeIdentity; seed: string } => {
       n += 1;
       const token = n === 1 && collideWith !== undefined ? collideWith : `tok-${n}`;
       return {

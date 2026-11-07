@@ -161,6 +161,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   and `model_requires_credits` now map to `policy_rejected` (403), and
   `model_at_capacity`/`model_unavailable` to `platform_unavailable` (503),
   so each `GatewayErrorCode` carries one consistent status.
+- **Qoder machine identity now OS-derived; vendor bridge removed.** The
+  `vendor/qoder-umid/` tree (runtime-info ELF/PE/Mach-O binaries, mini-ELF
+  bundle) and `scripts/tools/extract-qoder-umid.ts` are deleted. Identity is
+  now derived deterministically from the host OS fingerprint + account uid
+  (donor-style `derive_id` pattern): UUIDv4-shaped machine id, base64url
+  machine token, 18-hex type/code. Same host + same account → same identity;
+  accounts are isolated by the uid salt. The Dockerfile's umid `chmod` step,
+  `CARTETHYIA_QODER_UMID_MINI`, and related docs/config are removed.
 
 ### Fixed
 - **Fast probe uses a short greeting with 64 max output tokens.** The fast

@@ -119,12 +119,12 @@ export function writeMachineIdentityCache(realm: string, entry: Omit<MachineIden
  */
 export function sampleIdentityWithVote(
   sample: (accountId: string) => {
-    identity: { machineToken: string; machineType: string; machineCode: string; isVm: boolean; source: "runtime-info" | "generated" };
+    identity: { machineToken: string; machineType: string; machineCode: string; isVm: boolean; source: "runtime-info" | "generated" | "os" };
     seed: string;
   } | null,
   accountId: string,
 ): {
-  identity: { machineToken: string; machineType: string; machineCode: string; isVm: boolean; source: "runtime-info" | "generated" };
+  identity: { machineToken: string; machineType: string; machineCode: string; isVm: boolean; source: "runtime-info" | "generated" | "os" };
   seed: string;
 } | null {
   const take = (count: number): Array<NonNullable<ReturnType<typeof sample>>> => {

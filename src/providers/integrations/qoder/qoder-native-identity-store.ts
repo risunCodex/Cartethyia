@@ -17,8 +17,7 @@ import { and, eq, isNotNull, ne } from "drizzle-orm";
 import type { CartethyiaDatabase } from "../../../persistence/db-handle";
 import { providerAccounts, type NativeIdentityRecord } from "../../../persistence/schema";
 import {
-  mintQoderNativeIdentity,
-  replayQoderNativeIdentity,
+  mintQoderOsIdentity,
   type QoderNativeIdentity,
 } from "./qoder-umid";
 import {
@@ -97,11 +96,11 @@ function withAllocationLock<T>(work: () => Promise<T>): Promise<T> {
 }
 
 /** Identity minting injected for tests; defaults to the real bridge. */
-export type NativeIdentityMinter = (accountId: string) => { identity: QoderNativeIdentity; seed: string } | null;
-export type NativeIdentityReplayer = (seed: string, accountId: string) => QoderNativeIdentity | null;
+export type NativeIdentityMinter = (accountId?: string) => { identity: QoderNativeIdentity; seed: string } | null;
+export type NativeIdentityReplayer = (seed: string, accountId?: string) => QoderNativeIdentity | null;
 
-const defaultMinter: NativeIdentityMinter = (accountId) => mintQoderNativeIdentity(accountId);
-const defaultReplayer: NativeIdentityReplayer = (seed, accountId) => replayQoderNativeIdentity(seed, accountId);
+const defaultMinter: NativeIdentityMinter = (accountId = "") => ({ identity: mintQoderOsIdentity(accountId), seed: "" });
+const defaultReplayer: NativeIdentityReplayer = () => null;
 
 /**
  * Mints and binds a fresh device identity for an account: runs the bridge
@@ -147,7 +146,7 @@ export function allocateQoderNativeIdentity(
           machineToken: cached.machineToken,
           machineType: cached.machineType,
           machineCode: cached.machineCode,
-          source: cached.source === "generated" ? "generated" : "runtime-info",
+          source: cached.source === "generated" ? "generated" : cached.source === "os" ? "os" : "runtime-info",
         };
         await store.bind(providerId, accountId, record);
         return record;
@@ -194,7 +193,7 @@ export function allocateQoderNativeIdentity(
         machineToken: evenExpired.machineToken,
         machineType: evenExpired.machineType,
         machineCode: evenExpired.machineCode,
-        source: evenExpired.source === "generated" ? "generated" : "runtime-info",
+        source: evenExpired.source === "generated" ? "generated" : evenExpired.source === "os" ? "os" : "runtime-info",
       };
       await store.bind(providerId, accountId, record);
       return record;

@@ -219,8 +219,8 @@ export interface NativeIdentityRecord {
   readonly machineCode: string;
   /** The seed-file content this identity was minted from, if captured. */
   readonly seed?: string;
-  /** How this identity was produced: the genuine SG bridge or the fallback. */
-  readonly source?: "runtime-info" | "generated";
+  /** How this identity was produced: the genuine SG bridge, the OS fingerprint, or the fallback. */
+  readonly source?: "runtime-info" | "generated" | "os";
 }
 
 export const providerAccounts = pgTable("provider_accounts", {

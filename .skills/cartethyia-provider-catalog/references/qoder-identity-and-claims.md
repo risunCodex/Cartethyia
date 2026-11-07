@@ -19,16 +19,19 @@ fixed 64 chars from `randomBytes` (CSPRNG, RFC 7636).
 
 ## Identity
 
-- **Native identity** (`P1gA…` machineToken, hex `machineType`/`machineOs`) is
-  minted by the vendor bridge. Keep it in
-  `src/providers/integrations/qoder/qoder-umid.ts` (`umidpack` binaries in
-  `vendor/qoder-umid/umidpack/`, seeds replayed there). **CORRECTED
-  2026-11-04:** the real bridge token IS required for CREDITS campaign
-  visibility — earlier same-account controls that suggested generated/random/
-  empty machine headers expose the grant were wrong for the current campaign.
-  A generated SHA-256 token keeps the CREDITS `CLAIM_BENEFIT` campaign hidden;
-  the genuine `runtime-info` token (Windows PE / ELF / mini-ELF) surfaces it.
-  Identity does not create a missing grant.
+- **OS-derived identity** (`P1gA…`-shaped machineToken, hex `machineType`/`machineCode`)
+  is derived from the host OS fingerprint + account uid (donor-style
+  deterministic derivation: UUIDv4-shaped machine id, base64url token,
+  18-hex type/code). The vendor bridge (`umidpack` / `runtime-info`) is no
+  longer vendored or executed; see
+  `src/providers/integrations/qoder/qoder-umid.ts`. Per-host stable, per-account
+  isolated via the uid salt. **CORRECTED 2026-11-04:** the genuine bridge token
+  WAS required for CREDITS campaign visibility — earlier same-account controls
+  that suggested generated/random/empty machine headers expose the grant were
+  wrong for the current campaign. The OS-derived identity keeps the bridge
+  token shape and is sent as the full machine-header set; the legacy generated
+  fallback (source `"generated"`) omits `cosy-machinetoken/type/code` to avoid
+  the upstream filter (donor issue #10).
 - The daily-credits claim is the IDE's plain `Bearer` (device token, or a
   PAT↔job token) + machine headers — **no WASM signing needed**. `machineId`
   is platform-specific: serial-hex on macOS/ELF, a cached UUID on Windows
@@ -97,7 +100,7 @@ same-account header controls are recorded in the research note.
 
 ## When touching this code
 
-Keep `qoder-umid.ts` (mint/replay), `qoder-oauth.ts` (device flow), and the
+Keep `qoder-umid.ts` (OS-derived mint), `qoder-oauth.ts` (device flow), and the
 `NativeIdentityRecord` persistence schema aligned; migration parity across
 `migrations/lite-sqlite3/` and `migrations/full-postgres/` is enforced by
 `test/persistence/sqlite-baseline.test.ts`. Verify downstream with the real
