@@ -20,8 +20,10 @@ import type {
 } from "../../authentication/oauth-flow-store";
 
 const FREEPI_DEVICE_START_PATH = "/auth/github/device";
+const FREEPI_CONSENT_PATH = "/auth/consent";
 const FREEPI_TOKEN_PATH = "/auth/token";
 const FREEPI_BASE_URL = "https://api.freepi.ai";
+const FREEPI_CONSENT_VERSION = "4";
 
 export class FreepiOAuthClient extends OAuthClient {
   readonly supportsDeviceCode = true;
@@ -42,13 +44,28 @@ export class FreepiOAuthClient extends OAuthClient {
       throw new Error(`free-pi device flow start failed: HTTP ${res.status} ${text.slice(0, 300)}`);
     }
     const body = (await res.json()) as Record<string, unknown>;
+    const sessionId = String(body["session_id"] ?? "");
+    // The upstream requires consent before the token poll answers: without it,
+    // `/auth/token` returns 403 `consent_required`. Submit it once here so
+    // the device flow is complete before the dashboard starts polling.
+    if (sessionId) {
+      try {
+        await this.fetchFn(new URL(FREEPI_CONSENT_PATH, FREEPI_BASE_URL), {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ session_id: sessionId, consent_version: FREEPI_CONSENT_VERSION }),
+        });
+      } catch {
+        // Consent failure is non-fatal at start; the poll will surface it.
+      }
+    }
     return {
       verificationUri: String(body["verification_uri"] ?? ""),
       userCode: String(body["user_code"] ?? ""),
-      deviceAuthId: String(body["session_id"] ?? ""),
+      deviceAuthId: sessionId,
       intervalSeconds: Number(body["interval"] ?? 5),
       expiresInSeconds: Number(body["expires_in"] ?? 900),
-      providerState: JSON.stringify({ session_id: body["session_id"] }),
+      providerState: JSON.stringify({ session_id: sessionId }),
     };
   }
 
