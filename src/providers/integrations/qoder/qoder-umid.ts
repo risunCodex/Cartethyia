@@ -409,15 +409,26 @@ export function replayQoderNativeIdentity(seed: string, accountId: string): Qode
  * The OS and hostname are derived from the real runtime (`qoderMachineOs` /
  * `qoderMachineHostname`), not hardcoded — the campaign surface fingerprint
  * must match the actual client (verified live 2026-11-04).
+ *
+ * Generated identities are NOT sent as machine headers. The donor hub proved
+ * live (issue #10) that the server filters the daily CREDITS campaign when a
+ * full set of *derived* cosy-machine* headers is sent — "全套派生 cosy-machine*
+ * 六头会被服务端判定为非官方客户端，把 CLAIMABLE 的每日领取整条过滤"。 A
+ * generated identity is not an official device, so sending its headers is
+ * worse than sending none: the campaign is hidden entirely. Only a native
+ * UMID identity (source "runtime-info") sends the full machine header set.
  */
 export function qoderMachineHeaders(identity: QoderNativeIdentity, machineId?: string): Record<string, string> {
   const mid = machineId && machineId.length > 0 ? machineId : identity.machineToken;
-  return {
+  const headers: Record<string, string> = {
     "cosy-machineid": mid,
-    "cosy-machinetoken": identity.machineToken,
-    "cosy-machinetype": identity.machineType,
-    "cosy-machinecode": identity.machineCode,
     "cosy-machineos": qoderMachineOs(),
     "cosy-machinehostname": qoderMachineHostname(),
   };
+  if (identity.source !== "generated") {
+    headers["cosy-machinetoken"] = identity.machineToken;
+    headers["cosy-machinetype"] = identity.machineType;
+    headers["cosy-machinecode"] = identity.machineCode;
+  }
+  return headers;
 }

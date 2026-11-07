@@ -21,6 +21,12 @@ import {
   replayQoderNativeIdentity,
   type QoderNativeIdentity,
 } from "./qoder-umid";
+import {
+  readMachineIdentityCache,
+  readMachineIdentityCacheEvenExpired,
+  sampleIdentityWithVote,
+  writeMachineIdentityCache,
+} from "./qoder-identity-cache";
 
 /** Stateful read/write boundary for bound native identities. */
 export interface QoderNativeIdentityStore {
@@ -104,6 +110,12 @@ const defaultReplayer: NativeIdentityReplayer = (seed, accountId) => replayQoder
  *
  * `avoidToken` optionally excludes the account's own current token so a
  * regenerate moves to a *different* device.
+ *
+ * The disk cache (per realm) is checked first — a cached native identity is
+ * reused without re-running the bridge, so container rebuilds keep the same
+ * device. When no cache exists, a majority vote stabilizes the bridge's VM
+ * jitter. If the bridge fails entirely, the cached identity (even expired)
+ * is preferred over a generated one.
  */
 export function allocateQoderNativeIdentity(
   store: QoderNativeIdentityStore,
@@ -113,27 +125,81 @@ export function allocateQoderNativeIdentity(
     readonly avoidToken?: string;
     readonly mint?: NativeIdentityMinter;
     readonly replayer?: NativeIdentityReplayer;
+    readonly realm?: string;
+    readonly env?: NodeJS.ProcessEnv;
   } = {},
 ): Promise<NativeIdentityRecord | null> {
   const mint = options.mint ?? defaultMinter;
+  const realm = options.realm ?? "intl";
+  const env = options.env ?? process.env;
   return withAllocationLock(async () => {
-    const occupied = await store.occupied(accountId);
-    for (let i = 0; i < 6; i += 1) {
-      const minted = mint(accountId);
-      if (!minted) return null;
-      const token = minted.identity.machineToken;
-      if (occupied.has(token)) continue; // collision (rare) → mint again
-      if (token === options.avoidToken) continue;
+    // 1. Disk cache first — reuse the stable device identity across restarts.
+    //    But the cache is machine-global: a token already bound to another
+    //    account (unique index) must not be reused, so skip the cache and
+    //    mint fresh when the cached token is occupied.
+    const cached = readMachineIdentityCache(realm, env);
+    if (cached) {
+      const occupied = await store.occupied(accountId);
+      if (cached.machineToken !== options.avoidToken && !occupied.has(cached.machineToken)) {
+        const existing = await store.get(providerId, accountId);
+        if (existing && existing.machineToken === cached.machineToken) return existing;
+        const record: NativeIdentityRecord = {
+          machineToken: cached.machineToken,
+          machineType: cached.machineType,
+          machineCode: cached.machineCode,
+          source: cached.source === "generated" ? "generated" : "runtime-info",
+        };
+        await store.bind(providerId, accountId, record);
+        return record;
+      }
+    }
+
+    // 2. No valid cache — sample with a majority vote (stabilizes VM jitter).
+    const voted = sampleIdentityWithVote(mint, accountId);
+    if (voted) {
+      const occupied = await store.occupied(accountId);
+      for (let i = 0; i < 6; i += 1) {
+        const minted = i === 0 ? voted : mint(accountId);
+        if (!minted) return null;
+        const token = minted.identity.machineToken;
+        if (occupied.has(token)) continue; // collision (rare) → mint again
+        if (token === options.avoidToken) continue;
+        const record: NativeIdentityRecord = {
+          machineToken: token,
+          machineType: minted.identity.machineType,
+          machineCode: minted.identity.machineCode,
+          ...(minted.seed ? { seed: minted.seed } : {}),
+          source: minted.identity.source,
+        };
+        await store.bind(providerId, accountId, record);
+        // Persist the bound token to the disk cache so future runs reuse it.
+        writeMachineIdentityCache(realm, {
+          machineToken: token,
+          machineType: minted.identity.machineType,
+          machineCode: minted.identity.machineCode,
+          isVm: minted.identity.isVm,
+          source: minted.identity.source,
+          environment: realm === "cn" ? "0" : "3",
+        }, env);
+        return record;
+      }
+      return null;
+    }
+
+    // 3. Bridge failed entirely — fall back to the cached identity even if
+    //    expired. A real identity is better than a generated one.
+    const evenExpired = readMachineIdentityCacheEvenExpired(realm, env);
+    if (evenExpired) {
       const record: NativeIdentityRecord = {
-        machineToken: token,
-        machineType: minted.identity.machineType,
-        machineCode: minted.identity.machineCode,
-        ...(minted.seed ? { seed: minted.seed } : {}),
-        source: minted.identity.source,
+        machineToken: evenExpired.machineToken,
+        machineType: evenExpired.machineType,
+        machineCode: evenExpired.machineCode,
+        source: evenExpired.source === "generated" ? "generated" : "runtime-info",
       };
       await store.bind(providerId, accountId, record);
       return record;
     }
+
     return null;
   });
 }

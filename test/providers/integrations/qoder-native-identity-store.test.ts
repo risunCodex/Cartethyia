@@ -37,6 +37,7 @@ async function fixture() {
   const sqlite = createSqliteDatabase(join(dir, "t.sqlite"));
   await applySqliteMigrations(sqlite);
   const { db } = buildSqliteHandle(sqlite);
+  const env = { CARTETHYIA_DATA_DIR: dir };
   await db.insert(providers).values({ id: "qoder" });
   const account = async (label: string, providerId = "qoder") => {
     const [row] = await db
@@ -54,6 +55,7 @@ async function fixture() {
   return {
     db,
     account,
+    env,
     cleanup: () => {
       try { sqlite.close(); } catch { /* already closed */ }
       removeDir(dir);
@@ -61,15 +63,18 @@ async function fixture() {
   };
 }
 
-/** A deterministic fake minter: each mint yields a fresh token sequence. */
-function fakeMinter() {
+/** A deterministic fake minter: stable token per call, like the real bridge
+ * (same seed → same token). An optional `collideWith` makes the first call
+ * emit an occupied token so collision-retry tests can exercise the loop. */
+function fakeMinter(collideWith?: string) {
   let n = 0;
   return {
     mint: (_accountId: string): { identity: QoderNativeIdentity; seed: string } => {
       n += 1;
+      const token = n === 1 && collideWith !== undefined ? collideWith : `tok-${n}`;
       return {
         identity: {
-          machineToken: `tok-${n}`,
+          machineToken: token,
           machineType: `type-${n}`,
           machineCode: `code-${n}`,
           isVm: false,
@@ -141,7 +146,7 @@ describe("allocateQoderNativeIdentity", () => {
       const id = await f.account("a");
       const store = new DrizzleQoderNativeIdentityStore(f.db);
       const minter = fakeMinter();
-      const record = await allocateQoderNativeIdentity(store, "qoder", id, { mint: minter.mint });
+      const record = await allocateQoderNativeIdentity(store, "qoder", id, { mint: minter.mint, env: f.env, realm: "intl" });
       expect(record?.machineToken).toBe("tok-1");
       expect(record?.seed).toBe('{"seed":1}');
       if (record === null) throw new Error("expected a bound record");
@@ -165,6 +170,8 @@ describe("allocateQoderNativeIdentity", () => {
       const record = await allocateQoderNativeIdentity(store, "qoder", c, {
         mint: minter.mint,
         avoidToken: "tok-3",
+        env: f.env,
+        realm: "intl",
       });
       // tok-1/tok-2 are occupied; tok-3 avoided → first free is tok-4.
       expect(record?.machineToken).toBe("tok-4");
@@ -180,6 +187,8 @@ describe("allocateQoderNativeIdentity", () => {
       const store = new DrizzleQoderNativeIdentityStore(f.db);
       const record = await allocateQoderNativeIdentity(store, "qoder", id, {
         mint: () => null,
+        env: f.env,
+        realm: "intl",
       });
       expect(record).toBeNull();
       if (record !== null) throw new Error("expected no bound record");
@@ -212,8 +221,13 @@ describe("allocateQoderNativeIdentity", () => {
           seed: `{"seed":${calls}}`,
         };
       };
-      const record = await allocateQoderNativeIdentity(store, "qoder", id, { mint });
-      expect(calls).toBe(2);
+      const record = await allocateQoderNativeIdentity(store, "qoder", id, { mint, env: f.env, realm: "intl" });
+      // The vote samples twice (first two mint calls: tok-1, tok-2) and
+      // aborts on the second sample when tokens differ — here they differ, so
+      // the vote returns tok-1 (occupied), then the collision retry calls mint
+      // again: call 3 also yields tok-2 (the fake yields tok-2 for any call
+      // after the first), which is free.
+      expect(calls).toBe(3);
       expect(record?.machineToken).toBe("tok-2");
     } finally {
       f.cleanup();
@@ -228,11 +242,15 @@ describe("allocateQoderNativeIdentity", () => {
       const store = new DrizzleQoderNativeIdentityStore(f.db);
       const minter = fakeMinter();
       const [ra, rb] = await Promise.all([
-        allocateQoderNativeIdentity(store, "qoder", a, { mint: minter.mint }),
-        allocateQoderNativeIdentity(store, "qoder", b, { mint: minter.mint }),
+        allocateQoderNativeIdentity(store, "qoder", a, { mint: minter.mint, env: f.env, realm: "intl" }),
+        allocateQoderNativeIdentity(store, "qoder", b, { mint: minter.mint, env: f.env, realm: "intl" }),
       ]);
       expect(ra?.machineToken).toBe("tok-1");
-      expect(rb?.machineToken).toBe("tok-2");
+      // The in-process lock serializes the two allocations. The first binds
+      // tok-1 and writes it to the disk cache; the second sees the cached
+      // token as occupied and mints fresh (vote consumes tok-2/tok-3, then
+      // binds tok-3).
+      expect(rb?.machineToken).toBe("tok-3");
       expect(ra?.machineToken).not.toBe(rb?.machineToken);
     } finally {
       f.cleanup();
@@ -249,8 +267,10 @@ describe("allocateQoderNativeIdentity", () => {
       await store.bind("qoder", a, RECORD("tok-1"));
 
       const minter = fakeMinter();
-      const record = await allocateQoderNativeIdentity(store, "qodercn", b, { mint: minter.mint });
-      expect(record?.machineToken).toBe("tok-2");
+      const record = await allocateQoderNativeIdentity(store, "qodercn", b, { mint: minter.mint, env: f.env, realm: "cn" });
+      // tok-1 is occupied; the vote consumes tok-1/tok-2 and aborts on the
+      // differing token, so the retry binds tok-3.
+      expect(record?.machineToken).toBe("tok-3");
       expect(record?.machineToken).not.toBe("tok-1");
     } finally {
       f.cleanup();

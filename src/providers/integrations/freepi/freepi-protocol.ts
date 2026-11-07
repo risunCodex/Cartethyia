@@ -225,13 +225,15 @@ export async function* parseFreepiSse(
 export function throwFreepiUpstreamError(code: unknown, message: unknown): never {
   const msg = typeof message === "string" && message.trim() ? message : "free-pi upstream error";
   const codeStr = code === undefined ? undefined : String(code);
-  // Entitlement/plan walls the gateway classifies as quota.
+  // Entitlement/plan walls the gateway classifies as policy rejection (403):
+  // the account is not allowed to use this model/credential type, which is
+  // not a transient rate limit (quota_exceeded = 429).
   if (codeStr === "guest_unavailable" || codeStr === "model_requires_credits") {
-    throw new GatewayError("quota_exceeded", 403, `${msg} (request {requestId}). The free-pi account cannot serve this — check credits or sign in. 💸`, { upstream_code: codeStr }, "upstream");
+    throw new GatewayError("policy_rejected", 403, `${msg} (request {requestId}). The free-pi account cannot serve this — check credits or sign in. 💸`, { upstream_code: codeStr }, "upstream");
   }
-  // Server-side model unavailability.
+  // Server-side model unavailability → platform unavailable (503).
   if (codeStr === "model_at_capacity" || codeStr === "model_unavailable") {
-    throw new GatewayError("capacity_exhausted", 503, `${msg} (request {requestId}). Upstream has this model hard-down right now. 🔄`, { upstream_code: codeStr }, "upstream");
+    throw new GatewayError("platform_unavailable", 503, `${msg} (request {requestId}). Upstream has this model hard-down right now. 🔄`, { upstream_code: codeStr }, "upstream");
   }
   if (codeStr === "upstream_error") {
     throw new GatewayError("platform_unavailable", 502, `${msg} (request {requestId}). The upstream model host errored. 🌙`, { upstream_code: codeStr }, "upstream");

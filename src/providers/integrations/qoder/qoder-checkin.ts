@@ -1,6 +1,6 @@
 /**
  * Qoder daily check-in (streak / 100 Credits per day), ported from the
- * reference bridge (`qoder_accounts.py` in `qoder2api-hub`).
+ * reference bridge (`qoder_accounts.py` in the donor hub).
  *
  * Two upstream surfaces, tried in order:
  *
@@ -443,7 +443,7 @@ export async function fetchQoderDailyCheckin(args: {
     }
   }
   if (!bound && store) {
-    const minted = await allocateQoderNativeIdentity(store, providerId, accountId);
+    const minted = await allocateQoderNativeIdentity(store, providerId, accountId, { realm });
     if (minted) {
       boundRecord = minted;
       bound = {

@@ -144,6 +144,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   detail probe toggle now lives in the runtime settings
   (`useRuntimeSettings().modelProbeMode`); per-provider headers and
   localStorage flags were removed.
+- **Qoder native device identity hardened: generated headers no longer sent,
+  disk cache + majority vote.** Adopted from the donor reference
+  implementation: a generated (software) identity is no longer sent as the
+  full `cosy-machine*` machine-header set — the upstream filters the daily
+  CREDITS campaign when a full set of derived headers appears (donor issue
+  #10), so generated identities now send only `cosy-machineid` + os +
+  hostname, while native UMID identities keep the full six-header set. A
+  per-realm disk cache (`machine_identity.json`) keeps the device identity
+  stable across container rebuilds, and fresh mints use a majority vote
+  (2–3 samples) to stabilize the bridge's VM-classification jitter. When the
+  bridge fails entirely, the cached identity (even expired) is preferred over
+  a generated one. The allocation path now skips a cached token that is
+  already bound to another account (unique-index invariant).
+- **Free-pi upstream error codes align with gateway conventions.** `guest_unavailable`
+  and `model_requires_credits` now map to `policy_rejected` (403), and
+  `model_at_capacity`/`model_unavailable` to `platform_unavailable` (503),
+  so each `GatewayErrorCode` carries one consistent status.
+
+### Fixed
 - **Fast probe uses a short greeting with 64 max output tokens.** The fast
   probe prompt is now `"How are you?"` and `PROBE_FAST_MAX_OUTPUT_TOKENS`
   is 64 (was 32), so quick checks stay cheaper while remaining above entropy

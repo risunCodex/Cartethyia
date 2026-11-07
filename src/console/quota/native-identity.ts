@@ -16,6 +16,7 @@ import {
   DrizzleQoderNativeIdentityStore,
   type QoderNativeIdentityStore,
 } from "../../providers/integrations/qoder/qoder-native-identity-store";
+import { qoderRealmForProvider } from "../../providers/integrations/qoder/qoder-realm";
 import { ConsoleDomainError, requireGlobalAdmin, requireTenantScope } from "../shared/errors";
 import type { ConsoleAccessResolver } from "../auth/access";
 
@@ -38,6 +39,7 @@ export type NativeIdentityAllocator = (args: {
 function defaultAllocator(store: QoderNativeIdentityStore): NativeIdentityAllocator {
   return ({ providerId, accountId, avoidToken }) =>
     allocateQoderNativeIdentity(store, providerId, accountId, {
+      realm: qoderRealmForProvider(providerId),
       ...(avoidToken !== undefined ? { avoidToken } : {}),
     });
 }

@@ -139,7 +139,7 @@ export async function claimQoderCredits(args: {
   const store = new DrizzleQoderNativeIdentityStore(db);
   let bound = await store.get(providerId, accountId);
   if (!bound) {
-    const minted = await allocateQoderNativeIdentity(store, providerId, accountId);
+    const minted = await allocateQoderNativeIdentity(store, providerId, accountId, { realm });
     if (!minted) return { state: "error", amount: 0, detail: "Could not mint a UMID identity for this account." };
     bound = minted;
   }
