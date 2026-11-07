@@ -1,0 +1,67 @@
+/**
+ * Exports provider accounts from a Lite SQLite store into the probe accounts
+ * JSON format. Shared by the per-provider export wrappers
+ * (`auth/qoder-export-accounts.ts`, …). Not for production; probe helper.
+ *
+ * Usage (from repo root, with CARTETHYIA_ENCRYPTION_KEY set):
+ *
+ *   bun run scripts/provider-probing/lib/export-accounts.ts \
+ *     <sqlite> <out.json> [providerId]
+ *
+ * The SQLite path, output path, and (optional) provider id are positional
+ * args; the encryption key must be in the environment (normally from `.env`).
+ * The output file is meant for probe scripts only — never commit it.
+ */
+import { Database } from "bun:sqlite";
+import { writeFileSync } from "node:fs";
+import { decryptCredentialToString } from "../../../src/security/crypto";
+
+/** Exports all accounts (optionally filtered by provider id) to the probe shape. */
+export function exportProviderAccounts(
+  dbPath: string,
+  outPath: string,
+  providerId?: string,
+): number {
+  const db = new Database(dbPath, { readonly: true });
+  const rows = (providerId === undefined
+    ? db.query(
+        `SELECT id, provider_id, label, credential_kind, status, credential_ciphertext, auth_state, created_at
+         FROM provider_accounts ORDER BY created_at`,
+      ).all()
+    : db.query(
+        `SELECT id, provider_id, label, credential_kind, status, credential_ciphertext, auth_state, created_at
+         FROM provider_accounts WHERE provider_id = ? ORDER BY created_at`,
+      ).all(providerId)) as Array<{
+    id: string;
+    provider_id: string;
+    label: string | null;
+    credential_kind: string;
+    status: string;
+    credential_ciphertext: Uint8Array | null;
+    auth_state: unknown;
+    created_at: string;
+  }>;
+
+  const accounts = rows.map((row) => {
+    const secret = row.credential_ciphertext
+      ? decryptCredentialToString(row.credential_ciphertext)
+      : "";
+    const authState = typeof row.auth_state === "string" ? JSON.parse(row.auth_state) : row.auth_state;
+    return {
+      id: row.id,
+      providerId: row.provider_id,
+      label: row.label ?? "",
+      credentialKind: row.credential_kind,
+      status: row.status,
+      accessToken: secret,
+      refreshToken: secret,
+      authState,
+      createdAt: row.created_at,
+    };
+  });
+
+  writeFileSync(outPath, JSON.stringify({ exportedAt: new Date().toISOString(), accounts }, null, 2));
+  console.log(`exported ${accounts.length} ${providerId ?? "all"} accounts -> ${outPath}`);
+  for (const a of accounts) console.log(" -", a.label, "|", a.status);
+  return accounts.length;
+}

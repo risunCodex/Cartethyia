@@ -60,6 +60,7 @@ provider-probing/
   lib/
     accounts.ts        # account-file reading + masking
     http.ts            # POST probe helper (timeout, first-bytes head)
+    export-accounts.ts # export provider accounts from Lite SQLite to probe JSON
   github/
     github-opencode-login.ts # device login with OpenCode's OAuth app
     github-plan-entitlement-probe.ts # plan/SKU + gpt-6-luna entitlement
@@ -77,14 +78,33 @@ provider-probing/
       qoder-capacity-probe.ts  # context acceptance + session-retention experiments (--mode context|retention)
     grpc/
       qoder-grpc-meta.ts       # gRPC per-model probe: metadata/trailers/usage/extras (+ --echo-only)
+      qoder-grpc-wire-probe.ts # live gRPC matrix probe against real accounts (isolates rejected tool payloads)
+      qoder-grpc-live-test.ts  # gateway live test: qwen3.8-flash + tool over SSE
+    direct/
+      qoder-gateway-live-test.ts # gateway live test against 127.0.0.1:12800
     quota/
       qoder-entitlement-probe.ts # userinfo + quota + roster (--header-mode, --full, --roster-key)
       probe-qoder-credits.ts     # sash campaign list / claim / reward (--claim, --wait)
     auth/
       qoder-device-login.ts    # device-code login (desktop IDE flow)
-      qoder-export-accounts.ts # extract Qoder accounts from local SQLite store
+      qoder-export-accounts.ts # extract Qoder accounts from local SQLite store (wrapper over lib/export-accounts.ts)
     inspect/
       qoder-body-inspect.ts    # inspect the legacy request body builder output
+      qoder-wire-audit.ts      # raw-wire verification + tool-call buffering audit (merged)
+    tools/
+      qoder-bundle-slice.ts    # print slices of the unpacked bundle around a keyword
+    dev/
+      gen-chat-proto.ts        # regenerate embedded chat.proto source
+      mint-admin-key.ts        # mint a local admin API key into Lite SQLite
+      qoder-live-check-db.ts   # inspect local Lite SQLite for API key + active Qoder accounts
+  trae/
+    probe-trae-chat.ts   # chat/agent wire probe + SSE decode
+    probe-trae-quota.ts  # session/entitlement/pay quota probe
+    trae-auto-selection-probe.ts # live Auto model-selection wire probe
+  freepi/
+    probe-freepi.ts      # guest/device identity, catalog, chat, sweep
+    freepi-oauth-capture.ts # GitHub device-code login → JWT capture
+    freepi-shared.ts     # upstream wire helpers
   kiro/
     probe-kiro.ts      # management (models) + runtime (generation) probe
     probe-kiro-oauth.ts # IdC/Builder-ID browser PKCE + social OAuth probe

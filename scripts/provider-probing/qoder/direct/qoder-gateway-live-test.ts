@@ -2,7 +2,7 @@
  * Dev-only live test against the local Cartethyia gateway.
  *
  * Usage:
- *   bun run scripts/scratch/qoder-gateway-live-test.ts [mode]
+ *   bun run scripts/provider-probing/qoder/direct/qoder-gateway-live-test.ts [mode]
  *
  * mode: "tools" (default) | "no-tools" | "tools-no-choice" | "tools-no-parallel"
  *
@@ -11,7 +11,7 @@
  * gateway's provider machinery). Reports SSE chunks and any retry markers.
  */
 import { Database } from "bun:sqlite";
-import { decryptCredentialToString } from "../../src/security/crypto";
+import { decryptCredentialToString } from "../../../../src/security/crypto";
 
 const DB_PATH = process.argv[2] ?? "C:/Users/Aria/AppData/Roaming/cartethyia/cartethyia.sqlite";
 const GATEWAY = "http://127.0.0.1:12800/v1/chat/completions";

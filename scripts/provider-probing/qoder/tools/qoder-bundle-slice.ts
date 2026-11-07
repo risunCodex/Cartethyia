@@ -5,11 +5,11 @@
  * inspect it.
  *
  * Usage:
- *   bun run scripts/scratch/qoder-bundle-slice.ts <keyword> [before] [after] [maxHits]
+ *   bun run scripts/provider-probing/qoder/tools/qoder-bundle-slice.ts <keyword> [before] [after] [maxHits]
  *
  * Examples:
- *   bun run scripts/scratch/qoder-bundle-slice.ts "function QFn" 200 1200 3
- *   bun run scripts/scratch/qoder-bundle-slice.ts "cosy-clienttype" 400 600 5
+ *   bun run scripts/provider-probing/qoder/tools/qoder-bundle-slice.ts "function QFn" 200 1200 3
+ *   bun run scripts/provider-probing/qoder/tools/qoder-bundle-slice.ts "cosy-clienttype" 400 600 5
  */
 import { readFileSync } from "node:fs";
 
@@ -17,7 +17,7 @@ const BUNDLE = "D:/tmp/unpacked/qoder/Qoder-unpacked/npm-package/package/bundle/
 
 const kw = process.argv[2];
 if (kw === undefined) {
-  console.error("usage: bun run scripts/scratch/qoder-bundle-slice.ts <keyword> [before] [after] [maxHits]");
+  console.error("usage: bun run scripts/provider-probing/qoder/tools/qoder-bundle-slice.ts <keyword> [before] [after] [maxHits]");
   process.exit(1);
 }
 const before = Number(process.argv[3] ?? 400);

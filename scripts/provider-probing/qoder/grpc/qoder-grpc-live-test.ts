@@ -7,7 +7,7 @@
  * "Qoder gRPC stream failed … object expected" / 400 upstream / DSML leak.
  */
 import { Database } from "bun:sqlite";
-import { decryptCredentialToString } from "../../src/security/crypto";
+import { decryptCredentialToString } from "../../../../src/security/crypto";
 
 const DB_PATH = process.argv[2] ?? "C:/Users/Aria/AppData/Roaming/cartethyia/cartethyia.sqlite";
 const GATEWAY = "http://127.0.0.1:12800/v1/chat/completions";

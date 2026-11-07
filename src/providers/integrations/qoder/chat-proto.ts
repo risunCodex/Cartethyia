@@ -1,7 +1,7 @@
 /**
  * Generated from `vendor/qoder-proto/chat.proto` (Qoder desktop client v1.1.81,
  * `qoder-worker-runtime.mjs`). Do not edit by hand — regenerate from the
- * proto file via `scripts/scratch/gen-chat-proto.ts`.
+ * proto file via `scripts/provider-probing/qoder/dev/gen-chat-proto.ts`.
  */
 export const CHAT_PROTO_SOURCE = `syntax = "proto3";
 

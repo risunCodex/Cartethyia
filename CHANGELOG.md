@@ -108,6 +108,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   and enforced by backend validation. An absent `service_kinds` means "all
   kinds" for backward compatibility; `llm` is always included, so an older
   custom provider without capabilities still routes as a chat model.
+- **Free-pi provider (bundled): adapter + OAuth + quota + live discovery.**
+  The free-pi backend (`api.freepi.ai`) is now a bundled provider serving the
+  OpenAI-completions wire with a JWT bearer. Login is GitHub device-code
+  (`freepi-oauth-capture.ts`); the quota collector reads `GET /me` (USD daily
+  budget, daily/bonus/premium credits); discovery reads `GET /client-version`
+  and keeps the whole live catalog, with the bare `deepseek-v4-flash` id
+  remapped onto the CLI default `deepseek/deepseek-v4-flash`. The adapter
+  registers an ad session (`/ads/next` + `/ads/impression`) before chat —
+  upstream answers `ads_required` unless a session has shown ads — and maps
+  `guest_unavailable`/`model_requires_credits` → quota, `model_at_capacity` →
+  capacity, `upstream_error` → platform unavailable. The static roster is the
+  offline fallback and carries only the four Free Unlimited rows
+  (`deepseek-v4.1-flash`, `glm-5.3-flash`, `particle`,
+  `deepseek/deepseek-v4-flash`); the v4 row was dropped per operator request.
+  Live-verified: guest sweep (4 free rows pass, 26 refused with
+  `guest_unavailable`), GitHub sweep (23/30 pass, 4 model_at_capacity, 2
+  credit-required, 1 upstream 404), and direct chat through the gateway.
+- **Free-pi probing scripts.** `scripts/provider-probing/freepi/`:
+  `probe-freepi.ts` (guest/device identity, `/me`, `/client-version`, chat,
+  sweep), `freepi-oauth-capture.ts` (device-code login → JWT capture), and
+  `freepi-shared.ts` (upstream wire helpers). Tokens are never printed.
+- **Probe scripts restructured: `scripts/scratch/` removed.** All scratch
+  files moved into `scripts/provider-probing/` by domain (qoder → grpc/direct/
+  tools/dev/inspect, trae stays in trae/), relative imports fixed, and
+  references updated everywhere. Duplicates merged: `export-provider-accounts.ts`
+  + `qoder-export-accounts.ts` → `lib/export-accounts.ts` (generic helper) with
+  the qoder wrapper; `qoder-raw-wire-probe.ts` + `qoder-toolcall-audit-probe.ts`
+  → `qoder/inspect/qoder-wire-audit.ts`. The `README.md` layout now documents
+  the full tree.
 
 ### Changed
 

@@ -388,6 +388,13 @@ export const VERSION_SOURCES = {
       },
     ],
   },
+  freepi: {
+    key: "freepi",
+    // The free-pi CLI version — the `x-client-version` the gateway reports.
+    // Fallback = the unpacked 0.6.14 bundle; npm discovery replaces it.
+    fallback: "0.6.14",
+    sources: [{ url: "https://registry.npmjs.org/free-pi-cli/latest" }],
+  },
   cursor: {
     key: "cursor",
     // Fallback = the last observed wire version (CLI ~2026.11.07-306d153).
@@ -434,6 +441,7 @@ const resolvers = {
   qoder: createClientVersionResolver({ ...VERSION_SOURCES.qoder, client: "qoder" }),
   hermes: createClientVersionResolver({ ...VERSION_SOURCES.hermes, client: "hermes" }),
   trae: createClientVersionResolver({ ...VERSION_SOURCES.trae, client: "trae" }),
+  freepi: createClientVersionResolver({ ...VERSION_SOURCES.freepi, client: "freepi" }),
   cursor: createClientVersionResolver({ ...VERSION_SOURCES.cursor, client: "cursor" }),
   opencode: createClientVersionResolver({ ...VERSION_SOURCES.opencode, client: "opencode" }),
   commandcode: createClientVersionResolver({ ...VERSION_SOURCES.commandcode, client: "command-code" }),

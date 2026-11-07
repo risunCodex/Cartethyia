@@ -5,7 +5,7 @@
  * dist, and the standalone binary without runtime filesystem dependence. Run
  * after editing `vendor/qoder-proto/chat.proto`:
  *
- *   bun run scripts/scratch/gen-chat-proto.ts
+ *   bun run scripts/provider-probing/qoder/dev/gen-chat-proto.ts
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -20,7 +20,7 @@ const escaped = proto.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/
 const ts = `/**
  * Generated from \`vendor/qoder-proto/chat.proto\` (Qoder desktop client v1.1.81,
  * \`qoder-worker-runtime.mjs\`). Do not edit by hand — regenerate from the
- * proto file via \`scripts/scratch/gen-chat-proto.ts\`.
+ * proto file via \`scripts/provider-probing/qoder/dev/gen-chat-proto.ts\`.
  */
 export const CHAT_PROTO_SOURCE = \`${escaped}\`;
 `;

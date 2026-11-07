@@ -11,8 +11,8 @@
 import { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import * as grpc from "@grpc/grpc-js";
-import { decryptCredentialToString } from "../../src/security/crypto";
-import { CHAT_PROTO_SOURCE } from "../../src/providers/integrations/qoder/chat-proto";
+import { decryptCredentialToString } from "../../../../src/security/crypto";
+import { CHAT_PROTO_SOURCE } from "../../../../src/providers/integrations/qoder/chat-proto";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

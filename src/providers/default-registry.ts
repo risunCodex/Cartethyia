@@ -531,6 +531,37 @@ export const PROVIDER_CAPABILITIES = {
     loadQuotaCollector: quotaCapability(() => import("./integrations/trae/trae-quota"), "fetchTraeCnQuota"),
     loadModelDiscovery: traeDiscovery("cn", "traecn"),
   },
+  freepi: {
+    loadAdapter: async () => (await import("./integrations/freepi/freepi")).createFreepiAdapter(),
+    loadModels: async () => (await import("./integrations/freepi/freepi-catalog")).FREEPI_MODELS,
+    // Free-pi login is a GitHub device flow; the issued JWT is the credential.
+    loadAuthentication: oauthCapability(() => import("./integrations/freepi/freepi-oauth"), "freepiOAuthClient"),
+    loadQuotaCollector: quotaCapability(() => import("./integrations/freepi/freepi-quota"), "fetchFreepiQuota"),
+    // Live `/client-version` (Bearer) is the catalog source; the static roster
+    // is the offline fallback.
+    loadModelDiscovery: async () => async (request: Parameters<ProviderModelDiscovery>[0]) => {
+      const { discoverFreepiModels } = await import("./integrations/freepi/freepi-discovery");
+      const { FREEPI_MODELS } = await import("./integrations/freepi/freepi-catalog");
+      const secret = request.credential.trim();
+      const fetcher = request.fetcher as unknown as typeof fetch | undefined;
+      if (secret.length === 0 || fetcher === undefined) return FREEPI_MODELS;
+      let token = secret;
+      if (secret.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(secret) as Record<string, unknown>;
+          const found = ["accessToken", "access_token", "token"].find(
+            (key) => typeof parsed[key] === "string" && (parsed[key] as string).length > 0,
+          );
+          if (found !== undefined) token = parsed[found] as string;
+        } catch {
+          // Use the raw secret as the token.
+        }
+      }
+      const rows = await discoverFreepiModels({ token, fetcher });
+      if (rows.length === 0) return FREEPI_MODELS;
+      return rows;
+    },
+  },
   inferhub: {
     loadAdapter: async () => (await import("./integrations/inferhub")).createInferhubAdapter(),
     // Live `/v1/models` is the primary source: the marketplace republishes its
