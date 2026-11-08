@@ -389,15 +389,22 @@ function globFiles(args: Record<string, unknown>, root: string): Record<string, 
   return { files: out };
 }
 
-/** Minimal glob matcher: `*` (within a segment), `**` (any depth), `?`. */
+/**
+ * Minimal glob matcher: `*` (within a segment), `**` (any depth), `?`.
+ * The value is normalized to forward slashes first, so a Windows `\` path
+ * matches exactly like a POSIX `/` path — otherwise `*.ts` matches
+ * `src\a.ts` on Windows but not `src/a.ts`, and the same pattern behaves
+ * differently depending on which separator `relative()` happened to emit.
+ */
 function simpleGlobMatch(pattern: string, value: string): boolean {
+  const normalized = value.replace(/\\/g, "/");
   const re = pattern
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*\*/g, "__GLOBSTAR__")
     .replace(/\*/g, "[^/]*")
     .replace(/__GLOBSTAR__/g, ".*")
     .replace(/\?/g, ".");
-  return new RegExp(`^${re}$`).test(value);
+  return new RegExp(`^${re}$`).test(normalized);
 }
 
 function grepFiles(args: Record<string, unknown>, root: string, pi: boolean): Record<string, unknown> {

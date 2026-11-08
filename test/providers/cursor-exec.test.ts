@@ -140,10 +140,22 @@ describe("Cursor native tool executor", () => {
   });
 
   test("ct_find lists matching files (modern find arm)", async () => {
-    const result = await executeNativeTool("ct_find_args", { path: ".", pattern: "*.ts" }, WORKSPACE);
+    const result = await executeNativeTool("ct_find_args", { path: ".", pattern: "**/*.ts" }, WORKSPACE);
     expect(result?.field).toBe("pi_find_result");
     const success = result?.message["success"] as Record<string, unknown>;
     expect(success["output"]).toContain("a.ts");
+  });
+
+  test("ct_find glob matching is separator-independent", async () => {
+    // `*.ts` must not match a nested path on either separator: the matcher
+    // normalizes to forward slashes, so `src\a.ts` (Windows) behaves exactly
+    // like `src/a.ts` (POSIX) — `*.ts` misses both and `**/*.ts` hits both.
+    const shallow = await executeNativeTool("ct_find_args", { path: ".", pattern: "*.ts" }, WORKSPACE);
+    const shallowSuccess = shallow?.message["success"] as Record<string, unknown>;
+    expect(String(shallowSuccess["output"])).not.toContain("a.ts");
+    const deep = await executeNativeTool("ct_find_args", { path: ".", pattern: "**/*.ts" }, WORKSPACE);
+    const deepSuccess = deep?.message["success"] as Record<string, unknown>;
+    expect(String(deepSuccess["output"])).toContain("a.ts");
   });
 
   test("delete removes the file", async () => {
