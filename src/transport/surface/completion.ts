@@ -103,6 +103,31 @@ export class CompletionStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent
   push(event: CanonicalEvent): Record<string, unknown>[] {
     if (event.type === "terminal") this.terminalEvent = event;
     if (event.type === "usage") this.usageEvent = event;
+    if (event.type === "terminal" && event.state === "failed") {
+      // A failed terminal is a real failure: emit an error object instead of
+      // a completion with a null finish_reason. The client receives the
+      // upstream's message (rate limit, quota, error) rather than a silent
+      // empty completion.
+      const raw = isRecord(event.stop_details) ? event.stop_details : undefined;
+      const message =
+        typeof raw?.["message"] === "string" && raw["message"].length > 0
+          ? raw["message"]
+          : "The upstream response failed";
+      return [
+        {
+          id: this.id,
+          object: "text_completion",
+          created: this.created,
+          model: this.options.model ?? "",
+          error: {
+            type: "server_error",
+            code: event.stop_reason ?? "provider_error",
+            ...(typeof raw?.["status"] === "number" ? { status: raw["status"] } : {}),
+            message,
+          },
+        },
+      ];
+    }
     const text = eventText(event);
     if (text === undefined) {
       if (event.type !== "terminal") return [];

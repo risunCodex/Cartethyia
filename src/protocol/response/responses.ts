@@ -274,7 +274,16 @@ export function parseResponsesResponseToEvents(
     canonicalTerminal({
       sequenceNumber: events.length + 1,
       responseId: id,
-      state: status === "cancelled" ? "aborted" : status === "failed" ? "failed" : "complete",
+      // `incomplete` maps to `aborted` (not `complete`): the surface encoder
+      // turns `aborted` into `response.incomplete`, while `complete` would
+      // emit `response.completed` for a response the upstream declared
+      // unfinished (max output tokens / content filter).
+      state:
+        status === "cancelled" || status === "incomplete"
+          ? "aborted"
+          : status === "failed"
+            ? "failed"
+            : "complete",
       stopReason: respJsonStopReason,
       providerStopReason: respJsonProviderStopReason,
       usage: usageFromProvider(usage),
@@ -740,8 +749,15 @@ export async function* decodeResponsesSseStream(
   const truncated = status === undefined;
   yield canonicalTerminal({
     sequenceNumber: seq++,
+    // `incomplete` maps to `aborted` (not `complete`): the surface encoder
+    // turns `aborted` into `response.incomplete`, while `complete` would
+    // emit `response.completed` for a stream the upstream declared unfinished.
     state:
-      status === "cancelled" ? "aborted" : status === "failed" || truncated ? "failed" : "complete",
+      status === "cancelled" || status === "incomplete"
+        ? "aborted"
+        : status === "failed" || truncated
+          ? "failed"
+          : "complete",
     stopReason: responsesStopReason,
     providerStopReason: responsesProviderStopReason,
     usage: usageFromProvider(rawUsage),

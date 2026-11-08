@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { CanonicalRequest, ContentPart } from "../../src/protocol/canonical-model";
-import { decodeResponsesSseStream } from "../../src/protocol/response/responses";
+import {
+  decodeResponsesSseStream,
+  parseResponsesResponseToEvents,
+} from "../../src/protocol/response/responses";
 import { canonicalToResponsesPayload } from "../../src/protocol/request/responses";
 import { chatAdapter } from "../../src/transport/surface/chat/adapter";
 
@@ -150,5 +153,171 @@ describe("Responses reasoning decoder", () => {
         typeof item === "object" && item !== null && "type" in item && item["type"] === "reasoning",
     );
     expect(replayed).toMatchObject({ id: "rs_17pws5a", encrypted_content: "gateway-opaque-blob" });
+  });
+});
+
+describe("Responses terminal-state mapping", () => {
+  const terminalOf = (events: readonly { type: string }[]): { type: string; state?: string; stop_reason?: string } => {
+    const terminal = [...events].reverse().find((event) => event.type === "terminal");
+    if (terminal?.type !== "terminal") throw new Error("expected a terminal event");
+    return terminal as { type: string; state?: string; stop_reason?: string };
+  };
+
+  test("non-stream response.incomplete decodes to aborted, not complete", () => {
+    const request = {
+      model: "test-model",
+      source_surface: "responses",
+      stream: false,
+      messages: [],
+    } as unknown as CanonicalRequest;
+    const events = parseResponsesResponseToEvents(
+      {
+        id: "resp_1",
+        model: "test-model",
+        status: "incomplete",
+        output: [],
+      },
+      request,
+    );
+    const terminal = terminalOf(events);
+    expect(terminal.state).toBe("aborted");
+    expect(terminal.stop_reason).toBe("length");
+  });
+
+  test("non-stream response.failed decodes to failed", () => {
+    const request = {
+      model: "test-model",
+      source_surface: "responses",
+      stream: false,
+      messages: [],
+    } as unknown as CanonicalRequest;
+    const events = parseResponsesResponseToEvents(
+      {
+        id: "resp_2",
+        model: "test-model",
+        status: "failed",
+        output: [],
+      },
+      request,
+    );
+    const terminal = terminalOf(events);
+    expect(terminal.state).toBe("failed");
+    expect(terminal.stop_reason).toBe("error");
+  });
+
+  test("non-stream response.completed decodes to complete", () => {
+    const request = {
+      model: "test-model",
+      source_surface: "responses",
+      stream: false,
+      messages: [],
+    } as unknown as CanonicalRequest;
+    const events = parseResponsesResponseToEvents(
+      {
+        id: "resp_3",
+        model: "test-model",
+        status: "completed",
+        output: [],
+      },
+      request,
+    );
+    const terminal = terminalOf(events);
+    expect(terminal.state).toBe("complete");
+    expect(terminal.stop_reason).toBe("stop");
+  });
+
+  test("stream response.incomplete decodes to aborted, not complete", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode([
+          'data: {"type":"response.incomplete","response":{"status":"incomplete","output":[]}}',
+          "data: [DONE]",
+          "",
+        ].join("\n\n")));
+        controller.close();
+      },
+    });
+    const request = {
+      model: "test-model",
+      source_surface: "responses",
+      stream: true,
+      messages: [],
+    } as unknown as CanonicalRequest;
+    const events = [];
+    for await (const event of decodeResponsesSseStream(stream, request)) events.push(event);
+    const terminal = terminalOf(events);
+    expect(terminal.state).toBe("aborted");
+    expect(terminal.stop_reason).toBe("length");
+  });
+
+  test("stream response.failed decodes to failed", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode([
+          'data: {"type":"response.failed","response":{"status":"failed","output":[]}}',
+          "data: [DONE]",
+          "",
+        ].join("\n\n")));
+        controller.close();
+      },
+    });
+    const request = {
+      model: "test-model",
+      source_surface: "responses",
+      stream: true,
+      messages: [],
+    } as unknown as CanonicalRequest;
+    const events = [];
+    for await (const event of decodeResponsesSseStream(stream, request)) events.push(event);
+    const terminal = terminalOf(events);
+    expect(terminal.state).toBe("failed");
+    expect(terminal.stop_reason).toBe("error");
+  });
+
+  test("stream response.completed decodes to complete", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode([
+          'data: {"type":"response.completed","response":{"status":"completed","output":[]}}',
+          "data: [DONE]",
+          "",
+        ].join("\n\n")));
+        controller.close();
+      },
+    });
+    const request = {
+      model: "test-model",
+      source_surface: "responses",
+      stream: true,
+      messages: [],
+    } as unknown as CanonicalRequest;
+    const events = [];
+    for await (const event of decodeResponsesSseStream(stream, request)) events.push(event);
+    const terminal = terminalOf(events);
+    expect(terminal.state).toBe("complete");
+    expect(terminal.stop_reason).toBe("stop");
+  });
+
+  test("truncated stream with no terminal envelope decodes to failed", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode([
+          'data: {"type":"response.output_text.delta","delta":"partial"}',
+          "data: [DONE]",
+          "",
+        ].join("\n\n")));
+        controller.close();
+      },
+    });
+    const request = {
+      model: "test-model",
+      source_surface: "responses",
+      stream: true,
+      messages: [],
+    } as unknown as CanonicalRequest;
+    const events = [];
+    for await (const event of decodeResponsesSseStream(stream, request)) events.push(event);
+    const terminal = terminalOf(events);
+    expect(terminal.state).toBe("failed");
   });
 });

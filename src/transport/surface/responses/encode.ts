@@ -54,6 +54,7 @@ export class ResponsesEventEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
   private inputSequence = -Infinity;
   private started = false;
   private terminal = false;
+  private hasError = false;
   private responseModel: string | undefined;
   private systemFingerprint: string | undefined;
   private usage: UsageRecord | undefined;
@@ -624,21 +625,33 @@ export class ResponsesEventEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
     state: "complete" | "failed" | "aborted",
     stopReason?: CanonicalStopReason,
     usage?: UsageRecord,
+    stopDetails?: unknown,
   ): ResponsesWireEvent[] {
     if (this.terminal)
       throw new ResponsesLifecycleError("Responses stream has more than one terminal event");
     if (usage !== undefined) this.usage = usage;
     const events = this.closeAll();
-    const status = terminalResponseStatus(state);
+    // An upstream error event before an `aborted` terminal is a failure, not
+    // an incomplete response: the client must see `response.failed` rather
+    // than `response.incomplete` (the same distinction the Messages encoder
+    // applies in `stopData`).
+    const effectiveState = state === "aborted" && this.hasError ? "failed" : state;
+    const status = terminalResponseStatus(effectiveState);
     const response = this.responseObject(status.status);
     const incompleteReason =
       status.status === "incomplete" ? incompleteResponseReason(stopReason) : undefined;
     if (incompleteReason !== undefined) response.incomplete_details = { reason: incompleteReason };
-    if (state === "failed") {
+    if (effectiveState === "failed") {
+      const raw = isRecord(stopDetails) ? stopDetails : undefined;
+      const message =
+        typeof raw?.["message"] === "string" && raw["message"].length > 0
+          ? raw["message"]
+          : "The upstream response failed";
       response.error = {
         type: "server_error",
         code: stopReason ?? "provider_error",
-        message: "The upstream response failed",
+        ...(typeof raw?.["status"] === "number" ? { status: raw["status"] } : {}),
+        message,
       };
     }
     events.push(this.emit(status.event, { response }));
@@ -699,12 +712,16 @@ export class ResponsesEventEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
       return events;
     }
     if (event.type === "keepalive") return events.concat(this.emit("response.keepalive"));
-    if (event.type === "error")
+    if (event.type === "error") {
+      this.hasError = true;
       return events.concat(
         this.emit("response.error", { category: event.category, message: event.message }),
       );
+    }
     if (event.type === "terminal")
-      return events.concat(this.processTerminal(event.state, event.stop_reason, event.usage));
+      return events.concat(
+        this.processTerminal(event.state, event.stop_reason, event.usage, event.stop_details),
+      );
     throw new ResponsesLifecycleError(`Unsupported canonical event type: ${event.type}`);
   }
 
