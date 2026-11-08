@@ -38,7 +38,7 @@ import {
 import { RUN_IDLE_TTL_MS } from "../../src/providers/integrations/cursor/cursor-shared";
 import { decodeFramePayload, encodeFrame, streamFrames } from "../../src/providers/integrations/cursor/protocol/framing";
 import { decodeMessage, encodeMessage } from "../../src/providers/integrations/cursor/protocol/messages";
-import type { CanonicalEvent, CanonicalRequest } from "../../src/protocol/canonical-model";
+import type { CanonicalEvent, CanonicalMessage, CanonicalRequest } from "../../src/protocol/canonical-model";
 import type {
   AttemptLeaseOwnership,
   ProviderAdapter,
@@ -635,7 +635,7 @@ describe("Cursor cross-request Run continuation", () => {
     expect(cursorRunSessions.size).toBe(0);
   });
 
-  test("a stale Cursor result outside the trailing assistant/tool-result pair is refused", async () => {
+  test("a partial tool result with no matching tool call anywhere is refused", async () => {
     const adapter = createCursorAdapter();
     const { callId, stream } = await openRunAwaitingToolCall(adapter);
 
@@ -648,6 +648,8 @@ describe("Cursor cross-request Run continuation", () => {
     expect(answered.error).toBeUndefined();
     expect(cursorRunSessions.size).toBe(0);
 
+    // A result whose `toolCall` is absent from the sent conversation is a
+    // partial tail, not a complete replay: there is nothing safe to rebase.
     const malformedReplay: CanonicalRequest = {
       ...continuationRequest(callId),
       messages: [
@@ -661,8 +663,56 @@ describe("Cursor cross-request Run continuation", () => {
     const replay = harnessWith([turnEndedFrame()], scopeOf());
     const refused = await collect(adapter, malformedReplay, replay);
     expect(refused.error).toBeDefined();
-    expect(String((refused.error as Error).message)).toContain("no longer pending");
+    expect(String((refused.error as Error).message)).toContain("no matching tool call");
     expect(replay.streams.length).toBe(0);
+  });
+
+  test("a complete multi-round replay rebases once the Run is gone", async () => {
+    const adapter = createCursorAdapter();
+    // Round 1 completes and its Run closes.
+    const first = await openRunAwaitingToolCall(adapter, { execId: 1 });
+    first.stream.push(turnEndedFrame());
+    const firstAnswered = await collect(
+      adapter,
+      continuationRequest(first.callId),
+      continuationHarness(scopeOf(), first.stream),
+    );
+    expect(firstAnswered.error).toBeUndefined();
+    expect(cursorRunSessions.size).toBe(0);
+
+    // Round 2 completes and its Run closes too.
+    const second = await openRunAwaitingToolCall(adapter, { execId: 2 });
+    second.stream.push(turnEndedFrame());
+    const secondAnswered = await collect(
+      adapter,
+      continuationRequest(second.callId),
+      continuationHarness(scopeOf(), second.stream),
+    );
+    expect(secondAnswered.error).toBeUndefined();
+    expect(cursorRunSessions.size).toBe(0);
+
+    // The client resends the full transcript: both earlier rounds plus this
+    // tail. Every call_cursor_* result has a matching toolCall in the history
+    // and none is live, so the whole history rebases into a fresh Run instead
+    // of being refused as "no longer pending".
+    const messages: CanonicalMessage[] = [
+      { role: "user", content: [{ kind: "text", text: "what is the weather?" }] },
+    ];
+    for (const id of [first.callId, second.callId]) {
+      messages.push({ role: "assistant", content: [{ kind: "toolCall", call_id: id, name: "lookup", arguments: "{}" }] });
+      messages.push({ role: "tool", content: [{ kind: "toolResult", call_id: id, content: [{ kind: "text", text: "72F and clear" }] }] });
+    }
+    const replay = harnessWith([turnEndedFrame()], scopeOf());
+    const rebased = await collect(
+      adapter,
+      { model: "cursor-model", messages, tools: [LOOKUP_TOOL], stream: true, generation_controls: {}, source_surface: "chat" },
+      replay,
+    );
+    expect(rebased.error).toBeUndefined();
+    expect(replay.streams.length).toBe(1);
+    expect(replay.streams[0]?.runRequestCount()).toBe(1);
+    // The replay's run closes once the turn ends and nothing is left pending.
+    expect(cursorRunSessions.size).toBe(0);
   });
 
   test("replaying an older Cursor result beside the live one is refused instead of rebased", async () => {

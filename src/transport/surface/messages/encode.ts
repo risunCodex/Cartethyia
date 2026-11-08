@@ -207,11 +207,14 @@ export function groupedBlocks(events: readonly CanonicalEvent[]): {
           previousReasoningText,
           nextText,
         );
-        if (reasoningSummaryHasBoundary(previousReasoningIdentity, identity)) {
+        // A thinking block splits only on a strong boundary (a real paragraph
+        // break). Copilot streams one thought as many items; treating every
+        // identity change as a new block painted dozens of tiny thinking blocks.
+        if (reasoningSummaryHasBoundary(previousReasoningIdentity, identity) && separator === "\n\n") {
           next.thinking = `${separator}${nextText}`;
           blocks.push(next);
         } else {
-          previous.thinking = `${String(previous.thinking ?? "")}${nextText}`;
+          previous.thinking = `${String(previous.thinking ?? "")}${separator}${nextText}`;
         }
         previousReasoningIdentity = identity;
         previousReasoningText = nextText;

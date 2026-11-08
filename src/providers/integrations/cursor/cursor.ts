@@ -567,6 +567,24 @@ class CursorAdapter implements ProviderAdapter {
     }
     const runId = resolved[0]?.session.runId;
     if (runId === undefined) {
+      // No call resolved to a live Run. Two distinct cases:
+      // 1. A partial tail — a result whose `toolCall` is absent from the sent
+      //    conversation. That is not a complete replay, so there is nothing
+      //    safe to rebase; name the missing ids so the client can resend the
+      //    whole transcript.
+      // 2. A complete replay whose calls are live nowhere in this process is
+      //    handled above (rebase into a fresh Run). Reaching here with a
+      //    complete replay means at least one call id is still held in this
+      //    process under a different scope, which stays a hard refusal.
+      const missing = missingToolCallIds(request, pending);
+      if (missing.length > 0) {
+        throw new GatewayError(
+          "invalid_request",
+          400,
+          "This tool result has no matching tool call in the sent conversation (request {requestId}); resend the complete conversation. The session went cold — reconnect or resend 🔌",
+          { callIds: missing },
+        );
+      }
       throw new GatewayError(
         "invalid_request",
         400,
@@ -1371,32 +1389,39 @@ function readPendingToolResult(
  * when it resends its recorded transcript — a gateway restart between legs or
  * an evicted Run — and the only shape safe to rebase into a fresh Run, where
  * the recorded exchange travels as history.
+ *
+ * The matching `toolCall` may live anywhere in the conversation, not only in
+ * the trailing assistant turn: Claude Code resends the full transcript, which
+ * contains several earlier `call_cursor_*` rounds. A scan that accepted only
+ * one trailing assistant/tool pair refused those complete replays with
+ * "no longer pending" even though every result was paired and none was live
+ * (mirrors `isCompleteContinuationReplay` in the preparer).
  */
 function isCompleteToolHistoryReplay(
   request: CanonicalRequest,
   pending: readonly PendingToolResult[],
 ): boolean {
-  const expected = new Set(pending.map((item) => item.callId));
-  const seenResults = new Set<string>();
-  let index = request.messages.length - 1;
-  for (; index >= 0; index -= 1) {
-    const message = request.messages[index];
-    if (message === undefined) continue;
-    if (message.role !== "tool") break;
+  const calledIds = new Set<string>();
+  for (const message of request.messages) {
     for (const part of message.content) {
-      if (part.kind !== "toolResult") continue;
-      if (!expected.has(part.call_id) || seenResults.has(part.call_id)) return false;
-      seenResults.add(part.call_id);
+      if (part.kind === "toolCall") calledIds.add(part.call_id);
     }
   }
-  if (seenResults.size !== expected.size) return false;
-  const assistant = request.messages[index];
-  if (assistant === undefined || assistant.role !== "assistant") return false;
-  const calledIds = new Set<string>();
-  for (const part of assistant.content) {
-    if (part.kind === "toolCall" && expected.has(part.call_id)) calledIds.add(part.call_id);
-  }
   return pending.every((item) => calledIds.has(item.callId));
+}
+
+/** The `call_cursor_*` result ids with no matching `toolCall` in the conversation. */
+function missingToolCallIds(
+  request: CanonicalRequest,
+  pending: readonly PendingToolResult[],
+): string[] {
+  const calledIds = new Set<string>();
+  for (const message of request.messages) {
+    for (const part of message.content) {
+      if (part.kind === "toolCall") calledIds.add(part.call_id);
+    }
+  }
+  return pending.filter((item) => !calledIds.has(item.callId)).map((item) => item.callId);
 }
 
 /** Reconstructs one tool result's text and images for the adapter's tests. */

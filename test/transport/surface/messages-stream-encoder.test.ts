@@ -81,6 +81,65 @@ test("an upstream error event emits an error frame, not message_stop", () => {
   expect(String(err.error.message)).toContain("permission_denied");
 });
 
+test("Copilot-style reasoning deltas stay one thinking block unless the boundary is strong", () => {
+  const events = collect([
+    { type: "response_start", sequence_number: 1 } as never,
+    {
+      type: "content_delta",
+      sequence_number: 2,
+      item_id: "item-0",
+      content: { kind: "reasoning", summary: "I'm noting that the summary states ", summary_index: 0 },
+    } as never,
+    {
+      type: "content_delta",
+      sequence_number: 3,
+      item_id: "item-1",
+      content: { kind: "reasoning", summary: "skills are for trace-replay", summary_index: 0 },
+    } as never,
+    {
+      type: "content_delta",
+      sequence_number: 4,
+      item_id: "item-2",
+      content: { kind: "reasoning", summary: ", but the developer seems to have included skill details.", summary_index: 0 },
+    } as never,
+    { type: "terminal", sequence_number: 5, state: "complete" } as never,
+  ]);
+  const starts = events.filter((e) => (e as any).type === "content_block_start");
+  const stops = events.filter((e) => (e as any).type === "content_block_stop");
+  expect(starts).toHaveLength(1);
+  expect(stops).toHaveLength(1);
+  expect((starts[0] as any).content_block.type).toBe("thinking");
+  const deltas = events.filter((e) => (e as any).type === "content_block_delta");
+  const thinking = deltas
+    .map((d) => (d as any).delta.thinking ?? "")
+    .join("");
+  expect(thinking).toBe(
+    "I'm noting that the summary states skills are for trace-replay, but the developer seems to have included skill details.",
+  );
+});
+
+test("a genuine sentence boundary still splits into two thinking blocks", () => {
+  const events = collect([
+    { type: "response_start", sequence_number: 1 } as never,
+    {
+      type: "content_delta",
+      sequence_number: 2,
+      item_id: "item-0",
+      content: { kind: "reasoning", summary: "selesai.", summary_index: 0 },
+    } as never,
+    {
+      type: "content_delta",
+      sequence_number: 3,
+      item_id: "item-1",
+      content: { kind: "reasoning", summary: "Giliran", summary_index: 0 },
+    } as never,
+    { type: "terminal", sequence_number: 4, state: "complete" } as never,
+  ]);
+  const starts = events.filter((e) => (e as any).type === "content_block_start");
+  expect(starts).toHaveLength(2);
+  expect(starts.every((s) => (s as any).content_block.type === "thinking")).toBe(true);
+});
+
 test("a client-aborted terminal without an error event stays message_stop", () => {
   const events = collect([
     { type: "response_start", sequence_number: 1 } as never,

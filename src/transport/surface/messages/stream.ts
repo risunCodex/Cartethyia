@@ -1,6 +1,5 @@
 import type { CanonicalEvent, UsageRecord } from "../../../protocol/canonical-model";
 import {
-  reasoningSummaryHasBoundary,
   reasoningSummaryIdentity,
   reasoningSummarySeparator,
   type ReasoningSummaryIdentity,
@@ -249,11 +248,7 @@ export class MessagesStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
                 summary,
               )
             : "";
-        if (
-          blockType === "thinking" &&
-          reasoningSummaryHasBoundary(this.openReasoningIdentity, identity) &&
-          this.openBlock?.type === blockType
-        ) {
+        if (blockType === "thinking" && separator === "\n\n" && this.openBlock?.type === blockType) {
           out.push({ type: "content_block_stop", index: this.openBlock.index });
           this.openBlock = undefined;
         }

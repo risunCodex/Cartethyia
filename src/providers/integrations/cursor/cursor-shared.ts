@@ -83,11 +83,14 @@ export const SESSION_REFRESH_TIMEOUT_MS = 20_000;
 
 /**
  * How long a live Cursor Run is held open waiting for the client's next
- * tool-result request. Matches the donor's continuation default: a tool round
- * the client never answers must not hold an HTTP/2 stream, an account lease, or
- * a pool slot for the life of the process.
+ * tool-result request. Matches the donor's relay hold (`CURSOR_RELAY_IDLE_
+ * TIMEOUT_MS` in oh-my-pi: 30 minutes): a tool round the client never answers
+ * must not hold an HTTP/2 stream, an account lease, or a pool slot for the life
+ * of the process, but a human-approved tool round often takes longer than ten
+ * minutes — a shorter TTL expired the Run mid-approval and forced the client to
+ * resend the whole conversation.
  */
-export const RUN_IDLE_TTL_MS = 10 * 60_000;
+export const RUN_IDLE_TTL_MS = 30 * 60_000;
 
 /**
  * Any HTTPS subdomain of `cursor.sh` is an acceptable Run host: the region
