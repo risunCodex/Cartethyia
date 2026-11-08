@@ -395,6 +395,12 @@ export const VERSION_SOURCES = {
     fallback: "0.6.14",
     sources: [{ url: "https://registry.npmjs.org/free-pi-cli/latest" }],
   },
+  perch: {
+    key: "perch",
+    // The official Perch CLI, spawned by the adapter for hosted inference.
+    fallback: "2.4.125",
+    sources: [{ url: "https://registry.npmjs.org/perchai-cli/latest" }],
+  },
   cursor: {
     key: "cursor",
     // Fallback = the last observed wire version (CLI ~2026.11.07-306d153).
@@ -442,6 +448,7 @@ const resolvers = {
   hermes: createClientVersionResolver({ ...VERSION_SOURCES.hermes, client: "hermes" }),
   trae: createClientVersionResolver({ ...VERSION_SOURCES.trae, client: "trae" }),
   freepi: createClientVersionResolver({ ...VERSION_SOURCES.freepi, client: "freepi" }),
+  perch: createClientVersionResolver({ ...VERSION_SOURCES.perch, client: "perch" }),
   cursor: createClientVersionResolver({ ...VERSION_SOURCES.cursor, client: "cursor" }),
   opencode: createClientVersionResolver({ ...VERSION_SOURCES.opencode, client: "opencode" }),
   commandcode: createClientVersionResolver({ ...VERSION_SOURCES.commandcode, client: "command-code" }),

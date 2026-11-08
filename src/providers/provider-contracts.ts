@@ -309,6 +309,14 @@ export interface ProviderAdapter {
     context: ProviderDispatchContext,
   ): AsyncIterable<CanonicalEvent>;
   /**
+   * Optional provider-mandated system prompt, returned for probes and any
+   * caller that needs the upstream's required identity prompt. A provider
+   * whose wire refuses requests without a specific system prompt (Perch's
+   * Saffron fingerprint) declares it here so the probe path can carry it —
+   * the probe builder otherwise sends only the user message.
+   */
+  systemPrompt?(): string | undefined;
+  /**
    * Optional native-protocol capability for the public `POST /v1/systemone`
    * route (the dispatch leg of the System One service, alongside the probing
    * leg served by the discovery/probing-service). A provider whose catalog

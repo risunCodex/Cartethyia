@@ -16,7 +16,14 @@ exported): `providerId`, `label`, `credentialKind`, `accessToken`,
 `refreshToken`, `authState.userId`, `authState.machineId`.
 
 Tokens are **never** printed. Only a short prefix (e.g. `dt-…`) is shown for
-confirmation.
+confirmation. Perch's saved sessions (`accounts*.json`) are gitignored: they
+carry live access and refresh tokens.
+
+Perch probes are pure HTTP — no CLI install, no spawned process, no desktop,
+MCP, or ACP transport. Only `standard` and `standard 1m` are invoked, and the
+Saffron system-prompt prefix is required or the upstream answers `403
+perch_surface_required`. Repeated incomplete calls trigger `turn_rate_limited`
+and can get an account banned; keep live runs to the minimum.
 
 ## Running
 
@@ -105,6 +112,10 @@ provider-probing/
     probe-freepi.ts      # guest/device identity, catalog, chat, sweep
     freepi-oauth-capture.ts # GitHub device-code login → JWT capture
     freepi-shared.ts     # upstream wire helpers
+  perch/
+    probe-perch.ts       # Supabase PKCE OAuth capture + pure HTTP model-call probe
+    probe-perch-min.ts   # minimal `standard` / `standard 1m` check from a saved session
+    perch-shared.ts      # upstream wire helpers (authorize/exchange/plan/account)
   kiro/
     probe-kiro.ts      # management (models) + runtime (generation) probe
     probe-kiro-oauth.ts # IdC/Builder-ID browser PKCE + social OAuth probe

@@ -12,6 +12,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Perch provider (Free Limited), pure HTTP.** Supabase GoTrue PKCE OAuth
+  implemented directly in Cartethyia (no captured external tokens), Starter
+  plan selection, turn-ticket mint, `/api/perch-terminal/model-call` SSE stream,
+  account quota, and model discovery. Catalog ships only the two servable
+  Starter tiers — `standard` and `standard 1m`; `pro` tiers were never hit.
+  No CLI process, desktop app, MCP, or ACP is installed, spawned, or bundled as
+  a transport. Evidence: `documentation/research/perch/README.md`.
+- **Unified provider system-prompt hook.** `ProviderAdapter.systemPrompt?()`
+  lets an adapter declare the system prompt its upstream fingerprints; the
+  probe path injects it as `request.system` instead of hardcoding anything in a
+  provider-detail test. Perch declares the 432-char Saffron prefix, which the
+  model-call body keeps as the opener even when the caller supplies its own
+  system turn. Other providers are unchanged.
 - **Routing: a qualified `provider/model` not in the catalog now routes via
   the provider's sibling candidate.** Previously any model missing from the
   catalog was refused with `model_not_found` (404), even when the provider was
@@ -171,10 +184,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   `CARTETHYIA_QODER_UMID_MINI`, and related docs/config are removed.
 
 ### Fixed
-- **Fast probe uses a short greeting with 64 max output tokens.** The fast
-  probe prompt is now `"How are you?"` and `PROBE_FAST_MAX_OUTPUT_TOKENS`
-  is 64 (was 32), so quick checks stay cheaper while remaining above entropy
-  thresholds. The detail probe keeps the identity prompt at 256 tokens.
+- **Console probes now carry Perch's required system prompt in the compiled
+  binary.** `PERCH_SAFFRON_SYSTEM_PROMPT` used to be read from
+  `saffron-system-prompt.txt` via `readFileSync(import.meta.dir)`; the
+  standalone binary has no `.txt` asset, so it silently shipped a two-line
+  fallback and every provider-detail probe answered `403
+  perch_surface_required` while source-level probes succeeded. The prompt is
+  now a bundled TS literal (test asserts it matches the research copy), and
+  `PerchAdapter` uses `context.outbound_fetch` for ticket, account, and
+  model-call instead of `globalThis.fetch`. Verified live 2026-11-08 on the
+  exact console probe path with the DB credential: `standard 1m` → 200.
+- **Fast probe uses `"ping"` with 64 max output tokens.** The fast probe
+  prompt is now `"ping"` (was `"How are you?"`) and
+  `PROBE_FAST_MAX_OUTPUT_TOKENS` is 64 (was 32), so quick checks stay cheaper
+  while remaining above entropy thresholds. The detail probe keeps the
+  identity prompt at 256 tokens.
 - **Qoder probes default to the COSY surface.** The adapter and probe default
   `surface` changed from `grpc`/`ide` to `cosy`; the `cmodel` identity-prompt
   probe workaround is removed. `deepseek-v4.1-flash` and

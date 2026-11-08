@@ -71,3 +71,11 @@ Cartemo/
 # Visual regression baseline captured by scripts/dev/visual-baseline.ts.
 # A measurement artifact, not a source of truth — regenerate, do not review.
 dashboard/visual/
+
+# Live OAuth sessions captured by provider probes. A saved `accounts.json`
+# carries access + refresh tokens in the clear; it belongs in scratch, never in
+# a commit.
+scripts/provider-probing/**/accounts*.json
+
+# Perch CLI/desktop local state written into the repo root during wire capture.
+.perch/

@@ -756,6 +756,9 @@ const FREE_LIMITED_IDS = new Set([
   // Free-pi is ad-funded: a daily USD/credit allowance (guest or GitHub
   // sign-in), with a small set of "Free Unlimited" rows on the free tier.
   "freepi",
+  // Perch Starter is free with a Google/GitHub sign-in: Roost Standard and
+  // Standard 1M tiers, a $20/month included-usage allowance.
+  "perch",
 ]);
 /**
  * The providers an operator reaches for first: household names with a

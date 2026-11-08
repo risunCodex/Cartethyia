@@ -263,6 +263,9 @@ export class ProviderProbingService {
       ...(preferences.maxOutputTokens === undefined
         ? {}
         : { maxOutputTokens: preferences.maxOutputTokens }),
+      ...(typeof adapter?.systemPrompt === "function"
+        ? { providerSystemPrompt: adapter.systemPrompt() }
+        : {}),
     });
     let capturedRequest = canonicalRequest;
     const parsedProviderId = parseProviderId(providerId);

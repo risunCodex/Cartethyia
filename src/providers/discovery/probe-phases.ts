@@ -515,7 +515,7 @@ export const PROBE_FAST_DEFAULT_TIMEOUT_SECONDS = 10;
 /** Default fast-probe output allowance, in tokens (D40). */
 export const PROBE_FAST_MAX_OUTPUT_TOKENS = 64;
 /** Fast-probe default prompt: a neutral greeting, not an identity question. */
-export const PROBE_FAST_DEFAULT_PROMPT = "How are you?";
+export const PROBE_FAST_DEFAULT_PROMPT = "ping";
 /** Fast-probe sample bound, in characters (D40). */
 export const PROBE_FAST_SAMPLE_MAX_CHARS = 80;
 
@@ -659,11 +659,20 @@ export function buildProbeCanonicalRequest(args: {
   readonly sourceSurface: SourceSurface;
   /** `fast` overrides the token allowance without changing the prompt (D42). */
   readonly maxOutputTokens?: number;
+  /**
+   * Provider-mandated system prompt (adapter `systemPrompt()`), injected as
+   * the probe's system turn so upstreams that fingerprint it accept the
+   * probe.
+   */
+  readonly providerSystemPrompt?: string | undefined;
 }): CanonicalRequest {
-  const { modelId, request, probeReasoning, sourceSurface, maxOutputTokens } = args;
+  const { modelId, request, probeReasoning, sourceSurface, maxOutputTokens, providerSystemPrompt } = args;
   const fast = maxOutputTokens === PROBE_FAST_MAX_OUTPUT_TOKENS;
   return {
     model: modelId,
+    ...(providerSystemPrompt && providerSystemPrompt.trim()
+      ? { system: [{ kind: "text", text: providerSystemPrompt }] }
+      : {}),
     messages: [
       {
         role: "user",

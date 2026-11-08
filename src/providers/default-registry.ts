@@ -562,6 +562,20 @@ export const PROVIDER_CAPABILITIES = {
       return rows;
     },
   },
+  perch: {
+    loadAdapter: async () => (await import("./integrations/perch/perch")).createPerchAdapter(),
+    loadModels: async () => (await import("./integrations/perch/perch-catalog")).PERCH_MODELS,
+    // Perch login is Supabase PKCE (Google/GitHub); the session blob
+    // (access/refresh token) is the credential, and the CLI refreshes it.
+    loadAuthentication: oauthCapability(() => import("./integrations/perch/perch-oauth"), "perchOAuthClient", { withRefresher: true }),
+    loadQuotaCollector: quotaCapability(() => import("./integrations/perch/perch-quota"), "fetchPerchQuota"),
+    // The hosted API exposes no public model list — Roost tiers are the only
+    // surface the CLI accepts, so discovery returns the static roster.
+    loadModelDiscovery: async () => async () => {
+      const { PERCH_MODELS } = await import("./integrations/perch/perch-catalog");
+      return PERCH_MODELS;
+    },
+  },
   inferhub: {
     loadAdapter: async () => (await import("./integrations/inferhub")).createInferhubAdapter(),
     // Live `/v1/models` is the primary source: the marketplace republishes its
