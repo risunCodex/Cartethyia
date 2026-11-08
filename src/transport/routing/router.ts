@@ -25,6 +25,8 @@ import {
   type RequiredCapability,
 } from "../../protocol/translation/capabilities";
 import { planAllowsCandidate } from "./plan-gate";
+import { unifiedRoutingDecisionEnabled } from "../../config/routing";
+import type { NormalizedQuotaFact } from "./route-model";
 import { InMemoryAdmissionController, admissionKey } from "./admission";
 import { ReservationManager } from "./reservations";
 import { createRoundRobinMap, RoundRobinState } from "./round-robin";
@@ -33,7 +35,12 @@ import {
   parseModelReference,
   routeCandidateIndex,
 } from "./candidate-index";
-import { totalRemainingCredit, type ProviderQuotaWindow } from "../../providers/quota/quota-contracts";
+import {
+  totalRemainingCredit,
+  totalRemainingPercent,
+  type ProviderQuotaResult,
+  type ProviderQuotaWindow,
+} from "../../providers/quota/quota-contracts";
 import { getCachedQuotaEntry, quotaLens } from "../../providers/quota/cache";
 import { readQuotaSnapshot } from "../../providers/quota/snapshot";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
@@ -86,6 +93,176 @@ export function filterCandidateQuotaWindows(
   }
 
   return windows;
+}
+
+/**
+ * Global freshness horizon for persisted quota/plan evidence. A plan or
+ * snapshot older than this is downgraded to `unknown` by routing instead of
+ * being trusted indefinitely. First cut uses one global value (not
+ * provider-specific); see proposal locked decision #4.
+ */
+export const QUOTA_FRESHNESS_HORIZON_MS = 6 * 60 * 60 * 1000;
+
+/** The account's total remaining absolute credit, or `null` when unknown. */
+function accountRemainingCredit(candidate: RoutedCandidate): number | null {
+  const windows = candidate.quota_windows;
+  if (windows === undefined || windows.length === 0) return null;
+  return totalRemainingCredit(windows);
+}
+
+/**
+ * Evaluates whether the candidate sits below its configured usage floor.
+ * Mirrors the legacy ordering heuristic (credit vs lowest independent percent),
+ * but returns a tri-state used for proactive exclusion under the unified
+ * routing engine.
+ */
+function usageFloorStateFor(candidate: RoutedCandidate): "above" | "below" | "unknown" {
+  const floor = candidate.usage_floor;
+  if (floor === null || floor === undefined || floor <= 0) return "unknown";
+  if (candidate.free_tier === true) return "above";
+  const windows = candidate.quota_windows;
+  if (windows === undefined || windows.length === 0) return "unknown";
+  if (candidate.usage_floor_unit === "credit") {
+    const credit = accountRemainingCredit(candidate);
+    if (credit === null) return "unknown";
+    return credit >= floor ? "above" : "below";
+  }
+  const percent = totalRemainingPercent(windows);
+  if (percent === null) return "unknown";
+  return percent >= floor ? "above" : "below";
+}
+
+/** Earliest stated reset across exhausted windows, when any carries one. */
+function exhaustedResetMs(windows: readonly ProviderQuotaWindow[] | undefined): number | undefined {
+  if (windows === undefined) return undefined;
+  let earliest: number | undefined;
+  for (const window of windows) {
+    if (window.resetsAt === null || window.resetsAt === undefined) continue;
+    const at = Date.parse(window.resetsAt);
+    if (!Number.isFinite(at)) continue;
+    if (earliest === undefined || at < earliest) earliest = at;
+  }
+  return earliest;
+}
+
+/** True when every relevant quota window for the candidate is known-spent. */
+function allWindowsExhausted(windows: readonly ProviderQuotaWindow[]): boolean {
+  if (windows.length === 0) return false;
+  for (const window of windows) {
+    if (window.accounting === "pooled") {
+      const remaining = window.remaining;
+      if (remaining !== null && remaining !== undefined && remaining > 0) return false;
+      const limit = window.limit;
+      if (limit !== null && limit !== undefined) {
+        const used = window.used;
+        if (used !== null && used !== undefined && used < limit) return false;
+        if (used === null && window.remainingPercent !== null && window.remainingPercent > 0) {
+          return false;
+        }
+      } else if (window.remainingPercent !== null && window.remainingPercent > 0) {
+        return false;
+      } else if (remaining === null && window.used === null) {
+        // No evidence of either remaining or used — not provably spent.
+        return false;
+      }
+    } else {
+      const remainingPercent = window.remainingPercent;
+      if (remainingPercent !== null && remainingPercent > 0) return false;
+      if (remainingPercent === null) {
+        // Unknown independent window: cannot prove exhaustion.
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Derives the normalized quota fact the unified decision engine evaluates.
+ * Returns `null` when the engine is disabled (legacy permissive behavior).
+ */
+function normalizeQuotaFact(
+  candidate: RoutedCandidate,
+  cacheEntry: { readonly fetchedAt: string | null; readonly quota: ProviderQuotaResult } | null | undefined,
+  snapshotEntry: { readonly fetchedAt: string; readonly quota: ProviderQuotaResult } | null | undefined,
+  now = Date.now(),
+): NormalizedQuotaFact | null {
+  if (!unifiedRoutingDecisionEnabled()) return null;
+  const windows = candidate.quota_windows;
+  const source =
+    cacheEntry?.quota !== undefined
+      ? cacheEntry.quota.error === null
+        ? ("live_cache" as const)
+        : ("unsupported" as const)
+      : snapshotEntry?.quota !== undefined
+        ? snapshotEntry.quota.error === null
+          ? ("snapshot" as const)
+          : ("unsupported" as const)
+        : ("none" as const);
+
+  // Freshness: only live-cache and snapshot evidence carries an observed-at.
+  const observedSrc =
+    cacheEntry?.quota !== undefined && cacheEntry.quota.error === null
+      ? cacheEntry
+      : snapshotEntry?.quota !== undefined && snapshotEntry.quota.error === null
+        ? snapshotEntry
+        : null;
+  const rawObservedAt = observedSrc?.fetchedAt;
+  const observedAt =
+    rawObservedAt === null || rawObservedAt === undefined ? Number.NaN : Date.parse(rawObservedAt);
+  const hasObservedAt = Number.isFinite(observedAt) && observedAt > 0;
+  // Stale is only meaningful when we have an observation timestamp to judge.
+  // Without one (candidate-stamped windows, no cache/snapshot metadata) there
+  // is nothing to mark stale, so the windows remain usable evidence.
+  const isStale = hasObservedAt && now - observedAt > QUOTA_FRESHNESS_HORIZON_MS;
+
+  const usageFloorState = usageFloorStateFor(candidate);
+  // Stale evidence is downgraded to unknown — the freshness horizon (locked
+  // decision #4) means routing must not trust a weeks-old balance for either
+  // exhaustion or floor decisions.
+  if (isStale) {
+    return {
+      quotaState: "unknown",
+      quotaSource: source,
+      quotaObservedAt: hasObservedAt ? observedAt : null,
+      isStale: true,
+      usageFloorState: "unknown",
+    };
+  }
+  if (windows === undefined || windows.length === 0) {
+    return {
+      quotaState: "unknown",
+      quotaSource: source,
+      quotaObservedAt: hasObservedAt ? observedAt : null,
+      isStale: false,
+      usageFloorState,
+    };
+  }
+  if (usageFloorState === "below") {
+    return {
+      quotaState: "exhausted",
+      quotaSource: source,
+      quotaObservedAt: hasObservedAt ? observedAt : null,
+      isStale,
+      usageFloorState,
+    };
+  }
+  if (allWindowsExhausted(windows)) {
+    return {
+      quotaState: "exhausted",
+      quotaSource: source,
+      quotaObservedAt: hasObservedAt ? observedAt : null,
+      isStale,
+      usageFloorState,
+    };
+  }
+  return {
+    quotaState: "available",
+    quotaSource: source,
+    quotaObservedAt: hasObservedAt ? observedAt : null,
+    isStale,
+    usageFloorState,
+  };
 }
 
 /**
@@ -460,8 +637,9 @@ export class RoutingEngine {
     // is never fresher than the cache, but a stale balance beats an unknown
     // one for ordering, and the sweep refreshes it on schedule.
     let quota = cached?.quota;
+    let stored: { readonly fetchedAt: string; readonly quota: ProviderQuotaResult } | null = null;
     if (quota === undefined && this.db !== undefined) {
-      const stored = await readQuotaSnapshot(this.db, accountId).catch(() => null);
+      stored = await readQuotaSnapshot(this.db, accountId).catch(() => null);
       quota = stored?.quota;
     }
     const rawWindows = quota?.windows;
@@ -472,14 +650,22 @@ export class RoutingEngine {
       rawWindows === undefined
         ? undefined
         : candidate.provider_id === "zcode-start" ? rawWindows : filterCandidateQuotaWindows(rawWindows, candidate);
-    return {
+    const stamped: RoutedCandidate = {
       ...candidate,
       ...(setting?.usageFloor == null
         ? {}
         : { usage_floor: setting.usageFloor, usage_floor_unit: setting.usageFloorUnit }),
-      ...(quotaWindows === undefined ? {} : { quota_windows: quotaWindows }),
+      // When no cache/snapshot evidence exists, keep the candidate's own
+      // stamped windows (unit tests and in-memory fixture route this way).
+      ...(quotaWindows === undefined
+        ? candidate.quota_windows === undefined
+          ? {}
+          : { quota_windows: candidate.quota_windows }
+        : { quota_windows: quotaWindows }),
       ...(quota?.source === "zcode-start" && quota.error === null ? { quota_entitlements_known: true } : {}),
     };
+    const fact = normalizeQuotaFact(stamped, cached, stored);
+    return { ...stamped, ...(fact === null ? {} : { quota_fact: fact }) };
   }
 
   /**
@@ -526,6 +712,24 @@ export class RoutingEngine {
         },
       };
     }
+    // Unified decision engine: normalized quota/plan fact.
+    const fact = candidate.quota_fact;
+    if (fact !== undefined) {
+      if (fact.quotaState === "exhausted" || fact.usageFloorState === "below") {
+        const reset = exhaustedResetMs(candidate.quota_windows);
+        return {
+          candidate,
+          decision: {
+            eligible: false,
+            rank: ROUTING_RANK.SATURATED,
+            reason: "quota_exhausted",
+            floor_blocked: fact.usageFloorState === "below",
+            saturated: false,
+            ...(reset === undefined ? {} : { cooldown_until: reset }),
+          },
+        };
+      }
+    }
     // Plan gate (free plan).
     if (!planAllowsCandidate(candidate)) {
       return {
@@ -552,11 +756,32 @@ export class RoutingEngine {
         };
       }
     }
+    // Unified engine: unknown quota is eligible but lower-rank than known-available.
+    if (fact !== undefined) {
+      if (fact.quotaState === "unknown") {
+        return {
+          candidate,
+          decision: {
+            eligible: true,
+            rank: ROUTING_RANK.FRESH_UNKNOWN,
+            reason: "quota_unknown",
+          },
+        };
+      }
+      return {
+        candidate,
+        decision: {
+          eligible: true,
+          rank: ROUTING_RANK.FRESH_KNOWN,
+          reason: "healthy",
+        },
+      };
+    }
     return {
       candidate,
       decision: {
         eligible: true,
-        rank: ROUTING_RANK.FRESH,
+        rank: ROUTING_RANK.FRESH_KNOWN,
         reason: "healthy",
       },
     };
@@ -578,11 +803,11 @@ export class RoutingEngine {
     let i = 0;
     while (i < eligible.length) {
       const cur = eligible[i]!;
-      const rank = decisions.get(admissionKey(cur))?.rank ?? ROUTING_RANK.FRESH;
+      const rank = decisions.get(admissionKey(cur))?.rank ?? ROUTING_RANK.FRESH_KNOWN;
       let j = i + 1;
       while (j < eligible.length) {
         const next = eligible[j]!;
-        const nextRank = decisions.get(admissionKey(next))?.rank ?? ROUTING_RANK.FRESH;
+        const nextRank = decisions.get(admissionKey(next))?.rank ?? ROUTING_RANK.FRESH_KNOWN;
         if (
           next.provider_id !== cur.provider_id ||
           next.model_id !== cur.model_id ||
@@ -674,7 +899,7 @@ export class RoutingEngine {
       const decision = pinnedDecisions.find((d) => d.candidate === candidate);
       decisions.set(admissionKey(candidate), {
         eligible: true,
-        rank: ROUTING_RANK.FRESH,
+        rank: ROUTING_RANK.FRESH_KNOWN,
         reason: "healthy",
         ...(decision?.cooldown_until !== undefined
           ? { cooldown_until: decision.cooldown_until }
@@ -810,7 +1035,9 @@ export class RoutingEngine {
 
     // Every eligible candidate cooling and no healthy/slow sibling → 429.
     const healthyCount = [...decisions.values()].filter(
-      (d) => d.eligible && (d.reason === "healthy" || d.reason === "slow"),
+      (d) =>
+        d.eligible &&
+        (d.reason === "healthy" || d.reason === "slow" || d.reason === "quota_unknown"),
     ).length;
     if (healthyCount === 0) {
       throw accountsRateLimitedError(
@@ -824,8 +1051,8 @@ export class RoutingEngine {
     // the same rank, accounts with remaining credit come first unless the model
     // is free tier, which routes to any account.
     eligible = [...eligible].sort((left, right) => {
-      const leftRank = decisions.get(admissionKey(left))?.rank ?? ROUTING_RANK.FRESH;
-      const rightRank = decisions.get(admissionKey(right))?.rank ?? ROUTING_RANK.FRESH;
+      const leftRank = decisions.get(admissionKey(left))?.rank ?? ROUTING_RANK.FRESH_KNOWN;
+      const rightRank = decisions.get(admissionKey(right))?.rank ?? ROUTING_RANK.FRESH_KNOWN;
       if (leftRank !== rightRank) return leftRank - rightRank;
       return creditPriority(right) - creditPriority(left);
     });

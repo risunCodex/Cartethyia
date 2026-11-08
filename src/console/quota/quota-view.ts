@@ -13,7 +13,14 @@ import {
 /** Shape returned for quota data on dashboard account responses. */
 interface QuotaRefreshView {
   readonly source: string;
-  readonly status: "ready" | "error" | "refreshing";
+  /**
+   * `ready` = a usable quota reading exists (successful fetch, cached or
+   * snapshot). `error` = the collector returned an error with no usable
+   * reading. `refreshing` = a background fill is in flight. `unknown` = no
+   * quota evidence at all (no collector surface, or an empty successful read
+   * with no timestamp) — the canonical wire representation for unknown quota.
+   */
+  readonly status: "ready" | "error" | "refreshing" | "unknown";
   readonly plan: string | null;
   readonly windows: ProviderQuotaResult["windows"];
   readonly fetchedAt: string | null;
@@ -94,7 +101,7 @@ export function toQuotaView(
     lastAttemptAt?: string | null;
     lastSuccessAt?: string | null;
     refreshError?: string | null;
-    status?: "ready" | "error" | "refreshing";
+    status?: "ready" | "error" | "refreshing" | "unknown";
   } = {},
 ): QuotaRefreshView {
   const fetchedAt = timestamps.fetchedAt ?? account.lastSuccessAt?.toISOString() ?? null;
@@ -112,9 +119,18 @@ export function toQuotaView(
   // that the last attempt failed; only `quota.error` — no usable reading at
   // all — makes the card an error.
   const error = quota.error ?? null;
+  // Unknown quota: a successful read that carries no windows AND no timestamp
+  // is not evidence of anything — the canonical "no quota evidence" state.
+  // (A provider with a real zero-balance still reports windows/timestamps.)
+  const derivedStatus =
+    error !== null
+      ? ("error" as const)
+      : quota.windows.length === 0 && fetchedAt === null
+        ? ("unknown" as const)
+        : ("ready" as const);
   return {
     source: quota.source,
-    status: timestamps.status ?? (error !== null ? "error" : "ready"),
+    status: timestamps.status ?? derivedStatus,
     plan: quota.plan ?? null,
     windows: quota.windows,
     fetchedAt,

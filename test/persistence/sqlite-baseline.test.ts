@@ -91,6 +91,7 @@ test("each backend has matching baseline and incremental migrations", () => {
     "0043_add_provider_custom_user_agent.sql",
     "0044_add_models_warning_metadata.sql",
     "0045_migrate_workbuddy_to_codebuddy.sql",
+    "0046_add_accounts_quota_plan_fetched_at.sql",
   ];
   expect(postgres).toEqual(expected);
   expect(sqlite).toEqual(expected);

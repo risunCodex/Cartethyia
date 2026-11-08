@@ -694,6 +694,77 @@ async function writeHealthEvent(
   await client.insert(healthEvents).values({ id: randomUUID(), ...row });
 }
 
+/**
+ * The one internal seam that applies a health verdict to an account row.
+ *
+ * Every producer that persists account-state semantics — dispatch failure
+ * classification, OAuth refresh definitive failure, quota refresh parking —
+ * converges here instead of writing `status`/`cooldownUntil`/error fields
+ * independently. Producers may still classify differently; they may not
+ * persist account-state semantics separately.
+ *
+ * This writes the account-wide health state plus a health audit row, inside the
+ * caller's transaction (`client`). It returns `true` when the account row was
+ * actually updated (i.e. the account exists and is not operator-disabled with
+ * `preserveOperatorDisable`), so the caller knows whether routing must be
+ * invalidated (routesVisible) or the lease released.
+ */
+export async function applyAccountVerdict(
+  client: CartethyiaDatabase,
+  verdict: {
+    readonly accountId: string;
+    readonly status: "cooldown" | "disabled";
+    readonly reason: string;
+    readonly category: string | null;
+    readonly cooldownUntil?: Date | null;
+    /** When true, an operator-disable (status `disabled`, no deadline) is left untouched. */
+    readonly preserveOperatorDisable?: boolean;
+    /** Health event transition status (defaults to the verdict status). */
+    readonly fromStatus?: "active" | "cooldown" | "disabled" | null;
+    readonly modelId?: string | null;
+    readonly createdAt?: Date;
+  },
+): Promise<boolean> {
+  const rows = await client
+    .select({
+      status: providerAccounts.status,
+      cooldownUntil: providerAccounts.cooldownUntil,
+    })
+    .from(providerAccounts)
+    .where(eq(providerAccounts.id, verdict.accountId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return false;
+  if (verdict.preserveOperatorDisable === true) {
+    const isOperatorDisable = row.status === "disabled" && row.cooldownUntil == null;
+    if (isOperatorDisable) return false;
+  }
+  const now = verdict.createdAt ?? new Date();
+  await client
+    .update(providerAccounts)
+    .set({
+      status: verdict.status,
+      lastError: (verdict.reason ?? "Account failed").slice(0, 500),
+      lastErrorCategory: verdict.category ?? "check_failed",
+      lastErrorAt: now,
+      ...(verdict.cooldownUntil === undefined
+        ? {}
+        : { cooldownUntil: verdict.cooldownUntil }),
+    })
+    .where(eq(providerAccounts.id, verdict.accountId));
+  await writeHealthEvent(client, {
+    entityKind: "account",
+    accountId: verdict.accountId,
+    fromStatus: verdict.fromStatus ?? (row.status as "active" | "cooldown" | "disabled" | null),
+    toStatus: verdict.status,
+    reason: verdict.reason,
+    errorCategory: verdict.category,
+    modelId: verdict.modelId ?? null,
+    createdAt: now,
+  });
+  return true;
+}
+
 export async function reportAttemptOutcome(
   db: CartethyiaDatabase,
   report: AttemptHealthReport,

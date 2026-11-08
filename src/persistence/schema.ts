@@ -310,6 +310,14 @@ export const providerAccounts = pgTable("provider_accounts", {
    */
   quotaPlan: text("quota_plan"),
   /**
+   * When `quota_plan` was last written by a successful quota read.
+   *
+   * The plan column is a bare string with no timestamp, so routing cannot tell
+   * a fresh plan from one recorded weeks ago. With the freshness horizon, a
+   * stale plan is downgraded to `unknown` instead of being trusted blindly.
+   */
+  quotaPlanFetchedAt: timestamp("quota_plan_fetched_at", { withTimezone: true }),
+  /**
    * The last successful quota read for this account, as a JSON snapshot.
    *
    * Persisted rather than left only in the quota cache: that cache is a short

@@ -27,6 +27,7 @@ import { sleep } from "../../shared/sleep";
 import { providerAccounts, providerOauthStates } from "../../persistence/schema";
 import { decryptCredentialToString, encryptCredential } from "../../security/crypto";
 import { invalidateCredentialCache } from "../operations/provider-credential-service";
+import { applyAccountVerdict } from "../operations/account-health-service";
 import { resolveAccountDisabledRecoveryMs } from "../../config/cooldowns";
 import { asJsonbRecord } from "../../shared/coerce";
 import {
@@ -294,48 +295,32 @@ async function disableAccount(
       .returning({ id: providerOauthStates.providerAccountId });
     if (leaseRows.length === 0) return;
     const disabledRecoveryMs = resolveAccountDisabledRecoveryMs();
-    // D23: read the row before writing so an operator disable (status `disabled`
-    // with no deadline) is not upgraded with a machine recovery deadline. The
-    // read is cheap and the lease already serializes refresh writers.
-    let isOperatorDisable = false;
-    if (options.preserveOperatorDisable === true) {
-      const rows = await tx
-        .select({
-          status: providerAccounts.status,
-          cooldownUntil: providerAccounts.cooldownUntil,
-        })
-        .from(providerAccounts)
-        .where(eq(providerAccounts.id, accountId))
-        .limit(1);
-      const row = rows[0];
-      isOperatorDisable = row?.status === "disabled" && row.cooldownUntil == null;
-    }
-    await tx
-      .update(providerAccounts)
-      .set({
-        status: "disabled",
-        lastError: message.slice(0, 500),
-        // `auth_invalidated` is the category the console reads to render the
-        // "Re-login required" pill, and the one the quota sweep excludes so it
-        // stops re-probing a credential that cannot repair itself. The refresh
-        // grant was definitively rejected and the stored access token could not
-        // be shown to still work, so this is exactly that state.
-        lastErrorCategory: "auth_invalidated",
-        lastErrorAt: new Date(),
-        // Carries a recovery deadline so `sweepExpiredCooldowns` can bring this
-        // account back once it elapses; without one, one definitive rejection
-        // parks the credential for good. The deadline is also what distinguishes
-        // this (machine-disabled) from an operator's own disable, which leaves
-        // `cooldownUntil` null and is therefore never swept. See
-        // `resolveAccountDisabledRecoveryMs`. An operator-disabled row keeps its
-        // `null` deadline (D23): the machine must not make the operator's
-        // terminal disable look recoverable.
-        ...(!isOperatorDisable && disabledRecoveryMs > 0
-          ? { cooldownUntil: new Date(Date.now() + disabledRecoveryMs) }
-          : {}),
-      })
-      .where(eq(providerAccounts.id, accountId));
-    invalidateCredentialCache(accountId);
+    // Converge on the health application seam (proposal §3.5): a definitive
+    // OAuth refresh failure is a producer into `applyAccountVerdict`, not a
+    // separate state machine. The seam preserves D23 (operator-disable rows
+    // keep their `null` recovery deadline) via `preserveOperatorDisable`.
+    const applied = await applyAccountVerdict(tx, {
+      accountId,
+      status: "disabled",
+      // `auth_invalidated` is the category the console reads to render the
+      // "Re-login required" pill, and the one the quota sweep excludes so it
+      // stops re-probing a credential that cannot repair itself. The refresh
+      // grant was definitively rejected and the stored access token could not
+      // be shown to still work, so this is exactly that state.
+      reason: message,
+      category: "auth_invalidated",
+      // Carries a recovery deadline so `sweepExpiredCooldowns` can bring this
+      // account back once it elapses; without one, one definitive rejection
+      // parks the credential for good. The deadline is also what distinguishes
+      // this (machine-disabled) from an operator's own disable, which leaves
+      // `cooldownUntil` null and is therefore never swept (D23).
+      cooldownUntil:
+        disabledRecoveryMs > 0 ? new Date(Date.now() + disabledRecoveryMs) : null,
+      ...(options.preserveOperatorDisable === true
+        ? { preserveOperatorDisable: true }
+        : {}),
+    });
+    if (applied) invalidateCredentialCache(accountId);
   });
 }
 

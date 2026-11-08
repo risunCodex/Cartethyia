@@ -18,6 +18,7 @@ import type { ProviderId } from "../provider-contracts";
 import type { ProviderRegistry } from "../provider-registry";
 import { quotaLens, setCachedQuota } from "./cache";
 import { persistQuotaSnapshot } from "./snapshot";
+import { applyAccountVerdict } from "../operations/account-health-service";
 import { asJsonbRecord } from "../../shared/coerce";
 import { KIRO_DEFAULT_LABELS } from "../integrations/kiro/kiro-oauth";
 
@@ -196,13 +197,17 @@ export async function recordAccountCheck(
   // pass. The cooldown clears itself; a success before it elapses resets the
   // count above.
   if (failures >= QUOTA_FAILURE_PARK_THRESHOLD) {
-    await db
-      .update(providerAccounts)
-      .set({
-        status: "cooldown",
-        cooldownUntil: new Date(Date.now() + QUOTA_FAILURE_COOLDOWN_MS),
-      })
-      .where(activeOnly);
+    // Converge on the health application seam (proposal §3.5): quota refresh
+    // parking is a producer into `applyAccountVerdict`, not a separate state
+    // machine.
+    await applyAccountVerdict(db, {
+      accountId,
+      status: "cooldown",
+      reason: outcome.error ?? "Account check failed",
+      category: outcome.category ?? "quota_fetch_failed",
+      cooldownUntil: new Date(Date.now() + QUOTA_FAILURE_COOLDOWN_MS),
+      fromStatus: "active",
+    });
   }
 }
 
@@ -427,7 +432,13 @@ async function runQuotaRefresh(
     try {
       await deps.db
         .update(providerAccounts)
-        .set({ quotaPlan: quota.plan })
+        .set({
+          quotaPlan: quota.plan,
+          // Freshness stamp for the plan column: routing uses it to downgrade
+          // a plan older than the freshness horizon to `unknown` instead of
+          // trusting a weeks-old string.
+          quotaPlanFetchedAt: new Date(),
+        })
         .where(eq(providerAccounts.id, target.accountId));
     } catch (error) {
       log.warn(`[quota] failed to record plan for account=${target.accountId}`, error as Error);

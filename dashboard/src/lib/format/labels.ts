@@ -12,6 +12,8 @@ type CredentialKind = "api_key" | "oauth" | "none";
 const ACCOUNT_ERROR_LABELS: Readonly<Record<string, string>> = {
   quota_fetch_failed: "Quota unreachable",
   quota_exhausted: "Quota exhausted",
+  quota_unknown: "Quota unknown",
+  plan_gate: "Plan blocked",
   policy_blocked: "Policy blocked",
   policy_blocked_banned: "Account banned",
   policy_blocked_invalid_request: "Request refused",
@@ -34,7 +36,13 @@ const ACCOUNT_ERROR_LABELS: Readonly<Record<string, string>> = {
  * A real refusal is not in here. `quota_exhausted` means the allowance is spent
  * and the account genuinely cannot serve; that stays visible.
  */
-const RETRYABLE_ERROR_CATEGORIES: ReadonlySet<string> = new Set(["quota_fetch_failed"]);
+const RETRYABLE_ERROR_CATEGORIES: ReadonlySet<string> = new Set([
+  "quota_fetch_failed",
+  // `quota_unknown` is not a failure — routing treats it as eligible but
+  // lower-rank. Rendering it as an error pill would claim the account cannot
+  // serve, which is the opposite of true.
+  "quota_unknown",
+]);
 
 /**
  * Whether an error category should be shown as a status pill.
