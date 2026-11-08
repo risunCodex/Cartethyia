@@ -24,7 +24,7 @@ import {
   GENERIC_API_KEY_SPECS,
   VERSIONED_ROOT_API_KEY_PROVIDER_IDS,
   VERSIONED_ROOT_API_KEY_SPECS,
-} from "../../src/providers/configured-openai-providers";
+} from "../../src/providers/configured-provider";
 import { createDefaultProviderRegistry } from "../../src/providers/default-registry";
 import { BUNDLED_PROVIDER_MODULES } from "../../src/providers/default-registry";
 import { BUNDLED_PROVIDER_METADATA, providerBaseUrl } from "../../src/providers/provider-metadata";

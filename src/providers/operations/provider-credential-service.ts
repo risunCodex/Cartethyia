@@ -6,7 +6,7 @@ import { providerAccounts, providerOauthStates } from "../../persistence/schema"
 import { decryptCredentialToString } from "../../security/crypto";
 import { GatewayError } from "../../protocol/gateway-error";
 import type { OAuthRefreshService, OAuthTokenRefresher } from "../authentication/oauth-refresh-service";
-import { CredentialResolver, type CredentialAlternative } from "../provider-credential-resolver";
+import { CredentialResolver, type CredentialAlternative } from "../provider-credentials";
 import { parseProviderId, type CredentialKind } from "../provider-contracts";
 import type { ResolvedCredential } from "../provider-contracts";
 import { refreshLeadMs } from "./oauth-refresh-lead";

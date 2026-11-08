@@ -62,7 +62,7 @@ import {
 } from "../workers/buddy-growth-tasks";
 import { createAccountSecretResolver } from "../providers/operations/provider-credential-service";
 import { quotaCacheSize } from "../providers/quota/cache";
-import { modelCatalogCacheSize } from "../providers/operations/model-catalog-cache";
+import { modelCatalogCacheSize } from "../providers/operations/provider-caches";
 import { preferencesReaderFor } from "../persistence/tenant-preferences";
 import { sweepExpiredCooldowns } from "../providers/operations/account-health-service";
 import { DrizzleTelemetryStore } from "../persistence/stores/telemetry-store";

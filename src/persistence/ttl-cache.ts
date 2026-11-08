@@ -144,8 +144,7 @@ interface TtlCacheFamilyOptions {
 /**
  * A set of {@link TtlCache} instances keyed by TTL, created on first use.
  *
- * Two provider-side caches (`operations/provider-version-cache.ts` and
- * `operations/model-discovery-cache.ts`) had each hand-rolled the same
+ * Two provider-side caches in `operations/provider-caches.ts` had each hand-rolled the same
  * `Map<number, TtlCache<T>>` + `cacheFor(ttlMs)` memo plus the same
  * `for (const cache of caches.values()) cache.clear()` reset. Tests pass
  * `ttlMs: 0` to force a reload, which is why the per-TTL split exists at all —

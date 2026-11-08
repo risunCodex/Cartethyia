@@ -8,7 +8,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { METADATA_CACHE_MAX_ENTRIES } from "../../src/providers/discovery/catalog/catalog-format";
-import { MODEL_CATALOG_CACHE_MAX_ENTRIES } from "../../src/providers/operations/model-catalog-cache";
+import { MODEL_CATALOG_CACHE_MAX_ENTRIES } from "../../src/providers/operations/provider-caches";
 import { BUNDLED_PROVIDER_METADATA } from "../../src/providers/provider-metadata";
 import { modelsDevCatalog } from "../../src/providers/discovery/models-dev-catalog";
 

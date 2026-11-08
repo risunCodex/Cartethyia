@@ -19,8 +19,7 @@
  */
 import { defineModel } from "../../provider-model-definition";
 import type { ModelDefinition } from "../../provider-model-definition";
-
-export const ALIBABACP_PROVIDER_ID = "alibabacp" as const;
+import { ALIBABACP_PROVIDER_ID } from "./alibabacp";
 
 /** Chat path below the region's `/compatible-mode/v1` base. */
 const CHAT_ENDPOINT = "/chat/completions";

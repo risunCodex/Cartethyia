@@ -4,13 +4,20 @@
 // drag every integration into memory at process start.
 import {
   GENERIC_API_KEY_SPECS,
-} from "./configured-openai-providers";
-import { createDiscoveryBackedProviderCapabilities, discoveryBackedCapabilities } from "./bundled-discovery-providers";
-import { createApiKeyAdapter } from "./configured-provider";
-import type { ApiKeyProviderSpec } from "./configured-provider";
-import { oauthCapability, quotaCapability, type ProviderModuleCapabilities } from "./provider-capabilities";
+  createDiscoveryBackedProviderCapabilities,
+  discoveryBackedCapabilities,
+  createApiKeyAdapter,
+  type ApiKeyProviderSpec,
+} from "./configured-provider";
 import { BUDDY_PROVIDER_CAPABILITIES } from "./integrations/buddy/capabilities";
-import { ProviderRegistry, toRegistration, type ProviderModule } from "./provider-registry";
+import {
+  ProviderRegistry,
+  toRegistration,
+  oauthCapability,
+  quotaCapability,
+  type ProviderModule,
+  type ProviderModuleCapabilities,
+} from "./provider-registry";
 import { BUNDLED_PROVIDER_METADATA, PROVIDER_COMPATIBILITY_PROFILES, providerBaseUrl, providerRequiresAccount, providerUpstreamHost, providerDefaultWireFamily, type BundledProviderId } from "./provider-metadata";
 import { createAnthropicCompatibleAdapter } from "./integrations/anthropic";
 import { defineModel } from "./provider-model-definition";
@@ -783,8 +790,8 @@ export const PROVIDER_CAPABILITIES = {
       responses: "/responses",
     },
     loadAdapter: async () => createApiKeyAdapter(GENERIC_API_KEY_SPECS.ollamacloud),
-    loadModels: async () => (await import("./integrations/ollamacloud-models")).OLLAMACLOUD_MODELS,
-    loadQuotaCollector: quotaCapability(() => import("./integrations/ollamacloud-quota"), "fetchOllamaQuota"),
+    loadModels: async () => (await import("./integrations/ollamacloud")).OLLAMACLOUD_MODELS,
+    loadQuotaCollector: quotaCapability(() => import("./integrations/ollamacloud"), "fetchOllamaQuota"),
     loadModelDiscovery: openAIModelDiscovery("ollamacloud", { headers: (credential) => ({ authorization: `Bearer ${credential}` }) }),
   },
 
@@ -835,7 +842,7 @@ export const PROVIDER_CAPABILITIES = {
   // the provider usable before anyone syncs.
   dashscope: {
     ...discoveryBackedCapabilities("dashscope", GENERIC_API_KEY_SPECS.dashscope, openAIModelDiscovery),
-    loadModels: async () => (await import("./integrations/dashscope-models")).DASHSCOPE_MODELS,
+    loadModels: async () => (await import("./integrations/alibabacp/dashscope-models")).DASHSCOPE_MODELS,
   },
 
 // Anthropic-Messages providers reached with a plain key. The wire path is

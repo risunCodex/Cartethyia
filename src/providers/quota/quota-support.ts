@@ -3,7 +3,7 @@ import { cleanError, unsupportedQuota } from "./quota-contracts";
 import type { ProviderRegistry } from "../provider-registry";
 import { parseProviderId } from "../provider-contracts";
 import { providerBaseUrl } from "../provider-metadata";
-import { createProbeFetch } from "../operations/probe-fetch";
+import { createProbeFetch } from "../provider-probe";
 /**
  * Verifies an API key against the provider's OpenAI-compatible `/models`
  * endpoint. For providers that expose no billing/quota surface, a reachable

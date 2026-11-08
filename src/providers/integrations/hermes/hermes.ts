@@ -1,10 +1,10 @@
-import type { CanonicalRequest } from "../../protocol/canonical-model";
-import type { ProviderDispatchTarget } from "../provider-contracts";
-import type { ApiKeyProviderSpec } from "../configured-provider";
-import { isRecord } from "../../protocol/codecs";
-import { boundedUpstreamArray, boundedUpstreamNumber, sanitizeUpstreamLabel } from "../provider-sanitize";
-import { getHermesVersion } from "../operations/client-versions";
-import { clineReasoningReplayPrepares } from "./buddy/buddy-chat-shared";
+import type { CanonicalRequest } from "../../../protocol/canonical-model";
+import type { ProviderDispatchTarget } from "../../provider-contracts";
+import type { ApiKeyProviderSpec } from "../../configured-provider";
+import { isRecord } from "../../../protocol/codecs";
+import { boundedUpstreamArray, boundedUpstreamNumber, sanitizeUpstreamLabel } from "../../provider-sanitize";
+import { getHermesVersion } from "../../operations/client-versions";
+import { clineReasoningReplayPrepares } from "../buddy/buddy-chat-shared";
 
 const HERMES_PROVIDER_ID = "hermes" as const;
 
@@ -57,8 +57,8 @@ function injectHermesTags(
 
 
 
-import { defineModel } from "../provider-model-definition";
-import type { ModelDefinition } from "../provider-model-definition";
+import { defineModel } from "../../provider-model-definition";
+import type { ModelDefinition } from "../../provider-model-definition";
 
 /**
  * Offline fallback: the free rows as the live catalog last reported them.

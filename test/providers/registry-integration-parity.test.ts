@@ -23,7 +23,7 @@ import { expect, test } from "bun:test";
 import { readdirSync, statSync, type Stats } from "node:fs";
 import { join, sep } from "node:path";
 import { PROVIDER_CAPABILITIES } from "../../src/providers/default-registry";
-import type { ProviderModuleCapabilities } from "../../src/providers/provider-capabilities";
+import type { ProviderModuleCapabilities } from "../../src/providers/provider-registry";
 
 const INTEGRATION_ROOT = join("src", "providers", "integrations");
 

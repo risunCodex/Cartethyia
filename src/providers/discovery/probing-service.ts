@@ -56,7 +56,7 @@ import {
   wireContextFrom,
   type ProbeProviderRow,
 } from "./probe-phases";
-import { createProbeFetch } from "../operations/probe-fetch";
+import { createProbeFetch } from "../provider-probe";
 import { authHeaders } from "../adapters/compatible-adapter";
 import {
   byokAuthHeaderShape,

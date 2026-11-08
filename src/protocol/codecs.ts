@@ -14,7 +14,7 @@ import type { CanonicalStopReason, CanonicalTerminalEvent, UsageRecord } from ".
 import { type WireFamily } from "./canonical-model";
 import type { GenerationControls } from "./canonical-model";
 import { BASE_PROTECTED_HEADERS, HEADER_CONTROL, HEADER_TOKEN } from "../security/outbound-headers";
-import { unwrapProviderToken } from "../providers/provider-credential-envelope";
+import { unwrapProviderToken } from "../providers/provider-credentials";
 
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();

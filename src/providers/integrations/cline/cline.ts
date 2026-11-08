@@ -1,12 +1,12 @@
 import { createApiKeyAdapter } from "../../configured-provider";
 import type { ProviderDispatchTarget, ProviderAdapter, ProviderDispatchContext } from "../../provider-contracts";
 import type { ModelDefinition } from "../../provider-model-definition";
-import { unwrapProviderToken } from "../../provider-credential-envelope";
+import { unwrapProviderToken } from "../../provider-credentials";
 import { GatewayError } from "../../../protocol/gateway-error";
 import type { CanonicalRequest } from "../../../protocol/canonical-model";
 import { completeRequiredSchema, isRecord } from "../../../protocol/codecs";
 import { providerBaseUrl } from "../../provider-metadata";
-import { getCachedModelDiscovery } from "../../operations/model-discovery-cache";
+import { getCachedModelDiscovery } from "../../operations/provider-caches";
 import { defineModel } from "../../provider-model-definition";
 import { clineReasoningReplayPrepares } from "../buddy/buddy-chat-shared";
 import { clinePlatform, clinePlatformVersion } from "../../operations/cli-platform";

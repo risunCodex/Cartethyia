@@ -10,7 +10,7 @@ import { ProviderRegistry } from "../provider-registry";
 import { OpenAICompatibleAdapter } from "../adapters/compatible-adapter";
 import { resolveByokWireProfile } from "./byok-wire-profile";
 import { BUNDLED_PROVIDER_MODULES } from "../default-registry";
-import { getCachedModels } from "./model-catalog-cache";
+import { getCachedModels } from "./provider-caches";
 import { seedBundledModels } from "./provider-catalog-seeder";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 import { providers } from "../../persistence/schema";

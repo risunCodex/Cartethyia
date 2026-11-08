@@ -1,6 +1,6 @@
-import type { FetchLike, ProviderQuotaResult } from "../quota/quota-contracts";
-import { getJson, record, text } from "../quota/quota-contracts";
-import { parseQuotaWindows } from "../quota/quota-window-parser";
+import type { FetchLike, ProviderQuotaResult } from "../../quota/quota-contracts";
+import { getJson, record, text } from "../../quota/quota-contracts";
+import { parseQuotaWindows } from "../../quota/quota-window-parser";
 
 async function fetchPlan(fetcher: FetchLike, headers: Record<string, string>): Promise<string> {
   try {

@@ -16,8 +16,8 @@
  * All six serve the chat wire (none is a Responses-native id), and all report
  * `supported_in_api: true` on the live roster.
  */
-import { defineModel } from "../provider-model-definition";
-import type { ModelDefinition } from "../provider-model-definition";
+import { defineModel } from "../../provider-model-definition";
+import type { ModelDefinition } from "../../provider-model-definition";
 
 export const OLLAMACLOUD_PROVIDER_ID = "ollamacloud" as const;
 

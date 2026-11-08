@@ -11,7 +11,7 @@
  * Discovery is owned by the background client-version monitor. Request paths
  * only call the synchronous `get`/`snapshot` accessors and never fetch.
  */
-import { getCachedVersion, resetVersionCacheForTesting } from "./provider-version-cache";
+import { getCachedVersion, resetVersionCacheForTesting } from "./provider-caches";
 import type { OutboundFetch } from "../provider-contracts";
 import { composeAbortSignal } from "../authentication/oauth-flow-store";
 

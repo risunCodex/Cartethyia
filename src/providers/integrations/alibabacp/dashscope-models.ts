@@ -17,8 +17,8 @@
  * does not publish yet arrives through the sync control instead of being
  * asserted ahead of the upstream.
  */
-import { defineModel } from "../provider-model-definition";
-import type { ModelDefinition } from "../provider-model-definition";
+import { defineModel } from "../../provider-model-definition";
+import type { ModelDefinition } from "../../provider-model-definition";
 
 export const DASHSCOPE_PROVIDER_ID = "dashscope" as const;
 

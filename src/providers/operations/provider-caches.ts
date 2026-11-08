@@ -1,16 +1,17 @@
 /**
- * Process-lifetime model-catalog cache.
- *
- * `bundledModelCatalog` is called during startup seeding and again whenever a
- * caller rebuilds the routing/console catalog. Caching the loader *promise*
- * (not just the resolved value) makes concurrent and repeated calls for one
- * provider share a single load, and lets the dynamic catalog imports run once
- * per process. A rejected load is evicted so a later call can retry.
+ * In-process caches for model catalogs, model discovery, and client/provider versions.
  */
+
 import type { ModelDefinition } from "../provider-model-definition";
 import { trackModelCatalogLoad } from "../../observability/performance-metrics";
 import { resolveRedisClient } from "../../persistence/redis";
 import { cachedRead } from "../../console/shared/read-through-cache";
+import { TtlCacheFamily } from "../../persistence/ttl-cache";
+import { retryWithBackoff } from "../../network/retry";
+
+/* -------------------------------------------------------------------------- */
+/* 1. Model Catalog Cache                                                     */
+/* -------------------------------------------------------------------------- */
 
 /**
  * Provider entries retained before the least-recently-used catalog is evicted.
@@ -37,8 +38,7 @@ const catalogCache = new Map<string, Promise<readonly ModelDefinition[]>>();
 /**
  * Evicts the least-recently-used provider before inserting a new one once the
  * cache is at its bound. `Map` preserves insertion order and every cache hit
- * re-inserts its entry at the tail, so the head is the LRU key. Without this
- * bound the process-lifetime cache pinned one catalog per provider forever.
+ * re-inserts its entry at the tail, so the head is the LRU key.
  */
 function evictLeastRecentlyUsedCatalog(maxEntries: number): void {
   if (catalogCache.size < maxEntries) return;
@@ -87,13 +87,65 @@ export function resetModelCatalogCacheForTesting(): void {
   catalogCache.clear();
 }
 
-/**
- * Live entry count, for the `/metrics` gauge.
- *
- * Exported so a rebuild that saturates the cap is visible from outside the
- * process: before this, every in-process cache except the quota tier was
- * invisible, and growth could only be found with a heap dump.
- */
+/** Live entry count, for the `/metrics` gauge. */
 export function modelCatalogCacheSize(): number {
   return catalogCache.size;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 2. Model Discovery Cache                                                   */
+/* -------------------------------------------------------------------------- */
+
+const MODEL_DISCOVERY_CACHE_TTL_MS = 10 * 60 * 1000;
+const discoveryCaches = new TtlCacheFamily<readonly ModelDefinition[]>({
+  defaultTtlMs: MODEL_DISCOVERY_CACHE_TTL_MS,
+});
+
+export interface CachedModelDiscoveryOptions {
+  readonly ttlMs?: number;
+}
+
+/** Returns cached models, retrying null/empty loads on the next call. */
+export async function getCachedModelDiscovery(
+  key: string,
+  loader: () => Promise<readonly ModelDefinition[] | null>,
+  options: CachedModelDiscoveryOptions = {},
+): Promise<readonly ModelDefinition[] | null> {
+  return discoveryCaches.for(options.ttlMs).load(key, loader, {
+    namespace: "model-discovery",
+    shouldCache: (models) => models.length > 0,
+  });
+}
+
+/** Drops all cached discoveries. Test-only. */
+export function resetModelDiscoveryCacheForTesting(): void {
+  discoveryCaches.clear();
+}
+
+/* -------------------------------------------------------------------------- */
+/* 3. Provider Version Cache                                                  */
+/* -------------------------------------------------------------------------- */
+
+const VERSION_CACHE_TTL_MS = 5 * 60 * 1000;
+const versionCaches = new TtlCacheFamily<string>({ defaultTtlMs: VERSION_CACHE_TTL_MS });
+
+export interface CachedVersionOptions {
+  readonly ttlMs?: number;
+  readonly maxRetries?: number;
+}
+
+export async function getCachedVersion(
+  key: string,
+  loader: () => Promise<string | null>,
+  options: CachedVersionOptions = {},
+): Promise<string | null> {
+  const loadWithRetry = () => retryWithBackoff(loader, { maxRetries: options.maxRetries ?? 2 });
+  return versionCaches.for(options.ttlMs).load(key, loadWithRetry, {
+    namespace: "provider-version",
+  });
+}
+
+/** Drops all cached versions. Test-only. */
+export function resetVersionCacheForTesting(): void {
+  versionCaches.clear();
 }

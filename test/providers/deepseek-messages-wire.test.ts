@@ -13,7 +13,7 @@ import { createDeepseekAnthropicAdapter } from "../../src/providers/integrations
 import { endpointUrl } from "../../src/protocol/codecs";
 import { PROVIDER_CAPABILITIES } from "../../src/providers/default-registry";
 import { DEEPSEEK_MODELS } from "../../src/providers/integrations/deepseek";
-import { GENERIC_API_KEY_SPECS, GENERIC_API_KEY_PROVIDER_IDS } from "../../src/providers/configured-openai-providers";
+import { GENERIC_API_KEY_SPECS, GENERIC_API_KEY_PROVIDER_IDS } from "../../src/providers/configured-provider";
 import { providerBaseUrl, providerDefaultWireFamily } from "../../src/providers/provider-metadata";
 
 describe("deepseek anthropic messages wire", () => {
