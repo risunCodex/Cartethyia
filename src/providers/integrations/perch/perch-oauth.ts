@@ -48,6 +48,19 @@ export class PerchOAuthClient extends OAuthClient {
   /** Loopback callback path (the desktop app uses the same shape). */
   override readonly browserRedirectUri = "http://127.0.0.1:1455/callback";
 
+  /**
+   * GoTrue token responses carry the signed-in user (`user.email`). Without
+   * this the exchange falls back to the provider id as the account label and
+   * every login of every Perch account collides on the same identity
+   * fingerprint — the second login replaces the first instead of adding a new
+   * row.
+   */
+  protected override extractAccountLabel(data: unknown): string | undefined {
+    const body = data as { user?: { email?: unknown } } | null | undefined;
+    const email = typeof body?.user?.email === "string" ? body.user.email.trim() : "";
+    return email.length > 0 ? email : undefined;
+  }
+
   protected override extraAuthorizeParams(): Record<string, string> | undefined {
     return {
       provider: "google",

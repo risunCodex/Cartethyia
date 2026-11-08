@@ -95,6 +95,21 @@ describe("PerchOAuthClient", () => {
     expect((userBody["data"] as Record<string, unknown>)["signup_source"]).toBe("cli");
   });
 
+  test("resolves the GoTrue user email as the account label", async () => {
+    const { fetchImpl } = stubFetch();
+    const client = new PerchOAuthClient(fetchImpl);
+    const result = await client.exchangeCode(
+      "code-1",
+      "verifier-1",
+      "http://127.0.0.1:1455/callback",
+      "st-1",
+    );
+    // Without this every Perch login defaulted to the provider id label and
+    // every account collided on one identity fingerprint, so a second login
+    // replaced the first.
+    expect(result.accountLabel).toBe("a@b.c");
+  });
+
   test("refreshes via JSON with grant_type=refresh_token", async () => {
     const { fetchImpl, calls } = stubFetch();
     const client = new PerchOAuthClient(fetchImpl);

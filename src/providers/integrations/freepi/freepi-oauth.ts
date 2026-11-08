@@ -11,6 +11,7 @@
 // the flow). Pasting a raw JWT is supported via `importCredential`.
 
 import { OAuthClient } from "../../authentication/oauth-client";
+import { decodeJwtPayload } from "../../authentication/oauth-flow-store";
 import type {
   OAuthDeviceStartResult,
   OAuthDevicePollResult,
@@ -87,13 +88,29 @@ export class FreepiOAuthClient extends OAuthClient {
     }
     const body = (await res.json()) as Record<string, unknown>;
     if (typeof body["token"] === "string" && (body["token"] as string).length > 0) {
+      const token = body["token"] as string;
+      // The free-pi JWT carries the GitHub user identity (`sub` = GitHub user
+      // id, `email` when the account has one). Resolving it keeps one account
+      // per GitHub user — without it every device login minted the same
+      // generic label and the second account replaced the first (the identity
+      // fingerprint collided on the static label).
+      const claims = decodeJwtPayload(token);
+      const userId = typeof claims?.["sub"] === "string" ? claims["sub"] : undefined;
+      const email = typeof claims?.["email"] === "string" ? (claims["email"] as string).trim() : "";
+      const label = email.length > 0 ? email : userId ? `freepi-${userId}` : "freepi-device";
       return {
         status: "complete",
         result: {
-          access: body["token"] as string,
+          access: token,
           refresh: "",
           expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000),
-          accountLabel: "freepi-device",
+          accountLabel: label,
+          // The upstream identity the token resolved, stored beside the token
+          // so a later login of the same GitHub user lands on the same row
+          // (and a *different* user on a different row).
+          ...(userId || email
+            ? { auth_state: { ...(userId ? { freepi_user_id: userId } : {}), ...(email ? { email } : {}) } }
+            : {}),
         },
       };
     }
@@ -106,11 +123,18 @@ export class FreepiOAuthClient extends OAuthClient {
   async importCredential(input: OAuthImportInput): Promise<OAuthExchangeResult> {
     const token = input.credential.trim();
     if (!token) throw new Error("free-pi: a JWT credential is required");
+    const claims = decodeJwtPayload(token);
+    const userId = typeof claims?.["sub"] === "string" ? claims["sub"] : undefined;
+    const email = typeof claims?.["email"] === "string" ? (claims["email"] as string).trim() : "";
+    const label = email.length > 0 ? email : userId ? `freepi-${userId}` : input.accountLabel ?? "freepi-jwt";
     return {
       access: token,
       refresh: "",
       expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000),
-      accountLabel: input.accountLabel ?? "freepi-jwt",
+      accountLabel: label,
+      ...(userId || email
+        ? { auth_state: { ...(userId ? { freepi_user_id: userId } : {}), ...(email ? { email } : {}) } }
+        : {}),
     };
   }
 }

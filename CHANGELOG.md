@@ -217,6 +217,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   classifier maps `turn_rate_limited` to `rate_limit_transient` with a 24-hour
   cooldown and routing picks a sibling account instead of hammering the same
   key all day.
+- **Free-pi device login keeps one account per GitHub user.** The device flow
+  used to label every login `freepi-device`; the OAuth identity fingerprint
+  collided on that static label, so a second login silently replaced the first
+  account. The JWT now resolves the GitHub identity (`sub` / `email`) into the
+  account label and `auth_state`, so different GitHub users land on different
+  rows — the same re-login identity fix as the Cursor fallback.
+- **Perch browser login resolves the GoTrue user email as the account label.**
+  Without it the exchange fell back to the provider-id label and every Perch
+  login collided on one identity fingerprint, so a second login replaced the
+  first account.
 - **Qoder probes default to the COSY surface.** The adapter and probe default
   `surface` changed from `grpc`/`ide` to `cosy`; the `cmodel` identity-prompt
   probe workaround is removed. `deepseek-v4.1-flash` and
