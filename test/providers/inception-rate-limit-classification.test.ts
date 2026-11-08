@@ -78,3 +78,30 @@ test("an upstream-stated retry-after still wins over the 1-minute fallback", () 
   });
   expect(classification.cooldownMs).toBe(5_000);
 });
+
+test("Perch turn_rate_limited cools the account for 24 hours", () => {
+  const classification = classifyAccountError(
+    new Error("Your plan's Perch turn rate limit has been reached. Wait a moment and continue in Perch AI. Contact us if you need direct API access."),
+    {
+      ...UPSTREAM,
+      providerId: "perch",
+      providerCode: "turn_rate_limited",
+      statusCode: 429,
+    },
+  );
+  expect(classification.category).toBe("rate_limit_transient");
+  expect(classification.status).toBe("cooldown");
+  expect(classification.mutatesAccount).toBe(true);
+  expect(classification.cooldownMs).toBe(24 * 60 * 60 * 1000);
+});
+
+test("Perch 429 with turn-rate text matches without a provider code", () => {
+  const classification = classifyAccountError(new Error("Perch turn rate limit has been reached"), {
+    ...UPSTREAM,
+    providerId: "perch",
+    statusCode: 429,
+  });
+  expect(classification.category).toBe("rate_limit_transient");
+  expect(classification.mutatesAccount).toBe(true);
+  expect(classification.cooldownMs).toBe(24 * 60 * 60 * 1000);
+});

@@ -8,17 +8,27 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [2.7.9] - 2026-11-08
 
 ### Added
 
 - **Perch provider (Free Limited), pure HTTP.** Supabase GoTrue PKCE OAuth
   implemented directly in Cartethyia (no captured external tokens), Starter
   plan selection, turn-ticket mint, `/api/perch-terminal/model-call` SSE stream,
-  account quota, and model discovery. Catalog ships only the two servable
-  Starter tiers — `standard` and `standard 1m`; `pro` tiers were never hit.
-  No CLI process, desktop app, MCP, or ACP is installed, spawned, or bundled as
-  a transport. Evidence: `documentation/research/perch/README.md`.
+  account quota, and model discovery. `pro` tiers were never hit and are
+  absent from the roster. No CLI process, desktop app, MCP, or ACP is
+  installed, spawned, or bundled as a transport. Evidence:
+  `documentation/research/perch/README.md`.
+- **Perch Starter-pool model pins.** Beyond the Roost tiers, the Starter plan
+  pins a small model pool; the catalog now ships `glm-5.3-flash-starter`,
+  `deepseek-flash-starter`, `crouton-alpha`, and `beam-1.0-starter`
+  (all 1M context per the client's published cards). Verified live
+  2026-11-08: GLM 5.3 Flash, DeepSeek V4.1 Flash, and Crouton Alpha answer
+  200 and the server reports the pinned backing model; Beam was not verified
+  (turn rate limit). A pin is sent as `manualModelOptionId` +
+  `preferredModelId` with `strictManual: true` — `preferredModelId` alone is
+  ignored by the upstream (it falls back to the Roost default). The 1M tier
+  now also sends the canonical `standard_max` tier id instead of the label.
 - **Unified provider system-prompt hook.** `ProviderAdapter.systemPrompt?()`
   lets an adapter declare the system prompt its upstream fingerprints; the
   probe path injects it as `request.system` instead of hardcoding anything in a
@@ -199,6 +209,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   `PROBE_FAST_MAX_OUTPUT_TOKENS` is 64 (was 32), so quick checks stay cheaper
   while remaining above entropy thresholds. The detail probe keeps the
   identity prompt at 256 tokens.
+- **Perch rate limits now cool the account so routing fails over.** Perch's
+  `turn_rate_limited` answers on every ticket mint while the window is
+  exhausted. The adapter now stamps every upstream verdict (`rate_limited`,
+  `policy_rejected`, `platform_unavailable`) with `origin: "upstream"` plus
+  `providerCode`/`providerId`, so the account health machine sees it; the
+  classifier maps `turn_rate_limited` to `rate_limit_transient` with a 24-hour
+  cooldown and routing picks a sibling account instead of hammering the same
+  key all day.
 - **Qoder probes default to the COSY surface.** The adapter and probe default
   `surface` changed from `grpc`/`ide` to `cosy`; the `cmodel` identity-prompt
   probe workaround is removed. `deepseek-v4.1-flash` and

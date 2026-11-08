@@ -35,6 +35,10 @@ import {
   parsePerchSse,
   summarizePerchStream,
 } from "./perch-protocol";
+import {
+  PERCH_MODEL_PINS,
+  PERCH_MODEL_ROOST_TIERS,
+} from "./perch-catalog";
 import { PERCH_PROVIDER_ID } from "./perch-realm";
 
 interface PerchAdapterOptions {
@@ -98,13 +102,16 @@ export class PerchAdapter implements ProviderAdapter {
       body: JSON.stringify({ surface: "cli", profile: "standard" }),
       signal: AbortSignal.timeout(15_000),
     });
-    const body = (await res.json().catch(() => null)) as { ok?: boolean; ticket?: string; runId?: string; error?: string } | null;
+    const body = (await res.json().catch(() => null)) as { ok?: boolean; ticket?: string; runId?: string; error?: string; errorCode?: string } | null;
     if (!res.ok || !body?.ok || !body.ticket || !body.runId) {
-      throw new GatewayError(
-        "authentication_failed",
-        401,
-        `Perch turn ticket mint failed: ${body?.error ?? `HTTP ${res.status}`}`,
-      );
+      const message = body?.error ?? `HTTP ${res.status}`;
+      const providerCode = body?.errorCode;
+      // Upstream verdict: 429/turn_rate_limited cools this account so routing
+      // tries the next one instead of hammering the same key all day.
+      if (res.status === 429 || providerCode === "turn_rate_limited") {
+        throw upstreamPerchError("rate_limited", 429, `Perch turn ticket mint failed: ${message}`, providerCode);
+      }
+      throw upstreamPerchError("authentication_failed", 401, `Perch turn ticket mint failed: ${message}`, providerCode);
     }
     return { ticket: body.ticket, runId: body.runId };
   }
@@ -118,7 +125,7 @@ export class PerchAdapter implements ProviderAdapter {
       assertWireFamily(candidate, "chat", "perch");
     }
     const secret = readCredentialSecret(context.credential, "Perch credential is required");
-    const tier = candidate.model_id || request.model || "standard";
+    const modelId = candidate.model_id || request.model || "standard";
     const access = secret.startsWith("{") ? parseAccessToken(secret) : secret.trim();
     // Probes pass a validated outbound fetch (with capture wrapped around it);
     // live dispatch passes one too. `globalThis.fetch` here silently split the
@@ -129,19 +136,21 @@ export class PerchAdapter implements ProviderAdapter {
     yield {
       type: "message_start",
       sequence_number: ++seq,
-      model: tier,
+      model: modelId,
       timestamp: Date.now(),
     };
 
     const ticket = await this.#mintTicket(access, fetchFn);
     const account = await this.#accountSession(access, fetchFn);
 
-    const body = buildPerchModelCallBody(request, tier, {
+    const body = buildPerchModelCallBody(request, modelId, {
       userId: account.userId,
       workspaceId: account.workspaceId,
       orgId: account.orgId,
       planCode: account.planCode,
       runId: ticket.runId,
+      pin: PERCH_MODEL_PINS[modelId],
+      roostTier: PERCH_MODEL_ROOST_TIERS[modelId],
     });
 
     const controller = new AbortController();
@@ -166,19 +175,21 @@ export class PerchAdapter implements ProviderAdapter {
       const raw = await res.text();
       if (!res.ok) {
         let message = `Perch model-call failed: HTTP ${res.status}`;
+        let providerCode: string | undefined;
         try {
           const parsed = JSON.parse(raw) as { error?: string; errorCode?: string; limit?: Record<string, unknown> };
           if (parsed.error) message = parsed.error;
+          providerCode = parsed.errorCode;
           if (parsed.errorCode === "starter_model_blocked" || parsed.errorCode === "plan_model_blocked") {
-            throw new GatewayError("policy_rejected", 403, message);
+            throw upstreamPerchError("policy_rejected", 403, message, providerCode);
           }
           if (res.status === 429 || parsed.errorCode === "turn_rate_limited") {
-            throw new GatewayError("rate_limited", 429, message);
+            throw upstreamPerchError("rate_limited", 429, message, providerCode);
           }
         } catch (e) {
           if (e instanceof GatewayError) throw e;
         }
-        throw new GatewayError("platform_unavailable", 502, message);
+        throw upstreamPerchError("platform_unavailable", 502, message, providerCode);
       }
 
       const events = parsePerchSse(raw);
@@ -278,6 +289,25 @@ function parseAccessToken(secret: string): string {
   } catch {
     return secret.trim();
   }
+}
+
+/**
+ * Builds an upstream verdict for the Perch surface. `origin: "upstream"` is
+ * what lets the account health machine see the failure: `attempt-finalize`
+ * only records health for `GatewayError`s whose origin is upstream, so a
+ * `turn_rate_limited` minted as a local error never cooled the account and
+ * routing kept dialing the same key.
+ */
+function upstreamPerchError(
+  code: GatewayError["code"],
+  status: number,
+  message: string,
+  providerCode: string | undefined,
+): GatewayError {
+  return new GatewayError(code, status, message, {
+    providerId: PERCH_PROVIDER_ID,
+    ...(providerCode ? { providerCode } : {}),
+  }, "upstream");
 }
 
 export function createPerchAdapter(options: PerchAdapterOptions = {}): PerchAdapter {

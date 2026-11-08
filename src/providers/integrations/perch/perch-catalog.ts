@@ -1,35 +1,61 @@
 // Perch model roster.
 //
 // Perch's hosted model layer ("Roost") exposes tier labels rather than raw
-// model ids: `standard` and `standard 1m` are the tiers included in the free
-// Starter plan — the only tiers this provider serves. The official CLI
-// accepts these as `--model` values (`perch run --model standard ...`).
-// Context windows are the client's own published claims; the actual model
-// behind a tier is hidden ("never reveal underlying model names") and may
-// vary per task — so no reasoning/toolCall capability claims are made here
-// beyond what the tier surfaces guarantee (chat text).
+// model ids: `standard` and `standard_max` are the tiers included in the free
+// Starter plan. In addition, the plan pins a small "Starter" model pool
+// (`PERCH_STARTER_PINS`) whose pins are verified live 2026-11-08:
+// `glm-5.3-flash-starter`, `deepseek-flash-starter`, and `crouton-alpha`
+// answer 200 and the server reports the pinned backing model; `beam` was not
+// verified (turn rate limit). Paid `pro` tiers are deliberately absent.
 //
-// Probe evidence (2026-11-08, Starter account): `standard` and
-// `standard 1m` answer. Paid tiers are deliberately absent from the roster:
-// the Starter account cannot serve them, and hitting them is what gets an
-// account suspended.
+// Model ids here are the gateway-facing ids; the adapter maps them to the
+// upstream wire (Roost tier + backing pin) via `PERCH_STARTER_PINS` /
+// `roostModelChoice` — the upstream itself hides real model names.
 
 import { defineModel, type ModelDefinition } from "../../provider-model-definition";
 import {
   PERCH_CONTEXT_STANDARD,
   PERCH_CONTEXT_STANDARD_1M,
   PERCH_PROVIDER_ID,
+  PERCH_STARTER_PINS,
 } from "./perch-realm";
 
 interface PerchRow {
   readonly id: string;
   readonly displayName: string;
   readonly ctx: number;
+  /**
+   * Output ceiling. When absent it falls back to the CLI's `sUr` resolution
+   * (`perchOutputTokens`); starter-pool rows carry the client card's own
+   * `maxOutputTokens` (2.4.125) so a big request is not clamped below what
+   * the upstream actually serves.
+   */
+  readonly out?: number;
+  /** `undefined` = plain Roost tier; else starter-pool pin id. */
+  readonly pin?: string;
 }
+
+/** Roost tier sent for the plain tier rows (CLI canonical tier ids). */
+const TIER_ROOST_TIERS: Readonly<Record<string, string>> = {
+  standard: "standard",
+  "standard 1m": "standard_max",
+};
 
 const PERCH_ROWS: readonly PerchRow[] = [
   { id: "standard", displayName: "Roost Standard", ctx: PERCH_CONTEXT_STANDARD },
   { id: "standard 1m", displayName: "Roost Standard 1M", ctx: PERCH_CONTEXT_STANDARD_1M },
+  // Starter-pool pins — context/output per the client's published cards
+  // (2.4.125): glm-5.3-flash 1048576, crouton-alpha 1048576 / 943718,
+  // beam-1.0 1048576 / 131072, deepseek-v4.1-flash-1017-starter 1048576 /
+  // 131072.
+  { id: "glm-5.3-flash-starter", displayName: "GLM 5.3 Flash (Starter)", ctx: PERCH_CONTEXT_STANDARD_1M, out: 131_072, pin: "glm-5.3-flash-starter" },
+  { id: "deepseek-flash-starter", displayName: "DeepSeek V4.1 Flash 1017 (Starter)", ctx: PERCH_CONTEXT_STANDARD_1M, out: 131_072, pin: "deepseek-flash-starter" },
+  { id: "crouton-alpha", displayName: "Crouton Alpha (Stealth)", ctx: PERCH_CONTEXT_STANDARD_1M, out: 943_718, pin: "crouton-alpha" },
+  { id: "beam-1.0-starter", displayName: "Beam 1.0 (Starter)", ctx: PERCH_CONTEXT_STANDARD_1M, out: 131_072, pin: "beam-1.0-starter" },
+  // Pinned 1M tier: the CLI normalizes `standard 1m` → `standard_max`; the
+  // adapter keys `roostModelChoice` off the catalog id so the right tier is
+  // sent even though the id is a label.
+  { id: "standard 1m", displayName: "Roost Standard 1M", ctx: PERCH_CONTEXT_STANDARD_1M, pin: "standard-max" },
 ];
 
 /**
@@ -50,7 +76,7 @@ export const PERCH_MODELS: readonly ModelDefinition[] = PERCH_ROWS.map((row) =>
     wireFamily: "chat",
     endpoint: "/api/perch-terminal/model-call",
     ctx: row.ctx,
-    out: perchOutputTokens(row.ctx),
+    out: row.out ?? perchOutputTokens(row.ctx),
     // The tier surfaces are chat-text; no modality claims beyond that. No
     // `free`/`freeTier` flag is set: the upstream does not expose a
     // per-model plan list (cli-plan only reports planRequired), and a free
@@ -59,4 +85,21 @@ export const PERCH_MODELS: readonly ModelDefinition[] = PERCH_ROWS.map((row) =>
     reasoning: false,
     toolCall: false,
   }),
+);
+
+/** Model-id → starter pin, for the adapter's dispatch-time lookup. */
+export const PERCH_MODEL_PINS: Readonly<Record<string, string | undefined>> = Object.fromEntries(
+  PERCH_ROWS.map((row) => [row.id, row.pin]),
+);
+
+/** Model-id → Roost tier, for the adapter's dispatch-time lookup. */
+export const PERCH_MODEL_ROOST_TIERS: Readonly<Record<string, string>> = Object.fromEntries(
+  PERCH_ROWS.map((row) => [
+    row.id,
+    row.pin === undefined
+      ? TIER_ROOST_TIERS[row.id] ?? "standard"
+      : row.pin === "standard-max"
+        ? "standard_max"
+        : PERCH_STARTER_PINS[row.pin]?.roostTier ?? "standard",
+  ]),
 );

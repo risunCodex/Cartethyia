@@ -22,6 +22,7 @@ import type { CanonicalRequest } from "../../../protocol/canonical-model";
 // upstream answered `403 perch_surface_required`.
 export { PERCH_SAFFRON_SYSTEM_PROMPT } from "./perch-system-prompt";
 import { PERCH_SAFFRON_SYSTEM_PROMPT } from "./perch-system-prompt";
+import { PERCH_STARTER_PINS } from "./perch-realm";
 
 /** Default hosted model id when the account endpoint is unreachable. */
 export const PERCH_DEFAULT_CHAT_MODEL = "wandb-kimi-k2-6";
@@ -38,6 +39,15 @@ export interface PerchTurnContext {
   readonly orgId: string | null;
   readonly planCode: string | null;
   readonly runId: string;
+  /**
+   * Starter-pool pin (see `PERCH_STARTER_PINS`): when present the request
+   * carries the backing model id as `manualModelOptionId` +
+   * `preferredModelId` with `strictManual: true`, so the server actually
+   * serves the pinned model instead of the Roost default.
+   */
+  readonly pin?: string | undefined;
+  /** Roost tier for `roostModelChoice` (`standard` | `standard_max`). */
+  readonly roostTier?: string | undefined;
 }
 
 /**
@@ -88,6 +98,8 @@ export function buildPerchModelCallBody(
     32000;
   const temperature = request.generation_controls.temperature ?? 0.6;
   const runId = ctx.runId;
+  const pin = ctx.pin && ctx.pin !== "standard-max" ? ctx.pin : undefined;
+  const pinModel = pin ? PERCH_STARTER_PINS[pin]?.preferredModelId : undefined;
   return {
     request: {
       messages,
@@ -96,8 +108,8 @@ export function buildPerchModelCallBody(
     },
     runId,
     lane: "chat",
-    strictManual: false,
-    preferredModelId,
+    strictManual: pinModel !== undefined,
+    preferredModelId: pinModel ?? preferredModelId,
     avoidModelIds: [],
     attribution: {
       userId: ctx.userId,
@@ -109,9 +121,10 @@ export function buildPerchModelCallBody(
     },
     clientSurface: "cli",
     resendAfterOutput: true,
-    roostModelChoice: tier,
+    roostModelChoice: ctx.roostTier ?? tier,
     roostReasoning: true,
     effort: { level: "high", orchestration: false },
+    ...(pinModel ? { manualModelOptionId: pinModel } : {}),
   };
 }
 

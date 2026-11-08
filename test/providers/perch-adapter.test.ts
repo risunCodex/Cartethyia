@@ -137,7 +137,7 @@ describe("PerchAdapter (HTTP)", () => {
     expect(headers.get("accept")).toBe("text/event-stream");
 
     const body = JSON.parse(String(call!.init?.body)) as Record<string, unknown>;
-    expect(body["roostModelChoice"]).toBe("standard 1m");
+    expect(body["roostModelChoice"]).toBe("standard_max");
     expect(body["clientSurface"]).toBe("cli");
     expect(body["runId"]).toBe("run-1");
     expect(body["resendAfterOutput"]).toBe(true);
@@ -150,6 +150,20 @@ describe("PerchAdapter (HTTP)", () => {
     expect(req.messages[0]?.content).toBe(PERCH_SAFFRON_SYSTEM_PROMPT);
     expect(req.messages[1]?.role).toBe("user");
     expect(req.messages[1]?.content).toBe("hello");
+  });
+
+  test("pins starter-pool models via manualModelOptionId", async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    const adapter = createPerchAdapter({ fetch: stubFetch(requests) });
+    await drain(adapter, request({ model: "glm-5.3-flash-starter" }), candidate("glm-5.3-flash-starter"), context());
+
+    const call = requests.find((r) => r.url.includes("/model-call"));
+    expect(call).toBeDefined();
+    const body = JSON.parse(String(call!.init?.body)) as Record<string, unknown>;
+    expect(body["strictManual"]).toBe(true);
+    expect(body["preferredModelId"]).toBe("openrouter-z-ai-glm-5-3-flash-crusoe");
+    expect(body["manualModelOptionId"]).toBe("openrouter-z-ai-glm-5-3-flash-crusoe");
+    expect(body["roostModelChoice"]).toBe("standard");
   });
 
   test("uses the validated outbound fetch for ticket, account, and model-call", async () => {
