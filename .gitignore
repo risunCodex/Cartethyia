@@ -25,15 +25,6 @@ dist/
 # mistake). Never project code.
 20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.txt
 
-# Vendored multi-protocol proxy binaries for local development. Never
-# committed: they are large, platform-specific, and version-pinned. Docker
-# builds its own copies in the image.
-bin/
-.kanbots/
-
-# Test coverage output
-coverage/
-
 # Local runtime scratch: captured telemetry payload frames. Written constantly
 # by the running gateway and pruned by retention, so tracking them churns the
 # repo with megabytes of transient request bodies.
@@ -76,6 +67,3 @@ dashboard/visual/
 # carries access + refresh tokens in the clear; it belongs in scratch, never in
 # a commit.
 scripts/provider-probing/**/accounts*.json
-
-# Perch CLI/desktop local state written into the repo root during wire capture.
-.perch/
