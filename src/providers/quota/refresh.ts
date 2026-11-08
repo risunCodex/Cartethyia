@@ -152,11 +152,48 @@ export async function recordAccountCheck(
   accountId: string,
   outcome: { ok: boolean; error?: string | null; category?: string | null },
 ): Promise<void> {
-  const activeOnly = and(
-    eq(providerAccounts.id, accountId),
-    eq(providerAccounts.status, "active"),
-  );
   if (outcome.ok) {
+    // A successful quota refresh is the freshest evidence about the account's
+    // health: heal a cooldown that the refresh shows is no longer justified, so
+    // the account returns to rotation immediately instead of waiting out the
+    // remainder of a stale fallback window. Only healable scopes heal — an
+    // auth/policy cooldown must never be lifted by a quota report (the
+    // credential is still refused). `lastErrorCategory` carries the category
+    // that parked the account, so the heal is scoped by the same verdict the
+    // health machine wrote.
+    const healableCategories = new Set([
+      "quota_exhausted",
+      "rate_limit_transient",
+      "model_capacity",
+      "model_unreachable",
+      "unknown",
+      "check_failed",
+    ]);
+    const rows = await db
+      .select({ status: providerAccounts.status, lastErrorCategory: providerAccounts.lastErrorCategory })
+      .from(providerAccounts)
+      .where(eq(providerAccounts.id, accountId))
+      .limit(1);
+    const account = rows[0];
+    const healable =
+      account?.status === "cooldown" &&
+      (account.lastErrorCategory === null || healableCategories.has(account.lastErrorCategory));
+    if (healable) {
+      await db
+        .update(providerAccounts)
+        .set({
+          status: "active",
+          lastSuccessAt: new Date(),
+          lastError: null,
+          lastErrorCategory: null,
+          lastErrorAt: null,
+          consecutiveFailures: 0,
+          cooldownUntil: null,
+          lastRecoveredAt: new Date(),
+        })
+        .where(eq(providerAccounts.id, accountId));
+      return;
+    }
     await db
       .update(providerAccounts)
       .set({
@@ -166,7 +203,7 @@ export async function recordAccountCheck(
         lastErrorAt: null,
         consecutiveFailures: 0,
       })
-      .where(activeOnly);
+      .where(and(eq(providerAccounts.id, accountId), eq(providerAccounts.status, "active")));
     return;
   }
   const transient = isTransientTimeout(outcome.error);
@@ -187,7 +224,7 @@ export async function recordAccountCheck(
       lastErrorAt: new Date(),
       ...(transient ? {} : { consecutiveFailures: sql`${providerAccounts.consecutiveFailures} + 1` }),
     })
-    .where(activeOnly)
+    .where(and(eq(providerAccounts.id, accountId), eq(providerAccounts.status, "active")))
     .returning({ consecutiveFailures: providerAccounts.consecutiveFailures });
   if (transient) return;
   const failures = failing[0]?.consecutiveFailures ?? 0;

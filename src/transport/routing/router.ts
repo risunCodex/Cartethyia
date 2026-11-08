@@ -25,11 +25,12 @@ import {
   type RequiredCapability,
 } from "../../protocol/translation/capabilities";
 import { planAllowsCandidate } from "./plan-gate";
-import { unifiedRoutingDecisionEnabled } from "../../config/routing";
+import { unifiedRoutingDecisionEnabled, accountReservePct, routingStickyWarmMs, routingStickyMaxSessions } from "../../config/routing";
 import type { NormalizedQuotaFact } from "./route-model";
 import { InMemoryAdmissionController, admissionKey } from "./admission";
 import { ReservationManager } from "./reservations";
-import { createRoundRobinMap, RoundRobinState } from "./round-robin";
+import { createRoundRobinMap, RoundRobinState, StickySessionStore } from "./round-robin";
+import { drainScore, isInReserve } from "./drain-reserve";
 import {
   lookupRouteCandidates,
   parseModelReference,
@@ -281,6 +282,23 @@ function creditPriority(candidate: RoutedCandidate): number {
 }
 
 /**
+ * Hot-window guard: true when the account's most-urgent window is ≥85% used.
+ * A nearly exhausted short window means an imminent mid-session block, so these
+ * candidates rank behind cooler siblings no matter their drain score — overflow
+ * lands on the next-most-urgent cool account instead.
+ */
+function hotWindow(windows: readonly ProviderQuotaWindow[] | undefined): boolean {
+  if (windows === undefined || windows.length === 0) return false;
+  for (const window of windows) {
+    const used = window.usedPercent;
+    if (typeof used === "number" && Number.isFinite(used) && used >= 85) return true;
+    const remaining = window.remainingPercent;
+    if (typeof remaining === "number" && Number.isFinite(remaining) && remaining <= 15) return true;
+  }
+  return false;
+}
+
+/**
  * Normalizes a requested model name before alias lookup. Coding-agent CLIs
  * version their model ids with variant suffixes (`claude-opus-5[1m]`,
  * effort tags, …) that must never each become a mapping row. Normalization
@@ -490,6 +508,7 @@ export class RoutingEngine {
   private readonly _roundRobinByProvider = createRoundRobinMap();
   private readonly eligibility = new EligibilityEvaluator();
   private readonly reservations = new ReservationManager();
+  private readonly sticky = new StickySessionStore(routingStickyMaxSessions());
 
   constructor(
     private readonly admission: AdmissionController = new InMemoryAdmissionController(),
@@ -663,6 +682,16 @@ export class RoutingEngine {
           : { quota_windows: candidate.quota_windows }
         : { quota_windows: quotaWindows }),
       ...(quota?.source === "zcode-start" && quota.error === null ? { quota_entitlements_known: true } : {}),
+      // Drain urgency and reserve are derived from the same windows the credit
+      // ordering already reads. They are ordering preferences, never
+      // exclusions: an account in reserve or with a zero drain score stays
+      // eligible and routed.
+      ...(quotaWindows === undefined && candidate.quota_windows === undefined
+        ? {}
+        : { drain_score: drainScore(quotaWindows ?? candidate.quota_windows) }),
+      ...(quotaWindows === undefined && candidate.quota_windows === undefined
+        ? {}
+        : { in_reserve: isInReserve(quotaWindows ?? candidate.quota_windows, accountReservePct()) }),
     };
     const fact = normalizeQuotaFact(stamped, cached, stored);
     return { ...stamped, ...(fact === null ? {} : { quota_fact: fact }) };
@@ -924,6 +953,7 @@ export class RoutingEngine {
     allowCliMappings = false,
     keyId?: string,
     continuationAffinity?: RouteContinuationAffinity,
+    sessionId?: string,
   ): Promise<RoutePlan> {
     const tid = tenantId ?? null;
     const { resolved, matching, unmatchedMembers } = this.resolveMatchingCandidates(
@@ -1048,13 +1078,50 @@ export class RoutingEngine {
     }
 
     // Single sort by rank (fresh → slow → cooling → saturated), stable. Within
-    // the same rank, accounts with remaining credit come first unless the model
-    // is free tier, which routes to any account.
+    // the same rank, ordered by credit → reserve → hot-window guard → measured
+    // usage → drain → round-robin. The drain score chases quota about to expire
+    // unused; reserve yields to non-reserve siblings; a hot primary window (≥85%
+    // used) defers to cooler accounts so overflow lands on a cool sibling.
+    const reservePct = accountReservePct();
+    const stickyWarmMs = routingStickyWarmMs();
+    const stickyEntry = stickyWarmMs > 0 ? this.sticky.get(eligible[0]?.provider_id ?? "", sessionId) : undefined;
+    const stickyAccountId = stickyEntry?.accountId;
+    const stickyWarm = stickyEntry !== undefined && Date.now() - stickyEntry.lastUsedAtMs < stickyWarmMs;
     eligible = [...eligible].sort((left, right) => {
       const leftRank = decisions.get(admissionKey(left))?.rank ?? ROUTING_RANK.FRESH_KNOWN;
       const rightRank = decisions.get(admissionKey(right))?.rank ?? ROUTING_RANK.FRESH_KNOWN;
       if (leftRank !== rightRank) return leftRank - rightRank;
-      return creditPriority(right) - creditPriority(left);
+      // A free-tier model routes to any account: skip every quota-derived
+      // preference (credit, reserve, hot-window, drain) so the original order
+      // is preserved. Sticky warm pins still apply — they are about prompt
+      // cache warmth, not quota.
+      const bothFree = left.free_tier === true && right.free_tier === true;
+      // Sticky warm pin: within the warm window the account that last served
+      // this session wins outright (explicit pins always win).
+      const leftSticky = left.provider_account_id === stickyAccountId;
+      const rightSticky = right.provider_account_id === stickyAccountId;
+      if (leftSticky !== rightSticky) {
+        if (stickyEntry?.explicit === true) return leftSticky ? -1 : 1;
+        if (stickyWarm) return leftSticky ? -1 : 1;
+      }
+      if (bothFree) return 0;
+      const leftReserve = (left as RoutedCandidate).in_reserve ??
+        isInReserve(left.quota_windows, reservePct);
+      const rightReserve = (right as RoutedCandidate).in_reserve ??
+        isInReserve(right.quota_windows, reservePct);
+      if (leftReserve !== rightReserve) return leftReserve ? 1 : -1;
+      const leftPriority = (left as RoutedCandidate).account_priority ?? 0;
+      const rightPriority = (right as RoutedCandidate).account_priority ?? 0;
+      if (leftPriority !== rightPriority) return rightPriority - leftPriority;
+      const leftHot = hotWindow(left.quota_windows);
+      const rightHot = hotWindow(right.quota_windows);
+      if (leftHot !== rightHot) return leftHot ? 1 : -1;
+      const credit = creditPriority(right) - creditPriority(left);
+      if (credit !== 0) return credit;
+      const leftDrain = (left as RoutedCandidate).drain_score ?? 0;
+      const rightDrain = (right as RoutedCandidate).drain_score ?? 0;
+      if (leftDrain !== rightDrain) return rightDrain - leftDrain;
+      return 0;
     });
 
     // Provider routing rotates accounts within the same rank group only; it can
@@ -1063,6 +1130,13 @@ export class RoutingEngine {
     eligible = this.applyProviderRoutingSorted(eligible, decisions, snapshot, tid);
 
     const chosen = eligible[0]!;
+    // Record which account served this session so a follow-up request within the
+    // warm window can prefer it (prompt-cache warmth). Explicit operator pins are
+    // recorded as explicit so they win even past the warm window.
+    if (sessionId !== undefined && chosen.provider_account_id !== undefined) {
+      const explicitPin = continuationAffinity?.providerAccountId === chosen.provider_account_id;
+      this.sticky.set(chosen.provider_id, sessionId, chosen.provider_account_id, explicitPin);
+    }
     return {
       revision: snapshot.revision,
       candidates: eligible,

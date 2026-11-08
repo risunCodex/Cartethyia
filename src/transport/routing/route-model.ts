@@ -149,6 +149,28 @@ export type RoutedCandidate = RouteCandidate & {
    * re-deriving window state.
    */
   quota_fact?: NormalizedQuotaFact;
+  /**
+   * Operator-configured account priority (0 when unset). Higher ranks ahead
+   * within the same rank group, before usage measurement.
+   */
+  account_priority?: number;
+  /**
+   * True when the account's remaining quota fraction is at or below the
+   * configured reserve percent. A reserved account stays eligible but orders
+   * behind non-reserve siblings.
+   */
+  in_reserve?: boolean;
+  /**
+   * Drain urgency score: headroom fraction / remaining hours until reset.
+   * Higher = quota about to expire unused, ranked first within a rank group.
+   */
+  drain_score?: number;
+  /**
+   * Session-id → provider-account stickiness, stamped at plan time. When the
+   * request carries a session id, this is the account that last served it
+   * within the warm window (or was pinned by the operator).
+   */
+  sticky_account_id?: string;
 };
 
 /**

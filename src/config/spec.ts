@@ -276,6 +276,26 @@ export const CONFIG_SPEC = {
   CARTETHYIA_ACCOUNT_AUTH_REJECTED_COOLDOWN_MS: { kind: "int", default: 300_000, min: 0, max: 86_400_000 },
   CARTETHYIA_ACCOUNT_POLICY_BLOCK_COOLDOWN_MS: { kind: "int", default: 300_000, min: 0, max: 86_400_000 },
   CARTETHYIA_ACCOUNT_DISABLED_RECOVERY_MS: { kind: "int", default: 86_400_000, min: 0, max: 604_800_000 },
+  /**
+   * Routing reserve: an account whose remaining quota fraction falls at or
+   * below this percent is demoted behind non-reserve siblings during ordering
+   * (it is still eligible and still routed — a reserve is a preference, never
+   * an exclusion). 0 disables reserve demotion for every account.
+   */
+  CARTETHYIA_ACCOUNT_RESERVE_PCT: { kind: "int", default: 20, min: 0, max: 100 },
+  /**
+   * Session stickiness warm window (milliseconds). Within this window after an
+   * account last served a session id, routing prefers that account when it is
+   * still eligible — prompt-cache warmth is worth more than perfect load
+   * balance. Past the window, the sticky account is only an ordering hint.
+   * 0 disables stickiness.
+   */
+  CARTETHYIA_ROUTING_STICKY_WARM_MS: { kind: "int", default: 300_000, min: 0, max: 86_400_000 },
+  /**
+   * Hard ceiling on distinct session ids whose sticky state is retained in
+   * memory per provider (LRU). Evicted sessions simply lose their preference.
+   */
+  CARTETHYIA_ROUTING_STICKY_MAX_SESSIONS: { kind: "int", default: 256, min: 1, max: 10_000 },
 
   // Proxy pool agents
   CARTETHYIA_PROXY_MAX_SOCKETS: { kind: "int", default: 100, min: 1, max: 100_000 },

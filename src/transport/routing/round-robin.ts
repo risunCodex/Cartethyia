@@ -36,3 +36,63 @@ const MAX_ROUND_ROBIN_ENTRIES = 1000;
 export function createRoundRobinMap(): BoundedLruMap<string, RoundRobinState> {
   return new BoundedLruMap<string, RoundRobinState>(MAX_ROUND_ROBIN_ENTRIES);
 }
+
+/** One session's sticky account: which provider account last served it, and when. */
+export interface StickySession {
+  readonly accountId: string;
+  readonly lastUsedAtMs: number;
+  /** Set only by an explicit operator pin; automatic warm stickiness leaves it absent. */
+  readonly explicit?: true;
+}
+
+/**
+ * Session → account stickiness per provider, bounded by an LRU. Used by the
+ * router to prefer the account that last served a session within the warm
+ * window — prompt-cache warmth is worth more than perfect load balance. A
+ * session id that is absent, evicted, or past the warm window simply carries
+ * no preference.
+ */
+export class StickySessionStore {
+  private readonly byProvider = new Map<string, BoundedLruMap<string, StickySession>>();
+
+  constructor(private readonly maxSessionsPerProvider: number) {}
+
+  private mapFor(providerId: string): BoundedLruMap<string, StickySession> {
+    let map = this.byProvider.get(providerId);
+    if (map === undefined) {
+      map = new BoundedLruMap<string, StickySession>(this.maxSessionsPerProvider);
+      this.byProvider.set(providerId, map);
+    }
+    return map;
+  }
+
+  /** The account last pinned to this session, or undefined. */
+  get(providerId: string, sessionId: string | undefined): StickySession | undefined {
+    if (sessionId === undefined) return undefined;
+    return this.mapFor(providerId).get(sessionId);
+  }
+
+  /** Record that `accountId` served `sessionId` now (or pin it explicitly). */
+  set(providerId: string, sessionId: string | undefined, accountId: string, explicit = false): void {
+    if (sessionId === undefined) return;
+    const now = Date.now();
+    this.mapFor(providerId).set(sessionId, {
+      accountId,
+      lastUsedAtMs: now,
+      ...(explicit ? { explicit: true as const } : {}),
+    });
+  }
+
+  /** Drop one session's stickiness (e.g. after the account is invalidated). */
+  clear(providerId: string, sessionId: string | undefined): void {
+    if (sessionId === undefined) return;
+    this.mapFor(providerId).delete(sessionId);
+  }
+
+  /** Total retained sticky entries across providers (for metrics/tests). */
+  size(): number {
+    let total = 0;
+    for (const map of this.byProvider.values()) total += map.size;
+    return total;
+  }
+}

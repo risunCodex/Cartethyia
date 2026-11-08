@@ -304,6 +304,15 @@ export interface AccountErrorClassification {
    */
   readonly providerStated?: boolean;
   /**
+   * True when the classification is a verdict on the *credential* (not a
+   * transient backoff): the request should rotate to a sibling account now
+   * instead of waiting out the cooldown on this one. Usage-limit exhaustion,
+   * spending caps, and banned/revoked credentials rotate; per-minute
+   * throttles (TPM/RPM), model-capacity overload, and concurrency caps back
+   * off on the same account instead.
+   */
+  readonly rotateAccount?: boolean;
+  /**
    * True when the upstream reported the model as one it does not serve (the
    * buddy family's `11102`), rather than one this account merely cannot reach.
    *
@@ -676,9 +685,35 @@ interface AccountErrorSignals {
   readonly queuedUpstream: boolean;
   readonly validationRequired: boolean;
   readonly validationUrl: string | undefined;
+  /** True when this failure should switch to a sibling account rather than wait. */
+  readonly rotateAccount: boolean;
 }
 
 const VALIDATION_URL_RE = /https?:\/\/[^\s"'\\]+/;
+
+/**
+ * True when the wording names a *transient* rolling throttle — per-minute
+ * token/request windows (TPM/RPM), "too many requests", "per minute" — that
+ * self-heals within the window, so it must back off on the same account rather
+ * than rotate to a sibling. Mirrors oh-my-pi's `RATE_LIMIT_EXCEEDED` lane.
+ */
+function transientRateLimitWording(lower: string): boolean {
+  return (
+    lower.includes("rate limit") ||
+    lower.includes("rate_limit") ||
+    lower.includes("too many requests") ||
+    lower.includes("per minute") ||
+    lower.includes("tokens per minute") ||
+    lower.includes("requests per minute") ||
+    lower.includes("tpm limit") ||
+    lower.includes("rpm limit") ||
+    lower.includes("tpm exhausted") ||
+    lower.includes("rpm exhausted") ||
+    lower.includes("ratelimitexceeded.endpointtpm") ||
+    lower.includes("ratelimitexceeded.endpointrpm") ||
+    lower.includes("presque")
+  );
+}
 
 /**
  * Extracts the Google `validation_url` from an Antigravity rejection.
@@ -816,6 +851,16 @@ function accountErrorContext(error: unknown, options?: AccountFailureEvidence): 
     // invisible). Defaulting true keeps existing callers conservative.
     routesVisible: true,
     providerStated,
+    // Usage-limit exhaustion, spending caps, and credential verdicts rotate to a
+    // sibling account now; transient throttles (per-minute, capacity) do not.
+    // The transient guard also applies to a category the classifier resolved to
+    // `quota_exhausted` — a TPM/RPM throttle phrased with quota wording
+    // ("tpm exhausted (type=quota_exceeded_error)") still self-heals within the
+    // minute and must not burn a sibling credential.
+    rotateAccount:
+      (category === "quota_exhausted" || category === "policy_blocked_banned") &&
+      !(statusCode === 429 && transientRateLimitWording(lower)) &&
+      !(statusCode === 503 || statusCode === 529),
     modelUnsupported,
   });
 
@@ -993,9 +1038,12 @@ export function classifyAccountError(
       lower.includes("have exceeded the quota") ||
       lower.includes("balance exhausted") ||
       lower.includes("insufficient balance") ||
+      lower.includes("insufficient credits") ||
       lower.includes("out of credits") ||
       lower.includes("credits exhausted") ||
       lower.includes("spending limit") ||
+      lower.includes("spending cap") ||
+      lower.includes("monthly spend limit") ||
       lower.includes("billing daily count exceeded") ||
       // Same Qoder family reached by body text when the code is not parsed out.
       (lower.includes("pricingurl") && lower.includes("qoder.com/pricing")));
@@ -1226,6 +1274,16 @@ export function classifyAccountError(
     queuedUpstream,
     validationRequired,
     validationUrl,
+    // A quota/spend/cap signal rotates to a sibling account; a per-minute
+    // throttle, model capacity, or concurrency cap backs off on the same one.
+    // `quotaSignal` is the broad price-refusal match — exclude explicit
+    // throttles it would otherwise sweep (see the rate-limit and Inception
+    // arms, which match the same signals and must keep backoff-only behavior).
+    rotateAccount:
+      quotaSignal &&
+      !modelFrequencyWindow &&
+      !(statusCode === 429 && transientRateLimitWording(lower)) &&
+      !(statusCode === 503 || statusCode === 529),
   };
 
   for (const rule of ACCOUNT_ERROR_RULES) {
@@ -1559,7 +1617,13 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
   },
   {
     name: "quota-exhausted",
-    match: (s) => s.origin === "upstream" && s.quotaSignal,
+    match: (s) =>
+      s.origin === "upstream" &&
+      s.quotaSignal &&
+      // A transient rolling throttle phrased with quota wording (TPM/RPM
+      // "tpm exhausted (type=quota_exceeded_error)") self-heals within the
+      // minute; it belongs to the rate-limit arm below, never here.
+      !transientRateLimitWording(s.lower),
     decide: (s) => {
       // xAI Grok Build's free tier resets on a rolling window. Use a duration
       // stated by the provider when present; otherwise park for the conservative

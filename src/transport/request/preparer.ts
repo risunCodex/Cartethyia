@@ -484,6 +484,7 @@ export class ProxyRequestPreparer {
           allowCliMappings,
           authorization.cliMappingOwnerId ?? authorization.id,
           continuationAffinity,
+          request.conversation_id ?? request.conversation?.conversation_id,
         );
       } catch (error) {
         // `plan()` collapses "no candidate supports this capability" into
@@ -551,6 +552,7 @@ export class ProxyRequestPreparer {
                   allowCliMappings,
                   authorization.cliMappingOwnerId ?? authorization.id,
                   continuationAffinity,
+                  request.conversation_id ?? request.conversation?.conversation_id,
                 );
                 plan = handoffPlan;
                 variantRequest = replaced;
@@ -735,6 +737,8 @@ export class ProxyRequestPreparer {
     readonly clientUserAgent?: string;
     readonly eligible: (candidate: RouteCandidate) => boolean;
     readonly emptyMessage: string;
+    /** Session identity for sticky routing (conversation id when present). */
+    readonly conversationId?: string;
   }): Promise<PreparedNativeRequest> {
     if (input.signal?.aborted)
       throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
@@ -778,6 +782,8 @@ export class ProxyRequestPreparer {
       undefined,
       allowCliMappings,
       input.authorization.cliMappingOwnerId ?? input.authorization.id,
+      undefined,
+      input.conversationId,
     );
     if (input.signal?.aborted)
       throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
