@@ -32,6 +32,44 @@ const CARD_LINK = cn("block flex-1 p-6 no-underline text-inherit");
 
 const CARD_NAME = cn("text-body font-semibold overflow-hidden text-ellipsis whitespace-nowrap");
 
+/**
+ * Diagonal corner ribbon shared by the Friend sponsor mark and the Disabled
+ * status mark. Same geometry as the founding ribbon so the cards stay one
+ * visual family; only the tone and label change.
+ */
+function CornerRibbon({
+  label,
+  title,
+  tone,
+}: {
+  readonly label: string;
+  readonly title: string;
+  readonly tone: "accent" | "danger";
+}): ReactNode {
+  return (
+    <span
+      aria-label={title}
+      title={title}
+      className="absolute top-0 right-0 z-2 w-36 h-36 overflow-hidden pointer-events-none"
+    >
+      <span
+        className={cn(
+          // DISABLED is two letters longer than Friend, so the danger arm is a
+          // touch wider; the clip box stays the same so the corner cut is
+          // identical across both marks.
+          tone === "danger"
+            ? "absolute top-9 -right-13 w-44 py-1 rotate-45 bg-red-soft text-red"
+            : "absolute top-9 -right-11 w-38 py-1 rotate-45 bg-accent-soft text-accent",
+          "text-micro font-extrabold tracking-tight leading-[1.05]",
+          "text-center uppercase shadow-ribbon",
+        )}
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
+
 import type {
   CreateProviderRequest,
   ProviderResponse,
@@ -493,6 +531,9 @@ function CustomProviderCard({ customProvider }: { customProvider: ProviderRespon
       className={CARD_SHELL}
     >
       <ProviderVersionBadge clientVersion={customProvider.clientVersion} />
+      {!customProvider.enabled ? (
+        <CornerRibbon label="Disabled" title="Provider disabled" tone="danger" />
+      ) : null}
       <Link
         to={`/providers/${encodeURIComponent(customProvider.providerId)}`}
         // See the builtin card: `flex: 1` keeps the clickable area as tall as
@@ -886,27 +927,17 @@ const ProviderCard = memo(function ProviderCard({
   const displayName = provider.label || provider.displayName;
   // Connection counts and the model badge come from the provider-list overview
   // fields, so this card issues no per-provider accounts/models request.
+  // Disabled wins over Friend: a parked founding provider must still read as
+  // disabled at a glance, or the operator forgets why it stopped routing.
   return (
     <Card
       className={CARD_SHELL}
     >
       <ProviderVersionBadge clientVersion={provider.clientVersion} />
-      {isFounding ? (
-        <span
-          aria-label="Friend sponsor"
-          title="Friend sponsor"
-          className="absolute top-0 right-0 z-2 w-36 h-36 overflow-hidden pointer-events-none"
-        >
-          <span
-            className={cn(
-              "absolute top-9 -right-11 w-38 py-1 rotate-45 bg-accent-soft",
-              "text-accent text-micro font-extrabold tracking-tight leading-[1.05]",
-              "text-center uppercase shadow-ribbon",
-            )}
-          >
-            Friend
-          </span>
-        </span>
+      {!provider.enabled ? (
+        <CornerRibbon label="Disabled" title="Provider disabled" tone="danger" />
+      ) : isFounding ? (
+        <CornerRibbon label="Friend" title="Friend sponsor" tone="accent" />
       ) : null}
 
       <Link

@@ -557,6 +557,14 @@ class CursorAdapter implements ProviderAdapter {
       return;
     }
     const resolved = resolvedAll.filter((entry) => entry !== undefined);
+    if (resolved.length > 0 && resolved.length !== pending.length) {
+      throw new GatewayError(
+        "invalid_request",
+        400,
+        "This request mixes live Cursor tool results with stale or unknown ones (request {requestId}); resend only the pending Run's results. The session went cold — reconnect or resend 🔌",
+        { callIds: pending.map((item) => item.callId) },
+      );
+    }
     const runId = resolved[0]?.session.runId;
     if (runId === undefined) {
       throw new GatewayError(
@@ -1368,11 +1376,25 @@ function isCompleteToolHistoryReplay(
   request: CanonicalRequest,
   pending: readonly PendingToolResult[],
 ): boolean {
-  const calledIds = new Set<string>();
-  for (const message of request.messages) {
+  const expected = new Set(pending.map((item) => item.callId));
+  const seenResults = new Set<string>();
+  let index = request.messages.length - 1;
+  for (; index >= 0; index -= 1) {
+    const message = request.messages[index];
+    if (message === undefined) continue;
+    if (message.role !== "tool") break;
     for (const part of message.content) {
-      if (part.kind === "toolCall") calledIds.add(part.call_id);
+      if (part.kind !== "toolResult") continue;
+      if (!expected.has(part.call_id) || seenResults.has(part.call_id)) return false;
+      seenResults.add(part.call_id);
     }
+  }
+  if (seenResults.size !== expected.size) return false;
+  const assistant = request.messages[index];
+  if (assistant === undefined || assistant.role !== "assistant") return false;
+  const calledIds = new Set<string>();
+  for (const part of assistant.content) {
+    if (part.kind === "toolCall" && expected.has(part.call_id)) calledIds.add(part.call_id);
   }
   return pending.every((item) => calledIds.has(item.callId));
 }
@@ -1394,4 +1416,3 @@ function resolveCursorWireModelId(rawModelId: string): string {
   if (id === "auto") return "default";
   return rawModelId;
 }
-

@@ -100,6 +100,63 @@ describe("provider card badges from the list overview fields", () => {
     view.unmount();
   });
 
+  test("shows a Disabled corner ribbon when the provider is parked, and keeps Friend only while enabled", async () => {
+    const CATALOG = [
+      // Founding sponsor, still live → Friend ribbon.
+      provider("inferhub", {
+        configured: true,
+        accountCount: 1,
+        activeAccountCount: 1,
+        modelCount: 1,
+      }),
+      // Disabled builtin → Disabled ribbon, no Friend.
+      provider("anthropic", {
+        enabled: false,
+        configured: true,
+        accountCount: 2,
+        activeAccountCount: 2,
+        modelCount: 3,
+      }),
+    ];
+    const view = await mount(createElement(Providers), {
+      seed: [{ key: queryKeys.providers.all, data: CATALOG }, INFERHUB_SEED],
+    });
+    await view.flush();
+
+    const friend = view.container.querySelector('[aria-label="Friend sponsor"]');
+    expect(friend).toBeTruthy();
+    expect(friend?.textContent?.trim()).toBe("Friend");
+
+    const disabled = view.container.querySelector('[aria-label="Provider disabled"]');
+    expect(disabled).toBeTruthy();
+    expect(disabled?.textContent?.trim()).toBe("Disabled");
+    view.unmount();
+
+    // A disabled founding provider must read as Disabled, not Friend — otherwise
+    // the operator forgets why the sponsor route stopped answering.
+    const parked = await mount(createElement(Providers), {
+      seed: [
+        {
+          key: queryKeys.providers.all,
+          data: [
+            provider("inferhub", {
+              enabled: false,
+              configured: true,
+              accountCount: 1,
+              activeAccountCount: 1,
+              modelCount: 1,
+            }),
+          ],
+        },
+        INFERHUB_SEED,
+      ],
+    });
+    await parked.flush();
+    expect(parked.container.querySelector('[aria-label="Friend sponsor"]')).toBeNull();
+    expect(parked.container.querySelector('[aria-label="Provider disabled"]')).toBeTruthy();
+    parked.unmount();
+  });
+
   test("default-collapses Other API Key Providers and mounts its cards only when expanded", async () => {
     const OTHER = provider("oddball", {
       configured: true,

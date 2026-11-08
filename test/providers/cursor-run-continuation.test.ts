@@ -624,7 +624,77 @@ describe("Cursor cross-request Run continuation", () => {
     // The replayed exchange travels as rebased history: the request submitted
     // a fresh Run turn (not a resume).
     expect(replay.streams[0]?.runRequestCount()).toBe(1);
+    const rebound = replay.streams[0]?.messages().find((message) => message["run_request"] !== undefined);
+    const runRequest = rebound?.["run_request"] as Record<string, unknown> | undefined;
+    const action = runRequest?.["action"] as Record<string, unknown> | undefined;
+    const userAction = action?.["user_message_action"] as Record<string, unknown> | undefined;
+    const userMessage = userAction?.["user_message"] as Record<string, unknown> | undefined;
+    const text = typeof userMessage?.["text"] === "string" ? userMessage["text"] : "";
+    expect(text.match(/what is the weather\?/g)?.length ?? 0).toBe(1);
+    expect(text.match(/\[tool result /g)?.length ?? 0).toBe(1);
     expect(cursorRunSessions.size).toBe(0);
+  });
+
+  test("a stale Cursor result outside the trailing assistant/tool-result pair is refused", async () => {
+    const adapter = createCursorAdapter();
+    const { callId, stream } = await openRunAwaitingToolCall(adapter);
+
+    stream.push(turnEndedFrame());
+    const answered = await collect(
+      adapter,
+      continuationRequest(callId),
+      continuationHarness(scopeOf(), stream),
+    );
+    expect(answered.error).toBeUndefined();
+    expect(cursorRunSessions.size).toBe(0);
+
+    const malformedReplay: CanonicalRequest = {
+      ...continuationRequest(callId),
+      messages: [
+        { role: "user", content: [{ kind: "text", text: "older note" }] },
+        { role: "tool", content: [{ kind: "toolResult", call_id: callId, content: [{ kind: "text", text: "stale" }] }] },
+        { role: "assistant", content: [{ kind: "text", text: "thanks" }] },
+        { role: "user", content: [{ kind: "text", text: "continue" }] },
+      ],
+      tools: [LOOKUP_TOOL],
+    };
+    const replay = harnessWith([turnEndedFrame()], scopeOf());
+    const refused = await collect(adapter, malformedReplay, replay);
+    expect(refused.error).toBeDefined();
+    expect(String((refused.error as Error).message)).toContain("no longer pending");
+    expect(replay.streams.length).toBe(0);
+  });
+
+  test("replaying an older Cursor result beside the live one is refused instead of rebased", async () => {
+    const adapter = createCursorAdapter();
+    const first = await openRunAwaitingToolCall(adapter, { execId: 1 });
+    first.stream.push(turnEndedFrame());
+    const answered = await collect(
+      adapter,
+      continuationRequest(first.callId),
+      continuationHarness(scopeOf(), first.stream),
+    );
+    expect(answered.error).toBeUndefined();
+
+    const second = await openRunAwaitingToolCall(adapter, { execId: 2 });
+    const mixedReplay: CanonicalRequest = {
+      ...continuationRequest(second.callId),
+      messages: [
+        { role: "user", content: [{ kind: "text", text: "first question" }] },
+        { role: "assistant", content: [{ kind: "toolCall", call_id: first.callId, name: "lookup", arguments: "{}" }] },
+        { role: "tool", content: [{ kind: "toolResult", call_id: first.callId, content: [{ kind: "text", text: "old answer" }] }] },
+        { role: "user", content: [{ kind: "text", text: "second question" }] },
+        { role: "assistant", content: [{ kind: "toolCall", call_id: second.callId, name: "lookup", arguments: "{}" }] },
+        { role: "tool", content: [{ kind: "toolResult", call_id: second.callId, content: [{ kind: "text", text: "new answer" }] }] },
+      ],
+      tools: [LOOKUP_TOOL],
+    };
+
+    const refused = await collect(adapter, mixedReplay, continuationHarness(scopeOf(), second.stream));
+    expect(refused.error).toBeDefined();
+    expect(String((refused.error as Error).message)).toContain("mixes live Cursor tool results");
+    expect(second.stream.mcpResults().length).toBe(0);
+    expect(cursorRunSessions.size).toBe(1);
   });
 
   test("results for two different Runs in one request are refused whole", async () => {

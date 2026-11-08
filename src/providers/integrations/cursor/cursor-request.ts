@@ -219,7 +219,9 @@ export function systemPromptFrom(request: CanonicalRequest): string | undefined 
  */
 export function historyFromRequest(request: CanonicalRequest): CursorHistoryEntry[] {
   const entries: CursorHistoryEntry[] = [];
-  for (const message of request.messages) {
+  const liveIndex = lastLiveUserMessageIndex(request);
+  for (const [index, message] of request.messages.entries()) {
+    if (index === liveIndex) continue;
     const text = messageText(message);
     if (text.trim().length === 0) continue;
     if (message.role === "assistant") entries.push({ role: "assistant", content: text });
@@ -530,12 +532,21 @@ function toolResultText(part: Extract<ContentPart, { kind: "toolResult" }>): str
  * only the current prompt.
  */
 export function liveUserText(request: CanonicalRequest): string {
+  const index = lastLiveUserMessageIndex(request);
+  if (index === -1) return "";
+  const message = request.messages[index];
+  if (message === undefined) return "";
+  return messageText(message);
+}
+
+/** Index of the current user/tool turn Cursor should send as the live prompt. */
+function lastLiveUserMessageIndex(request: CanonicalRequest): number {
   for (let index = request.messages.length - 1; index >= 0; index -= 1) {
     const message = request.messages[index];
     if (message === undefined) continue;
     if (message.role !== "user" && message.role !== "tool") continue;
     const text = messageText(message);
-    if (text.trim().length > 0) return text;
+    if (text.trim().length > 0) return index;
   }
-  return "";
+  return -1;
 }

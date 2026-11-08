@@ -8,6 +8,65 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- **Unified routing decision engine (feature-gated).** New full-request
+  routing decision (`CARTETHYIA_UNIFIED_ROUTING_DECISION` text flag, default
+  off; legacy behavior unchanged when off). When on: model-aware quota window
+  matching (a candidate is only compared to windows for the model being
+  routed), proactive exclusion of candidates whose quota evidence is known
+  exhausted or below the usage floor, and `quota_unknown` treated as eligible
+  but lower rank. Quota evidence older than the 6h freshness horizon is
+  downgraded to unknown. `ROUTING_RANK` is split into
+  `FRESH_KNOWN`/`FRESH_UNKNOWN`/`SLOW`/`COOLING`/`SATURATED`; candidates and
+  routed candidates carry a normalized `quota_fact` stamp; `EligibilityReason`
+  gains `plan_gate`, `quota_unknown`, and `capability_unsupported`. Coverage:
+  `test/transport/unified-routing-decision.test.ts`.
+- **Provider accounts: `quota_plan_fetched_at` column.** Records when the
+  quota plan was last fetched (migration `0046_add_accounts_quota_plan_fetched_at.sql`
+  in both full and lite sets), written by the quota refresh pass.
+- **Quota view: canonical `unknown` status.** `QuotaRefreshView.status` now
+  includes `"unknown"` — a successful read carrying no windows and no
+  timestamp is rendered as `unknown` instead of `ready`, so the dashboard and
+  routing share one wire representation for missing quota evidence.
+- **Provider cards: Disabled corner ribbon.** A parked (disabled) provider now
+  shows a red `Disabled` ribbon; the `Friend` sponsor ribbon only appears while
+  the provider is enabled. A disabled founding provider reads as Disabled, not
+  Friend.
+- **Cursor: stale or mixed tool-result replays are refused.** A continuation
+  request whose tool results do not match the trailing assistant/tool-result
+  pair of the pending Run (stale results, results from an older Run, or
+  unknown call ids) is refused with `400` instead of being silently rebased.
+  The request is rejected whole with the offending call ids in the error.
+- **Vision handoff: dropped images are marked, not silently deleted.** When an
+  older image-carrying history turn is excluded from the handoff, its image
+  parts are replaced with a `[image omitted]` text marker instead of being
+  filtered out, so the main model knows something was there. Coverage:
+  `test/transport/vision-handoff.test.ts` (Option E of the vision-handoff
+  context-preservation proposal).
+
+### Changed
+
+- **Cursor: the live turn is excluded from rebased history.** `historyFromRequest`
+  skips the current live user/tool turn (it is sent as the prompt, not
+  replayed as history), so the upstream does not see the pending prompt twice.
+- **OAuth disable and quota-refresh parking share one writer.** Account
+  disable and the quota-refresh parking path both converge on
+  `applyAccountVerdict` (status, last error, cooldown, health event, operator
+  disable preserved).
+- **Account error labels: `quota_unknown` and `plan_gate`.** Both are
+  rendered as status text (`Quota unknown`, `Plan blocked`); `quota_unknown`
+  is a retryable/eligible category, not an error pill.
+
+### Removed
+
+- **Proposal docs retired:** `documentation/proposals/docs-audit-why-install.md`
+  and `documentation/proposals/vision-handoff-context-preservation.md` were
+  removed from the proposals directory (the vision-handoff proposal's Option E
+  is now implemented; the audit was folded into its findings).
+
 ## [2.7.9] - 2026-11-08
 
 ### Added
