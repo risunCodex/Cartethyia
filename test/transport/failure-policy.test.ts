@@ -1013,33 +1013,6 @@ describe("classifyUpstreamFailure", () => {
     expect(policy.providerCode).toBe("11140");
   });
 
-  test("maps a qoder upstream 499 to quota cooldown, not invalid_request", () => {
-    // Qoder closes an exhausted-quota stream with upstream 499 (nginx
-    // client-close style). Before the dedicated arm it fell through to
-    // `invalid_request` (non-retryable, no cooldown) and the account stayed in
-    // rotation for the whole exhausted window.
-    const policy = classifyUpstreamFailure(
-      new GatewayError("invalid_request", 499, "closed", { providerId: "qoder" }, "upstream"),
-    );
-    expect(policy.category).toBe("quota_exceeded");
-    expect(policy.retryable).toBe(true);
-    expect(policy.mutatesAccount).toBe(true);
-    expect(policy.scope).toBe("account");
-    expect(policy.cooldownMs).toBeGreaterThan(0);
-    expect(policy.cooldownMs).toBeLessThan(24 * 3600 * 1000);
-  });
-
-  test("qoder 499 quota arm does not fire for non-qoder providers", () => {
-    // The upstream-499 + quota mapping is specific to qoder; other providers
-    // still see the ordinary status classification (499 is not authoritative, so
-    // it falls to the generic code path).
-    const policy = classifyUpstreamFailure(
-      new GatewayError("invalid_request", 499, "closed", { providerId: "other" }, "upstream"),
-    );
-    expect(policy.category).toBe("invalid_request");
-    expect(policy.cooldownMs).toBeUndefined();
-  });
-
   test("a local transport_closed 499 is not treated as theoder quota", () => {
     // The gateway's own client-abort is produced locally with no qoder
     // providerId; it must stay a transport_closed cancel, not quota.

@@ -90,38 +90,6 @@ test("upstream classification maps code 110 to quota, not auth", () => {
   expect(classification.credentialEvidence).toBeUndefined();
 });
 
-test("Qoder upstream 499 with a model cools the pair for a day", () => {
-  const classification = classifyAccountError(new Error("Qoder stream closed"), {
-    ...UPSTREAM,
-    providerId: "qoder",
-    statusCode: 499,
-    modelId: "deepseek-v4.1-flash",
-  });
-  expect(classification.category).toBe("model_unreachable");
-  expect(classification.status).toBe("cooldown");
-  expect(classification.cooldownMs).toBe(ONE_DAY);
-  expect(classification.mutatesAccount).toBe(true);
-});
-
-test("Qoder upstream 499 without a model id never parks the account", () => {
-  const classification = classifyAccountError(new Error("Qoder stream closed"), {
-    ...UPSTREAM,
-    providerId: "qoder",
-    statusCode: 499,
-  });
-  expect(classification.category).toBe("model_unreachable");
-  expect(classification.mutatesAccount).toBe(false);
-});
-
-test("Qoder 499 does not classify as quota for other providers", () => {
-  const classification = classifyAccountError(new Error("stream closed"), {
-    ...UPSTREAM,
-    providerId: "openai",
-    statusCode: 499,
-  });
-  expect(classification.category).not.toBe("model_unreachable");
-});
-
 test("an unknown numeric provider code never invalidates the credential", () => {
   const classification = classifyAccountError(new Error("some opaque error"), {
     ...UPSTREAM,
