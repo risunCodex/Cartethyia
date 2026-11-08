@@ -50,7 +50,8 @@ export interface MessagesStreamEvent extends MessagesWireObject {
     | "content_block_delta"
     | "content_block_stop"
     | "message_delta"
-    | "message_stop";
+    | "message_stop"
+    | "error";
 }
 
 function contentArray(value: unknown, label: string): unknown[] {

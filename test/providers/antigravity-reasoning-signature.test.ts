@@ -15,6 +15,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { responseParts } from "../../src/protocol/response/gemini";
+import { buildGeminiPayload } from "../../src/protocol/request/gemini";
 import { dropAntigravityUnsignedReasoning } from "../../src/providers/integrations/antigravity/antigravity-protocol";
 import { AntigravityAdapter } from "../../src/providers/integrations/antigravity/antigravity";
 import type { CanonicalRequest } from "../../src/protocol/canonical-model";
@@ -184,6 +185,12 @@ describe("dropAntigravityUnsignedReasoning", () => {
     expect(assistant.content.map((p) => p.kind)).toEqual(["text"]);
   });
 
+  test("drops empty-string signature reasoning on a Claude route", () => {
+    const out = dropAntigravityUnsignedReasoning(requestWithReasoning(""), true);
+    const assistant = out.messages[1]!;
+    expect(assistant.content.map((p) => p.kind)).toEqual(["text"]);
+  });
+
   test("keeps signed reasoning on a Claude route", () => {
     const out = dropAntigravityUnsignedReasoning(
       requestWithReasoning(THOUGHT_SIGNATURE),
@@ -202,5 +209,53 @@ describe("dropAntigravityUnsignedReasoning", () => {
   test("is a no-op when nothing is dropped (same reference)", () => {
     const request = requestWithReasoning(THOUGHT_SIGNATURE);
     expect(dropAntigravityUnsignedReasoning(request, true)).toBe(request);
+  });
+});
+
+describe("buildGeminiPayload reasoning-signature filtering", () => {
+  function requestWithReasoning(signature?: string): CanonicalRequest {
+    return {
+      model: "claude-sonnet-4-6",
+      messages: [
+        { role: "user", content: [{ kind: "text", text: "hai" }] },
+        {
+          role: "assistant",
+          content: [
+            { kind: "text", text: "Hello!" },
+            {
+              kind: "reasoning",
+              payload: "thinking…",
+              summary: "thinking…",
+              ...(signature === undefined ? {} : { signature }),
+            },
+          ],
+        },
+      ],
+      stream: true,
+      generation_controls: {},
+      source_surface: "test",
+    } as unknown as CanonicalRequest;
+  }
+
+  test("drops unsigned reasoning from the Gemini payload", () => {
+    const payload = buildGeminiPayload(requestWithReasoning());
+    const model = payload["contents"] as Array<{ role: string; parts: Array<{ text?: string; thought?: boolean }> }>;
+    const assistant = model.find((m) => m.role === "model")!;
+    expect(assistant.parts.some((p) => p.thought === true)).toBe(false);
+  });
+
+  test("drops empty-string signature reasoning from the Gemini payload", () => {
+    const payload = buildGeminiPayload(requestWithReasoning(""));
+    const model = payload["contents"] as Array<{ role: string; parts: Array<{ text?: string; thought?: boolean }> }>;
+    const assistant = model.find((m) => m.role === "model")!;
+    expect(assistant.parts.some((p) => p.thought === true)).toBe(false);
+  });
+
+  test("keeps signed reasoning with its thoughtSignature in the Gemini payload", () => {
+    const payload = buildGeminiPayload(requestWithReasoning(THOUGHT_SIGNATURE));
+    const model = payload["contents"] as Array<{ role: string; parts: Array<{ text?: string; thought?: boolean; thoughtSignature?: string }> }>;
+    const assistant = model.find((m) => m.role === "model")!;
+    const thought = assistant.parts.find((p) => p.thought === true)!;
+    expect(thought.thoughtSignature).toBe(THOUGHT_SIGNATURE);
   });
 });

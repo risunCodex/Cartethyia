@@ -400,7 +400,11 @@ export function dropAntigravityUnsignedReasoning(
     if (message.role !== "assistant") return message;
     const content = message.content.filter((part) => {
       if (part.kind !== "reasoning") return true;
-      if (part.signature !== undefined) return true;
+      // A present-but-empty signature is still unsigned: upstream rejects a
+      // `thinking` part whose `signature` is missing *or* empty with
+      // `400 messages.N.content.0.thinking.signature: Field required`. Only a
+      // non-empty signature is a real one.
+      if (typeof part.signature === "string" && part.signature.length > 0) return true;
       changed = true;
       return false;
     });

@@ -153,10 +153,16 @@ export class MessagesAdapter implements SurfaceAdapter {
         : data.reason;
     const usage = usageToMessagesWire(data.usage);
     if (data.failed) {
+      const errorEvent = [...events]
+        .reverse()
+        .find((event): event is Extract<CanonicalEvent, { type: "error" }> => event.type === "error");
       return {
         id: responseId,
         type: "error",
-        error: { type: "server_error", message: "The upstream response failed" },
+        error: {
+          type: "server_error",
+          message: errorEvent?.message ?? "The upstream response failed",
+        },
       };
     }
     return {

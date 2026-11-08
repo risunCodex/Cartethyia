@@ -262,11 +262,30 @@ export function jsonCompletion(
   };
   const terminal = events.findLast((event) => event.type === "terminal");
   if (terminal?.type === "terminal" && terminal.state === "failed") {
-    result.error = {
-      type: "server_error",
-      code: terminal.stop_reason ?? "provider_error",
-      message: "The upstream response failed",
+    const raw = isRecord(terminal.stop_details) ? terminal.stop_details : undefined;
+    const errorMessage =
+      typeof raw?.["message"] === "string" && raw["message"].length > 0
+        ? raw["message"]
+        : "The upstream response failed";
+    // A failed terminal returns an error response, not a completion with a
+    // finish_reason: the client must be able to tell the refusal/limit from a
+    // finished answer. OpenAI error responses carry no `choices`.
+    const errorResult: JsonObject = {
+      id,
+      object: "chat.completion",
+      created,
+      model,
+      usage,
+      error: {
+        type: "server_error",
+        code: terminal.stop_reason ?? "provider_error",
+        ...(typeof raw?.["status"] === "number" ? { status: raw["status"] } : {}),
+        message: errorMessage,
+      },
     };
+    const serviceTier = options.service_tier ?? options.serviceTier;
+    if (serviceTier !== undefined) errorResult.service_tier = serviceTier;
+    return errorResult;
   }
   const serviceTier = options.service_tier ?? options.serviceTier;
   if (serviceTier !== undefined) result.service_tier = serviceTier;
@@ -482,6 +501,30 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
     if (event.type === "terminal") {
       this.terminalState = event.state;
       this.terminalReason = finishReason(event.stop_reason);
+      // A failed terminal is a real failure: emit an error frame with the
+      // upstream's message instead of a `finish_reason: "error"` chunk. The
+      // client receives the reason (rate limit, quota, upstream error) rather
+      // than a bare "error" word it has to guess at. `stop_details` carries
+      // the failure details when the adapter set them; otherwise the stop
+      // reason is the only signal.
+      if (event.state === "failed") {
+        const raw = isRecord(event.stop_details) ? event.stop_details : undefined;
+        const message =
+          typeof raw?.["message"] === "string" && raw["message"].length > 0
+            ? raw["message"]
+            : "The upstream response failed";
+        this.emittedAny = true;
+        return [
+          {
+            error: {
+              type: "server_error",
+              code: event.stop_reason ?? "provider_error",
+              ...(typeof raw?.["status"] === "number" ? { status: raw["status"] } : {}),
+              message,
+            },
+          },
+        ];
+      }
       if (!this.cancelled && event.state !== "aborted" && event.usage)
         this.finalUsage = usageToChatWire(event.usage);
       const usage = this.cancelled || event.state === "aborted" ? null : this.finalUsage;

@@ -62,6 +62,7 @@ export class MessagesStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
   private droppedUnnamedToolCalls = 0;
   private usage: UsageRecord | undefined;
   private failed = false;
+  private errorMessage: string | undefined;
   private stopReason: string | null = null;
   private readonly responseId: string;
   private readonly model: string;
@@ -199,6 +200,7 @@ export class MessagesStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
       // inevitable terminal push throw, producing a second error frame
       // after message_stop (which Anthropic never sends).
       this.failed = true;
+      if (this.errorMessage === undefined) this.errorMessage = event.message;
       return out;
     }
     if (event.type === "content_delta") {
@@ -401,18 +403,25 @@ export class MessagesStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
       resetToolCallTracker(this.tools);
       const finalUsage = usageToMessagesWire(this.usage);
       if (this.failed) {
-        out.push({
-          type: "message_delta",
-          delta: { stop_reason: null, stop_sequence: null },
-          usage: finalUsage,
-        });
-      } else {
-        out.push({
-          type: "message_delta",
-          delta: { stop_reason: this.stopReason, stop_sequence: null },
-          usage: finalUsage,
-        });
+        // The stream is closing on an upstream failure, not a normal end. A
+        // `message_stop` here would hide the failure from the client (it
+        // reads a clean stop), so emit the error event instead — matching the
+        // semantic the non-streaming encoder uses for `failed` terminals.
+        return [
+          {
+            type: "error",
+            error: {
+              type: "server_error",
+              message: this.errorMessage ?? "The upstream response failed",
+            },
+          },
+        ];
       }
+      out.push({
+        type: "message_delta",
+        delta: { stop_reason: this.stopReason, stop_sequence: null },
+        usage: finalUsage,
+      });
       out.push({ type: "message_stop" });
       this.finished = true;
       return out;
@@ -446,6 +455,18 @@ export class MessagesStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
       ];
     }
     if (this.finished) return [];
+    if (this.failed) {
+      this.finished = true;
+      return [
+        {
+          type: "error",
+          error: {
+            type: "server_error",
+            message: this.errorMessage ?? "The upstream response failed",
+          },
+        },
+      ];
+    }
     const out: MessagesStreamEvent[] = [];
     out.push(...this.closeOpenBlock());
     out.push(...this.flushToolCalls(true));

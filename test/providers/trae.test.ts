@@ -330,6 +330,29 @@ describe("buildTraeChatBody", () => {
     expect(body.messages[0]?.tool_call_id).toBe("c1");
   });
 
+  test("parallel tool results each become their own tool turn", () => {
+    const body = buildTraeChatBody(
+      "gpt-5.5",
+      request({
+        messages: [
+          {
+            role: "tool",
+            content: [
+              { kind: "toolResult", call_id: "c1", content: [{ kind: "text", text: "one" }] },
+              { kind: "toolResult", call_id: "c2", content: [{ kind: "text", text: "two" }] },
+            ],
+          },
+        ],
+      }),
+      "intl",
+    );
+    expect(body.messages).toHaveLength(2);
+    expect(body.messages[0]?.tool_call_id).toBe("c1");
+    expect(body.messages[0]?.content[0]).toEqual({ type: "text", text: "one" });
+    expect(body.messages[1]?.tool_call_id).toBe("c2");
+    expect(body.messages[1]?.content[0]).toEqual({ type: "text", text: "two" });
+  });
+
   test("a tool call is emitted as tool_calls with stringified arguments", () => {
     const body = buildTraeChatBody(
       "gpt-5.5",
