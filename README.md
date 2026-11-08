@@ -9,28 +9,19 @@
 
 Cartethyia gives AI clients one stable, OpenAI and Anthropic-compatible endpoint. Behind it, the gateway handles the operational work: provider-aware translation, account selection, health-aware failover, quota and cooldown enforcement, usage accounting, telemetry, and optional proxy pools.
 
+Cartethyia is more than a router. Routers move bytes; Cartethyia runs a system — it watches your accounts, feels when one gets tired, and quietly routes around it before you ever notice. It lives between you and the models you trust: one stable, OpenAI and Anthropic-compatible endpoint, with every provider's dialect spoken for you.
+
 Configure provider accounts once, issue an API key, and point OpenCode, Kilo, Droid, Cline, Claude Code, Codex, ZCode, or any compatible client at Cartethyia. The client keeps its native protocol; Cartethyia normalizes the request, selects a viable route, dispatches upstream, and returns the response in the contract the client expects.
 
 Built with Bun, TypeScript, Elysia, embedded SQLite or external PostgreSQL, and optional Redis coordination.
 
 > **Repository availability**
 >
-> The original repository (`risunCode/Cartethyia`) was hidden from public view
-> by GitHub after automated star activity looked like vote manipulation rather
-> than real interest — the project itself is unaffected, and this was not a
-> code, security, or licensing issue. The project moved to a reachable
-> primary.
->
-> Reachable primaries, all carrying the same history and releases:
->
 > - **GitHub:** <https://github.com/risunCodex/Cartethyia>
-> - **GitLab:** <https://gitlab.com/risuncode/cartethyia>
 > - **npm:** <https://www.npmjs.com/package/cartethyia>
 >
-> Stars and forks are appreciated on the GitHub primary where they can
-> actually be counted. The dashboard and console point at this primary; the
-> hidden original is kept linked in `dashboard/src/lib/links.ts` as the
-> historical alt so a reader who still has access to it is not stranded.
+> The dashboard and console point at the GitHub primary. Stars and forks are
+> appreciated there — they are the only ones that count.
 
 ## <img src="https://api.iconify.design/lucide/download.svg?color=%238b949e" width="20" height="20" alt=""> Installation
 
@@ -42,10 +33,9 @@ cartethyia setup
 carte
 ```
 
-Install it **globally**. A local `npm install cartethyia` puts `cartethyia` and
-`carte` in `./node_modules/.bin/`, which is not on your `PATH` — the commands
-will not be found. Either install globally, or run a local one through
-`npx cartethyia`.
+Install it **globally**. A local install drops `cartethyia`/`carte` into
+`./node_modules/.bin/` — not on your `PATH`, so the commands won't be found.
+Use `npx cartethyia` for a local run.
 
 Update and remove:
 
@@ -71,9 +61,8 @@ npm uninstall -g cartethyia # uninstall
 | `cartethyia admin reset-lockout --all` | Unlock every locked console account |
 | `cartethyia telemetry reconcile --apply` / `--verify` | Reconcile telemetry state |
 
-Full install guide, modes, Docker, VPS, systemd, and the one-shot script:
-[the installation guide](documentation/installation.md). To remove it:
-`npm uninstall -g cartethyia`.
+Full guide (modes, Docker, VPS, systemd, one-shot script):
+[installation](documentation/installation.md).
 
 ## <img src="https://api.iconify.design/lucide/sparkles.svg?color=%238b949e" width="20" height="20" alt=""> What it actually does
 
@@ -87,8 +76,8 @@ Full install guide, modes, Docker, VPS, systemd, and the one-shot script:
   sent, what Cartethyia translated, what the provider returned, and what the
   client got.
 
-Full list, with the custom-built capabilities and how they differ from plain
-forwarders: [Why Cartethyia](documentation/why-cartethyia.md).
+The full capability list, and how it differs from plain forwarders:
+[Why Cartethyia](documentation/why-cartethyia.md).
 
 ## <img src="https://api.iconify.design/lucide/image.svg?color=%238b949e" width="20" height="20" alt=""> Showcase
 
@@ -133,43 +122,31 @@ and change routing without restarting anything.
 | `/v1/audio/speech`         | Text to speech                            |
 
 
-Generation routes take an opaque body and let the provider's own adapter shape
-it, so what a given model accepts is whatever that provider accepts. Images are
-served by Gemini, Antigravity, Codex, and the Buddy family. Video is narrower:
-among bundled providers only CodeBuddy declares it, via
-`seedance-2.5`, submitted as an async task the adapter polls to completion
-rather than returning a clip inline. A custom provider is not restricted to
-those: any upstream you point it at can serve either route, and the remote's
-own error is what comes back if it does not.
+Generation routes take an opaque body the provider's own adapter shapes —
+whatever a model accepts is what it gets. Images: Gemini, Antigravity, Codex,
+Buddy family. Video: CodeBuddy only (`seedance-2.5`, async task polled to
+completion).
 
-Embeddings and both audio routes are **passthrough**: the gateway routes them,
-applies admission and accounting, and forwards the body untouched. No bundled
-adapter implements them — there is no wire here to translate — so they are
-useful against a compatible upstream you configure yourself, and a model row
-carrying the matching service kind is all that is needed.
+Embeddings and both audio routes are **passthrough**: admission + accounting,
+body forwarded untouched. No bundled adapter implements them — wire them to a
+compatible upstream yourself; a model row with the matching service kind is all
+that's needed.
 
 A **custom** provider gets *every* service kind automatically, including these
-three: it has no manifest row narrowing it, and you chose its base URL. The
-upstream still decides what it actually answers — pointing one at a host that
-does not speak a surface gets that host's own error, not a gateway refusal.
-
-The route picks the wire. After that, routing, admission, retry, and accounting
-are the same.
+three — it has no manifest row narrowing it. The upstream still decides what it
+answers; a surface it doesn't speak returns its own error, not a gateway refusal.
 
 ## <img src="https://api.iconify.design/lucide/layers.svg?color=%238b949e" width="20" height="20" alt=""> Lite or Full
 
 Same app either way. Lite is not a cut-down edition.
-
 
 |          | Pick it when                                                                       |
 | -------- | ---------------------------------------------------------------------------------- |
 | **Lite** | One person, one machine, or you just want it running                               |
 | **Full** | Several people, a VPS, or the process is busy enough that SQLite is the bottleneck |
 
-
-Docker Compose defaults to Full. A local `.env` defaults to Lite. When Lite
-gets tight, export a JSON backup and restore it into Full. You do not rebuild
-the config.
+Docker Compose defaults to Full; a local `.env` defaults to Lite. When Lite
+gets tight, export a JSON backup and restore it into Full — no config rebuild.
 
 Details: [Database modes and configuration](documentation/installation.md#database-modes-and-configuration).
 
@@ -190,18 +167,11 @@ bun run dashboard:test
 bun run dashboard:dev     # dashboard dev server
 ```
 
-The default test scope runs in parallel with at most `min(CPU cores, 4)`
-workers so the suite does not pin every core; set `CARTETHYIA_TEST_JOBS` to
-override (e.g. `CARTETHYIA_TEST_JOBS=2 bun run test`).
-
-Backend suites live in `test/`, mirroring `src/`; dashboard suites live in
-`dashboard/test/`. `bun run test:backend` runs the default backend scope and
-also covers `test/cli/` (CLI/installer). The heavier installer lifecycle and
-Docker contracts live under `test/integration/` — the Docker contract suite
-runs in the default backend scope too, and the full integration scope runs on
-request with `bun run test:integration`. Full-mode suites need
-`CARTETHYIA_TEST_DATABASE_URL` set (see `documentation/installation.md`); the
-suite never touches the runtime `DATABASE_URL`.
+Tests run in parallel (`CARTETHYIA_TEST_JOBS` overrides the default
+`min(CPU cores, 4)`). Backend suites in `test/` mirror `src/`; dashboard suites
+in `dashboard/test/`. `test:backend` also covers `test/cli/`; the heavier
+installer/Docker contracts live in `test/integration/`. Full-mode suites need
+`CARTETHYIA_TEST_DATABASE_URL` — never the runtime `DATABASE_URL`.
 
 ## <img src="https://api.iconify.design/lucide/scale.svg?color=%238b949e" width="20" height="20" alt=""> License
 

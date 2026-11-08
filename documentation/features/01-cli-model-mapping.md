@@ -27,7 +27,7 @@ Claude → non-Claude remap would otherwise rewrite a caller that happened to na
 security boundary: a client that forges the header looks like Claude Code.
 
 The two gates are evaluated together in `ProxyRequestPreparer.prepare`
-(`src/transport/request/preparer.ts:108`), which then resolves the target with
+(`src/transport/request/preparer.ts:360`), which then resolves the target with
 `authorization.cliMappingOwnerId ?? authorization.id`. That fallback is how a
 share child inherits its parent's mapping bucket: the child authenticates under
 its own id but reads the parent's routes.
@@ -63,7 +63,7 @@ CLI aliases are merged *after* ordinary aliases, so within one bucket a CLI row
 wins for the names it covers. `cliMappingSourceKeys()` expands a Claude-family
 alias into the slot names the tool actually sends.
 
-Name normalization in `normalizeAliasKey` (`src/transport/routing/router.ts:89`)
+Name normalization in `normalizeAliasKey` (`src/transport/routing/router.ts:114`)
 makes a full model id honor the same mapping as the short slot: a trailing
 `[...]` variant is stripped first (`claude-opus-5[1m]` → `claude-opus-5`), then
 the family-slot fallback takes `claude-opus-5` → `opus`. Both only fire when the

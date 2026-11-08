@@ -194,6 +194,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   `CARTETHYIA_QODER_UMID_MINI`, and related docs/config are removed.
 
 ### Fixed
+- **Recover is now offered for any account with a recorded failure category,
+  not only those parked in an account-wide cooldown.** The quota-check path
+  can stamp `rate_limit_transient` without moving status/`cooldownUntil`, so
+  a rate-limited account previously rendered "Rate limited" with no way to
+  clear it. `AccountRow` and the health dialog now show Recover whenever
+  `lastErrorCategory` is set (except `auth_invalidated`, which needs a
+  re-login).
 - **Console probes now carry Perch's required system prompt in the compiled
   binary.** `PERCH_SAFFRON_SYSTEM_PROMPT` used to be read from
   `saffron-system-prompt.txt` via `readFileSync(import.meta.dir)`; the

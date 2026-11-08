@@ -36,12 +36,10 @@ from nothing:
 - **Runtime: Bun.** One process, TypeScript executed directly, no build step
   between source and run. The tray app, the CLI, and the server are the same
   runtime.
-- **HTTP layer: Elysia.** Chosen instead of Next.js for the console and API.
-  Next.js carries a React server runtime and a bundler footprint that costs
-  hundreds of megabytes of resident memory before it serves a request; a gateway
-  that should sit quietly in a tray cannot spend that. Elysia is a plain HTTP
-  layer over Bun's server, so the console is a static React bundle served by the
-  same process that proxies traffic.
+- **HTTP layer: Elysia.** Chosen instead of Next.js for the console and API:
+  a plain HTTP layer over Bun's server, so the console is a static React bundle
+  served by the same process that proxies traffic — no React server runtime,
+  no bundler memory footprint.
 - **Data: embedded SQLite or PostgreSQL, Redis optional.** Start with no
   database server; move up without rebuilding. The PostgreSQL baseline is
   canonical and the SQLite DDL is generated from it, so both backends carry the
@@ -98,6 +96,14 @@ These are implemented here from scratch, shaped by operating this gateway — no
 - **Buddy media generation.** Images and submit/poll video tasks through Buddy
   providers, including the undocumented polling contract — see
   [Buddy media generation](features/07-buddy-media-generation.md).
+- **Buddy CLI identity.** Device-token identity and per-account binding for
+  the Buddy family — see [Buddy CLI identity](features/06-buddy-cli-identity.md).
+- **Cursor provider.** The Run protocol adapter, entitlement, and quota — see
+  [Cursor provider](features/08-cursor-provider.md).
+- **Wire dialects.** How a request is translated per provider dialect — see
+  [Wire dialects](features/09-wire-dialects.md).
+- **Thinking-effort ladder.** Effort-level translation across providers — see
+  [Thinking effort ladder](features/10-thinking-effort-ladder.md).
 - **Built-in remote debugging.** Pull a recorded request off a running instance
   and replay it until one field flips the status. That method is how the
   OpenCode free-tier gate was solved.
@@ -128,3 +134,5 @@ telemetry, and the console API — is this project's own.
 
 - [Installation](installation.md) — install and choose a database mode.
 - [Project README](../README.md) — product overview and installation entrypoint.
+- [Feature docs](features/) — CLI mapping, routing, pools, quota, share keys.
+- [Reference](reference/) — configuration, errors, providers, deployment.

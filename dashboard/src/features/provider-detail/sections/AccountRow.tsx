@@ -191,7 +191,17 @@ export function AccountRow({
   // button must appear whenever any per-model backoff is in force — not only
   // when the account-wide status/cooldown says so.
   const hasActiveModelCooldowns = activeModelCooldowns(account) !== undefined;
-  const isRecoverable = account.status === "cooldown" || hasActiveCooldown || hasActiveModelCooldowns;
+  // An account carrying a recorded failure category is recoverable even when
+  // it is not in an account-wide cooldown: the quota-check path can stamp
+  // `rate_limit_transient` without moving status/cooldownUntil, and a stale
+  // category would otherwise render "Rate limited" with no way to clear it.
+  // `auth_invalidated` is the one category recover cannot fix (a re-login is
+  // required), so it stays excluded.
+  const hasRecoverableError =
+    typeof account.lastErrorCategory === "string" &&
+    account.lastErrorCategory.length > 0 &&
+    account.lastErrorCategory !== "auth_invalidated";
+  const isRecoverable = account.status === "cooldown" || hasActiveCooldown || hasActiveModelCooldowns || hasRecoverableError;
   const [showHistory, setShowHistory] = useState(false);
   const [showPoolHistory, setShowPoolHistory] = useState(false);
   const [editKeyOpen, setEditKeyOpen] = useState(false);

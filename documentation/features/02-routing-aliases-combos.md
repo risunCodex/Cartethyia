@@ -27,7 +27,7 @@ is a real write.
 
 ## Resolution
 
-Everything runs in `resolveAlias` (`src/transport/routing/router.ts:152`) against
+Everything runs in `resolveAlias` (`src/transport/routing/router.ts:177`) against
 the merged alias map, and every step is bounded:
 
 1. **Thinking suffix is stripped first**, in `ProxyRequestPreparer`
@@ -36,7 +36,7 @@ the merged alias map, and every step is bounded:
    matches on the name — otherwise alias resolution, the allowlist, the prefix
    check, and routing all see a name that matches nothing, and alias resolution
    swallows its own failure into a silent miss.
-2. **`normalizeAliasKey`** (`router.ts:89`) makes a full model id honor the same
+2. **`normalizeAliasKey`** (`router.ts:114`) makes a full model id honor the same
    mapping as the short name. A trailing `[...]` variant is stripped
    (`claude-opus-5[1m]` → `claude-opus-5`), then the family-slot fallback takes
    `claude-opus-5` → `opus`. Both only fire when the full name has no mapping of

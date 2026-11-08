@@ -32,9 +32,17 @@ export interface AccountHealthSummary {
   readonly jwtIssuer?: string | undefined;
 }
 
-/** Recovery is offered for the one transient state the backend can recover. */
-function isRecoverable(status: string): boolean {
-  return status === "cooldown";
+/**
+ * Recovery is offered for a transient state the backend can clear: an
+ * account-wide cooldown, or any recorded failure category except
+ * `auth_invalidated` (which needs a re-login, not a recover). A rate-limited
+ * account whose quota-check stamped `lastErrorCategory` without moving the
+ * account status still needs the button.
+ */
+function isRecoverable(status: string, errorCategory?: string): boolean {
+  if (status === "cooldown") return true;
+  if (errorCategory === undefined || errorCategory.length === 0) return false;
+  return errorCategory !== "auth_invalidated";
 }
 
 function statusTone(status: string): "ok" | "disabled" | "warn" {
@@ -110,7 +118,7 @@ export function HealthEventsModal({
               </p>
             ) : null}
           </div>
-          {isRecoverable(status) ? (
+          {isRecoverable(status, errorCategory) ? (
             <Button
               size="sm"
               variant="secondary"
