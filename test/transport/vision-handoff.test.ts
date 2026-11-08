@@ -217,6 +217,9 @@ dbDescribe("vision handoff", () => {
     const mainCall = mainAdapter.dispatches[mainAdapter.dispatches.length - 1]!;
     const olderTurn = mainCall.request.messages[0]!;
     expect(olderTurn.content.some((part) => part.kind === "image")).toBe(false);
+    // Option E: the older image is not silently deleted — a marker tells the
+    // main model something was there.
+    expect(olderTurn.content.some((part) => part.kind === "text" && part.text === "[image omitted]")).toBe(true);
     expect(olderTurn.content.some((part) => part.kind === "text" && part.text === "[image]")).toBe(false);
     const activeTurn = mainCall.request.messages[2]!;
     expect(activeTurn.content.some((part) => part.kind === "image")).toBe(false);

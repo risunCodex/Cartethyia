@@ -1,7 +1,8 @@
 # Proposal — Vision handoff context preservation (zero-loss paths)
 
-Status: proposed — not yet implemented
-Date: 2026-11-06
+Status: partially implemented — Option E shipped (never delete images silently);
+Options A–D remain open recommendations.
+Date: 2026-11-06 (Option E implemented 2026-11-08)
 Scope: `src/transport/vision-handoff.ts`, `src/transport/request/preparer.ts`,
 routing/re-plan wiring, and optional transport improvements. Follow-up to
 `documentation/research/opencode/2026-11-02-vision-handoff-large-session.md`
@@ -58,9 +59,10 @@ This was introduced as the fix for the "broken on large sessions" report
 
 ### 2.3 Secondary risks observed
 
-- **Silent image removal:** older image-carrying turns (before the active
-  turn) have their images filtered out with no marker. The main model does not
-  even know something was there.
+- **Silent image removal (fixed, 2026-11-08):** older image-carrying turns
+  (before the active turn) had their images filtered out with no marker; the
+  main model did not even know something was there. `replaceImagePartsWithText`
+  now substitutes a `[image omitted]` marker instead, so the loss is visible.
 - **Perspective mismatch:** the trailing history the vision model sees (bounded
   by its context) is not necessarily the history the main model receives
   (possibly condense-truncated). The description can reference context the main
@@ -124,6 +126,11 @@ least knows something was there.
 
 - **Pros:** very cheap; eliminates invisible loss.
 - **Cons:** does not restore content; only makes loss visible.
+- **Status (2026-11-08): implemented.** `replaceImagePartsWithText` emits
+  `[image omitted]` for dropped older images; covered by
+  `test/transport/vision-handoff.test.ts` ("older image-carrying history turns
+  are dropped … but trailing context is carried"). All vision-handoff tests
+  pass (4666 backend tests, 0 failures).
 
 ## 5. Recommendation
 
@@ -131,8 +138,9 @@ least knows something was there.
   image-heavy sessions to a verified vision-capable main model, and fix the
   transport path so giant sessions do not need truncation.
 - **Safety net:** **C** — try full, condense only on failure.
-- **Cheap hygiene:** **E** — never delete images silently; and if summarization
-  is ever introduced, **D** is the natural upgrade over dropping.
+- **Cheap hygiene:** **E** — never delete images silently; **implemented
+  2026-11-08**. If summarization is ever introduced, **D** is the natural
+  upgrade over dropping.
 
 ## 6. Implementation sketch (for a future session)
 
@@ -143,8 +151,9 @@ least knows something was there.
    supports Option B.
 3. Implement Option C in `preparer.ts`: on `502`/`ECONNRESET` from the
    upstream attempt, re-plan with `condenseHandoffRequest` applied.
-4. Implement Option E in `replaceImagePartsWithText`: emit `[image omitted]`
-   for dropped older images.
+4. ~~Implement Option E in `replaceImagePartsWithText`: emit `[image omitted]`
+   for dropped older images.~~ **Done 2026-11-08** — `preparer.ts` flatMaps
+   dropped image parts to `{ kind: "text", text: "[image omitted]" }`.
 5. Extend `test/transport/vision-handoff*.test.ts` to cover: full-context
-   path on large-but-not-failing sessions, condense-only-on-failure, and the
-   omitted-image marker.
+   path on large-but-not-failing sessions and condense-only-on-failure (the
+   omitted-image marker is already covered).

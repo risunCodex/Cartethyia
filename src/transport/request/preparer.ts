@@ -80,7 +80,17 @@ function replaceImagePartsWithText(
     }
     const hasImage = message.content.some(isImageOrPlaceholderPart);
     if (!hasImage) return message;
-    return { ...message, content: message.content.filter((part) => !isImageOrPlaceholderPart(part)) };
+    // Never delete images silently (proposal Option E): replace a dropped
+    // older image with a marker so the main model at least knows something
+    // was there, instead of the loss being invisible.
+    return {
+      ...message,
+      content: message.content.flatMap((part) =>
+        isImageOrPlaceholderPart(part)
+          ? [{ kind: "text" as const, text: "[image omitted]" }]
+          : [part],
+      ),
+    };
   });
   const unchangedMessages = nextMessages.every(
     (message, i) => message === request.messages[i],
