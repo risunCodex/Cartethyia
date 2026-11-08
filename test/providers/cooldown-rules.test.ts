@@ -203,4 +203,79 @@ describe("recordAccountFailure tier-rule precedence", () => {
     expect(deadline - Date.now()).toBeGreaterThan(2.9 * 60 * 60 * 1000);
     expect(deadline - Date.now()).toBeLessThanOrEqual(3 * 60 * 60 * 1000);
   });
+
+  test("Vertex/Antigravity 429 states a reset in the body — 24h provider-stated, not 15m fallback", async () => {
+    const accountId = await insertTraeAccount(null);
+    // Exact upstream body captured 2026-11-08 (Antigravity/Vertex Claude route):
+    // the reset lives in `details[]` (ErrorInfo.metadata.quotaResetDelay /
+    // quotaResetTimeStamp, RetryInfo.retryDelay) and in the prose message.
+    const raw = JSON.stringify({
+      error: {
+        code: 429,
+        message:
+          "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 165h46m45s.",
+        status: "RESOURCE_EXHAUSTED",
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            reason: "QUOTA_EXHAUSTED",
+            domain: "cloudcode-pa.googleapis.com",
+            metadata: {
+              uiMessage: "true",
+              model: "claude-sonnet-4-6",
+              quotaResetDelay: "165h46m45.017558959s",
+              quotaResetTimeStamp: "2026-11-15T12:12:39Z",
+            },
+          },
+          {
+            "@type": "type.googleapis.com/google.rpc.RetryInfo",
+            retryDelay: "596805.017558959s",
+          },
+        ],
+      },
+    });
+    const classification = await recordAccountFailure(db!, accountId, new Error(raw), {
+      origin: "upstream",
+      scope: "provider",
+      providerId: "antigravity",
+      statusCode: 429,
+      providerCode: "rate_limited",
+      modelId: "claude-sonnet-4-6",
+    });
+    expect(classification?.providerStated).toBe(true);
+    const row = await rowOf(accountId);
+    const cooldowns = row.modelCooldowns as Record<string, string>;
+    const deadline = Date.parse(cooldowns["claude-sonnet-4-6"] ?? "");
+    // The provider-stated window is capped at the 24h maximum — far above the
+    // 15-minute fallback that previously ignored the body entirely.
+    expect(deadline - Date.now()).toBeGreaterThan(DAY - 60_000);
+    expect(deadline - Date.now()).toBeLessThanOrEqual(DAY);
+  });
+
+  test("Vertex/Antigravity 429 without a stated reset stays the 15m fallback", async () => {
+    const accountId = await insertTraeAccount(null);
+    // Exact upstream body captured 2026-11-09 (Antigravity/Vertex Gemini route):
+    // "Resource has been exhausted (e.g. check quota)." names no window.
+    const raw = JSON.stringify({
+      error: {
+        code: 429,
+        message: "Resource has been exhausted (e.g. check quota).",
+        status: "RESOURCE_EXHAUSTED",
+      },
+    });
+    const classification = await recordAccountFailure(db!, accountId, new Error(raw), {
+      origin: "upstream",
+      scope: "provider",
+      providerId: "antigravity",
+      statusCode: 429,
+      providerCode: "rate_limited",
+      modelId: "gemini-3.8-flash",
+    });
+    expect(classification?.providerStated).toBe(false);
+    const row = await rowOf(accountId);
+    const cooldowns = row.modelCooldowns as Record<string, string>;
+    const deadline = Date.parse(cooldowns["gemini-3.8-flash"] ?? "");
+    expect(deadline - Date.now()).toBeGreaterThan(14 * MINUTE);
+    expect(deadline - Date.now()).toBeLessThanOrEqual(15 * MINUTE);
+  });
 });

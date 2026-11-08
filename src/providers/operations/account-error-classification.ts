@@ -488,6 +488,19 @@ function tryParseUpstreamBody(text: string): unknown {
   }
 }
 
+/** Reads `error.message` from a parsed upstream body object. */
+function nestedErrorMessage(body: unknown): string {
+  if (typeof body !== "object" || body === null) return "";
+  const record = body as Record<string, unknown>;
+  if (typeof record["message"] === "string") return record["message"];
+  const error = record["error"];
+  if (typeof error === "object" && error !== null) {
+    const message = (error as Record<string, unknown>)["message"];
+    if (typeof message === "string") return message;
+  }
+  return "";
+}
+
 /**
  * Reads a reset window the upstream stated in structured fields.
  *
@@ -501,13 +514,26 @@ function tryParseUpstreamBody(text: string): unknown {
  * (`resets_at`, seconds or milliseconds) and a relative delay
  * (`resets_in_seconds`). The later of the two wins, since they are the same
  * claim computed at slightly different instants.
+ *
+ * Structured Google rpc error details are read too — Vertex/Antigravity returns
+ * the reset inside `details[]` as `ErrorInfo.metadata.quotaResetDelay` /
+ * `quotaResetTimeStamp` and `RetryInfo.retryDelay` (a Go duration like
+ * `596805.017558959s`). Without this a "Resets in 165h46m45s" refusal cooled
+ * for the 15-minute fallback and re-entered rotation hours before it could
+ * serve. The prose `message` is parsed through `parseProviderResetDuration` as
+ * a last resort, because several providers state the window only there.
  */
 function parseUpstreamBodyReset(body: unknown): number | null {
   if (typeof body !== "object" || body === null) return null;
   const record = body as Record<string, unknown>;
   // Some providers nest under `error`, some return it at the top level.
-  const candidates = [record, (record["error"] as Record<string, unknown> | undefined) ?? undefined];
+  const errorRecord = (record["error"] as Record<string, unknown> | undefined) ?? undefined;
+  const candidates = [record, errorRecord];
   let best: number | null = null;
+  const consider = (delay: number | null | undefined): void => {
+    if (typeof delay !== "number" || !Number.isFinite(delay) || delay <= 0) return;
+    best = best === null ? delay : Math.max(best, delay);
+  };
   for (const candidate of candidates) {
     if (typeof candidate !== "object" || candidate === null) continue;
     const now = Date.now();
@@ -518,8 +544,7 @@ function parseUpstreamBodyReset(body: unknown): number | null {
       // milliseconds ~13, and the two are four orders of magnitude apart — so
       // the smaller is scaled up rather than guessed from a threshold date.
       const epochMs = absolute < 1e11 ? absolute * 1000 : absolute;
-      const delay = epochMs - now;
-      if (delay > 0) best = best === null ? delay : Math.max(best, delay);
+      consider(epochMs - now);
     }
 
     const relative =
@@ -527,17 +552,67 @@ function parseUpstreamBodyReset(body: unknown): number | null {
       candidate["reset_in_seconds"] ??
       candidate["retry_after_seconds"];
     if (typeof relative === "number" && Number.isFinite(relative) && relative > 0) {
-      const delay = relative * 1000;
-      best = best === null ? delay : Math.max(best, delay);
+      consider(relative * 1000);
     }
 
     const minutes = candidate["limit_window_minutes"] ?? candidate["reset_in_minutes"];
     if (typeof minutes === "number" && Number.isFinite(minutes) && minutes > 0) {
-      const delay = minutes * 60_000;
-      best = best === null ? delay : Math.max(best, delay);
+      consider(minutes * 60_000);
+    }
+
+    // The body's own prose (both top-level and nested under `error`): providers
+    // that state the window only in the message ("Resets in 165h46m45s") are
+    // honored rather than cooled for the 15-minute fallback.
+    const prose = candidate["message"];
+    if (typeof prose === "string" && prose.length > 0) {
+      consider(parseProviderResetDuration(prose));
+    }
+  }
+
+  // Google rpc `details[]` (Vertex/Antigravity error frames): `ErrorInfo`
+  // metadata carries the reset delay/timestamp, `RetryInfo` carries the retry
+  // delay directly.
+  const details = errorRecord?.["details"];
+  if (Array.isArray(details)) {
+    for (const detail of details) {
+      if (typeof detail !== "object" || detail === null) continue;
+      const entry = detail as Record<string, unknown>;
+      const type = typeof entry["@type"] === "string" ? entry["@type"] : "";
+      if (type.includes("google.rpc.ErrorInfo")) {
+        const metadata = entry["metadata"] as Record<string, unknown> | undefined;
+        const delay = metadata?.["quotaResetDelay"] ?? metadata?.["quotaResetDelaySeconds"];
+        consider(parseGoDuration(delay));
+        const stamp =
+          metadata?.["quotaResetTimeStamp"] ?? metadata?.["quotaResetTimestamp"];
+        if (typeof stamp === "string" && stamp.length > 0) {
+          const t = new Date(stamp).getTime();
+          if (Number.isFinite(t)) consider(t - Date.now());
+        }
+      }
+      if (type.includes("google.rpc.RetryInfo")) {
+        consider(parseGoDuration(entry["retryDelay"]));
+      }
+      // Some providers put the retry delay on the detail without a type.
+      consider(parseGoDuration(entry["retryDelay"]));
     }
   }
   return best === null ? null : Math.min(MAX_UPSTREAM_STATED_COOLDOWN_MS, Math.round(best));
+}
+
+/** Parses a Go duration string (`596805.017558959s`, `1h30m0s`) to ms. */
+function parseGoDuration(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim().replace(/\s+/g, "");
+  if (!/^(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$/.test(text)) {
+    return null;
+  }
+  const match = /^(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$/.exec(text);
+  if (!match) return null;
+  let ms = 0;
+  if (match[1] !== undefined) ms += Number(match[1]) * 3_600_000;
+  if (match[2] !== undefined) ms += Number(match[2]) * 60_000;
+  if (match[3] !== undefined) ms += Number(match[3]) * 1_000;
+  return ms > 0 ? ms : null;
 }
 
 
@@ -737,13 +812,27 @@ function accountErrorContext(error: unknown, options?: AccountFailureEvidence): 
   const headerCooldown =
     options?.retryAfterMs ??
     parseUpstreamBackoff({ get: getHeader });
-  const messageCooldown = parseProviderResetDuration(message);
   const rawUpstreamResponse =
     origin === "upstream" &&
     error instanceof GatewayError &&
     typeof error.details.raw === "string"
       ? error.details.raw
       : undefined;
+  // The surface `message` may be a generic placeholder ("Provider returned HTTP
+  // 429.") even when the upstream body states a reset window. Fall through to
+  // the raw body's prose when the surface message names none, so a
+  // "Resets in 165h46m45s" refusal is honored instead of cooling for the
+  // 15-minute fallback.
+  const messageCooldown =
+    parseProviderResetDuration(message) ??
+    (rawUpstreamResponse === undefined
+      ? null
+      : parseProviderResetDuration(rawUpstreamResponse)) ??
+    (options?.upstreamBody === undefined
+      ? null
+      : typeof options.upstreamBody === "string"
+        ? parseProviderResetDuration(options.upstreamBody)
+        : parseProviderResetDuration(nestedErrorMessage(options.upstreamBody)));
   // The body's own fields, when they can be reached. Checked alongside the
   // header and the prose rather than instead of them: a provider may state the
   // window in any of the three, and the longest honest statement wins.
