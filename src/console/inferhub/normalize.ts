@@ -234,6 +234,9 @@ export function normalizeCatalogModel(
     minAskOut: tiersOut[0]?.price ?? null,
     maxAskIn: tiersIn.at(-1)?.price ?? null,
     maxAskOut: tiersOut.at(-1)?.price ?? null,
+    // Computed by the route layer before sending; starts null in internal models.
+    capacityPriceIn: null,
+    capacityPriceOut: null,
     providersLive,
     // Not carried by the catalog; merged from `/api/market` by the store.
     lastRate: null,

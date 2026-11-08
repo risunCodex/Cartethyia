@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
+import { resolvePackagePath } from "../../src/config/package-paths";
 import { probeListenPort, blockedPortMessage, startupFailureMessage } from "../../scripts/cli/port";
 import { gatewayExecutable, startGateway } from "../../scripts/cli/gateway";
 import { install } from "../../scripts/install/install";
@@ -67,7 +68,7 @@ test("a TypeScript gateway override launches through Bun with the real package r
   const executable = await gatewayExecutable("src/main.ts");
   expect(executable[0]).toBe(process.execPath);
   expect(executable[1]).toBe("run");
-  expect(executable[2]).toBe(resolve(process.cwd(), "src/main.ts"));
+  expect(executable[2]).toBe(resolvePackagePath("src", "main.ts"));
   expect(Bun.file(executable[2]!).exists()).resolves.toBe(true);
 });
 

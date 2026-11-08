@@ -11,7 +11,7 @@ import { type ShareLinkStore, type ShareLinkSummary } from "../../persistence/st
 import { API_KEY_MODES, API_KEY_CONCURRENCY_SCOPES, type ApiKeyMode, type ApiKeyModelAccessMode, type ShareLinkKind } from "../../persistence/schema";
 import { isValidTenantKeyScope, type AccessScope } from "../../security/access-control";
 import { normalizeClientRouterId } from "../../security/client-router-fingerprint";
-import type { ShareActivityPort } from "../share/share-usage";
+import type { ShareActivityPort, SharedKeySummary } from "../share/share-usage";
 import { ConsoleDomainError } from "../shared/errors";
 import { pickDefined } from "../shared/object";
 import type { ConsoleAccessResolver } from "../auth/access";
@@ -35,6 +35,17 @@ export type {
   SharedKeySummary,
   SharedKeyActivityDetail,
 } from "../share/share-usage";
+
+/** Paged response of the share-child list endpoint. */
+export interface SharedKeyPage {
+  readonly rows: readonly SharedKeySummary[];
+  readonly total: number;
+  readonly active: number;
+  readonly revoked: number;
+  /** Family-wide lifetime tokens consumed, independent of the page. */
+  readonly consumed: number;
+}
+
 /** How a share template's concurrency cap applies to its recipients. */
 export type ConcurrencyScope = (typeof API_KEY_CONCURRENCY_SCOPES)[number];
 

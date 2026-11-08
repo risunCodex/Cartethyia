@@ -4,7 +4,7 @@ import type {
   PromptMode,
   PromptSetting,
   TenantSystemPrompts,
-} from "../../../src/console/system-prompt/contracts";
+} from "../data/contracts";
 import { queryKeys } from "../data/query-keys";
 import { querySignal } from "../data/assert";
 import { CACHE, DASHBOARD_QUERY_OPTIONS } from "../data/query-policy";

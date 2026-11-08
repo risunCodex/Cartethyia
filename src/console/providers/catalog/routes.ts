@@ -44,6 +44,7 @@ const compatibilityProfileSchema = t.Object({
       }),
     ),
   ),
+  service_kinds: t.Optional(t.Array(literalUnion(SERVICE_KINDS))),
   streaming_usage_mode: t.Optional(t.Union([t.Literal("include_usage"), t.Literal("none")])),
   structured_output: t.Optional(
     t.Object({

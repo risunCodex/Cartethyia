@@ -1,30 +1,21 @@
 import {
-  Activity,
   Bell,
   Clock,
   ChevronDown,
   Cpu,
-  FlaskConical,
   Globe,
-  LayoutDashboard,
   LogOut,
   MemoryStick,
   Menu,
   Monitor,
   Moon,
-  Network,
   Rocket,
   Server,
-  Settings as SettingsIcon,
-  ShieldAlert,
-  ScrollText,
   Sun,
-  Terminal,
   Timer,
   X,
   type LucideIcon,
 } from "lucide-react";
-import { Palette } from "lucide-react";
 import { HeaderExtras } from "../../components/HeaderExtras";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -45,123 +36,7 @@ import { formatUptime } from "../../lib/format/numbers";
 import { GITHUB_RELEASES_URL } from "../../lib/links";
 import { isNewerRelease } from "../../data/contracts";
 import type { SessionUser } from "../../data/contracts";
-
-interface NavItemDef {
-  readonly label: string;
-  readonly path?: string;
-  readonly icon: LucideIcon;
-  readonly badge?: string;
-  readonly disabled?: boolean;
-  readonly children?: readonly NavItemDef[];
-}
-
-interface NavGroupDef {
-  readonly label: string;
-  readonly items: readonly NavItemDef[];
-}
-
-export const navigationGroups: readonly NavGroupDef[] = [
-  {
-    label: "Main",
-    items: [
-      { label: "Overview", path: "/", icon: LayoutDashboard },
-      { label: "Usage", path: "/usage", icon: Activity },
-      { label: "Providers", path: "/providers", icon: Server },
-      { label: "Model Lab", path: "/model-lab", icon: FlaskConical },
-    ],
-  },
-  {
-    label: "Control",
-    items: [
-      { label: "Combos & Routes", path: "/combos", icon: Cpu },
-      { label: "Quota Management", path: "/quota", icon: ShieldAlert },
-      { label: "Proxy & Requests", path: "/proxy", icon: Network },
-      { label: "CLI Tools", path: "/cli-tools", icon: Terminal },
-    ],
-  },
-  {
-    label: "Tools",
-    items: [
-      {
-        label: "Tools",
-        icon: Globe,
-        children: [],
-      },
-    ],
-  },
-  {
-    label: "System",
-    items: [
-      { label: "Customization", path: "/customization", icon: Palette },
-      { label: "Console Log", path: "/console-log", icon: ScrollText },
-      { label: "Settings", path: "/settings", icon: SettingsIcon },
-    ],
-  },
-];
-
-
-const titlesMap: Record<string, { title: string; sub: string; icon: LucideIcon }> = {
-  "/": { title: "Overview", sub: "Gateway health, capacity, and live metrics" , icon: LayoutDashboard },
-  "/usage": { title: "Usage & Metrics", sub: "Token economics, requests, and cost breakdown" , icon: Activity },
-  "/providers": { title: "Provider Catalog", sub: "Upstream credentials, models, and latency" , icon: Server },
-  "/combos": {
-    title: "Combos & Routing",
-    sub: "Failover policies, model aliases, and weighted routes",
-    icon: Cpu,
-  },
-  "/quota": { title: "Quota Management", sub: "Rate limits, leases, and tenant quotas" , icon: ShieldAlert },
-  "/proxy": {
-    title: "Proxy & Requests",
-    sub: "Network pools, SOCKS5/HTTP egress, and dispatch",
-    icon: Network,
-  },
-  "/customization": { title: "Customization", sub: "Background, transparency, and blur", icon: Palette },
-  "/model-lab": { title: "Model Lab", sub: "Chat a routed model without leaving the console", icon: FlaskConical },
-  "/console-log": { title: "Console Log", sub: "Live server logs and audit trail" , icon: ScrollText },
-  "/cli-tools": {
-    title: "CLI Tools",
-    sub: "Claude Code CLI, OpenCode, and local developer tool integrations",
-    icon: Terminal,
-  },
-  "/settings": {
-    title: "Settings",
-    sub: "Account security, runtime preferences, and state recovery",
-    icon: SettingsIcon,
-  },
-};
-
-const CONSOLE_FALLBACK = { title: "Console", sub: "Cartethyia AI Gateway Administration", icon: LayoutDashboard };
-
-/**
- * Resolves the topbar title/subtitle for a pathname.
- *
- * The two parameterized routes (`/providers/:providerId`, `/cli-tools/:toolId`)
- * carry their subject in the path, so a flat `titlesMap` lookup would drop them
- * onto the generic console fallback. They are matched by pattern instead.
- */
-function resolveRouteMeta(
-  pathname: string,
-  providers: readonly { readonly providerId: string; readonly displayName: string; readonly label?: string }[],
-): { title: string; sub: string; icon: LucideIcon } {
-  const providerMatch = /^\/providers\/([^/]+)\/?$/.exec(pathname);
-  if (providerMatch?.[1]) {
-    const provider = providers.find((candidate) => candidate.providerId === providerMatch[1]);
-    return {
-      title: provider?.label || provider?.displayName || providerMatch[1],
-      sub: "Routing, accounts, models, and health",
-      icon: Server,
-    };
-  }
-  const toolMatch = /^\/cli-tools\/([^/]+)\/?$/.exec(pathname);
-  if (toolMatch?.[1]) {
-    return {
-      title: "CLI Tool",
-      sub: `${toolMatch[1]} — mappings, endpoints, and downloadable config`,
-      icon: Terminal,
-    };
-  }
-  return titlesMap[pathname] ?? CONSOLE_FALLBACK;
-}
+import { navigationGroups, resolveRouteMeta, type NavGroupDef, type NavItemDef } from "./route-manifest";
 
 function useSafeSystemHealth() {
   try {
@@ -786,7 +661,8 @@ export function DashboardShell({
     streamUpdate?.version ?? releaseQuery.data?.tag_name?.replace(/^v/, "");
   const updateAvailable =
     streamUpdate !== undefined || isNewerRelease(localVersion, latestTag);
-  const providersQuery = useProviders();
+  const providerDetailActive = /^\/providers\/[^/]+\/?$/.test(location.pathname);
+  const providersQuery = useProviders(providerDetailActive);
   // Prompts once per release, not once per load: the point of showing it at all
   // is that an operator running an old version may never think to look. But a
   // dialog that returns on every navigation punishes the person who has already

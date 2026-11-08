@@ -1,8 +1,8 @@
 /**
- * Unified routing decision engine (proposal: routing/quota/health
- * unification). Gated by `CARTETHYIA_UNIFIED_ROUTING_DECISION=true`.
+ * Unified routing decision engine (routing/quota/health unification), now the
+ * canonical planner behavior.
  *
- * When enabled:
+ * It guarantees:
  * - known-exhausted quota (spent pooled credits, or all relevant independent
  *   windows spent) becomes a proactive exclusion before dispatch;
  * - unknown/unsupported/stale quota stays eligible but ranks below a known
@@ -11,13 +11,11 @@
  * - window matching stays model-aware: exhausting one model family must not
  *   block the sibling family.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { RoutingEngine } from "../../src/transport/routing/router";
 import type { RouteCandidate, RouteSnapshot } from "../../src/transport/routing/route-model";
 import type { ProviderQuotaWindow } from "../../src/providers/quota/quota-contracts";
 import { clearQuotaCacheForTests, setCachedQuota } from "../../src/providers/quota/cache";
-
-const ORIGINAL_FLAG = process.env.CARTETHYIA_UNIFIED_ROUTING_DECISION;
 
 function candidate(id: string, extra: Record<string, unknown> = {}): RouteCandidate {
   return {
@@ -73,20 +71,8 @@ async function plannedOrder(snapshot: RouteSnapshot, requested: string): Promise
   return plan.candidates.map((candidate) => candidate.provider_account_id ?? candidate.provider_id);
 }
 
-beforeAll(() => {
-  process.env.CARTETHYIA_UNIFIED_ROUTING_DECISION = "true";
-});
-
 beforeEach(() => {
   clearQuotaCacheForTests();
-});
-
-afterAll(() => {
-  if (ORIGINAL_FLAG === undefined) {
-    delete process.env.CARTETHYIA_UNIFIED_ROUTING_DECISION;
-  } else {
-    process.env.CARTETHYIA_UNIFIED_ROUTING_DECISION = ORIGINAL_FLAG;
-  }
 });
 
 describe("unified routing decision engine", () => {

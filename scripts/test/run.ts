@@ -21,8 +21,9 @@
  *   parallel run catches. Worker count is capped at 4 (or
  *   `CARTETHYIA_TEST_JOBS`) so the suite does not pin every core.
  *
- * `--scope` picks a tree: `backend` (`test/`), `dashboard` (`dashboard/test/`),
- * `scripts` (`test/cli/`), or `all`. Integration is a separate opt-in scope.
+ * `--scope` picks explicit path sets: `backend` (backend-only trees under
+ * `test/`), `dashboard` (`dashboard/test/`), `scripts` (`test/cli/`),
+ * `integration` (`test/integration/`), or `all`.
  * `--watch` re-runs on change. Anything else is forwarded to
  * `bun test`, so `bun run test -- --test-name-pattern admission` works.
  *
@@ -35,9 +36,10 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateCartethyiaEncryptionKey } from "../cli/env";
+import { generateCartethyiaEncryptionKey, readEnvFile } from "../cli/env";
+import { PACKAGE_ROOT } from "../../src/config/package-paths";
 
-const PROJECT_ROOT = join(import.meta.dir, "..", "..");
+const PROJECT_ROOT = PACKAGE_ROOT;
 const DASHBOARD_ROOT = join(PROJECT_ROOT, "dashboard");
 const BACKEND_TESTS = join(PROJECT_ROOT, "test");
 const INTEGRATION_TESTS = join(BACKEND_TESTS, "integration");
@@ -46,27 +48,10 @@ const SCRIPTS_TESTS = join(PROJECT_ROOT, "test", "cli");
 const DEFAULT_BACKEND_TESTS = readdirSync(BACKEND_TESTS)
   .filter((name) => name !== "cli" && name !== "integration")
   .map((name) => join(BACKEND_TESTS, name));
-DEFAULT_BACKEND_TESTS.push(join(INTEGRATION_TESTS, "docker-contract.test.ts"), SCRIPTS_TESTS);
 const sandboxRoot = mkdtempSync(join(tmpdir(), "cartethyia-test-run-"));
 
 const rawArgs = process.argv.slice(2);
 
-/**
- * Reads a dotenv file into the test environment. Explicit shell variables win.
- */
-function loadEnvFile(path: string): Record<string, string> {
-  if (!existsSync(path)) return {};
-  const values: Record<string, string> = {};
-  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
-    if (line.startsWith("#")) continue;
-    const separator = line.indexOf("=");
-    if (separator <= 0) continue;
-    const key = line.slice(0, separator).trim();
-    const value = line.slice(separator + 1).trim();
-    if (key) values[key] = value;
-  }
-  return values;
-}
 
 const scopeIndex = rawArgs.indexOf("--scope");
 const scope = scopeIndex >= 0 ? rawArgs[scopeIndex + 1] : "all";
@@ -84,7 +69,7 @@ const watch = passthrough.includes("--watch");
 const testArgs = passthrough.filter((arg) => arg !== "--watch");
 
 const sharedEnv = {
-  ...loadEnvFile(join(PROJECT_ROOT, ".env")),
+  ...(await readEnvFile(join(PROJECT_ROOT, ".env"))),
   ...process.env,
 };
 

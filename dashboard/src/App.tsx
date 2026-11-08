@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { DashboardShell } from "./apps/console/shell";
+import { CONSOLE_ROUTE_SPECS } from "./apps/console/route-manifest";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { lazyWithRetry } from "./lib/lazy-retry";
 import { consoleRequest, fetchSessionUser, setSessionTransitionListener } from "./data/api";
@@ -172,19 +173,36 @@ function ProtectedRoutes(): ReactNode {
           re-throws an error the nearest boundary did not commit, so the operator
           saw the error surface rendered inside itself. */}
       <Routes>
-        <Route path="/" element={<Overview />} />
-        <Route path="/usage" element={<Usage />} />
-        <Route path="/providers" element={<Providers />} />
-        <Route path="/providers/:providerId" element={<ProviderDetail />} />
-        <Route path="/combos" element={<Combos />} />
-        <Route path="/quota" element={<Quota />} />
-        <Route path="/proxy" element={<Proxy />} />
-        <Route path="/console-log" element={<ConsoleLogPage />} />
-        <Route path="/customization" element={<Customization />} />
-        <Route path="/model-lab" element={<Studio />} />
-        <Route path="/cli-tools" element={<CliTools />} />
-        <Route path="/cli-tools/:toolId" element={<CliToolDetail />} />
-        <Route path="/settings" element={<Settings />} />
+        {CONSOLE_ROUTE_SPECS.map((route) => {
+          switch (route.key) {
+            case "overview":
+              return <Route key={route.key} path={route.path} element={<Overview />} />;
+            case "usage":
+              return <Route key={route.key} path={route.path} element={<Usage />} />;
+            case "providers":
+              return <Route key={route.key} path={route.path} element={<Providers />} />;
+            case "provider-detail":
+              return <Route key={route.key} path={route.path} element={<ProviderDetail />} />;
+            case "combos":
+              return <Route key={route.key} path={route.path} element={<Combos />} />;
+            case "quota":
+              return <Route key={route.key} path={route.path} element={<Quota />} />;
+            case "proxy":
+              return <Route key={route.key} path={route.path} element={<Proxy />} />;
+            case "console-log":
+              return <Route key={route.key} path={route.path} element={<ConsoleLogPage />} />;
+            case "customization":
+              return <Route key={route.key} path={route.path} element={<Customization />} />;
+            case "model-lab":
+              return <Route key={route.key} path={route.path} element={<Studio />} />;
+            case "cli-tools":
+              return <Route key={route.key} path={route.path} element={<CliTools />} />;
+            case "cli-tool-detail":
+              return <Route key={route.key} path={route.path} element={<CliToolDetail />} />;
+            case "settings":
+              return <Route key={route.key} path={route.path} element={<Settings />} />;
+          }
+        })}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </DashboardShell>

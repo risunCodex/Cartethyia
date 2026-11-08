@@ -144,9 +144,8 @@ export type RoutedCandidate = RouteCandidate & {
    */
   lane?: "slow";
   /**
-   * Normalized quota/plan fact stamped at plan time by the unified routing
-   * engine (feature-flag gated). The decision engine reads this instead of
-   * re-deriving window state.
+   * Normalized quota/plan fact stamped at plan time by the routing decision
+   * engine. The decision engine reads this instead of re-deriving window state.
    */
   quota_fact?: NormalizedQuotaFact;
   /**
@@ -165,12 +164,6 @@ export type RoutedCandidate = RouteCandidate & {
    * Higher = quota about to expire unused, ranked first within a rank group.
    */
   drain_score?: number;
-  /**
-   * Session-id → provider-account stickiness, stamped at plan time. When the
-   * request carries a session id, this is the account that last served it
-   * within the warm window (or was pinned by the operator).
-   */
-  sticky_account_id?: string;
 };
 
 /**
@@ -348,8 +341,6 @@ export interface RouteSnapshot {
   readonly created_at: number;
   /** Optional per-provider routing preferences keyed by tenant. */
   readonly providerRouting?: ProviderRoutingMap;
-  /** Optional per-tenant pool selection strategy (absent = `least_loaded`). */
-  readonly poolRouting?: Readonly<Record<string, PoolRoutingSetting>>;
   /**
    * Tenants whose invoke switch is off, so `/v1/*` must be refused outright.
    *
@@ -757,9 +748,6 @@ export class InMemoryRouteSnapshotService implements RouteSnapshotService {
       ...(built.cli_aliases ? { cli_aliases: Object.freeze({ ...built.cli_aliases }) } : {}),
       combos: Object.freeze({ ...built.combos }),
       ...(providerRouting ? { providerRouting } : {}),
-      // Unfrozen copy: deepFreeze must reach the inner per-tenant settings —
-      // a pre-frozen record trips its is-frozen guard and skips recursion.
-      ...(built.poolRouting ? { poolRouting: { ...built.poolRouting } } : {}),
       created_at: built.created_at ?? Date.now(),
     });
     // A mutation during the build means this snapshot describes a catalog that

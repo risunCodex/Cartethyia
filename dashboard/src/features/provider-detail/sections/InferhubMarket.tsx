@@ -21,7 +21,8 @@ import { Select } from "../../../components/ui/select";
 import { Stack } from "../../../components/ui/stack";
 import { cn } from "../../../lib/classnames";
 import { consoleRequest } from "../../../data/api";
-import { useInferhubSummary, type InferhubModel, type InferhubSummary } from "../../../hooks/inferhub";
+import { useInferhubSummary } from "../../../hooks/inferhub";
+import type { InferhubModel, InferhubSummary } from "../../../data/contracts";
 
 function formatPrice(value: number | null): string {
   return value === null ? "—" : `$${value.toFixed(4)}`;

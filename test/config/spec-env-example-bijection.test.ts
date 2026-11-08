@@ -28,57 +28,14 @@
  */
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolvePackagePath } from "../../src/config/package-paths";
 import { CONFIG_SPEC, type ConfigEntry } from "../../src/config/spec";
+import {
+  ENV_EXAMPLE_ONLY_KEYS,
+  SPEC_ONLY_ENV_EXAMPLE_KEYS,
+} from "../../src/config/spec-metadata";
 
-/** Keys in CONFIG_SPEC that are deliberately absent from `.env.example`. */
-const SPEC_ONLY_KEYS: Readonly<Record<string, true>> = {
-  // Setup wizard writes this directly; sample would mislead a copy-paste.
-  CARTETHYIA_API_KEY: true,
-  // Opt-in diagnostics; sampling would nudge operators to enable them.
-  CARTETHYIA_FORCED_GC: true,
-  CARTETHYIA_RUNTIME_METRICS_INTERVAL_MS: true,
-  // Advanced knobs documented in `documentation/reference/configuration.md`.
-  CARTETHYIA_DISABLED_TASKS: true,
-  // Install-identity directory; only hosters who need a stable identity across
-  // restarts touch it, and the reference doc covers it.
-  CARTETHYIA_INSTALL_ID_DIR: true,
-
-  CARTETHYIA_OAUTH_CALLBACK_PORT: true,
-  // Provider-specific overrides. Readers live in `src/config/providers.ts`;
-  // every operator who needs one goes through the reference doc, and sampling
-  // them in `.env.example` would advertise flags the vast majority of
-  // installs do not care about.
-  CARTETHYIA_KIMI_OAUTH_HOST: true,
-  CARTETHYIA_KIMI_QUOTA_BASE_URL: true,
-  CARTETHYIA_GITHUB_ENTERPRISE_DOMAIN: true,
-  CARTETHYIA_OPENCODE_UNAVAILABLE_FREE: true,
-  // Telemetry retention baseline. Tenants override from the Settings panel;
-  // the deployment-level knob stays in CONFIG_SPEC but is doc-only.
-  CARTETHYIA_TELEMETRY_RETENTION_DAYS: true,
-  CARTETHYIA_TELEMETRY_PAYLOAD_MAX_BYTES: true,
-};
-
-/** Keys in `.env.example` that `CONFIG_SPEC` does not declare. */
-const ENV_EXAMPLE_ONLY_KEYS: Readonly<Record<string, true>> = {
-  // Read outside src/config/ by their domain modules.
-  CARTETHYIA_DB_MODE: true,
-  NODE_ENV: true,
-  LOG_LEVEL: true,
-  DATABASE_URL: true,
-  DATABASE_POOL_MAX: true,
-  DATABASE_POOL_IDLE_FLOOR: true,
-  REDIS_URL: true,
-  CARTETHYIA_DATA_DIR: true,
-  CARTETHYIA_TELEMETRY_PAYLOAD_DIR: true,
-  CARTETHYIA_CONFIG_DIR: true,
-  DASHBOARD_PORT: true,
-  VITE_BACKEND_URL: true,
-  // Read by scripts/test/run.ts (test-only runner knob), not src/config.
-  CARTETHYIA_TEST_JOBS: true,
-};
-
-const envExamplePath = resolve(process.cwd(), ".env.example");
+const envExamplePath = resolvePackagePath(".env.example");
 const envExampleText = readFileSync(envExamplePath, "utf8");
 
 /** Parse `KEY=value` lines in `.env.example`, honoring the commented samples. */
@@ -101,7 +58,7 @@ const specKeys = new Set(Object.keys(CONFIG_SPEC));
 
 test("every spec key is sampled in .env.example (modulo allowlist)", () => {
   const missing = [...specKeys].filter(
-    (key) => !envExampleKeys.has(key) && SPEC_ONLY_KEYS[key] !== true,
+    (key) => !envExampleKeys.has(key) && SPEC_ONLY_ENV_EXAMPLE_KEYS[key] !== true,
   );
   expect(missing).toEqual([]);
 });
@@ -116,7 +73,7 @@ test("every .env.example key is declared in the spec (modulo allowlist)", () => 
 test("the allowlists only name keys that actually exist on their side", () => {
   // A spec-only allowlist entry that is also in .env.example (or vice versa)
   // means the key moved and the allowlist went stale. Catch here, not later.
-  const stale_spec_only = Object.keys(SPEC_ONLY_KEYS).filter(
+  const stale_spec_only = Object.keys(SPEC_ONLY_ENV_EXAMPLE_KEYS).filter(
     (key) => !specKeys.has(key) || envExampleKeys.has(key),
   );
   const stale_env_only = Object.keys(ENV_EXAMPLE_ONLY_KEYS).filter(

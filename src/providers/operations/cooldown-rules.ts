@@ -28,24 +28,19 @@ type ProviderRules = Record<string, CategoryRules>;
 const DAY = 24 * 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
 
+const TRAE_RULES: CategoryRules = {
+  model_unreachable: {
+    free: DAY,
+    paid: 15 * MINUTE,
+    pro: 15 * MINUTE,
+  },
+};
+
 const COOLDOWN_RULES: ProviderRules = {
-  trae: {
-    model_unreachable: {
-      free: DAY,
-      paid: 15 * MINUTE,
-      pro: 15 * MINUTE,
-    },
-  },
+  trae: TRAE_RULES,
   // Trae CN is the same upstream product under a second realm id — the
-  // classifier already treats the two identically (trae-region-unavailable,
-  // trae-quota-exhausted), so the rules mirror.
-  traecn: {
-    model_unreachable: {
-      free: DAY,
-      paid: 15 * MINUTE,
-      pro: 15 * MINUTE,
-    },
-  },
+  // classifier already treats the two identically, so the rules alias.
+  traecn: TRAE_RULES,
 };
 
 /**

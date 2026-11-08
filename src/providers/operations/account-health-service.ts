@@ -725,44 +725,50 @@ export async function applyAccountVerdict(
     readonly createdAt?: Date;
   },
 ): Promise<boolean> {
-  const rows = await client
-    .select({
-      status: providerAccounts.status,
-      cooldownUntil: providerAccounts.cooldownUntil,
-    })
-    .from(providerAccounts)
-    .where(eq(providerAccounts.id, verdict.accountId))
-    .limit(1);
-  const row = rows[0];
-  if (!row) return false;
-  if (verdict.preserveOperatorDisable === true) {
-    const isOperatorDisable = row.status === "disabled" && row.cooldownUntil == null;
-    if (isOperatorDisable) return false;
-  }
-  const now = verdict.createdAt ?? new Date();
-  await client
-    .update(providerAccounts)
-    .set({
-      status: verdict.status,
-      lastError: (verdict.reason ?? "Account failed").slice(0, 500),
-      lastErrorCategory: verdict.category ?? "check_failed",
-      lastErrorAt: now,
-      ...(verdict.cooldownUntil === undefined
-        ? {}
-        : { cooldownUntil: verdict.cooldownUntil }),
-    })
-    .where(eq(providerAccounts.id, verdict.accountId));
-  await writeHealthEvent(client, {
-    entityKind: "account",
-    accountId: verdict.accountId,
-    fromStatus: verdict.fromStatus ?? (row.status as "active" | "cooldown" | "disabled" | null),
-    toStatus: verdict.status,
-    reason: verdict.reason,
-    errorCategory: verdict.category,
-    modelId: verdict.modelId ?? null,
-    createdAt: now,
-  });
-  return true;
+  return withTransaction(
+    client,
+    async (tx) => {
+      const rows = await tx
+        .select({
+          status: providerAccounts.status,
+          cooldownUntil: providerAccounts.cooldownUntil,
+        })
+        .from(providerAccounts)
+        .where(eq(providerAccounts.id, verdict.accountId))
+        .limit(1);
+      const row = rows[0];
+      if (!row) return false;
+      if (verdict.preserveOperatorDisable === true) {
+        const isOperatorDisable = row.status === "disabled" && row.cooldownUntil == null;
+        if (isOperatorDisable) return false;
+      }
+      const now = verdict.createdAt ?? new Date();
+      await tx
+        .update(providerAccounts)
+        .set({
+          status: verdict.status,
+          lastError: (verdict.reason ?? "Account failed").slice(0, 500),
+          lastErrorCategory: verdict.category ?? "check_failed",
+          lastErrorAt: now,
+          ...(verdict.cooldownUntil === undefined
+            ? {}
+            : { cooldownUntil: verdict.cooldownUntil }),
+        })
+        .where(eq(providerAccounts.id, verdict.accountId));
+      await writeHealthEvent(tx, {
+        entityKind: "account",
+        accountId: verdict.accountId,
+        fromStatus: verdict.fromStatus ?? (row.status as "active" | "cooldown" | "disabled" | null),
+        toStatus: verdict.status,
+        reason: verdict.reason,
+        errorCategory: verdict.category,
+        modelId: verdict.modelId ?? null,
+        createdAt: now,
+      });
+      return true;
+    },
+    false,
+  );
 }
 
 export async function reportAttemptOutcome(

@@ -13,7 +13,7 @@ import { mount } from "../helpers/render";
 import { registerDom } from "../helpers/dom";
 import { queryKeys } from "../../src/data/query-keys";
 import { InferhubMarket } from "../../src/features/provider-detail/sections/InferhubMarket";
-import type { InferhubSummary } from "../../src/hooks/inferhub";
+import type { InferhubSummary } from "../../src/data/contracts";
 
 registerDom();
 
@@ -23,29 +23,46 @@ const SUMMARY: InferhubSummary = {
       id: "cc/claude-opus-4-6",
       prefix: "cc",
       family: "Claude Code",
+      modelId: "claude-opus-4-6",
       aliasKey: "claude-opus-4-6",
       providersLive: 36,
       minAskIn: 5,
       minAskOut: 25,
+      maxAskIn: 10,
+      maxAskOut: 50,
       capacityPriceIn: 5,
       capacityPriceOut: 25,
       officialIn: 10,
       officialOut: 50,
       lastRate: null,
+      cacheHitRate: null,
       routable: true,
       tiersIn: [{ price: 5, discountPct: 50, avail: 36 }],
       tiersOut: [{ price: 25, discountPct: 50, avail: 36 }],
       systemPromptNote: null,
       health: { successRatePct: 99, avgTtftMs: null, avgTps: null, familyState: null },
+      capabilities: {
+        contextWindow: null,
+        maxOutputTokens: null,
+        modalities: [],
+        outputModality: "text",
+        reasoningLevels: [],
+        supportsCache: false,
+      },
     },
   ],
   providers: [
     {
       prefix: "cc",
       family: "Claude Code",
+      activeProviders: 36,
       familyState: "operational",
       availability24hPct: 99.8,
       availability7dPct: 98.1,
+      p50DurationMs: null,
+      p95DurationMs: null,
+      avgTtftMs1h: null,
+      avgTps1h: null,
     },
   ],
   pricingConfig: null,
@@ -87,8 +104,8 @@ const MULTI_SUMMARY: InferhubSummary = {
     modelOn("ag", "Antigravity", "ag/claude-opus-4-6", 9),
   ],
   providers: [
-    { prefix: "zai", family: "Z.AI", familyState: "operational", availability24hPct: 99, availability7dPct: 97 },
-    { prefix: "ag", family: "Antigravity", familyState: "operational", availability24hPct: 99.9, availability7dPct: 98 },
+    { prefix: "zai", family: "Z.AI", activeProviders: 10, familyState: "operational", availability24hPct: 99, availability7dPct: 97, p50DurationMs: null, p95DurationMs: null, avgTtftMs1h: null, avgTps1h: null },
+    { prefix: "ag", family: "Antigravity", activeProviders: 10, familyState: "operational", availability24hPct: 99.9, availability7dPct: 98, p50DurationMs: null, p95DurationMs: null, avgTtftMs1h: null, avgTps1h: null },
   ],
 };
 const MULTI_SEED = [{ key: queryKeys.inferhub.summary, data: MULTI_SUMMARY }];

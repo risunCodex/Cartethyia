@@ -151,6 +151,7 @@ export async function recordAccountCheck(
   db: CartethyiaDatabase,
   accountId: string,
   outcome: { ok: boolean; error?: string | null; category?: string | null },
+  snapshotInvalidator?: { invalidate(): unknown },
 ): Promise<void> {
   if (outcome.ok) {
     // A successful quota refresh is the freshest evidence about the account's
@@ -179,7 +180,7 @@ export async function recordAccountCheck(
       account?.status === "cooldown" &&
       (account.lastErrorCategory === null || healableCategories.has(account.lastErrorCategory));
     if (healable) {
-      await db
+      const healed = await db
         .update(providerAccounts)
         .set({
           status: "active",
@@ -191,7 +192,9 @@ export async function recordAccountCheck(
           cooldownUntil: null,
           lastRecoveredAt: new Date(),
         })
-        .where(eq(providerAccounts.id, accountId));
+        .where(eq(providerAccounts.id, accountId))
+        .returning({ id: providerAccounts.id });
+      if (healed.length > 0) await snapshotInvalidator?.invalidate();
       return;
     }
     await db
@@ -237,7 +240,7 @@ export async function recordAccountCheck(
     // Converge on the health application seam (proposal §3.5): quota refresh
     // parking is a producer into `applyAccountVerdict`, not a separate state
     // machine.
-    await applyAccountVerdict(db, {
+    const parked = await applyAccountVerdict(db, {
       accountId,
       status: "cooldown",
       reason: outcome.error ?? "Account check failed",
@@ -245,6 +248,7 @@ export async function recordAccountCheck(
       cooldownUntil: new Date(Date.now() + QUOTA_FAILURE_COOLDOWN_MS),
       fromStatus: "active",
     });
+    if (parked) await snapshotInvalidator?.invalidate();
   }
 }
 
@@ -517,10 +521,15 @@ async function runQuotaRefresh(
     }
   }
   try {
-    await recordAccountCheck(deps.db, target.accountId, {
-      ok: quota.error === null,
-      ...(quota.error === null ? {} : { error: quota.error, category: failure ?? "quota_fetch_failed" }),
-    });
+    await recordAccountCheck(
+      deps.db,
+      target.accountId,
+      {
+        ok: quota.error === null,
+        ...(quota.error === null ? {} : { error: quota.error, category: failure ?? "quota_fetch_failed" }),
+      },
+      deps.snapshotInvalidator,
+    );
   } catch (error) {
     // A stamp failure must not lose the freshly fetched quota.
     log.warn(`[quota] failed to stamp check outcome for account=${target.accountId}`, error as Error);

@@ -129,7 +129,7 @@ into the next.
 | `backup/` | `/console/api/backup/*` | Export, import, delete-all. Recognized legacy exports are converted without guessing provider ids |
 | `studio/` | — (no console domain) | Model Lab is dashboard-only and talks straight to the data plane (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/search`, `/v1/images/generations`, `/v1/videos/generations`) with a console-issued key |
 | `quota/` | `/console/api/quota/*`, `/console/api/accounts/*`, `/console/api/global/accounts/*` | Quota windows and refresh; cached readings also feed the per-account [Usage floor](../../../documentation/features/04-usage-floor.md) routing policy |
-| `observability/` | `/console/api/system/*` (including `/system/performance`), `/system/usage/requests/:requestId/download` (JSON attachment of the full detail incl. payloads), `/telemetry/*`, `/logs/*`, `/live/*` | File-log reads, log ring SSE, live in-flight gauge, pool health streams |
+| `observability/` | `/console/api/system/*`, `/system/usage/requests/:requestId/download` (JSON attachment of the full detail incl. payloads), `/telemetry/*`, `/logs/*`, `/live/*` | File-log reads, log ring SSE, live in-flight gauge, pool health streams |
 | `audit/` | `/console/api/audit` | Cursor-paginated `admin_audit_log` read, `platform:admin` only |
 | `updates/` | `/console/api/updates/release`, `/updates/status`, `/updates/apply` | GitHub latest-release read (no scope); install status file read; apply + graceful drain (`dashboard:write`, 409 `update_in_progress` while a fresh install is running, drains via `ShutdownCoordinator("update")`) |
 | `inferhub/` | `/console/api/inferhub/*` | Summary, models, compare, providers, status, CSV export; writes are `platform:admin`-guarded |

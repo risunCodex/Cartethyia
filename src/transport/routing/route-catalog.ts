@@ -86,7 +86,6 @@ export function cliMappingSourceKeys(toolId: string, sourceModel: string): reado
 
 const HARD_COOLDOWN_CATEGORIES: Readonly<Record<string, true>> = {
   quota_exhausted: true,
-  policy_blocked: true,
   auth_invalidated: true,
 };
 
@@ -528,7 +527,8 @@ class RouteCatalogRepository {
     }
 
     // Per-tenant pool selection strategy; an absent row reads as the
-    // `least_loaded` default at selection time.
+    // `least_loaded` default at selection time. The local map resolves
+    // per-candidate during the build; it is NOT stored in RouteSnapshot.
     const poolRouting: Record<string, PoolRoutingSetting> = {};
     for (const row of poolSettingRows) {
       if (tenantId === undefined || row.tenantId === tenantId) {
@@ -995,7 +995,6 @@ class RouteCatalogRepository {
       cli_aliases: cliAliases,
       combos,
       ...(routingMap ? { providerRouting: routingMap } : {}),
-      ...(Object.keys(poolRouting).length > 0 ? { poolRouting } : {}),
       ...(invokeDisabledTenants.size > 0 ? { invokeDisabledTenants } : {}),
     };
   }

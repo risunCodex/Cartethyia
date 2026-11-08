@@ -26,10 +26,12 @@ import {
   useRestoreBackup,
 } from "../hooks/backup";
 import { Dialog } from "./ui/dialog";
-import type { BackupImportReport } from "../data/contracts";
-import type { RestoreWarning } from "../../../src/console/backup/contracts";
-import type { BackupInspection } from "../../../src/console/backup/service";
-import type { DeleteAllScope } from "../../../src/console/backup/store";
+import type {
+  BackupImportReport,
+  BackupInspection,
+  DeleteAllScope,
+  RestoreWarning,
+} from "../data/contracts";
 
 /**
  * Backup and restore, as a Settings panel.

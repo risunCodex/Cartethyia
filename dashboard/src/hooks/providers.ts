@@ -35,14 +35,15 @@ export interface ModelMetadataPayload {
  * invalidate this key, so a longer stale window can never strand a
  * create/update/delete. `staleTime` is left at the shared default.
  */
-export function useProviders() {
+export function useProviders(enabled = true) {
   return useQuery({
     queryKey: queryKeys.providers.all,
     queryFn: (context) =>
       consoleRequest<unknown>("/providers", { signal: querySignal(context) }).then(assertProviders),
     ...DASHBOARD_QUERY_OPTIONS,
+    enabled,
     gcTime: 600_000,
-    refetchInterval: POLL.catalog,
+    refetchInterval: enabled ? POLL.catalog : false,
   });
 }
 

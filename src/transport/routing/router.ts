@@ -25,7 +25,7 @@ import {
   type RequiredCapability,
 } from "../../protocol/translation/capabilities";
 import { planAllowsCandidate } from "./plan-gate";
-import { unifiedRoutingDecisionEnabled, accountReservePct, routingStickyWarmMs, routingStickyMaxSessions } from "../../config/routing";
+import { accountReservePct, routingStickyWarmMs, routingStickyMaxSessions } from "../../config/routing";
 import type { NormalizedQuotaFact } from "./route-model";
 import { InMemoryAdmissionController, admissionKey } from "./admission";
 import { ReservationManager } from "./reservations";
@@ -165,6 +165,11 @@ function allWindowsExhausted(windows: readonly ProviderQuotaWindow[]): boolean {
       } else if (remaining === null && window.used === null) {
         // No evidence of either remaining or used — not provably spent.
         return false;
+      } else if (remaining !== null && limit === null) {
+        // Remaining=0 but no limit: cannot prove the pool is exhausted without
+        // knowing the total. This is the "credit window without a known ceiling"
+        // shape — treat as unknown, not exhausted.
+        return false;
       }
     } else {
       const remainingPercent = window.remainingPercent;
@@ -179,16 +184,14 @@ function allWindowsExhausted(windows: readonly ProviderQuotaWindow[]): boolean {
 }
 
 /**
- * Derives the normalized quota fact the unified decision engine evaluates.
- * Returns `null` when the engine is disabled (legacy permissive behavior).
+ * Derives the normalized quota fact the routing decision engine evaluates.
  */
 function normalizeQuotaFact(
   candidate: RoutedCandidate,
   cacheEntry: { readonly fetchedAt: string | null; readonly quota: ProviderQuotaResult } | null | undefined,
   snapshotEntry: { readonly fetchedAt: string; readonly quota: ProviderQuotaResult } | null | undefined,
   now = Date.now(),
-): NormalizedQuotaFact | null {
-  if (!unifiedRoutingDecisionEnabled()) return null;
+): NormalizedQuotaFact {
   const windows = candidate.quota_windows;
   const source =
     cacheEntry?.quota !== undefined
@@ -694,7 +697,7 @@ export class RoutingEngine {
         : { in_reserve: isInReserve(quotaWindows ?? candidate.quota_windows, accountReservePct()) }),
     };
     const fact = normalizeQuotaFact(stamped, cached, stored);
-    return { ...stamped, ...(fact === null ? {} : { quota_fact: fact }) };
+    return { ...stamped, quota_fact: fact };
   }
 
   /**

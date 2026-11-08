@@ -36,12 +36,12 @@
 import { Client } from "pg";
 import { randomUUID } from "node:crypto";
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
-import { readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { resolveMigrationsFolder, migrationFileIds } from "../../src/persistence/migrate";
 import * as schemaModule from "../../src/persistence/schema";
 
-const PROJECT_ROOT = resolve(import.meta.dir, "..", "..");
-const MIGRATIONS_DIR = join(PROJECT_ROOT, "migrations", "full-postgres");
+const MIGRATIONS_DIR = resolveMigrationsFolder();
 
 const driftDatabaseUrl = process.env["CARTETHYIA_DRIFT_DATABASE_URL"]?.trim();
 if (!driftDatabaseUrl) {
@@ -55,12 +55,6 @@ const ADMIN_URL: string = driftDatabaseUrl;
 
 const SCRATCH_PREFIX = "cartethyia_drift_";
 
-/** Migration files, in the order `migrate.ts` applies them. */
-function migrationFiles(): readonly string[] {
-  return readdirSync(MIGRATIONS_DIR)
-    .filter((file) => /^\d{4}_.+\.sql$/.test(file))
-    .sort();
-}
 
 async function createDatabase(name: string): Promise<void> {
   const admin = new Client({ connectionString: ADMIN_URL });
@@ -163,7 +157,7 @@ function normalizeName(definition: string): string {
 }
 
 async function main(): Promise<number> {
-  const files = migrationFiles();
+  const files = migrationFileIds(MIGRATIONS_DIR);
   if (files.length === 0) {
     console.error(`[migration-drift] no migrations found in ${MIGRATIONS_DIR}`);
     return 1;

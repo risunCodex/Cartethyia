@@ -10,11 +10,7 @@ throws at the boundary instead of being coerced. Adding a knob means adding
 a row there plus a `.env.example` line.
 
 Variables read outside the spec are therefore **not** listed below:
-`CARTETHYIA_DB_MODE`, `DATABASE_URL`, `REDIS_URL`, `NODE_ENV`, `LOG_LEVEL`,
-`CARTETHYIA_TELEMETRY_PAYLOAD_DIR`, `CARTETHYIA_DATA_DIR`,
-`CARTETHYIA_INSTALL_ID_DIR`, `CARTETHYIA_CONFIG_DIR`,
-`CARTETHYIA_TEST_DATABASE_URL`, and the Compose-only
-`CARTETHYIA_REDIS_URL`. See `documentation/installation.md`.
+`CARTETHYIA_DB_MODE`, `DATABASE_URL`, `REDIS_URL`, `NODE_ENV`, `LOG_LEVEL`, `DATABASE_POOL_MAX`, `DATABASE_POOL_IDLE_FLOOR`, `CARTETHYIA_DATA_DIR`, `CARTETHYIA_TELEMETRY_PAYLOAD_DIR`, `CARTETHYIA_CONFIG_DIR`, `DASHBOARD_PORT`, `VITE_BACKEND_URL`, `CARTETHYIA_TEST_DATABASE_URL`, `CARTETHYIA_TEST_JOBS`, `CARTETHYIA_REDIS_URL`. See `documentation/installation.md`.
 
 ## HTTP listener and dashboard runtime
 
@@ -118,7 +114,6 @@ Variables read outside the spec are therefore **not** listed below:
 | `CARTETHYIA_RUNTIME_METRICS_INTERVAL_MS` | integer | 30000 | 1000 – 300000 |
 | `CARTETHYIA_DISABLED_TASKS` | comma-separated list | unset | — |
 | `CARTETHYIA_USAGE_INPUT_MODE` | string | `inclusive` | — |
-| `CARTETHYIA_UNIFIED_ROUTING_DECISION` | string | `false` | — |
 | `CARTETHYIA_POOL_PROVIDER_RATE_LIMIT_COOLDOWN_MS` | integer | 3600000 | 0 – 86400000 |
 | `CARTETHYIA_ROUTING_STICKY_WARM_MS` | integer | 300000 | 0 – 86400000 |
 | `CARTETHYIA_ROUTING_STICKY_MAX_SESSIONS` | integer | 256 | 1 – 10000 |

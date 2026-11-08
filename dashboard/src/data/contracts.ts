@@ -1,5 +1,11 @@
 import type { healthStatus } from "../../../src/persistence/schema";
 import type { SessionStatusResponse } from "../../../src/console/auth/session";
+import type {
+  ModelMarket as _InferhubModel,
+  ProviderMarket as _InferhubProvider,
+  PricingConfig as _InferhubPricingConfig,
+  SnapshotMeta as _InferhubMeta,
+} from "../../../src/console/inferhub/types";
 // Remote-support tunnel types come from the backend contract module, which is
 // free of Elysia and Node imports and therefore safe in the browser bundle.
 export type {
@@ -168,10 +174,9 @@ export type {
   ConcurrencyScope,
   BanApiKeyRequest,
   ShareKeyResponse,
+  SharedKeyPage,
 } from "../../../src/console/api-keys/contracts";
 export { API_KEY_BAN_REASONS } from "../../../src/console/api-keys/ban-constants";
-
-import type { SharedKeySummary } from "../../../src/console/share/share-usage";
 
 export type {
   SharedKeySummary,
@@ -180,26 +185,19 @@ export type {
   SharedKeyRequestEvent,
 } from "../../../src/console/share/share-usage";
 
-/** Paged response of the share-child list endpoint. */
-export interface SharedKeyPage {
-  readonly rows: readonly SharedKeySummary[];
-  readonly total: number;
-  readonly active: number;
-  readonly revoked: number;
-  /** Family-wide lifetime tokens consumed, independent of the page. */
-  readonly consumed: number;
-}
-
 export type { SharedChildSortColumn } from "../../../src/persistence/stores/api-key-store";
 
 // Backup export returns the payload itself (it is the file the operator
 // downloads); import returns the per-table counts plus the router-import
 // report, so the page can show what was skipped and why.
-export type { BackupPayload as BackupExportResponse } from "../../../src/console/backup/contracts";
+export type {
+  BackupPayload as BackupExportResponse,
+  BackupInspection,
+  DeleteAllScope,
+  RestoreWarning,
+} from "../../../src/console/backup/contracts";
 export type { ImportResult as BackupImportResponse } from "../../../src/console/backup/service";
 export type { ImportReport as BackupImportReport } from "../../../src/console/backup/nine-router";
-import type { DeleteAllScope } from "../../../src/console/backup/store";
-export type { DeleteAllScope };
 export type { AuditEntry, AuditListPage } from "../../../src/console/audit/contracts";
 
 export type {
@@ -221,6 +219,40 @@ export type {
 } from "../../../src/console/data-management/contracts";
 
 export type { RedisBackend } from "../../../src/persistence/redis";
+
+export {
+  isWrappedInjectionProvider,
+  EMPTY_TENANT_SYSTEM_PROMPTS,
+} from "../../../src/console/system-prompt/contracts";
+export type {
+  PromptMode,
+  PromptSetting,
+  ScopePromptRef,
+  SystemPromptPreset,
+  TenantSystemPrompts,
+} from "../../../src/console/system-prompt/contracts";
+
+export type {
+  FamilyState as InferhubFamilyState,
+  ModelHealth as InferhubModelHealth,
+  ModelMarket as InferhubModel,
+  PricingConfig as InferhubPricingConfig,
+  ProviderMarket as InferhubProvider,
+  SnapshotMeta as InferhubMeta,
+  Tier as InferhubTier,
+} from "../../../src/console/inferhub/types";
+export type InferhubError = "no_config_key" | "upstream_unavailable" | null;
+export interface InferhubSummary {
+  readonly models: readonly _InferhubModel[];
+  readonly providers: readonly _InferhubProvider[];
+  readonly pricingConfig: _InferhubPricingConfig | null;
+  readonly meta: _InferhubMeta;
+  readonly error: InferhubError;
+}
+export interface InferhubModelsResponse {
+  readonly models: readonly _InferhubModel[];
+  readonly meta: _InferhubMeta;
+}
 
 export type HealthStatus = (typeof healthStatus.enumValues)[number];
 

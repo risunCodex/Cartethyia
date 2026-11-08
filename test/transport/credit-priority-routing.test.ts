@@ -66,7 +66,7 @@ test("accounts with remaining credit are ordered before unknown-quota accounts",
   expect(order).toEqual(["a-credit", "a-unknown"]);
 });
 
-test("a known-zero credit account is ordered after unknown, never excluded", async () => {
+test("a known-zero credit account without a limit is available and ranks as FRESH_KNOWN", async () => {
   const order = await plannedOrder(
     snapshot([
       candidate("a-zero", { quota_windows: [creditWindow(0)] }),
@@ -74,9 +74,9 @@ test("a known-zero credit account is ordered after unknown, never excluded", asy
     ]),
     "qoder-model",
   );
-  // Quota is not an eligibility exclusion anymore: the zero-credit account is
-  // still routed, but credit priority puts the unknown (neutral) account first.
-  expect(order).toEqual(["a-unknown", "a-zero"]);
+  // remaining=0 without a limit: not provably exhausted → quotaState "available" → FRESH_KNOWN.
+  // A no-windows account is FRESH_UNKNOWN, so FRESH_KNOWN ranks first.
+  expect(order).toEqual(["a-zero", "a-unknown"]);
 });
 
 test("a free-tier model routes even when its own quota window is exhausted", async () => {
@@ -105,7 +105,7 @@ test("a free-tier model ignores the operator floor threshold entirely", async ()
   expect(order).toEqual(["a-above-floor-free", "a-exhausted-free"]);
 });
 
-test("a free-tier model routes to any account (no credit preference)", async () => {
+test("a free-tier model routes to any account; known-available ranks before unknown", async () => {
   const order = await plannedOrder(
     snapshot([
       candidate("a-unknown", { free_tier: true }),
@@ -113,8 +113,10 @@ test("a free-tier model routes to any account (no credit preference)", async () 
     ]),
     "qoder-model",
   );
-  // Credit would put a-credit first; a free model keeps the original order.
-  expect(order).toEqual(["a-unknown", "a-credit"]);
+  // Both are free-tier: credit priority is skipped within the same rank.
+  // But a-credit (FRESH_KNOWN, available) outranks a-unknown (FRESH_UNKNOWN),
+  // so it routes first regardless of original position.
+  expect(order).toEqual(["a-credit", "a-unknown"]);
 });
 
 test("credit only breaks ties inside a rank; slow-lane still orders after fresh", async () => {

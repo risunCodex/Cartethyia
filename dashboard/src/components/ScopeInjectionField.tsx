@@ -17,7 +17,7 @@ import type {
   PromptSetting,
   ScopePromptRef,
   SystemPromptPreset,
-} from "../../../src/console/system-prompt/contracts";
+} from "../data/contracts";
 
 const MODE_OPTIONS = [
   { value: "append", label: "Append" },

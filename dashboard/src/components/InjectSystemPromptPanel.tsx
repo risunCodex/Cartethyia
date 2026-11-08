@@ -20,9 +20,14 @@ import { useDialogDirty } from "../hooks/use-dialog-dirty";
 import { mergeBuiltinPresets, BUILTIN_PRESET_BY_ID } from "../data/builtin-prompts";
 import { toast } from "../lib/toast";
 import { getErrorMessage } from "../data/api";
-import { isWrappedInjectionProvider } from "../../../src/console/system-prompt/contracts";
-import type { PromptSetting, ScopePromptRef, SystemPromptPreset, TenantSystemPrompts } from "../../../src/console/system-prompt/contracts";
-import type { ProviderResponse } from "../data/contracts";
+import {
+  isWrappedInjectionProvider,
+  type PromptSetting,
+  type ScopePromptRef,
+  type SystemPromptPreset,
+  type TenantSystemPrompts,
+  type ProviderResponse,
+} from "../data/contracts";
 
 const EMPTY_STATE: TenantSystemPrompts = {
   global: null,

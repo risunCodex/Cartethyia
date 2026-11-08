@@ -221,18 +221,6 @@ export const CONFIG_SPEC = {
   CARTETHYIA_FALLBACK_RETRY_BASE_MS: { kind: "int", default: 100, min: 0, max: 60_000 },
   CARTETHYIA_FALLBACK_RETRY_CAP_MS: { kind: "int", default: 2_000, min: 0, max: 300_000 },
   CARTETHYIA_ROUTE_MAX_ATTEMPTS: { kind: "int", default: 8, min: 1, max: 64 },
-  /**
-   * Unified routing decision engine (routing/quota/health unification).
-   *
-   * Only the literal `true` enables it. When true, the routing engine
-   * evaluates a normalized quota/plan fact per candidate: known-exhausted or
-   * below-floor accounts are proactively excluded before dispatch (model-aware
-   * window matching), unknown quota is an explicit lower-rank state instead of
-   * implicit permissiveness, and the plan gate is a first-class reason. When
-   * false (default), legacy permissive behavior is preserved unchanged.
-   * Staged rollout switch — no one-shot unflagged cutover.
-   */
-  CARTETHYIA_UNIFIED_ROUTING_DECISION: { kind: "text", default: "false" },
 
   // Account/pool health cooldown delays. Each is the fallback used when the
   // upstream error states no explicit reset window; an upstream

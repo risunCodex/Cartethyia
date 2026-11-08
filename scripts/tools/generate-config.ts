@@ -18,6 +18,7 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CONFIG_SPEC } from "../../src/config/spec";
+import { CONFIG_REFERENCE_EXTERNAL_VARIABLES } from "../../src/config/spec-metadata";
 
 const projectRoot = resolve(import.meta.dir, "..", "..");
 const outputPath = resolve(projectRoot, "documentation", "reference", "configuration.md");
@@ -146,11 +147,7 @@ export function renderConfigReference(): string {
     "a row there plus a `.env.example` line.",
     "",
     "Variables read outside the spec are therefore **not** listed below:",
-    "`CARTETHYIA_DB_MODE`, `DATABASE_URL`, `REDIS_URL`, `NODE_ENV`, `LOG_LEVEL`,",
-    "`CARTETHYIA_TELEMETRY_PAYLOAD_DIR`, `CARTETHYIA_DATA_DIR`,",
-    "`CARTETHYIA_INSTALL_ID_DIR`, `CARTETHYIA_CONFIG_DIR`,",
-    "`CARTETHYIA_TEST_DATABASE_URL`, and the Compose-only",
-    "`CARTETHYIA_REDIS_URL`. See `documentation/installation.md`.",
+    `${CONFIG_REFERENCE_EXTERNAL_VARIABLES.map((key) => `\`${key}\``).join(", ")}. See \`documentation/installation.md\`.`,
     "",
   ];
 

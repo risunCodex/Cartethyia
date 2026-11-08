@@ -129,6 +129,8 @@ function model(overrides: Partial<ModelMarket> = {}): ModelMarket {
     minAskOut: 15,
     maxAskIn: 3,
     maxAskOut: 15,
+    capacityPriceIn: null,
+    capacityPriceOut: null,
     providersLive: 2,
     lastRate: null,
     cacheHitRate: null,

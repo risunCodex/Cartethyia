@@ -1,6 +1,5 @@
 import { Client } from "pg";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { resolveEnvPath, readEnvFile } from "../cli/env";
 
 /**
  * Verifies the disposable test database is reachable.
@@ -12,22 +11,7 @@ import { join } from "node:path";
  * refuses to fall back to `DATABASE_URL`: a check that silently validated the
  * developer's *working* database would be worse than no check.
  */
-const PROJECT_ROOT = join(import.meta.dir, "..", "..");
-const ENV_PATH = join(PROJECT_ROOT, ".env");
-
-function readLocalEnv(): Record<string, string> {
-  if (!existsSync(ENV_PATH)) return {};
-  const values: Record<string, string> = {};
-  for (const line of readFileSync(ENV_PATH, "utf8").split(/\r?\n/)) {
-    if (line.trimStart().startsWith("#")) continue;
-    const separator = line.indexOf("=");
-    if (separator <= 0) continue;
-    values[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
-  }
-  return values;
-}
-
-const fileEnv = readLocalEnv();
+const fileEnv = await readEnvFile(resolveEnvPath());
 const databaseUrl =
   process.env.CARTETHYIA_TEST_DATABASE_URL?.trim() || fileEnv.CARTETHYIA_TEST_DATABASE_URL;
 

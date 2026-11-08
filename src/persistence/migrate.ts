@@ -25,11 +25,14 @@ export function resolveMigrationsFolder(): string {
   return folder;
 }
 
-export function migrationFiles(folder: string): readonly string[] {
+export function migrationFileIds(folder: string): readonly string[] {
   return readdirSync(folder)
     .filter((file) => /^\d{4}_.+\.sql$/.test(file))
-    .sort()
-    .map((file) => resolve(folder, file));
+    .sort();
+}
+
+export function migrationFiles(folder: string): readonly string[] {
+  return migrationFileIds(folder).map((file) => resolve(folder, file));
 }
 
 export function migrationIdFor(file: string): string {

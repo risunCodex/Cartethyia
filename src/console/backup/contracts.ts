@@ -20,6 +20,8 @@
  * as sensitive as the database.
  */
 import { getTableColumns, getTableName, type Column, type Table } from "drizzle-orm";
+import type { BackupInspection } from "./service";
+import type { DeleteAllScope } from "./store";
 import { resolveMaxBodyBytes } from "../../config/runtime";
 import {
   apiKeys,
@@ -392,6 +394,8 @@ export function replaceModeOf(table: Table): "delete" | "upsert" {
 export type BackupSection = "config" | "telemetry";
 
 export const BACKUP_SECTIONS: readonly BackupSection[] = ["config", "telemetry"];
+
+export type { BackupInspection, DeleteAllScope };
 
 export interface BackupPayload {
   readonly app: typeof BACKUP_APP;

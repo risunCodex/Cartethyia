@@ -187,12 +187,6 @@ export type AccountErrorCategory =
   | "model_unreachable"
   | "auth_invalidated"
   /**
-   * Deprecated: an upstream ban. Kept so existing health rows keep rendering
-   * instead of showing a blank cause. No longer produced — see
-   * `policy_blocked_banned` and `policy_blocked_invalid_request`.
-   */
-  | "policy_blocked"
-  /**
    * The upstream banned this credential: a verdict on the account, e.g. buddy
    * `11140` "request illegal" with "Your account has been restricted due to
    * unusual activity". Cooldown cannot help — the account is not throttled, it

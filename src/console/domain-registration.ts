@@ -38,7 +38,6 @@ import { createAuditRoutes } from "./audit/routes";
 import { DrizzleAuditReadStore } from "./audit/store";
 import { createIpBanRoutes } from "./ip-bans/routes";
 import type { IpAbuseStore } from "../security/abuse";
-import { createPerformanceRoutes } from "./observability/performance";
 import { createUpdateRoutes } from "./updates/routes";
 import { createRemoteSupportRoutes } from "./remote-support/routes";
 import { createRemoteSupportService } from "./remote-support/service";
@@ -278,7 +277,6 @@ export function registerConsoleDomains(
     ...(ctx.stateStore ? { stateStore: ctx.stateStore } : {}),
   }));
   console.use(createLogRoutes({ accessResolver: ctx.accessResolver, auditSink: ctx.auditRecorder }));
-  console.use(createPerformanceRoutes({ accessResolver: ctx.accessResolver }));
   console.use(createUpdateRoutes({
     accessResolver: ctx.accessResolver,
     observabilityStore,

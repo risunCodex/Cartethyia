@@ -13,11 +13,11 @@
  */
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { CONFIG_SPEC } from "../../src/config/spec";
+import { resolvePackagePath } from "../../src/config/package-paths";
 import { renderConfigReference } from "../../scripts/tools/generate-config";
 
-const outputPath = resolve(process.cwd(), "documentation", "reference", "configuration.md");
+const outputPath = resolvePackagePath("documentation", "reference", "configuration.md");
 const committed = readFileSync(outputPath, "utf8");
 const rendered = renderConfigReference();
 

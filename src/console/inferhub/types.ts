@@ -61,6 +61,9 @@ export interface ModelMarket {
   readonly minAskOut: number | null;
   readonly maxAskIn: number | null;
   readonly maxAskOut: number | null;
+  /** Capacity-weighted price computed by the route layer; null when no tiers. */
+  readonly capacityPriceIn: number | null;
+  readonly capacityPriceOut: number | null;
   /** Zero means no live provider — listed, but never routed to. */
   readonly providersLive: number;
   readonly lastRate: number | null;
