@@ -56,9 +56,34 @@ replayed as history), so the upstream does not see the pending prompt twice.
 disable and the quota-refresh parking path both converge on
 `applyAccountVerdict` (status, last error, cooldown, health event, operator
 disable preserved).
+- **Cursor: held-Run idle TTL raised to 30 minutes.** A live Run now waits
+30 minutes (matching the oh-my-pi donor) for the client's next tool-result
+request before expiring, so a slow human-approved tool round no longer goes
+cold mid-approval and forces a full-conversation resend.
 - **Account error labels: `quota_unknown` and `plan_gate`.** Both are
 rendered as status text (`Quota unknown`, `Plan blocked`); `quota_unknown`
 is a retryable/eligible category, not an error pill.
+
+### Fixed
+
+- **Cursor: complete multi-round tool-result replays rebase instead of being
+refused.** A continuation request whose `call_cursor_*` results all have a
+matching tool call in the sent conversation (a full-transcript resend after
+a gateway restart or an expired Run) now rebases into a fresh Run, including
+conversations with several earlier tool rounds. Previously only a single
+trailing assistant/tool-result pair qualified, so multi-round transcripts
+were rejected with a 400 "no longer pending" error. A partial tail (a
+result whose tool call is not in the conversation) is still refused, now
+naming the missing call ids. Coverage: `test/providers/cursor-run-continuation.test.ts`.
+- **Copilot thinking no longer renders as dozens of tiny blocks.** The
+Messages encoders (streaming `MessagesStreamEncoder` and non-streaming
+`groupedBlocks`) split a `thinking` block on every reasoning-item identity
+change. Copilot streams one thought as many summary items, so a single
+thought painted many small blocks with spurious breaks. Blocks now split only
+on a strong boundary (a sentence ending before a capitalized continuation, or
+a Markdown block marker); weaker boundaries merge into the open block with a
+space. Coverage: `test/transport/surface/messages-stream-encoder.test.ts` and
+`test/transport/reasoning-summary-separator.test.ts`.
 
 ### Removed
 
@@ -66,6 +91,10 @@ is a retryable/eligible category, not an error pill.
 and `documentation/proposals/vision-handoff-context-preservation.md` were
 removed from the proposals directory (the vision-handoff proposal's Option E
 is now implemented; the audit was folded into its findings).
+- **Completed planning proposals removed:** `documentation/proposals/codebase-cleanup-optimization-campaign.md`,
+`documentation/proposals/proactive-quota-routing.md`, and the four part files
+under `documentation/proposals/parts/` were removed — the campaigns they
+describe are landed, so the proposals no longer document anything in flight.
 
 ## [2.7.9] - 2026-11-08
 
