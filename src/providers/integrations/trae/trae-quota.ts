@@ -317,6 +317,13 @@ function logTraeQuotaMiss(errors: readonly string[]): void {
   log.warn(`[quota] trae surfaces unavailable: ${errors.join("; ")}`);
 }
 
+/** Only this exact response from both quota surfaces on both realms is terminal auth evidence. */
+function isTraeAuthInvalidation(errors: readonly string[]): boolean {
+  return errors.length === 4 && errors.every((error) =>
+    /HTTP 401\s+\{[^}]*"code"\s*:\s*1001\b/i.test(error),
+  );
+}
+
 /**
  * Reads one Trae account's quota.
  *
@@ -421,7 +428,14 @@ export async function fetchTraeQuota(
     // The detail is kept for the log instead, where it cannot be read as a
     // balance.
     logTraeQuotaMiss(errors);
-    return { source: "trae", plan: null, windows: [], error: null };
+    const authInvalidated = isTraeAuthInvalidation(errors);
+    return {
+      source: "trae",
+      plan: null,
+      windows: [],
+      error: authInvalidated ? errors.join("; ") : null,
+      ...(authInvalidated ? { authInvalidated: true } : {}),
+    };
   }
   return {
     source: "trae",

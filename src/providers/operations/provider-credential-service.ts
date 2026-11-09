@@ -161,6 +161,8 @@ export interface AccountWithOauthStateRow {
 export interface LoadAccountWithOauthStateOptions {
   /** Select `status` from providerAccounts. */
   readonly includeStatus?: boolean;
+  /** Select the last health category from providerAccounts. */
+  readonly includeLastErrorCategory?: boolean;
   /** Select `expiresAt` from providerOauthStates. */
   readonly includeExpiry?: boolean;
   /** Also compute the skew-adjusted OAuth due time (see `loadAccountWithFreshness`). */
@@ -174,6 +176,7 @@ export interface LoadedAccountWithOauthState {
   readonly id: string;
   readonly providerId: string;
   readonly credentialKind: CredentialKind;
+  readonly lastErrorCategory?: string | null;
   readonly credentialCiphertext: Buffer | null;
   readonly refreshCiphertext: Buffer | null;
   readonly authState: unknown;
@@ -209,6 +212,9 @@ export async function loadAccountWithOauthState(
       clientSecretCiphertext: providerOauthStates.clientSecretCiphertext,
       staticToken: providerAccounts.staticToken,
       ...(options.includeStatus === true ? { status: providerAccounts.status } : {}),
+      ...(options.includeLastErrorCategory === true
+        ? { lastErrorCategory: providerAccounts.lastErrorCategory }
+        : {}),
       ...(options.includeExpiry === true || options.includeDueAt === true
         ? { expiresAt: providerOauthStates.expiresAt }
         : {}),

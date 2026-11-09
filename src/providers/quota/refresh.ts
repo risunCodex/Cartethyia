@@ -21,6 +21,7 @@ import { persistQuotaSnapshot } from "./snapshot";
 import { applyAccountVerdict } from "../operations/account-health-service";
 import { asJsonbRecord } from "../../shared/coerce";
 import { KIRO_DEFAULT_LABELS } from "../integrations/kiro/kiro-oauth";
+import { invalidateCredentialCache } from "../operations/provider-credential-service";
 
 /**
  * The stock Kiro fallback labels as a SQL literal list. Built once from the
@@ -34,7 +35,7 @@ const KIRO_DEFAULT_LABEL_IN = sql.raw(
 );
 
 /** Why an account quota refresh failed; `null` means the fetch succeeded. */
-export type QuotaRefreshFailureCode = "missing_credential" | "quota_fetch_failed";
+export type QuotaRefreshFailureCode = "missing_credential" | "quota_fetch_failed" | "auth_invalidated";
 
 export interface QuotaRefreshOutcome {
   readonly quota: ProviderQuotaResult;
@@ -150,9 +151,25 @@ function isTransientTimeout(error: string | null | undefined): boolean {
 export async function recordAccountCheck(
   db: CartethyiaDatabase,
   accountId: string,
-  outcome: { ok: boolean; error?: string | null; category?: string | null },
+  outcome: { ok: boolean; error?: string | null; category?: string | null; authInvalidated?: boolean },
   snapshotInvalidator?: { invalidate(): unknown },
 ): Promise<void> {
+  if (outcome.authInvalidated === true) {
+    const disabled = await applyAccountVerdict(db, {
+      accountId,
+      status: "disabled",
+      reason: outcome.error ?? "Provider rejected account authentication",
+      category: "auth_invalidated",
+      // No deadline: a credential rejected as invalid cannot heal by waiting,
+      // and the OAuth refresh sweep must not keep spending refresh attempts.
+      cooldownUntil: null,
+    });
+    if (disabled) {
+      invalidateCredentialCache(accountId);
+      await snapshotInvalidator?.invalidate();
+    }
+    return;
+  }
   if (outcome.ok) {
     // A successful quota refresh is the freshest evidence about the account's
     // health: heal a cooldown that the refresh shows is no longer justified, so
@@ -453,7 +470,11 @@ async function runQuotaRefresh(
         error: error instanceof Error ? error.message : "Failed to refresh quota",
       };
     }
-    failure = quota.error === null ? null : "quota_fetch_failed";
+    failure = quota.error === null
+      ? null
+      : quota.authInvalidated === true
+        ? "auth_invalidated"
+        : "quota_fetch_failed";
   }
 
   // Cache even a failed fetch: the error view ("credential expired", "quota
@@ -527,6 +548,7 @@ async function runQuotaRefresh(
       {
         ok: quota.error === null,
         ...(quota.error === null ? {} : { error: quota.error, category: failure ?? "quota_fetch_failed" }),
+        ...(quota.authInvalidated === true ? { authInvalidated: true } : {}),
       },
       deps.snapshotInvalidator,
     );

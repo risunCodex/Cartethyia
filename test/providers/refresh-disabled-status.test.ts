@@ -48,6 +48,7 @@ dbDescribe("refreshAccountStatus", () => {
 
   async function oauthAccount(options: {
     status?: "active" | "disabled";
+    lastErrorCategory?: string | null;
     refreshToken?: string | null;
     expiresAt?: Date | null;
   } = {}): Promise<string> {
@@ -59,6 +60,12 @@ dbDescribe("refreshAccountStatus", () => {
       status: options.status ?? "active",
       credential: `access-token-${crypto.randomUUID()}`,
     });
+    if (options.lastErrorCategory !== undefined) {
+      await db()
+        .update(providerAccounts)
+        .set({ lastErrorCategory: options.lastErrorCategory })
+        .where(eq(providerAccounts.id, accountId));
+    }
     await db().insert(providerOauthStates).values({
       providerAccountId: accountId,
       refreshCiphertext:
@@ -117,6 +124,33 @@ dbDescribe("refreshAccountStatus", () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.code).toBe("static_token");
     expect(outcome.statusAfter).toBe("disabled");
+  });
+
+  test("does not refresh a disabled auth-invalidated account", async () => {
+    const accountId = await oauthAccount({
+      status: "disabled",
+      lastErrorCategory: "auth_invalidated",
+      refreshToken: "rt",
+    });
+    let refreshCalls = 0;
+    const outcome = await refreshAccountStatus({
+      db: db(),
+      refreshService: new OAuthRefreshService(db()),
+      resolveRefresher: async () => ({
+        refresh: async () => {
+          refreshCalls += 1;
+          return { access: "new", expiresAt: new Date(Date.now() + 60_000) };
+        },
+      }),
+    }, accountId);
+
+    expect(outcome).toMatchObject({
+      ok: false,
+      tokenRefreshed: false,
+      statusAfter: "disabled",
+      code: "auth_invalidated",
+    });
+    expect(refreshCalls).toBe(0);
   });
 
   test("allows refresh for a disabled account and reports statusAfter disabled", async () => {

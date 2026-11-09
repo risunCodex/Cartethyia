@@ -590,6 +590,20 @@ export class OAuthRefreshService {
   ): Promise<string | null> {
     const account = await loadAccountWithFreshness(this.#db, accountId, skewMs);
     if (!account || account.row.credentialKind !== "oauth") return null;
+    const health = await loadAccountWithOauthState(this.#db, accountId, {
+      includeStatus: true,
+      includeLastErrorCategory: true,
+    });
+    if (health?.status === "disabled" && health.lastErrorCategory === "auth_invalidated") {
+      pushStructuredConsoleLog("info", "OAuth token refresh skipped: account auth invalidated", {
+        event: "token_refresh",
+        accountId,
+        providerId: account.row.providerId,
+        errorCode: "auth_invalidated",
+        details: { origin },
+      });
+      return null;
+    }
     const { row, dueAt } = account;
     // A static token is used exactly as issued and never refreshed. There is
     // nothing to re-mint, so return null — the same "cannot refresh" signal a

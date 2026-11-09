@@ -23,7 +23,7 @@ import { providers, providerAccounts, providerOauthStates, healthEvents } from "
 import { and, eq } from "drizzle-orm";
 import { sweepExpiredCooldowns } from "../../src/providers/operations/account-health-service";
 import { resetCooldownCacheForTests } from "../../src/config/cooldowns";
-import { OAuthRefreshService, type OAuthTokenRefresher } from "../../src/providers/authentication/oauth-refresh-service";
+import { loadDueOAuthAccounts, OAuthRefreshService, type OAuthTokenRefresher } from "../../src/providers/authentication/oauth-refresh-service";
 import { encryptCredential } from "../../src/security/crypto";
 
 /** Recovery window the boot-time reader resolves when the env var is unset. */
@@ -254,6 +254,31 @@ test("no recovery event is written for an untouched disabled account", async () 
       and(eq(healthEvents.entityKind, "account"), eq(healthEvents.accountId, accountId)),
     );
   expect(rows).toHaveLength(0);
+});
+
+test("a terminal auth-invalidated account is excluded from automatic OAuth refresh", async () => {
+  const accountId = await insertOauthAccount({
+    status: "disabled",
+    cooldownUntil: null,
+    refreshToken: "rt",
+  });
+  await db!
+    .update(providerAccounts)
+    .set({ lastErrorCategory: "auth_invalidated", lastError: "Trae HTTP 401 code 1001" })
+    .where(eq(providerAccounts.id, accountId));
+
+  const due = await loadDueOAuthAccounts(handle(), 0);
+  expect(due.some((account) => account.id === accountId)).toBe(false);
+
+  let refreshCalls = 0;
+  const service = new OAuthRefreshService(handle());
+  expect(await service.ensureFreshAccessToken(accountId, {
+    refresh: async () => {
+      refreshCalls += 1;
+      return { access: "new", expiresAt: new Date(Date.now() + 60_000) };
+    },
+  }, { force: true, origin: "ui" })).toBeNull();
+  expect(refreshCalls).toBe(0);
 });
 
 test("D23: a definitive refresh failure on an operator-disabled account does not write cooldownUntil", async () => {

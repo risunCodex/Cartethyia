@@ -222,15 +222,51 @@ describe("Trae quota — the two surfaces are independent", () => {
     expect(result.error).toBeNull();
   });
 
-  test("both surfaces dead is a read failure, not a zero balance", async () => {
+  test("both surfaces unavailable without auth evidence leave account health alone", async () => {
     const fetcher = routedFetcher([]);
     const result = await fetchTraeQuota("token", fetcher, {
       auth_state: { realm: "intl", uid: "u1" },
     });
 
     expect(result.windows).toHaveLength(0);
-    // No windows and no error: an unreachable surface is not evidence about
-    // the account, and must not cool it.
+    expect(result.error).toBeNull();
+    expect(result.authInvalidated).toBeUndefined();
+  });
+
+  test("all four realm/surface responses with 401 code 1001 invalidate auth", async () => {
+    const fetcher = (async () => jsonResponse({
+      code: 1001,
+      message: "We're sorry, but we are not able to authenticate you.",
+    }, 401)) as unknown as typeof fetch;
+
+    const result = await fetchTraeQuota("token", fetcher, {
+      auth_state: { realm: "intl", uid: "u1" },
+    });
+
+    expect(result.windows).toHaveLength(0);
+    expect(result.authInvalidated).toBe(true);
+    expect(result.error).toContain("HTTP 401");
+    expect(result.error).toContain('"code":1001');
+  });
+
+  test("one successful realm/surface prevents auth invalidation", async () => {
+    let calls = 0;
+    const fetcher = (async () => {
+      calls += 1;
+      if (calls === 1) return jsonResponse({ code: 1001, message: "unauthorized" }, 401);
+      if (calls === 2) return jsonResponse({
+        remain_usage: { advanced_model: 40 },
+        usage: { advanced_model: { limit: 100 } },
+      });
+      return new Response("unauthorized", { status: 401 });
+    }) as unknown as typeof fetch;
+
+    const result = await fetchTraeQuota("token", fetcher, {
+      auth_state: { realm: "intl", uid: "u1" },
+    });
+
+    expect(result.windows.length).toBeGreaterThan(0);
+    expect(result.authInvalidated).toBeUndefined();
     expect(result.error).toBeNull();
   });
 

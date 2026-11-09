@@ -118,6 +118,30 @@ describe("recordAccountCheck healing", () => {
     expect(row.lastSuccessAt).toBeNull();
   });
 
+  test("Trae auth invalidation disables the account terminally", async () => {
+    await setHealth({
+      status: "active",
+      lastErrorCategory: null,
+      lastError: null,
+      cooldownUntil: null,
+      consecutiveFailures: 0,
+      lastSuccessAt: null,
+    });
+
+    await recordAccountCheck(getDb(), world.accountId, {
+      ok: false,
+      error: "Both Trae quota surfaces rejected authentication with HTTP 401 code 1001",
+      category: "auth_invalidated",
+      authInvalidated: true,
+    });
+
+    const row = await readHealth();
+    expect(row.status).toBe("disabled");
+    expect(row.lastErrorCategory).toBe("auth_invalidated");
+    expect(row.cooldownUntil).toBeNull();
+    expect(row.lastError).toContain("HTTP 401 code 1001");
+  });
+
   test("an active account just gets its success stamped", async () => {
     await setHealth({
       status: "active",

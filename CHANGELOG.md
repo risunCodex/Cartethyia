@@ -8,6 +8,17 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Trae: terminal quota authentication failures invalidate the account.** When
+  session usage and entitlement on both realms all return HTTP 401 with code
+  `1001`, the account is marked `disabled` / `auth_invalidated` immediately with
+  no recovery deadline. A successful surface or any other failure remains
+  non-terminal. Automatic and manual OAuth refreshes stop for the invalidated
+  account until re-authentication.
+
 ## [2.8.0] - 2026-11-09
 
 ### Added

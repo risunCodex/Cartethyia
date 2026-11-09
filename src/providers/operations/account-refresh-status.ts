@@ -21,6 +21,7 @@ export type RefreshAccountStatusCode =
   | "not_oauth"
   | "static_token"
   | "no_refresher"
+  | "auth_invalidated"
   | "refresh_failed";
 
 export interface RefreshAccountStatusOutcome {
@@ -54,6 +55,7 @@ interface LoadedAccount {
   readonly credentialKind: string;
   readonly status: string;
   readonly staticToken: boolean;
+  readonly lastErrorCategory: string | null;
   readonly refreshCiphertext: Buffer | null;
   readonly expiresAt: Date | null;
 }
@@ -64,6 +66,7 @@ async function loadAccount(
 ): Promise<LoadedAccount | undefined> {
   const loaded = await loadAccountWithOauthState(db, accountId, {
     includeStatus: true,
+    includeLastErrorCategory: true,
     includeExpiry: true,
   });
   if (!loaded || loaded.status === undefined || loaded.expiresAt === undefined) return undefined;
@@ -73,6 +76,7 @@ async function loadAccount(
     credentialKind: loaded.credentialKind,
     status: loaded.status,
     staticToken: loaded.staticToken,
+    lastErrorCategory: loaded.lastErrorCategory ?? null,
     refreshCiphertext: loaded.refreshCiphertext,
     expiresAt: loaded.expiresAt,
   };
@@ -137,6 +141,16 @@ export async function refreshAccountStatus(
   }
   const statusBefore = account.status;
 
+  if (account.status === "disabled" && account.lastErrorCategory === "auth_invalidated") {
+    return {
+      ok: false,
+      tokenRefreshed: false,
+      statusAfter: statusBefore,
+      code: "auth_invalidated",
+      error: "auth_invalidated",
+      category: "This account was rejected by the provider and requires re-authentication; automatic refresh is disabled.",
+    };
+  }
   if (account.credentialKind !== "oauth") {
     return {
       ok: false,

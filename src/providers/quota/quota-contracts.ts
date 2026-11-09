@@ -29,6 +29,8 @@ export interface ProviderQuotaResult {
   readonly plan: string | null;
   readonly windows: readonly ProviderQuotaWindow[];
   readonly error: string | null;
+  /** The provider explicitly rejected the account credential; do not retry it automatically. */
+  readonly authInvalidated?: boolean;
   /** Display identity the billing surface reported, when it reported one. */
   readonly accountLabel?: string;
 }
