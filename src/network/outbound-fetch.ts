@@ -153,27 +153,16 @@ async function dial(
           : (await new Response(rawBody).arrayBuffer()).byteLength;
     headers.set("content-length", String(bytes));
   }
-  // The runtime fetch (Bun/undici) pools keep-alive sockets for up to 300s
-  // and does not detect a server-side idle close before reuse: a POST handed a
-  // stale pooled socket fails with ECONNRESET when the origin closed the idle
-  // connection without a `Keep-Alive: timeout` hint (Bun issue #45138 —
-  // Turso/Zitadel/Cloudflare workerd all close at ~5s). Only idempotent
-  // methods are retried by the runtime, so POST is the one that breaks. Until
-  // the upstream fix lands (#45497), non-idempotent methods dial fresh so a
-  // stale pooled socket is never handed one; GET/HEAD keep the pool.
-  const keepalive = (init.method ?? "GET").toUpperCase() === "GET" || (init.method ?? "GET").toUpperCase() === "HEAD";
   if (dispatcher !== undefined) {
     return await socksFetch(url, {
       ...init,
       headers,
       dispatcher,
-      ...(keepalive ? {} : { keepalive: false }),
     });
   }
   return await fetchFn(url, {
     ...init,
     headers,
-    ...(keepalive ? {} : { keepalive: false }),
     ...(proxyUrl === undefined ? {} : { proxy: proxyUrl }),
   });
 }

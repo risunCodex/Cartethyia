@@ -62,6 +62,41 @@ function comboCandidateKey(candidate: RouteCandidate): string {
 }
 
 /**
+ * Extra dials allowed for a mid-response upstream socket drop when the
+ * candidate list is exhausted (single-account providers). One extra dial
+ * recovers the transient reset; more would stack latency on a dying origin.
+ */
+const MAX_SOCKET_DROP_RETRIES = 1;
+
+/**
+ * Normalizes a raw (non-GatewayError) failure before it escapes the loop.
+ *
+ * A transport-level throw — e.g. Bun's `TypeError` with
+ * `code: "ECONNRESET"` when the upstream socket dies mid-response — carries a
+ * `.code` of its own. The error middleware reads that `.code` for Elysia
+ * built-in errors, so a raw socket drop leaked to the client as
+ * `{"code":"ECONNRESET","status":400}` with origin `cartethyia`: the wrong
+ * code, the wrong status, and the wrong blame. The classifier already knows
+ * what this is (`transport_unavailable`, 502, upstream) — materialize it as a
+ * real GatewayError so the client and the captured Client Response see the
+ * same stable envelope every other upstream transport failure gets.
+ */
+function normalizeEscapeError(error: unknown, signal: AbortSignal): unknown {
+  if (error instanceof GatewayError) return error;
+  const terminal = classifyTerminalOutcome(error, signal);
+  if (terminal.errorCategory === "transport_unavailable") {
+    return new GatewayError(
+      "transport_unavailable",
+      502,
+      "The upstream closed the connection mid-response (request {requestId}). Retry; if it keeps happening, the account or pool is unstable. The connection ghosted us — come back in a moment 👻",
+      {},
+      "upstream",
+    );
+  }
+  return error;
+}
+
+/**
  * True when the rejection is about the API key or the gateway's own policy,
  * not about the provider account that was dialled.
  *
@@ -321,7 +356,7 @@ export async function runAttemptLoop<TResult, TAdapter>(
             status: terminal.status === "cancelled" ? "cancelled" : "failed",
           });
         }
-        throw lastError;
+        throw normalizeEscapeError(lastError, state.abortController.signal);
       }
     }
     let lease: AdmissionLease | undefined;
@@ -381,6 +416,13 @@ export async function runAttemptLoop<TResult, TAdapter>(
       // names the real cause.
       const drain = drainAbortReason(state.abortController.signal.reason);
       if (drain !== undefined) error = drain;
+      // Normalize a raw transport throw (e.g. Bun's `TypeError` with
+      // `code: "ECONNRESET"` when the upstream socket dies mid-response) into
+      // the stable `transport_unavailable`/502/upstream GatewayError **before**
+      // classification, so the telemetry row, the captured Client Response, and
+      // the escaped error all agree — and the raw `.code` never leaks to the
+      // client as a fake Elysia built-in code (see `normalizeEscapeError`).
+      error = normalizeEscapeError(error, state.abortController.signal);
       lastError = error;
       // A drain is a *server* close, not a client cancel: it must be recorded
       // as a failure with the shutdown code, and it is never retryable.
@@ -421,11 +463,25 @@ export async function runAttemptLoop<TResult, TAdapter>(
           flagPoolBlocked(deps.poolSelector, deps.db, networkPoolId, candidate.provider_id, error);
         }
       }
+      // A mid-response upstream socket drop (`transport_unavailable`) is the one
+      // retryable failure that receives an extra dial even when the candidate
+      // list is exhausted: an origin that closes the connection before the
+      // response is often transient (Trae's edge resets under concurrency),
+      // and the fresh dial recovers it — verified live 2026-11-09, 7/7
+      // recovered on the first retry. Without this, a single-account provider
+      // (the common case) tripped `index === candidates.length - 1` on the very
+      // first attempt and the client saw the raw socket error. The retry is
+      // bounded to one extra dial per request, never unbounded.
+      const memberAttempts = attemptsByMember.get(memberKey) ?? 0;
+      const socketDropRetryLeft =
+        terminal.errorCategory === "transport_unavailable" &&
+        !cancelled &&
+        memberAttempts < MAX_SOCKET_DROP_RETRIES;
       const terminalAttempt =
         cancelled ||
         isClientScopedRejection(error) ||
         !isRetryableFailure(error) ||
-        (index === candidates.length - 1 && !poolScopedFailure);
+        ((index === candidates.length - 1 && !poolScopedFailure) && !socketDropRetryLeft);
       // Track only the most recent fired exchange; the array this replaced
       // accumulated every attempt's capture until the loop returned.
       if (providerCapture.request !== null) lastFiredCapture = providerCapture;
@@ -499,7 +555,7 @@ export async function runAttemptLoop<TResult, TAdapter>(
       }
       if (terminalAttempt) {
         metrics.proxy_requests_total.inc(1, { status: cancelled ? "cancelled" : "failed" });
-        throw error;
+        throw normalizeEscapeError(error, state.abortController.signal);
       }
       // A failed combo member stays flagged for this request. Move it behind
       // every candidate that has not failed yet, so the next attempt cannot
@@ -542,7 +598,7 @@ export async function runAttemptLoop<TResult, TAdapter>(
         // as the sleep's own error would leave `proxy_requests_total` missing
         // the request.
         metrics.proxy_requests_total.inc(1, { status: "cancelled" });
-        throw lastError;
+        throw normalizeEscapeError(lastError, state.abortController.signal);
       }
     }
   }
@@ -577,5 +633,5 @@ export async function runAttemptLoop<TResult, TAdapter>(
     }));
   }
   metrics.proxy_requests_total.inc(1, { status: "failed" });
-  throw lastError;
+  throw normalizeEscapeError(lastError, state.abortController.signal);
 }

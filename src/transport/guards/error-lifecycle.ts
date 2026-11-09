@@ -77,8 +77,20 @@ export function createErrorNormalizationMiddleware(deps: {
     .error(({ request, error, set }) => {
       const state = deps.stateStore.get(request as Request);
       const gateway = error instanceof GatewayError ? error : undefined;
+      // Elysia's built-in errors (NotFound, ValidationError, ParseError,
+      // InternalServerError) always carry a numeric `status` **and** a code.
+      // A raw runtime error can carry a `.code` on its own — Bun's fetch
+      // surfaces `TypeError` with `code: "ECONNRESET"` when an upstream socket
+      // dies mid-response — so a `code` alone is not evidence of an Elysia
+      // built-in. Requiring the numeric status keeps that raw error from
+      // leaking into the public envelope as a fake code/400; the dispatch loop
+      // already normalizes socket drops to `transport_unavailable`/502 before
+      // they reach here.
       const builtin =
-        !gateway && typeof error === "object" && error !== null
+        !gateway &&
+        typeof error === "object" &&
+        error !== null &&
+        typeof (error as ElysiaBuiltinError).status === "number"
           ? (error as ElysiaBuiltinError)
           : undefined;
       const builtinStatus = typeof builtin?.status === "number" ? builtin.status : undefined;
