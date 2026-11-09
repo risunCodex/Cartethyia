@@ -1,7 +1,7 @@
 import { ValidationError } from "elysia";
 import type { AccessDecision, AccessScope } from "../../security/access-control";
 import { isRecord } from "../../protocol/codecs";
-import { formatPublicErrorMessage } from "../../protocol/gateway-error";
+import { formatPublicErrorMessage, GatewayError } from "../../protocol/gateway-error";
 
 // Single console error/access contract. Every domain throws ConsoleDomainError
 // (or the storage-layer BackupError, same code/status/message shape) and
@@ -24,8 +24,27 @@ export class ConsoleDomainError extends Error {
   }
 }
 
-function asDomainError(error: unknown): { code: string; status: number; message: string; details?: unknown } | undefined {
+interface ShapedDomainError {
+  readonly code: string;
+  readonly status: number;
+  readonly message: string;
+  readonly details?: unknown;
+  /** Upstream/network origin, preserved so the dashboard can tell a provider
+   * rejection from a console-session expiry (see `maybeSignalSessionTransition`). */
+  readonly origin?: string;
+}
+
+function asDomainError(error: unknown): ShapedDomainError | undefined {
   if (error instanceof ConsoleDomainError) return error;
+  if (error instanceof GatewayError) {
+    return {
+      code: error.code,
+      status: error.status,
+      message: error.message,
+      details: error.details,
+      ...(error.origin === "cartethyia" ? {} : { origin: error.origin }),
+    };
+  }
   if (
     typeof error === "object" &&
     error !== null &&
@@ -33,8 +52,14 @@ function asDomainError(error: unknown): { code: string; status: number; message:
     typeof (error as { status?: unknown }).status === "number" &&
     typeof (error as { message?: unknown }).message === "string"
   ) {
-    const shaped = error as { code: string; status: number; message: string; details?: unknown };
-    return { code: shaped.code, status: shaped.status, message: shaped.message, details: shaped.details };
+    const shaped = error as { code: string; status: number; message: string; details?: unknown; origin?: unknown };
+    return {
+      code: shaped.code,
+      status: shaped.status,
+      message: shaped.message,
+      details: shaped.details,
+      ...(typeof shaped.origin === "string" && shaped.origin !== "cartethyia" ? { origin: shaped.origin } : {}),
+    };
   }
   return undefined;
 }
@@ -47,6 +72,7 @@ export function errorResponse(
 ): {
   error: string;
   code: string;
+  origin?: string;
   details?: Record<string, unknown>;
 } {
   const shaped = asDomainError(error);
@@ -63,16 +89,17 @@ export function errorResponse(
     const body: Record<string, unknown> = {
       error: message,
       code: shaped.code,
+      ...(shaped.origin === undefined ? {} : { origin: shaped.origin }),
     };
     if (includeDetails) body.details = details;
-    return body as { error: string; code: string; details?: Record<string, unknown> };
+    return body as { error: string; code: string; origin?: string; details?: Record<string, unknown> };
   }
   set.status = 500;
   const body: Record<string, unknown> = {
     error: formatPublicErrorMessage("internal_error", fallbackMessage),
     code: "internal_error",
   };
-  return body as { error: string; code: string; details?: Record<string, unknown> };
+  return body as { error: string; code: string; origin?: string; details?: Record<string, unknown> };
 }
 
 export function requireScope(
