@@ -315,11 +315,28 @@ export function AddAccountModal({
                 file.type.startsWith("application/json") ||
                 file.type.startsWith("text/plain"),
               );
-              if (files.length === 0) {
-                toast.error("Unsupported file", "Drop .json, .txt, .jsonl, or .ndjson credential files.");
+              if (files.length > 0) {
+                handleFiles(files);
                 return;
               }
-              handleFiles(files);
+              // A text drop — selecting a credential in the browser and dragging
+              // it here — carries no file. Read it from the data transfer and
+              // feed it through the same parser the paste path uses, so a
+              // dragged token/key is accepted exactly like a paste.
+              const text = event.dataTransfer.getData("text/plain");
+              if (!text || !text.trim()) return;
+              const trimmed = text.trim();
+              setSecret(trimmed);
+              const parsed = parseCredentialBatch(trimmed);
+              if (parsed.length > 1) {
+                toast.success("Dropped credential text", `Detected ${parsed.length} credentials`);
+              } else {
+                const kind = parsed[0]?.kind ?? "api_key";
+                toast.success(
+                  "Dropped credential text",
+                  kind === "oauth" ? "Detected: OAuth export" : kind === "jwt" ? "Detected: Static JWT" : "Detected: API key",
+                );
+              }
             }}
           >
             <textarea
@@ -332,6 +349,7 @@ export function AddAccountModal({
             />
             <p className="text-micro text-text-tertiary text-center">
               Or drop credential files here — JSON, .txt, .jsonl, .ndjson — several at once, merged and detected together.
+              Selecting a credential text and dragging it here works too.
             </p>
           </div>
           {/* Paste and import feed the same field, so they sit under it rather

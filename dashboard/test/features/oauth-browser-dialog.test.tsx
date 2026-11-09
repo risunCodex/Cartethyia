@@ -99,6 +99,14 @@ function dropFile(view: { find(selector: string): Element | null }, file: unknow
   zone.dispatchEvent(drop);
 }
 
+/** Dispatch a text drop (no file) on the textarea's drop zone. */
+function dropText(view: { find(selector: string): Element | null }, text: string) {
+  const zone = view.find("textarea")!.parentElement!;
+  const drop = new Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(drop, "dataTransfer", { value: { files: [], getData: () => text } });
+  zone.dispatchEvent(drop);
+}
+
 describe("OAuthBrowserDialog drag-and-drop", () => {
   test("reads a dropped file into the field", async () => {
     const ctx = renderDialog();
@@ -173,6 +181,45 @@ describe("OAuthBrowserDialog invalid paste", () => {
       await view.flush();
       expect(ctx.onClose).toHaveBeenCalledWith(true);
       expect(ctx.closePopup).toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      ctx.restore();
+    }
+  });
+});
+
+describe("OAuthBrowserDialog text drop", () => {
+  test("accepts a dropped redirect URL text into the field", async () => {
+    const ctx = renderDialog();
+    const view = await ctx.mount();
+    try {
+      const success = spyOn(toast, "success").mockImplementation(() => "success");
+      await view.act(async () => {
+        dropText(view, VALID_PASTE);
+      });
+      await view.flush();
+      expect((view.find("textarea") as HTMLTextAreaElement).value).toBe(VALID_PASTE);
+      expect(connectButton(view).disabled).toBe(false);
+      expect(success).toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      ctx.restore();
+    }
+  });
+
+  test("an invalid dropped text empties the field and keeps the modal open", async () => {
+    const ctx = renderDialog();
+    const view = await ctx.mount();
+    try {
+      const error = spyOn(toast, "error").mockImplementation(() => "error");
+      await view.act(async () => {
+        dropText(view, "https://provider.example/redirect-without-code");
+      });
+      await view.flush();
+      expect((view.find("textarea") as HTMLTextAreaElement).value).toBe("");
+      expect(connectButton(view).disabled).toBe(true);
+      expect(error).toHaveBeenCalledWith("Invalid OAuth paste", expect.any(String));
+      expect(ctx.onClose).not.toHaveBeenCalled();
     } finally {
       view.unmount();
       ctx.restore();

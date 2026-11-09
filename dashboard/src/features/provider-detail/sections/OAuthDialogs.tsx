@@ -309,8 +309,26 @@ export function OAuthBrowserDialog({
                 event.preventDefault();
                 setDragActive(false);
                 const file = event.dataTransfer.files[0];
-                if (!file) return;
-                handleDropCallbackFile(file);
+                if (file) {
+                  handleDropCallbackFile(file);
+                  return;
+                }
+                // A text drop (selecting the redirect URL in the browser and
+                // dragging it here) carries no file — read it from the data
+                // transfer and feed it through the same parser the paste path
+                // uses. Validity is still decided at Connect time, exactly like
+                // a paste.
+                const text = event.dataTransfer.getData("text/plain");
+                if (!text || !text.trim()) return;
+                const trimmed = text.trim();
+                const parsed = extractOAuthCode(trimmed);
+                if ("error" in parsed) {
+                  setCallbackValue("");
+                  toast.error("Invalid OAuth paste", parsed.error);
+                  return;
+                }
+                setCallbackValue(trimmed);
+                toast.success("Loaded redirect URL", "Dropped URL text");
               }}
             >
               <textarea
@@ -332,7 +350,8 @@ export function OAuthBrowserDialog({
             </Button>
           </Inline>
           <p className="text-badge leading-snug text-text-tertiary">
-            Or drag a file here — a saved redirect URL or raw code is read straight into the field.
+            Or drag a file — or select the redirect URL and drag it here — a saved
+            redirect URL or raw code is read straight into the field.
           </p>
         </div>
       </Stack>

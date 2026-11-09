@@ -183,6 +183,11 @@ synthetic probe.
 - **Data-dir guard.** `resolveDataDir` ignores a literal `CARTETHYIA_DATA_DIR`
 value of `"undefined"`, which previously made the process write gateway state
 into a folder named `undefined/` in the working directory.
+- **OAuth/Add-Account dialogs accept dragged credential text.** A redirect URL,
+  token, key, or exported credential selected in the browser and dragged into
+  the drop zone (instead of only a file) now lands in the field through the same
+  parser as a paste — validity is still decided at Connect/Import/Add time, so
+  invalid material is rejected there rather than stored.
 
 ### Removed
 

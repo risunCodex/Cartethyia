@@ -122,6 +122,7 @@ export function ImportCredentialDialog({
   const importCredential = useImportOAuthCredential();
   const [credential, setCredential] = useState("");
   const [accountLabel, setAccountLabel] = useState("");
+  const [dragActive, setDragActive] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(() => initialFieldValues(fields));
   const missing = useMemo(() => missingRequiredFields(fields, values), [fields, values]);
 
@@ -199,15 +200,55 @@ export function ImportCredentialDialog({
           placeholder={providerId}
           onChange={(event) => setAccountLabel(event.target.value)}
         />
-        <Input
-          id="import-credential"
-          label="Credential"
-          value={credential}
-          placeholder="Paste the token, key, or exported JSON"
-          type="password"
-          autoComplete="off"
-          onChange={(event) => setCredential(event.target.value)}
-        />
+        <div className="flex flex-col gap-2">
+          <div
+            className={`rounded-control border-2 border-dashed transition-colors ${dragActive ? "border-accent bg-accent-soft" : ""}`}
+            data-drag-active={dragActive ? "true" : undefined}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragActive(false);
+              const file = event.dataTransfer.files[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                  const text = typeof reader.result === "string" ? reader.result.trim() : "";
+                  if (text) {
+                    setCredential(text);
+                    toast.success("Loaded credential file", `Read from ${file.name}`);
+                  }
+                };
+                reader.onerror = () => toast.error("Could not read file", `Failed to read "${file.name}".`);
+                reader.readAsText(file);
+                return;
+              }
+              // A text drop — selecting the credential in the browser and
+              // dragging it here — carries no file. Read it from the data
+              // transfer and fill the field exactly like a paste.
+              const text = event.dataTransfer.getData("text/plain");
+              if (!text || !text.trim()) return;
+              setCredential(text.trim());
+              toast.success("Dropped credential text");
+            }}
+          >
+            <Input
+              id="import-credential"
+              label="Credential"
+              value={credential}
+              placeholder="Paste the token, key, or exported JSON"
+              type="password"
+              autoComplete="off"
+              onChange={(event) => setCredential(event.target.value)}
+            />
+          </div>
+          <p className="text-badge leading-snug text-text-tertiary">
+            Or select the token/key and drag it here — same as pasting.
+          </p>
+        </div>
       </Stack>
     </Dialog>
   );
