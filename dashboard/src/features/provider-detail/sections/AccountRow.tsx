@@ -235,7 +235,11 @@ export function AccountRow({
   const [renaming, setRenaming] = useState(false);
   const [draftLabel, setDraftLabel] = useState("");
   const privacy = useMysteriousAccounts(providerId);
-  const shown = (account.label?.match(/[^\s@]+@[^\s@]+/)?.[0] ?? account.label) || account.id.slice(0, 8);
+  const shown =
+    account.accountEmail ??
+    account.accountName ??
+    (account.label?.match(/[^\s@]+@[^\s@]+/)?.[0] ?? account.label) ??
+    account.id.slice(0, 8);
   const label = privacy.enabled ? "Mysterious accounts" : shown;
   const expiryLabel = credentialExpiryLabel(account.tokenExpiresAt);
   // The countdown re-renders on a timer. It must be armed by the per-model

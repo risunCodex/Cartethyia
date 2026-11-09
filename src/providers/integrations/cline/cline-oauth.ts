@@ -8,6 +8,7 @@ import {
   record,
 } from "../../authentication/oauth-flow-store";
 import type { OAuthDeviceFlowContext, OAuthDevicePollResult, OAuthDeviceStartResult, OAuthExchangeResult } from "../../authentication/oauth-flow-store";
+import { oauthAccountIdentity } from "../../authentication/oauth-flow-store";
 import type { OAuthTokenRefreshResult } from "../../authentication/oauth-refresh-service";
 import { OAuthDeviceFlow } from "../../authentication/oauth-device-flow";
 
@@ -45,14 +46,18 @@ function tokenResult(value: unknown, fallbackRefresh?: string): OAuthExchangeRes
   const refresh =
     nonEmptyTrimmedString(payload.refresh_token) ?? nonEmptyTrimmedString(payload.refreshToken) ?? fallbackRefresh;
   if (!access || !refresh) throw new Error("Cline OAuth response omitted access or refresh token");
+  const identity = oauthAccountIdentity(value);
   const accountLabel =
     nonEmptyTrimmedString(payload.email) ??
     nonEmptyTrimmedString(record(payload.userInfo)?.email) ??
-    nonEmptyTrimmedString(record(payload.user)?.email);
+    nonEmptyTrimmedString(record(payload.user)?.email) ??
+    identity.accountEmail ??
+    identity.accountName;
   return {
     access,
     refresh,
     expiresAt: tokenExpiry(payload),
+    ...identity,
     ...(accountLabel === undefined ? {} : { accountLabel }),
   };
 }

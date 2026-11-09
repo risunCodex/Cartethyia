@@ -10,6 +10,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **GitHub Copilot: complete profile selection.** `CARTETHYIA_GITHUB_COPILOT_MODE`
+  now selects the OAuth app, token mint/refresh behavior, inference headers,
+  model discovery, and quota identity together. `opencode-copilot` remains the
+  default and uses the raw GitHub token; `vscode-client-real` mints and refreshes
+  the short-lived Copilot token. Restart the process after changing the mode,
+  then reconnect GitHub accounts. Cartethyia's `/auto` routing and GPT Luna
+  session-token flow remain available in both profiles. Imported 9router GitHub
+  credentials are rebound to the active profile during restore.
+- **OAuth: structured account identity and unique fallback labels.** OAuth login,
+  device polling, imports, and refreshes now preserve provider-reported email
+  and display name when available, including WorkOS response shapes used by
+  Cline and Factory Droid. Accounts whose upstream reports no identity receive
+  per-provider numbered labels such as `hermes-1` and `hermes-2` instead of
+  sharing the provider id. The account API and dashboard expose the resolved
+  email/name while generated labels remain display-only for re-login identity.
+
 ### Fixed
 
 - **Trae: terminal quota authentication failures invalidate the account.** When

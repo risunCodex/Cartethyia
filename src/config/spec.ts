@@ -326,15 +326,15 @@ export const CONFIG_SPEC = {
    */
   CARTETHYIA_GITHUB_ENTERPRISE_DOMAIN: { kind: "text", default: "" },
   /**
-   * Which wire identity the GitHub Copilot Auto/chat path presents to the
-   * upstream:
+   * Selects the complete GitHub Copilot OAuth and wire profile:
    *
-   * - `opencode-copilot` (default): the long-lived GitHub OAuth token + minimal
-   *   OpenCode headers. One token, no mint step, no short-lived minted-token
-   *   expiry. This is the most stable in practice.
-   * - `vscode-client-real`: a freshly minted Copilot token + the full VS Code
-   *   reference headers. Matches the VS Code client exactly, but requires the
-   *   minted token (expires ~25 min) and the reference identity.
+   * - `opencode-copilot` (default): OpenCode OAuth app, raw GitHub token, and
+   *   OpenCode identity for login, refresh, inference, discovery, and quota.
+   * - `vscode-client-real`: VS Code OAuth app, minted Copilot token, and the
+   *   VS Code reference identity for those surfaces.
+   *
+   * Restart after changing this setting and re-authenticate GitHub accounts;
+   * OAuth credentials cannot be converted between the two upstream apps.
    */
   CARTETHYIA_GITHUB_COPILOT_MODE: { kind: "text", default: "opencode-copilot" },
   // Only the literal true opts active ZCode accounts into daily gift claims.

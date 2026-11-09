@@ -610,6 +610,9 @@ export interface ProviderAccountResponse {
   providerId: string;
   tenantId: string | null;
   label: string;
+  /** Structured identity learned from an OAuth login, when the provider exposed one. */
+  accountEmail?: string;
+  accountName?: string;
   credentialKind: CredentialKind;
   credentialMode?: CredentialMode;
   /**

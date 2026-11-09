@@ -94,11 +94,12 @@ export function resolveGithubEnterpriseDomain(): string {
 export type GithubCopilotMode = "opencode-copilot" | "vscode-client-real";
 
 /**
- * Which GitHub Copilot wire identity the adapter uses. Defaults to
- * `opencode-copilot` (raw GitHub OAuth token + minimal OpenCode headers),
- * which is the proven-most-stable path (one token, no mint expiry). The
- * `vscode-client-real` mode matches the VS Code reference client exactly but
- * requires a freshly minted Copilot token.
+ * Selects the complete GitHub Copilot profile for OAuth login/refresh,
+ * inference, discovery, and quota identity. `opencode-copilot` is the default
+ * and uses the raw GitHub OAuth token with OpenCode identity. `vscode-client-real`
+ * uses the VS Code OAuth app and a minted Copilot token. Existing accounts must
+ * be re-authenticated after changing profiles; the upstream OAuth app binding
+ * prevents converting credentials between profiles.
  */
 export function resolveGithubCopilotMode(): GithubCopilotMode {
   const raw = readText(

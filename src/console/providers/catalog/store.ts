@@ -1566,11 +1566,18 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
       typeof authState?.["jwtIssuer"] === "string" ? authState["jwtIssuer"] : undefined;
     const authMethod =
       typeof authState?.["authMethod"] === "string" ? authState["authMethod"] : undefined;
+    const accountEmail = asStoredText(row.accountEmail) ?? undefined;
+    const accountName =
+      typeof authState?.["accountName"] === "string" && authState["accountName"].trim().length > 0
+        ? authState["accountName"].trim()
+        : undefined;
     return {
       id: row.id,
       providerId: row.providerId,
       tenantId: row.tenantId,
       label: row.label,
+      ...(accountEmail === undefined ? {} : { accountEmail }),
+      ...(accountName === undefined ? {} : { accountName }),
       credentialKind: row.credentialKind,
       ...(credentialMode === undefined ? {} : { credentialMode }),
       ...(tokenExpiresAt === undefined ? {} : { tokenExpiresAt }),

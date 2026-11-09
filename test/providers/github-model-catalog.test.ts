@@ -41,7 +41,7 @@ describe("GitHub Copilot fallback model catalog", () => {
   });
 
   test("removes retired Luna variants and keeps the canonical efficiency alias", async () => {
-    const credential = JSON.stringify({ access: "token", apiHost: "copilot.example" });
+    const credential = JSON.stringify({ access: "token", apiHost: "copilot.example", profile: "opencode-copilot" });
     const response = new Response(JSON.stringify({
       data: [
         ...[...GITHUB_EXCLUDED_MODEL_IDS].map((id) => ({
@@ -78,6 +78,7 @@ describe("GitHub Copilot fallback model catalog", () => {
       access: "catalog-access",
       apiHost: "copilot.example",
       github: "catalog-refresh",
+      profile: "opencode-copilot",
     });
     const models = await discoverGithubModels({
       credential,
@@ -104,7 +105,7 @@ describe("GitHub Copilot fallback model catalog", () => {
   });
 
   test("discovers Messages-only rows and routes them to /v1/messages", async () => {
-    const credential = JSON.stringify({ access: "token", apiHost: "copilot.example" });
+    const credential = JSON.stringify({ access: "token", apiHost: "copilot.example", profile: "opencode-copilot" });
     const response = new Response(JSON.stringify({
       data: [
         {
@@ -139,7 +140,7 @@ describe("GitHub Copilot fallback model catalog", () => {
   });
 
   test("carries the model's declared reasoning-effort ladder and upstream pricing", async () => {
-    const credential = JSON.stringify({ access: "token", apiHost: "copilot.example" });
+    const credential = JSON.stringify({ access: "token", apiHost: "copilot.example", profile: "opencode-copilot" });
     const response = new Response(JSON.stringify({
       data: [
         {

@@ -387,6 +387,18 @@ export const GITHUB_MODELS: readonly ModelDefinition[] = [
  * pipeline, so only the two Copilot-specific facts (the host and the client
  * identity) are supplied here.
  */
+function assertGithubProfileMatchesMode(credential: GithubCredential): void {
+  const mode = resolveGithubCopilotMode();
+  if (credential.profile !== mode) {
+    throw new GatewayError(
+      "authentication_failed",
+      401,
+      `GitHub Copilot account is bound to ${credential.profile}; reconnect it after selecting ${mode}.`,
+      { credentialEvidence: true, accountScope: true },
+    );
+  }
+}
+
 class GithubAdapter extends OpenAICompatibleAdapter {
   readonly #fallbackBaseUrl: string;
   /**
@@ -433,11 +445,14 @@ class GithubAdapter extends OpenAICompatibleAdapter {
       throw new GatewayError("authentication_failed", 401, "GitHub Copilot credential is missing (request {requestId}). Wrong key, right door — check the credential 🔑");
     }
     const credential = new TextDecoder().decode(secret);
+    const parsedCredential = parseGithubCredential(credential);
+    assertGithubProfileMatchesMode(parsedCredential);
     const autoInput = autoPrompt(request);
     const sessionId = resolveInboundSessionId(context, request);
+    const profile = resolveGithubCopilotMode();
     const cacheKey = sessionId === undefined || sessionId.startsWith("aff_")
       ? undefined
-      : this.#autoDecisionCacheKey(credential, sessionId, tier);
+      : this.#autoDecisionCacheKey(credential, sessionId, tier, profile);
     let autoDecision = cacheKey === undefined
       ? undefined
       : this.#getCachedAutoDecision(cacheKey, autoInput.hasImage);
@@ -548,18 +563,10 @@ class GithubAdapter extends OpenAICompatibleAdapter {
     if (credential === undefined) {
       throw new GatewayError("authentication_failed", 401, "GitHub Copilot credential is missing (request {requestId}). Wrong key, right door — check the credential 🔑");
     }
-    // `opencode-copilot` mode (default): raw GitHub token + minimal headers,
-    // proven the most stable (single token, no mint expiry). The reference
-    // mode (`vscode-client-real`) uses the minted Copilot token + full VS Code
-    // headers — but a stale/expired minted token fails with 403 and the
-    // reference headers on /auto can answer 400 "invalid apiVersion" unless the
-    // minted token is fresh, so the default stays opencode.
-    const headers =
-      resolveGithubCopilotMode() === "opencode-copilot" &&
-      credential.github !== undefined &&
-      credential.github.length > 0
-        ? await this.#opencodeStyleHeaders(context, request, credential)
-        : await this.prepareHeaders(context, request, candidate);
+    assertGithubProfileMatchesMode(credential);
+    // /auto remains Cartethyia's Auto selection feature in both wire profiles;
+    // only prepareHeaders chooses the OAuth app's matching identity.
+    const headers = await this.prepareHeaders(context, request, candidate);
     const payload: Record<string, unknown> = { prompt, tier };
     if (hasImage) payload.has_image = true;
     const outboundFetch = context.outbound_fetch ?? this.#fetch ?? globalThis.fetch;
@@ -630,12 +637,13 @@ class GithubAdapter extends OpenAICompatibleAdapter {
     credentialValue: string,
     sessionId: string,
     tier: "efficiency" | "balance" | "intelligence",
+    profile: ReturnType<typeof resolveGithubCopilotMode>,
   ): string {
     const credential = parseGithubCredential(credentialValue);
     const account = createHash("sha256")
       .update(`${credential.apiHost}:${credential.access}`)
       .digest("hex");
-    return `${account}:${tier}:${sessionId}`;
+    return `${account}:${profile}:${tier}:${sessionId}`;
   }
 
   #getCachedAutoDecision(
@@ -684,6 +692,17 @@ class GithubAdapter extends OpenAICompatibleAdapter {
     request: CanonicalRequest,
     candidate: ProviderDispatchTarget,
   ): Promise<Record<string, string>> {
+    const credentialSecret = context.credential.secret;
+    if (credentialSecret !== undefined && credentialSecret.length > 0) {
+      const credential = parseGithubCredential(new TextDecoder().decode(credentialSecret));
+      assertGithubProfileMatchesMode(credential);
+      if (credential.profile === "opencode-copilot") {
+        const opencode = await this.#opencodeStyleHeaders(context, request, credential);
+        const token = this.#autoSessionTokens.get(request);
+        if (token !== undefined) opencode["Copilot-Session-Token"] = token;
+        return opencode;
+      }
+    }
     const headers = await super.prepareHeaders(context, request, candidate);
     // The Copilot API rejects a request that does not identify a Copilot
     // client, so these are a protocol requirement. `applyRouteUserAgent` has
@@ -691,31 +710,20 @@ class GithubAdapter extends OpenAICompatibleAdapter {
     // it and wins — the route-level User-Agent is for generic OpenAI-compatible
     // hosts and would be rejected here.
     Object.assign(headers, GITHUB_REQUEST_HEADERS);
-    const secret = context.credential.secret;
+    const referenceSecret = context.credential.secret;
     let parsedCredential: ReturnType<typeof parseGithubCredential> | undefined;
-    if (secret !== undefined && secret.length > 0) {
+    if (referenceSecret !== undefined && referenceSecret.length > 0) {
       try {
-        parsedCredential = parseGithubCredential(new TextDecoder().decode(secret));
+        parsedCredential = parseGithubCredential(new TextDecoder().decode(referenceSecret));
       } catch {
         // Unparseable credential; fall back to the reference identity below.
       }
     }
+    if (parsedCredential !== undefined) assertGithubProfileMatchesMode(parsedCredential);
     const autoSessionToken = this.#autoSessionTokens.get(request);
-    // Auto-selected requests stream behind the session token. In the default
-    // `opencode-copilot` mode (raw GitHub token + minimal headers, proven 200
-    // on /auto and /responses), the whole request uses the OpenCode shape. The
-    // reference mode (`vscode-client-real`) keeps the reference identity and
-    // the minted Copilot token.
-    if (autoSessionToken !== undefined && parsedCredential?.github !== undefined) {
-      if (resolveGithubCopilotMode() === "opencode-copilot") {
-        const opencode = await this.#opencodeStyleHeaders(context, request, parsedCredential);
-        for (const key of Object.keys(headers)) delete headers[key];
-        Object.assign(headers, opencode);
-        headers["Copilot-Session-Token"] = autoSessionToken;
-        return headers;
-      }
-      headers["Copilot-Session-Token"] = autoSessionToken;
-    } else if (autoSessionToken !== undefined) {
+    // Auto-selected requests in either profile keep the session token returned
+    // by Cartethyia's /auto selection step.
+    if (autoSessionToken !== undefined) {
       headers["Copilot-Session-Token"] = autoSessionToken;
     }
     const requestId = context.request_id ?? randomUUID();

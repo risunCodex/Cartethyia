@@ -9,6 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   GithubOAuthClient,
+  GITHUB_CLIENT_ID,
   GITHUB_OPENCODE_CLIENT_ID,
   GITHUB_OPENCODE_API_HOST,
 } from "../../src/providers/integrations/github/github-oauth";
@@ -49,7 +50,7 @@ describe("GitHub Copilot device-login entitlement gate", () => {
       }
       return new Response("not found", { status: 404 });
     });
-    const client = new GithubOAuthClient(fetcher);
+    const client = new GithubOAuthClient(fetcher, GITHUB_CLIENT_ID);
 
     const poll = await client.pollDeviceAuth("device-code-1", {
       providerState: "github.com",
@@ -74,7 +75,7 @@ describe("GitHub Copilot device-login entitlement gate", () => {
       }
       return new Response("not found", { status: 404 });
     });
-    const client = new GithubOAuthClient(fetcher);
+    const client = new GithubOAuthClient(fetcher, GITHUB_CLIENT_ID);
 
     const poll = await client.pollDeviceAuth("device-code-2", {
       providerState: "github.com",
@@ -106,7 +107,7 @@ describe("GitHub Copilot device-login entitlement gate", () => {
       }
       return new Response("not found", { status: 404 });
     });
-    const client = new GithubOAuthClient(fetcher);
+    const client = new GithubOAuthClient(fetcher, GITHUB_CLIENT_ID);
 
     const poll = await client.pollDeviceAuth("device-code-3", {
       providerState: "github.com",
@@ -117,6 +118,9 @@ describe("GitHub Copilot device-login entitlement gate", () => {
     expect(poll.status).toBe("complete");
     if (poll.status !== "complete") throw new Error("unreachable");
     expect(calls.some((call) => call.url.includes("copilot_internal/v2/token"))).toBe(true);
+    const parsed = JSON.parse(poll.result.access) as { profile?: string };
+    expect(parsed.profile).toBe("vscode-client-real");
+    expect(poll.result.auth_state).toEqual({ github_copilot_profile: "vscode-client-real" });
     expect(poll.result.refresh).toBe("github-token");
     expect(poll.result.accountLabel).toBe("octocat");
   });
@@ -137,7 +141,7 @@ describe("GitHub Copilot device-login entitlement gate", () => {
       }
       return new Response("not found", { status: 404 });
     });
-    const client = new GithubOAuthClient(fetcher);
+    const client = new GithubOAuthClient(fetcher, GITHUB_CLIENT_ID);
 
     const poll = await client.pollDeviceAuth("device-code-4", {
       providerState: "github.com",
@@ -180,12 +184,51 @@ describe("GitHub Copilot device-login entitlement gate", () => {
       access?: string;
       apiHost?: string;
       github?: string;
+      profile?: string;
     };
     expect(parsed.access).toBe("github-token");
     expect(parsed.apiHost).toBe(GITHUB_OPENCODE_API_HOST);
     expect(parsed.github).toBe("github-token");
+    expect(parsed.profile).toBe("opencode-copilot");
+    expect(poll.result.auth_state).toEqual({ github_copilot_profile: "opencode-copilot" });
     expect(poll.result.refresh).toBe("github-token");
     expect(poll.result.accountLabel).toBe("octocat");
+  });
+
+  test("default login client follows the complete profile's OAuth app ID", async () => {
+    const originalMode = process.env.CARTETHYIA_GITHUB_COPILOT_MODE;
+    try {
+      for (const [mode, expectedClientId] of [
+        ["opencode-copilot", GITHUB_OPENCODE_CLIENT_ID],
+        ["vscode-client-real", GITHUB_CLIENT_ID],
+      ] as const) {
+        process.env.CARTETHYIA_GITHUB_COPILOT_MODE = mode;
+        let requestBody = "";
+        const fetcher = (async (_url: string | URL | Request, init?: RequestInit) => {
+          requestBody = String(init?.body ?? "");
+          return Response.json({
+            device_code: "device-code",
+            user_code: "ABCD-EFGH",
+            verification_uri: "https://github.com/login/device",
+          });
+        }) as unknown as typeof fetch;
+        await new GithubOAuthClient(fetcher).startDeviceAuth();
+        expect(new URLSearchParams(requestBody).get("client_id")).toBe(expectedClientId);
+      }
+    } finally {
+      if (originalMode === undefined) delete process.env.CARTETHYIA_GITHUB_COPILOT_MODE;
+      else process.env.CARTETHYIA_GITHUB_COPILOT_MODE = originalMode;
+    }
+  });
+
+  test("refuses cross-profile refresh before calling the mint endpoint", async () => {
+    const { fetch: fetcher, calls } = stubFetch(() => new Response("unexpected", { status: 500 }));
+    const client = new GithubOAuthClient(fetcher, GITHUB_CLIENT_ID);
+    await expect(client.refresh("github-token", undefined, {
+      account_id: "account-1",
+      auth_state: { github_copilot_profile: "opencode-copilot" },
+    })).rejects.toThrow("github_copilot_profile_mismatch");
+    expect(calls).toHaveLength(0);
   });
 
   test("OpenCode refresh keeps the raw token without minting", async () => {
@@ -200,10 +243,13 @@ describe("GitHub Copilot device-login entitlement gate", () => {
       access?: string;
       apiHost?: string;
       github?: string;
+      profile?: string;
     };
     expect(parsed.access).toBe("github-token");
     expect(parsed.apiHost).toBe(GITHUB_OPENCODE_API_HOST);
     expect(parsed.github).toBe("github-token");
+    expect(parsed.profile).toBe("opencode-copilot");
+    expect(refreshed.auth_state).toEqual({ github_copilot_profile: "opencode-copilot" });
     expect(refreshed.refresh).toBe("github-token");
   });
 });

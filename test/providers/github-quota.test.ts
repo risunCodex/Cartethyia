@@ -101,6 +101,7 @@ describe("GitHub Copilot quota", () => {
       access: "minted-copilot-token",
       apiHost: "api.individual.githubcopilot.com",
       github: "github-oauth-token",
+      profile: "opencode-copilot",
     }), fetcher);
 
     expect(requestedUrl).toBe("https://api.github.com/copilot_internal/user");

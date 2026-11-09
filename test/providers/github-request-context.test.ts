@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type {
   ProviderDispatchContext,
   ProviderDispatchTarget,
@@ -15,6 +15,13 @@ const candidate = {
   capabilities: {},
 } as unknown as ProviderDispatchTarget;
 
+const originalMode = process.env.CARTETHYIA_GITHUB_COPILOT_MODE;
+beforeAll(() => { process.env.CARTETHYIA_GITHUB_COPILOT_MODE = "vscode-client-real"; });
+afterAll(() => {
+  if (originalMode === undefined) delete process.env.CARTETHYIA_GITHUB_COPILOT_MODE;
+  else process.env.CARTETHYIA_GITHUB_COPILOT_MODE = originalMode;
+});
+
 const baseRequest = {
   model: "gpt-4.1",
   messages: [{ role: "user", content: [{ kind: "text", text: "hi" }] }],
@@ -30,7 +37,7 @@ interface CapturedRequest {
 async function capture(
   request: CanonicalRequest,
   credential = "account-a",
-  envelope?: { access?: string; apiHost?: string; github?: string },
+  envelope?: { access?: string; apiHost?: string; github?: string; profile?: "opencode-copilot" | "vscode-client-real" },
 ): Promise<CapturedRequest> {
   let captured: CapturedRequest | undefined;
   const outboundFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
@@ -50,6 +57,7 @@ async function capture(
         access: envelope?.access ?? "copilot-access",
         apiHost: envelope?.apiHost ?? "copilot.example",
         github: credential,
+        profile: envelope?.profile ?? "vscode-client-real",
       })),
     },
     deadline: Date.now() + 30_000,

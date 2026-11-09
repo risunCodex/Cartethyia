@@ -17,6 +17,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { convert9RouterBackup } from "../../src/console/backup/nine-router";
+import { bindImportedGithubCredential } from "../../src/providers/integrations/github/github-oauth";
 import { detectFormat, validateRestorePayload } from "../../src/console/backup/validate";
 import {
   COMBO_STRATEGIES,
@@ -61,6 +62,7 @@ describe("legacy provider mapping", () => {
         ],
       }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     expect(report.imported.accounts).toBe(1);
     expect(report.skipped).toEqual([`connection 1: provider "devin" (no matching provider)`]);
@@ -78,6 +80,7 @@ describe("legacy provider mapping", () => {
         customModels: [{ id: "m1", name: "deepseek", providerAlias: "oc" }],
       }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     const config = (payload as unknown as { sections: { config: Record<string, Record<string, unknown>[]> } }).sections.config;
     // The node becomes our provider under its prefix, which is what callers address.
@@ -96,6 +99,7 @@ describe("legacy provider mapping", () => {
         providerNodes: [{ id: "n1", type: "grpc-bidi", prefix: "gr", baseUrl: "https://x.example" }],
       }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     expect(report.imported.providers).toBe(0);
     expect(report.skipped[0]).toContain('type "grpc-bidi"');
@@ -139,6 +143,7 @@ describe("legacy proxy pools", () => {
         ],
       }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     expect(report.imported.pools).toBe(2);
     const config = (payload as unknown as { sections: { config: Record<string, Record<string, unknown>[]> } }).sections.config;
@@ -162,6 +167,7 @@ describe("legacy proxy pools", () => {
     const { report } = convert9RouterBackup(
       backup({ proxyPools: [{ id: "p", name: "empty", type: "http", createdAt: NOW }] }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     expect(report.imported.pools).toBe(0);
     expect(report.skipped[0]).toBe('proxy pool "empty": no proxy URL');
@@ -188,6 +194,7 @@ describe("legacy accounts", () => {
         ],
       }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     const config = (payload as unknown as { sections: { config: Record<string, Record<string, unknown>[]> } }).sections.config;
     const account = (config.provider_accounts ?? [])[0];
@@ -206,6 +213,137 @@ describe("legacy accounts", () => {
     expect(report.warnings).toContain('account "main": carried a client secret with no refresh token; it cannot authorize a refresh');
   });
 
+  test("rebinds a VS Code Copilot export to the active OpenCode profile", () => {
+    const originalMode = process.env.CARTETHYIA_GITHUB_COPILOT_MODE;
+    try {
+      process.env.CARTETHYIA_GITHUB_COPILOT_MODE = "opencode-copilot";
+      const { payload } = convert9RouterBackup(
+        backup({
+          providerConnections: [{
+            id: "github-vscode",
+            provider: "github",
+            name: "github import",
+            authType: "oauth",
+            accessToken: JSON.stringify({
+              access: "proxy-ep=api.individual.githubcopilot.com;expires_at=1893456000;",
+              apiHost: "api.individual.githubcopilot.com",
+              github: "raw-github-token",
+              profile: "vscode-client-real",
+            }),
+            refreshToken: "raw-github-token",
+            expiresAt: "2026-11-09T14:00:00.000Z",
+            isActive: true,
+            createdAt: NOW,
+          }],
+        }),
+        TENANT,
+        { github: bindImportedGithubCredential },
+      );
+      const config = (payload as unknown as { sections: { config: Record<string, Record<string, unknown>[]> } }).sections.config;
+      const account = (config.provider_accounts ?? [])[0];
+      const normalized = JSON.parse(String(account?.access_token)) as Record<string, unknown>;
+      expect(account?.credential_kind).toBe("oauth");
+      expect(normalized).toEqual({
+        access: "raw-github-token",
+        apiHost: "api.githubcopilot.com",
+        profile: "opencode-copilot",
+        github: "raw-github-token",
+      });
+      expect(account?.auth_state).toEqual({ github_copilot_profile: "opencode-copilot" });
+      expect((config.provider_oauth_states ?? [])[0]?.refresh_token).toBe("raw-github-token");
+      expect((config.provider_oauth_states ?? [])[0]?.expires_at).toEqual({
+        __date: expect.any(String),
+      });
+    } finally {
+      if (originalMode === undefined) delete process.env.CARTETHYIA_GITHUB_COPILOT_MODE;
+      else process.env.CARTETHYIA_GITHUB_COPILOT_MODE = originalMode;
+    }
+  });
+
+  test("rebinds a raw GitHub export to the active VS Code profile", () => {
+    const originalMode = process.env.CARTETHYIA_GITHUB_COPILOT_MODE;
+    try {
+      process.env.CARTETHYIA_GITHUB_COPILOT_MODE = "vscode-client-real";
+      const { payload } = convert9RouterBackup(
+        backup({
+          providerConnections: [{
+            id: "github-raw",
+            provider: "github",
+            name: "github raw",
+            authType: "oauth",
+            accessToken: "raw-github-token",
+            refreshToken: "raw-github-token",
+            isActive: true,
+            createdAt: NOW,
+          }],
+        }),
+        TENANT,
+        { github: bindImportedGithubCredential },
+      );
+      const config = (payload as unknown as { sections: { config: Record<string, Record<string, unknown>[]> } }).sections.config;
+      const account = (config.provider_accounts ?? [])[0];
+      const normalized = JSON.parse(String(account?.access_token)) as Record<string, unknown>;
+      expect(account?.credential_kind).toBe("oauth");
+      expect(normalized).toEqual({
+        access: "raw-github-token",
+        apiHost: "api.individual.githubcopilot.com",
+        profile: "vscode-client-real",
+        github: "raw-github-token",
+      });
+      expect(account?.auth_state).toEqual({ github_copilot_profile: "vscode-client-real" });
+      expect((config.provider_oauth_states ?? [])[0]?.refresh_token).toBe("raw-github-token");
+      expect((config.provider_oauth_states ?? [])[0]?.expires_at).toEqual({ __date: "1970-01-01T00:00:00.000Z" });
+    } finally {
+      if (originalMode === undefined) delete process.env.CARTETHYIA_GITHUB_COPILOT_MODE;
+      else process.env.CARTETHYIA_GITHUB_COPILOT_MODE = originalMode;
+    }
+  });
+
+  test("a minted VS Code export without a raw GitHub token is skipped, not invented", () => {
+    const originalMode = process.env.CARTETHYIA_GITHUB_COPILOT_MODE;
+    try {
+      process.env.CARTETHYIA_GITHUB_COPILOT_MODE = "opencode-copilot";
+      const { payload, report } = convert9RouterBackup(
+        backup({
+          providerConnections: [
+            {
+              id: "github-bad",
+              provider: "github",
+              name: "broken import",
+              authType: "oauth",
+              accessToken: JSON.stringify({
+                access: "proxy-ep=api.individual.githubcopilot.com;expires_at=1893456000;",
+                apiHost: "api.individual.githubcopilot.com",
+                github: undefined,
+                profile: "vscode-client-real",
+              }),
+              isActive: true,
+              createdAt: NOW,
+            },
+            {
+              id: "github-good",
+              provider: "github",
+              name: "good import",
+              authType: "oauth",
+              accessToken: "raw-github-token",
+              refreshToken: "raw-github-token",
+              isActive: true,
+              createdAt: NOW,
+            },
+          ],
+        }),
+        TENANT,
+        { github: bindImportedGithubCredential },
+      );
+      const config = (payload as unknown as { sections: { config: Record<string, Record<string, unknown>[]> } }).sections.config;
+      expect(report.skipped.some((entry) => entry.includes("broken import"))).toBe(true);
+      expect((config.provider_accounts ?? []).map((row) => row.label)).toEqual(["good import"]);
+    } finally {
+      if (originalMode === undefined) delete process.env.CARTETHYIA_GITHUB_COPILOT_MODE;
+      else process.env.CARTETHYIA_GITHUB_COPILOT_MODE = originalMode;
+    }
+  });
+
   test("a refresh token is a second sealed secret, not part of the credential", () => {
     const { payload } = convert9RouterBackup(
       backup({
@@ -222,6 +360,7 @@ describe("legacy accounts", () => {
         ],
       }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     const config = (payload as unknown as { sections: { config: Record<string, Record<string, unknown>[]> } }).sections.config;
     expect((config.provider_accounts ?? [])[0]?.access_token).toBe("at");
@@ -256,6 +395,7 @@ describe("legacy accounts", () => {
         ],
       }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     const config = (payload as unknown as { sections: { config: Record<string, Record<string, unknown>[]> } }).sections.config;
     const account = (config.provider_accounts ?? [])[0];
@@ -287,6 +427,7 @@ describe("legacy accounts", () => {
         ],
       }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     const config = (payload as unknown as { sections: { config: Record<string, Record<string, unknown>[]> } }).sections.config;
     const account = (config.provider_accounts ?? [])[0];
@@ -303,6 +444,7 @@ describe("legacy accounts", () => {
         ],
       }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     expect(report.imported.apiKeys).toBe(2);
     const config = (payload as unknown as { sections: { config: Record<string, Record<string, unknown>[]> } }).sections.config;
@@ -326,6 +468,7 @@ describe("legacy combos", () => {
         combos: [{ id: "c", name: "pair", kind: "weighted-random", models: ["oc/a", "oc/b"], createdAt: NOW }],
       }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     expect(report.imported.combos).toBe(1);
     expect(report.warnings).toContain('combo "pair": strategy "weighted-random" imported as "fallback"');
@@ -338,6 +481,7 @@ describe("legacy combos", () => {
     const { report } = convert9RouterBackup(
       backup({ combos: [{ id: "c", name: "pair", kind: null, models: ["kr/auto", "oc/x"], createdAt: NOW }] }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     expect(report.imported.combos).toBe(0);
     expect(report.skipped.some((entry) => entry.includes("needs at least two resolvable members"))).toBe(true);
@@ -359,6 +503,7 @@ describe("legacy payload validity", () => {
         customModels: [{ id: "m", name: "fast", providerAlias: "oc" }],
       }),
       TENANT,
+      { github: bindImportedGithubCredential },
     );
     // The store rejects an unknown column, so a clean validation here is what
     // proves the converter writes only real ones.

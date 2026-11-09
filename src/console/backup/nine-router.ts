@@ -23,6 +23,7 @@ import type { BackupPayload, BackupRow } from "./contracts";
 import { BACKUP_APP, BACKUP_VERSION } from "./contracts";
 import { isRecord } from "../../protocol/codecs";
 import { hashSecret } from "../../security/crypto";
+import { resolveGithubCopilotMode, resolveGithubEnterpriseDomain } from "../../config/providers";
 import {
   AUTH_STATE_KEYS,
   COMBO_STRATEGIES,
@@ -100,6 +101,24 @@ interface ResolvedConnectionCredential {
   readonly value: string;
   readonly kind: "api_key" | "oauth";
 }
+
+/** The provider-specific rebinding a router export may need before it becomes our envelope. */
+export interface ImportedProviderCredential {
+  readonly credential: string;
+  readonly profile: "opencode-copilot" | "vscode-client-real";
+  readonly refreshToken?: string;
+  readonly expiresAt: Date;
+  readonly requiresRefresh: boolean;
+  readonly warnings: readonly string[];
+}
+
+export type ImportedProviderCredentialBinder = (
+  value: string,
+  refreshValue: string | null | undefined,
+  profile: "opencode-copilot" | "vscode-client-real",
+  domain: string,
+  expiresAt?: Date,
+) => ImportedProviderCredential;
 function credentialOf(entry: Row, provider: string): ResolvedConnectionCredential | null {
   const apiKey = text(entry.apiKey);
   const accessToken = text(entry.accessToken);
@@ -128,7 +147,7 @@ function credentialOf(entry: Row, provider: string): ResolvedConnectionCredentia
  * we have no such provider — a set entry with no provider behind it would
  * classify a row that can never import.
  */
-const OAUTH_PROVIDERS = new Set(["claude", "codex", "antigravity", "kimi", "cline"]);
+const OAUTH_PROVIDERS = new Set(["claude", "codex", "antigravity", "kimi", "cline", "github"]);
 
 /** The non-secret per-account config, as our `auth_state` bag. */
 function authStateOf(entry: Row): Record<string, unknown> {
@@ -223,7 +242,11 @@ function modelReference(
  * leaving them null would make them global, i.e. visible to every tenant, which
  * an import must never do implicitly.
  */
-export function convert9RouterBackup(input: unknown, tenantId: string): ConversionResult {
+export function convert9RouterBackup(
+  input: unknown,
+  tenantId: string,
+  importBinders: Readonly<Record<string, ImportedProviderCredentialBinder>> = {},
+): ConversionResult {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     throw new Error("router backup must be a JSON object");
   }
@@ -273,6 +296,32 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
     }
     const accountId = crypto.randomUUID();
     const kind = credential.kind;
+    const specific = isRecord(entry.providerSpecificData) ? entry.providerSpecificData : {};
+    const importedRefresh = text(entry.refreshToken);
+    const sourceExpiry = typeof entry.expiresAt === "string" && Number.isFinite(Date.parse(entry.expiresAt))
+      ? new Date(entry.expiresAt)
+      : undefined;
+    const importBinder = provider === "github" && kind === "oauth" ? importBinders.github : undefined;
+    let githubBinding: ImportedProviderCredential | undefined;
+    if (importBinder !== undefined) {
+      try {
+        githubBinding = importBinder(
+          credential.value,
+          importedRefresh,
+          resolveGithubCopilotMode(),
+          resolveGithubEnterpriseDomain() || "github.com",
+          sourceExpiry,
+        );
+      } catch (error) {
+        // One malformed row must not take the rest of the backup down with it.
+        // The row is reported and left out; the operator can re-authenticate it.
+        skipped.push(`${label}: GitHub Copilot credential could not be bound: ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+    }
+    const storedCredential = githubBinding?.credential ?? credential.value;
+    const storedRefresh = githubBinding?.refreshToken ?? importedRefresh;
+    const storedAuthState = authStateOf(entry).auth_state;
     accounts.push({
       id: accountId,
       provider_id: provider,
@@ -282,7 +331,7 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
       // `SEALED_COLUMNS`. The store re-seals it under this instance's key on the
       // way in; sealing it here would put ciphertext in a payload whose only
       // portable form is the plaintext, and the restore would drop it.
-      access_token: credential.value,
+      access_token: storedCredential,
       credential_kind: kind,
       status: bool(entry.isActive, true) ? "active" : "disabled",
       consecutive_failures: 0,
@@ -292,29 +341,41 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
       // rather than invented — a lower number means the operator wants it used
       // first, and the column means the same thing.
       sort_index: typeof entry.priority === "number" && Number.isFinite(entry.priority) ? entry.priority : 0,
-      ...(authStateOf(entry)),
+      ...(githubBinding === undefined
+        ? (storedAuthState === undefined ? {} : { auth_state: storedAuthState })
+        : {
+            auth_state: {
+              ...(isRecord(storedAuthState) ? storedAuthState : {}),
+              github_copilot_profile: githubBinding.profile,
+            },
+          }),
       ...(emailOf(entry)),
       created_at: { __date: isoDate(entry.createdAt, now) },
     });
     connectedProviders.add(provider);
     // The refresh token is a second secret on the same account, so it gets its
     // own sealed row rather than being folded into the credential.
-    const specific = isRecord(entry.providerSpecificData) ? entry.providerSpecificData : {};
-    const refresh = text(entry.refreshToken);
     const clientSecret = text(specific.clientSecret);
-    if (refresh !== null || clientSecret !== null) {
+    for (const warning of githubBinding?.warnings ?? []) {
+      warnings.push(`account "${label}": ${warning}`);
+    }
+    if (storedRefresh !== null || clientSecret !== null || githubBinding?.requiresRefresh === true) {
       // A companion secret authorizes a refresh, so on its own it has nothing to
       // authorize. It is still carried rather than dropped, and the report says
       // why it is inert — a secret lost without a word is how an operator
       // discovers the loss from a failed refresh days later.
-      if (clientSecret !== null && refresh === null) {
+      if (clientSecret !== null && storedRefresh === null) {
         warnings.push(`account "${label}": carried a client secret with no refresh token; it cannot authorize a refresh`);
       }
       oauthStates.push({
         provider_account_id: accountId,
-        ...(refresh === null ? {} : { refresh_token: refresh }),
+        ...(storedRefresh === null ? {} : { refresh_token: storedRefresh }),
         ...(clientSecret === null ? {} : { client_secret: clientSecret }),
-        ...(typeof entry.expiresAt === "string" ? { expires_at: { __date: isoDate(entry.expiresAt, now) } } : {}),
+        ...(githubBinding !== undefined
+          ? { expires_at: { __date: githubBinding.expiresAt.toISOString() } }
+          : typeof entry.expiresAt === "string"
+            ? { expires_at: { __date: isoDate(entry.expiresAt, now) } }
+            : {}),
       });
     }
   });

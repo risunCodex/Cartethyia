@@ -15,6 +15,7 @@ const credential = JSON.stringify({
   access: "copilot-access",
   apiHost: "copilot.example",
   github: "account-auto",
+  profile: "opencode-copilot",
 });
 
 const request = {
@@ -206,6 +207,7 @@ describe("GitHub Copilot Auto routing", () => {
       access: "copilot-stream-access",
       apiHost: "copilot.example",
       github: "account-auto-stream",
+      profile: "opencode-copilot",
     });
     const requests: string[] = [];
     const responseEvents = [

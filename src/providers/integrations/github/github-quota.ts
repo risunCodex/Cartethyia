@@ -12,7 +12,7 @@
  */
 import type { FetchLike, ProviderQuotaResult, ProviderQuotaWindow } from "../../quota/quota-contracts";
 import { getJson, isoDate, number, percentWindow, quotaRecord, text } from "../../quota/quota-contracts";
-import { resolveGithubEnterpriseDomain } from "../../../config/providers";
+import { resolveGithubCopilotMode, resolveGithubEnterpriseDomain } from "../../../config/providers";
 import { GITHUB_REQUEST_HEADERS, parseGithubCredential } from "./github-oauth";
 
 /**
@@ -113,14 +113,31 @@ export async function fetchGithubQuota(
   // predates that field, the minted token is sent instead and the upstream
   // answers with an auth error that surfaces honestly rather than as a
   // fabricated window.
+  const mode = resolveGithubCopilotMode();
+  if (parsed.profile !== mode) {
+    return {
+      source: "github",
+      plan: null,
+      windows: [],
+      error: `GitHub Copilot account is bound to ${parsed.profile}; reconnect it after selecting ${mode}.`,
+    };
+  }
   const token = parsed.github ?? parsed.access;
   const domain = resolveGithubEnterpriseDomain() || "github.com";
+  const headers = mode === "opencode-copilot"
+    ? {
+        authorization: `Bearer ${token}`,
+        "user-agent": "opencode/0.1.0",
+        "x-github-api-version": "2025-04-01",
+      }
+    : {
+        authorization: `Bearer ${token}`,
+        ...GITHUB_REQUEST_HEADERS,
+        "x-github-api-version": "2025-04-01",
+      };
   const body = await getJson(
     `https://api.${domain}/copilot_internal/user`,
-    {
-      authorization: `Bearer ${token}`,
-      ...GITHUB_REQUEST_HEADERS,
-    },
+    headers,
     fetcher,
   );
   return parseGithubQuota(body);

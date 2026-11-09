@@ -25,10 +25,14 @@ import type {
   OAuthDeviceStartResult,
   OAuthExchangeResult,
 } from "../../authentication/oauth-flow-store";
-import type { OAuthTokenRefreshResult } from "../../authentication/oauth-refresh-service";
+import type {
+  OAuthRefreshContext,
+  OAuthTokenRefresher,
+  OAuthTokenRefreshResult,
+} from "../../authentication/oauth-refresh-service";
 import { OAuthDeviceFlow } from "../../authentication/oauth-device-flow";
 import type { FetchLike } from "../../authentication/oauth-client";
-import { resolveGithubEnterpriseDomain } from "../../../config/providers";
+import { resolveGithubCopilotMode, resolveGithubEnterpriseDomain } from "../../../config/providers";
 import { randomUUID, createHash } from "node:crypto";
 import { getOrCreateInstallId } from "../shared/install-id";
 
@@ -54,6 +58,26 @@ export const GITHUB_OPENCODE_API_HOST = "api.githubcopilot.com" as const;
  * real lifetime: a re-login or upstream expiry is what actually rotates it.
  */
 const GITHUB_OPENCODE_TOKEN_LIFETIME_MS = 365 * 24 * 60 * 60 * 1000;
+
+export type GithubCopilotCredentialProfile = "opencode-copilot" | "vscode-client-real";
+
+export function githubCopilotProfileForClientId(clientId: string): GithubCopilotCredentialProfile {
+  return clientId === GITHUB_OPENCODE_CLIENT_ID ? "opencode-copilot" : "vscode-client-real";
+}
+
+export function githubCopilotClientIdForProfile(profile: GithubCopilotCredentialProfile): string {
+  return profile === "opencode-copilot" ? GITHUB_OPENCODE_CLIENT_ID : GITHUB_CLIENT_ID;
+}
+
+export function githubCopilotApiHostForProfile(
+  profile: GithubCopilotCredentialProfile,
+  domain: string,
+): string {
+  if (profile === "opencode-copilot") {
+    return domain === "github.com" ? GITHUB_OPENCODE_API_HOST : `copilot-api.${domain}`;
+  }
+  return GITHUB_DEFAULT_API_HOST;
+}
 
 /**
  * Headers every Copilot inference and policy request must carry.
@@ -129,15 +153,18 @@ export function copilotGitHubDomain(): string {
   return resolveGithubEnterpriseDomain() || "github.com";
 }
 
-/** Persisted credential shape: the Copilot token plus the host it was minted for. */
-export function encodeGithubCredential(access: string, apiHost: string, githubToken?: string): string {
+/** Persisted credential shape: token, upstream host, and OAuth app origin. */
+export function encodeGithubCredential(
+  access: string,
+  apiHost: string,
+  githubToken: string | undefined,
+  profile: GithubCopilotCredentialProfile,
+): string {
   return JSON.stringify({
     access,
     apiHost,
-    // The GitHub token is carried in the envelope as well as the refresh
-    // column: the quota collector is handed only the access value, and the
-    // usage endpoint takes the GitHub token, not the minted one. It is optional
-    // so a credential written before this field existed still parses.
+    profile,
+    // The GitHub token is carried beside the minted token for quota reads.
     ...(githubToken === undefined || githubToken.length === 0 ? {} : { github: githubToken }),
   });
 }
@@ -145,8 +172,91 @@ export function encodeGithubCredential(access: string, apiHost: string, githubTo
 export interface GithubCredential {
   readonly access: string;
   readonly apiHost: string;
+  readonly profile: GithubCopilotCredentialProfile;
   /** The long-lived GitHub token, when the envelope carries it. */
   readonly github?: string;
+}
+
+export interface ImportedGithubCredential {
+  readonly credential: string;
+  readonly profile: GithubCopilotCredentialProfile;
+  readonly refreshToken?: string;
+  /** True when a raw GitHub token should be minted on first use in VS Code mode. */
+  readonly expiresAt: Date;
+  readonly requiresRefresh: boolean;
+  /** Non-fatal facts an importer must surface: the credential is usable, but its origin is not fully verified. */
+  readonly warnings: readonly string[];
+}
+
+/**
+ * Binds an exported/imported GitHub credential to the currently selected wire
+ * profile. This is a local normalization only; it never contacts GitHub.
+ */
+export function bindImportedGithubCredential(
+  value: string,
+  refreshValue: string | null | undefined,
+  profile: GithubCopilotCredentialProfile,
+  domain: string,
+  expiresAt?: Date,
+): ImportedGithubCredential {
+  const parsed = (() => {
+    try {
+      return parseGithubCredential(value);
+    } catch {
+      return undefined;
+    }
+  })();
+  const access = parsed?.access ?? nonEmptyTrimmedString(value);
+  if (access === undefined) throw new Error("GitHub Copilot import credential is empty");
+  const refresh = nonEmptyTrimmedString(refreshValue);
+  const rawToken = parsed?.github ?? refresh;
+  const isMinted =
+    access.includes("proxy-ep=") ||
+    (parsed !== undefined && rawToken !== undefined && access !== rawToken);
+  const githubToken = rawToken ?? (isMinted ? undefined : access);
+  if (profile === "opencode-copilot") {
+    if (isMinted && githubToken === undefined) {
+      throw new Error("a VS Code Copilot export needs its raw GitHub refresh token to import as opencode-copilot");
+    }
+    const token = githubToken ?? access;
+    return {
+      credential: encodeGithubCredential(
+        token,
+        githubCopilotApiHostForProfile(profile, domain),
+        token,
+        profile,
+      ),
+      profile,
+      refreshToken: token,
+      expiresAt: new Date(Date.now() + GITHUB_OPENCODE_TOKEN_LIFETIME_MS),
+      requiresRefresh: false,
+      warnings: [],
+    };
+  }
+  if (isMinted) {
+    const apiHost = parsed?.apiHost ?? apiHostFromGithubToken(access);
+    return {
+      credential: encodeGithubCredential(access, apiHost, githubToken, profile),
+      profile,
+      ...(githubToken === undefined ? {} : { refreshToken: githubToken }),
+      expiresAt: expiresAt ?? new Date(Date.now() + COPILOT_TOKEN_FALLBACK_MS),
+      requiresRefresh: false,
+      warnings: githubToken === undefined
+        ? ["the minted Copilot token has no raw GitHub refresh token; it will expire without a way to mint a replacement"]
+        : [],
+    };
+  }
+  const token = githubToken ?? access;
+  return {
+    credential: encodeGithubCredential(token, GITHUB_DEFAULT_API_HOST, token, profile),
+    profile,
+    refreshToken: token,
+    expiresAt: new Date(0),
+    requiresRefresh: true,
+    warnings: [
+      "the imported token has no Copilot mint metadata; its GitHub OAuth app origin could not be verified",
+    ],
+  };
 }
 
 /**
@@ -172,9 +282,17 @@ export function parseGithubCredential(value: string): GithubCredential {
   }
   const apiHost = nonEmptyTrimmedString(root.apiHost) ?? GITHUB_DEFAULT_API_HOST;
   const github = nonEmptyTrimmedString(root.github);
+  const rawProfile = nonEmptyTrimmedString(root.profile);
+  const profile: GithubCopilotCredentialProfile =
+    rawProfile === "opencode-copilot" || rawProfile === "vscode-client-real"
+      ? rawProfile
+      : github !== undefined && access === github && apiHost === GITHUB_OPENCODE_API_HOST
+        ? "opencode-copilot"
+        : "vscode-client-real";
   return {
     access,
     apiHost,
+    profile,
     ...(github === undefined ? {} : { github }),
   };
 }
@@ -236,6 +354,7 @@ export async function mintGithubToken(
 async function fetchGitHubLogin(
   githubAccessToken: string,
   domain: string,
+  profile: GithubCopilotCredentialProfile,
   fetchFn: FetchLike,
   signal: AbortSignal,
 ): Promise<string | undefined> {
@@ -244,10 +363,8 @@ async function fetchGitHubLogin(
       headers: {
         accept: "application/json",
         authorization: `Bearer ${githubAccessToken}`,
-        // The Copilot client headers belong on the Copilot API. Sent here they
-        // draw a 400, the login is never read, and every account then shares
-        // the dialog's label — so the second one overwrites the first.
-        "user-agent": GITHUB_REQUEST_HEADERS["user-agent"]!,
+        // The GitHub account API only needs the selected client's user-agent.
+        "user-agent": githubCopilotUserAgent(profile),
       },
       signal,
     });
@@ -277,6 +394,7 @@ interface CopilotUserProfile {
 async function fetchGitHubCopilotEntitlement(
   githubAccessToken: string,
   domain: string,
+  profile: GithubCopilotCredentialProfile,
   fetchFn: FetchLike,
   signal: AbortSignal,
 ): Promise<{ denied: string } | { denied?: undefined }> {
@@ -289,15 +407,15 @@ async function fetchGitHubCopilotEntitlement(
       headers: {
         accept: "application/json",
         authorization: `Bearer ${githubAccessToken}`,
-        "user-agent": GITHUB_REQUEST_HEADERS["user-agent"]!,
+        "user-agent": githubCopilotUserAgent(profile),
         "x-github-api-version": "2025-04-01",
       },
       signal,
     });
     if (!response.ok) return { denied: undefined };
-    const profile = record(await response.json()) as CopilotUserProfile | undefined;
-    if (profile?.chat_enabled === false) {
-      if (profile.can_signup_for_limited) {
+    const userProfile = record(await response.json()) as CopilotUserProfile | undefined;
+    if (userProfile?.chat_enabled === false) {
+      if (userProfile.can_signup_for_limited) {
         return {
           denied:
             "This GitHub account is not signed up for GitHub Copilot. Sign up for Copilot Free at https://github.com/features/copilot/plans and connect again.",
@@ -316,7 +434,43 @@ async function fetchGitHubCopilotEntitlement(
   }
 }
 
-export class GithubOAuthClient extends OAuthDeviceFlow {
+function parseGithubDeviceProviderState(value: string | undefined): { domain?: string; clientId?: string; profile?: GithubCopilotCredentialProfile } | undefined {
+  if (value === undefined || value.length === 0) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    const state = record(parsed);
+    const domain = nonEmptyTrimmedString(state?.domain);
+    const clientId = nonEmptyTrimmedString(state?.clientId);
+    const rawProfile = nonEmptyTrimmedString(state?.profile);
+    const profile = rawProfile === "opencode-copilot" || rawProfile === "vscode-client-real"
+      ? rawProfile
+      : undefined;
+    if (domain !== undefined) {
+      return {
+        domain,
+        ...(clientId === undefined ? {} : { clientId }),
+        ...(profile === undefined ? {} : { profile }),
+      };
+    }
+  } catch {
+    // Older in-flight logins persisted the bare GitHub domain as providerState.
+  }
+  return { domain: value };
+}
+
+function githubCopilotUserAgent(profile: GithubCopilotCredentialProfile): string {
+  return profile === "opencode-copilot" ? "opencode/0.1.0" : GITHUB_REQUEST_HEADERS["user-agent"]!;
+}
+
+function readGithubCopilotProfile(
+  authState: Readonly<Record<string, unknown>> | undefined,
+): GithubCopilotCredentialProfile | undefined {
+  const value = authState?.["github_copilot_profile"];
+  return value === "opencode-copilot" || value === "vscode-client-real" ? value : undefined;
+}
+
+export class GithubOAuthClient extends OAuthDeviceFlow implements OAuthTokenRefresher {
+  readonly requiresAccessToken = true;
   override readonly supportsDeviceCode = true;
   override readonly supportsBrowserCode = false;
 
@@ -330,7 +484,7 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
 
   constructor(
     fetchFn: FetchLike = globalThis.fetch,
-    clientId: string = GITHUB_CLIENT_ID,
+    clientId: string = githubCopilotClientIdForProfile(resolveGithubCopilotMode()),
   ) {
     super(fetchFn);
     this.clientId = clientId;
@@ -343,7 +497,7 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
       headers: {
         accept: "application/json",
         "content-type": "application/x-www-form-urlencoded",
-        "user-agent": GITHUB_REQUEST_HEADERS["user-agent"]!,
+        "user-agent": githubCopilotUserAgent(githubCopilotProfileForClientId(this.clientId)),
       },
       body: new URLSearchParams({ client_id: this.clientId, scope: "read:user" }),
     });
@@ -380,9 +534,13 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
       deviceAuthId: deviceCode,
       intervalSeconds: interval,
       expiresInSeconds: expiresIn,
-      // The host is captured at start so the poll mints against the same GitHub
-      // domain the device code was issued by.
-      providerState: domain,
+      // Pin the OAuth app and host across the complete device flow, even if
+      // process configuration changes before the user finishes authorization.
+      providerState: JSON.stringify({
+        domain,
+        clientId: this.clientId,
+        profile: githubCopilotProfileForClientId(this.clientId),
+      }),
     };
   }
 
@@ -390,16 +548,19 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
     deviceAuthId: string,
     context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDevicePollResult> {
-    const domain = context?.providerState ?? copilotGitHubDomain();
+    const providerState = parseGithubDeviceProviderState(context?.providerState);
+    const domain = providerState?.domain ?? copilotGitHubDomain();
+    const clientId = providerState?.clientId ?? this.clientId;
+    const profile = providerState?.profile ?? githubCopilotProfileForClientId(clientId);
     const response = await this.fetchFn(`https://${domain}/login/oauth/access_token`, {
       method: "POST",
       headers: {
         accept: "application/json",
         "content-type": "application/x-www-form-urlencoded",
-        "user-agent": GITHUB_REQUEST_HEADERS["user-agent"]!,
+        "user-agent": githubCopilotUserAgent(profile),
       },
       body: new URLSearchParams({
-        client_id: this.clientId,
+        client_id: clientId,
         device_code: deviceAuthId,
         grant_type: "urn:ietf:params:oauth:grant-type:device_code",
       }),
@@ -451,6 +612,7 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
       const entitlement = await fetchGitHubCopilotEntitlement(
         githubToken,
         domain,
+        profile,
         this.fetchFn,
         AbortSignal.timeout(10_000),
       );
@@ -462,7 +624,7 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
       // no minted Copilot token. The VS Code mint endpoint
       // (`/copilot_internal/v2/token`) rejects non-VS-Code client ids with 403
       // (GitHub's anti-scraping gate), so an OpenCode login must not mint.
-      if (this.clientId !== GITHUB_OPENCODE_CLIENT_ID) {
+      if (profile === "vscode-client-real") {
         minted = await mintGithubToken(githubToken, domain, this.fetchFn);
       }
     } catch (error) {
@@ -470,40 +632,50 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
       // not an exception that escapes the dashboard's poll request.
       return { status: "failed", reason: error instanceof Error ? error.message : "GitHub Copilot token mint failed" };
     }
-    const label = await fetchGitHubLogin(githubToken, domain, this.fetchFn, AbortSignal.timeout(10_000));
+    const label = await fetchGitHubLogin(githubToken, domain, profile, this.fetchFn, AbortSignal.timeout(10_000));
     const access = minted === undefined ? githubToken : minted.access;
-    const apiHost = minted === undefined ? GITHUB_OPENCODE_API_HOST : minted.apiHost;
+    const apiHost = minted === undefined ? githubCopilotApiHostForProfile(profile, domain) : minted.apiHost;
     const expiresAt =
       minted === undefined
         ? new Date(Date.now() + GITHUB_OPENCODE_TOKEN_LIFETIME_MS)
         : minted.expiresAt;
     const result: OAuthExchangeResult = {
-      access: encodeGithubCredential(access, apiHost, githubToken),
-      // The GitHub token is the refresh value: it is what re-mints the Copilot
-      // token (VS Code app) or is the raw credential itself (OpenCode app),
-      // depending on which app the flow presented.
+      access: encodeGithubCredential(access, apiHost, githubToken, profile),
+      // The raw GitHub token is the refresh value for the selected profile.
       refresh: githubToken,
       expiresAt,
+      auth_state: { github_copilot_profile: profile },
       ...(label === undefined ? {} : { accountLabel: label }),
     };
     return { status: "complete", result };
   }
 
 
-  override async refresh(refreshToken: string, signal?: AbortSignal): Promise<OAuthTokenRefreshResult> {
-    // OpenCode's app uses the raw GitHub token directly — there is no minted
-    // Copilot token to re-mint, and the VS Code mint endpoint rejects the
-    // OpenCode client id. Refresh is then a no-op that keeps the credential
-    // valid on its far-future lifetime.
-    if (this.clientId === GITHUB_OPENCODE_CLIENT_ID) {
+  override async refresh(
+    refreshToken: string,
+    signal?: AbortSignal,
+    context?: OAuthRefreshContext,
+  ): Promise<OAuthTokenRefreshResult> {
+    const profile = githubCopilotProfileForClientId(this.clientId);
+    const storedProfile =
+      readGithubCopilotProfile(context?.auth_state) ??
+      (context?.access_token === undefined
+        ? undefined
+        : parseGithubCredential(context.access_token).profile);
+    if (storedProfile !== undefined && storedProfile !== profile) {
+      throw new Error("github_copilot_profile_mismatch: reconnect this GitHub account under the selected CARTETHYIA_GITHUB_COPILOT_MODE");
+    }
+    if (profile === "opencode-copilot") {
       return {
         access: encodeGithubCredential(
           refreshToken,
-          GITHUB_OPENCODE_API_HOST,
+          githubCopilotApiHostForProfile(profile, copilotGitHubDomain()),
           refreshToken,
+          profile,
         ),
         refresh: refreshToken,
         expiresAt: new Date(Date.now() + GITHUB_OPENCODE_TOKEN_LIFETIME_MS),
+        auth_state: { github_copilot_profile: profile },
       };
     }
     const minted = await mintGithubToken(
@@ -513,10 +685,11 @@ export class GithubOAuthClient extends OAuthDeviceFlow {
       signal,
     );
     return {
-      access: encodeGithubCredential(minted.access, minted.apiHost, refreshToken),
+      access: encodeGithubCredential(minted.access, minted.apiHost, refreshToken, profile),
       // The GitHub token is unchanged by a re-mint, so it stays the refresh value.
       refresh: refreshToken,
       expiresAt: minted.expiresAt,
+      auth_state: { github_copilot_profile: profile },
     };
   }
 }

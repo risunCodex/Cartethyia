@@ -29,7 +29,15 @@ export interface OAuthCodeExchangeContext {
   readonly providerState?: string;
 }
 
-export interface OAuthExchangeResult {
+/** Structured identity an OAuth token response exposed at login or polling time. */
+export interface OAuthAccountIdentity {
+  /** Human-readable name or username, when the provider exposes one. */
+  readonly accountName?: string;
+  /** Primary email, when the provider exposes one. */
+  readonly accountEmail?: string;
+}
+
+export interface OAuthExchangeResult extends OAuthAccountIdentity {
   readonly access: string;
   readonly refresh: string;
   readonly expiresAt: Date;
@@ -423,6 +431,61 @@ export function decodeJwtPayload(token: string): Record<string, unknown> | undef
   } catch {
     return undefined;
   }
+}
+
+/** Trim a text value from an untrusted token response without accepting other types. */
+function identityText(value: unknown): string | undefined {
+  const trimmed = nonEmptyTrimmedString(value);
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
+}
+
+function firstIdentityText(
+  source: Record<string, unknown> | undefined,
+  fields: readonly string[],
+): string | undefined {
+  if (source === undefined) return undefined;
+  for (const field of fields) {
+    const value = identityText(source[field]);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Reads identity from the token response shapes shared by WorkOS and the donor
+ * OAuth integrations. A provider that exposes only an id gets a display name,
+ * never an invented email; a response with neither leaves every field absent.
+ */
+export function oauthAccountIdentity(payload: unknown): OAuthAccountIdentity {
+  const root = record(payload);
+  if (root === undefined) return {};
+  const sources = [
+    root,
+    record(root.data),
+    record(root.user),
+    record(root.userInfo),
+    record(record(root.data)?.user),
+    record(record(root.data)?.userInfo),
+    decodeJwtPayload(identityText(root.access_token) ?? identityText(root.accessToken) ?? ""),
+  ].filter((value): value is Record<string, unknown> => value !== undefined);
+  const email = sources
+    .map((source) => firstIdentityText(source, ["email", "userEmail", "preferred_username", "upn"]))
+    .find((value): value is string => value !== undefined);
+  const name = sources
+    .map((source) => firstIdentityText(source, ["name", "displayName", "nickname", "username", "login"]))
+    .find((value): value is string => value !== undefined);
+  const firstName = sources
+    .map((source) => firstIdentityText(source, ["firstName", "first_name", "given_name"]))
+    .find((value): value is string => value !== undefined);
+  const lastName = sources
+    .map((source) => firstIdentityText(source, ["lastName", "last_name", "family_name"]))
+    .find((value): value is string => value !== undefined);
+  const fullName = [firstName, lastName].filter((part): part is string => part !== undefined).join(" ").trim();
+  const accountName = name ?? (fullName.length > 0 ? fullName : undefined);
+  return {
+    ...(email === undefined ? {} : { accountEmail: email }),
+    ...(accountName === undefined ? {} : { accountName }),
+  };
 }
 
 /**

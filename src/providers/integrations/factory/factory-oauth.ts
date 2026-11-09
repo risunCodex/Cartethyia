@@ -30,6 +30,7 @@ import type {
 import {
   decodeJwtPayload,
   nonEmptyTrimmedString,
+  oauthAccountIdentity,
   readJsonResponse,
   record,
 } from "../../authentication/oauth-flow-store";
@@ -104,9 +105,11 @@ function buildEnvelope(
     // cause; failing upstream would surface as an opaque 401.
     throw new Error("Factory Droid token carries no organization claim; sign in again");
   }
-  const email = nonEmptyTrimmedString(claims?.["email"]);
-  const subject = nonEmptyTrimmedString(claims?.["sub"]);
-  const label = accountLabel ?? email ?? subject;
+  const responseIdentity = oauthAccountIdentity(payload);
+  const email = nonEmptyTrimmedString(claims?.["email"]) ?? responseIdentity.accountEmail;
+  const accountName = responseIdentity.accountName ?? nonEmptyTrimmedString(claims?.["name"]);
+  const subject = nonEmptyTrimmedString(claims?.["sub"]) ?? nonEmptyTrimmedString(record(payload["user"])?.["id"]);
+  const label = accountLabel ?? email ?? accountName ?? subject;
   const envelope: FactoryDroidEnvelope = { accessToken, orgId };
   const result: OAuthExchangeResult = {
     access: encodeFactoryDroidCredential(envelope),
@@ -117,12 +120,15 @@ function buildEnvelope(
     refresh: nonEmptyTrimmedString(payload["refresh_token"]) ?? accessToken,
     expiresAt: expiryFromClaims(claims),
     ...(label === undefined ? {} : { accountLabel: label }),
+    ...(email === undefined ? {} : { accountEmail: email }),
+    ...(accountName === undefined ? {} : { accountName }),
   };
   return {
     result,
     authState: {
       orgId,
       ...(email === undefined ? {} : { email }),
+      ...(accountName === undefined ? {} : { accountName }),
       ...(subject === undefined ? {} : { userId: subject }),
     },
   };
@@ -200,6 +206,9 @@ export class FactoryOAuthClient extends OAuthDeviceFlow {
       refresh: refreshToken,
       expiresAt: result.expiresAt,
       auth_state: authState,
+      ...(result.accountEmail === undefined ? {} : { accountEmail: result.accountEmail }),
+      ...(result.accountName === undefined ? {} : { accountName: result.accountName }),
+      ...(result.accountLabel === undefined ? {} : { accountLabel: result.accountLabel }),
     };
   }
 }
