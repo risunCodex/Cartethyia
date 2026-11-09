@@ -53,6 +53,7 @@ import {
   quotaBarTone,
   quotaWindowState,
   quotaPillSummary,
+  isGrokHeaderQuotaWindow,
   paginateQuotaWindows,
   accountIdentity,
 } from "../../lib/format/quota";
@@ -62,7 +63,7 @@ import { getErrorMessage } from "../../data/api";
 
 function firstResetAt(account: QuotaEntry): number {
   const resetTimes =
-    account.quota?.windows.map((window) =>
+    account.quota?.windows.filter((window) => !isGrokHeaderQuotaWindow(window)).map((window) =>
       window.resetsAt ? new Date(window.resetsAt).getTime() : Number.POSITIVE_INFINITY,
     ) ?? [];
   return Math.min(...resetTimes, Number.POSITIVE_INFINITY);
@@ -321,8 +322,10 @@ function QuotaCard({
   const canReset = supportsAccountReset(account.provider);
   const resets = useAccountResets(account.id, canReset);
   const quota = account.quota;
+  const quotaSource = quota?.source ?? null;
+  const hasQuotaWindows = (quota?.windows.length ?? 0) > 0;
   const [quotaWindowPage, setQuotaWindowPage] = useState(0);
-  const quotaWindows = quota?.windows ?? [];
+  const quotaWindows = (quota?.windows ?? []).filter((window) => !isGrokHeaderQuotaWindow(window));
   const pagination = paginateQuotaWindows(quotaWindows, quotaWindowPage);
   const quotaPageCount = pagination.pageCount;
   useEffect(() => {
@@ -566,19 +569,23 @@ function QuotaCard({
       )}
 
       {/* Quota progress bars */}
-      {quota?.windows.length ? (
+      {hasQuotaWindows ? (
         <div
           className="quota-window-list flex flex-1 flex-col gap-4 border-t border-inner-border px-7 py-4.5"
         >
-          <div className="quota-window-section-label text-micro font-bold tracking-label text-text-tertiary">
-            QUOTA WINDOWS
-          </div>
-          {pagination.items.map((window, index) => {
+          {quotaWindows.length === 0 ? (
+            <div className="text-badge text-text-tertiary">No quota windows to display.</div>
+          ) : (
+            <>
+              <div className="quota-window-section-label text-micro font-bold tracking-label text-text-tertiary">
+                QUOTA WINDOWS
+              </div>
+              {pagination.items.map((window, index) => {
             const state = quotaWindowState(window);
             if (state !== "current") {
               return (
                 <div key={`${window.kind ?? window.label}:${window.startsAt}:${index}`} className="flex flex-col gap-2 text-badge">
-                  <span title={window.label} className="break-words font-semibold text-text-primary">{formatQuotaWindowLabel(window.label, quota.source, window.modelIds)}</span>
+                  <span title={window.label} className="break-words font-semibold text-text-primary">{formatQuotaWindowLabel(window.label, quotaSource, window.modelIds)}</span>
                   <span className="text-text-tertiary">{state === "expired" ? "Expired" : `Not started yet · Starts ${new Date(window.startsAt!).toLocaleString()}`}</span>
                 </div>
               );
@@ -605,7 +612,7 @@ function QuotaCard({
               if (rounded > 0 && rounded < 0.1) return "<0.1";
               return rounded.toLocaleString(undefined, { maximumFractionDigits: 1 });
             };
-            const label = formatQuotaWindowLabel(window.label, quota.source, window.modelIds);
+            const label = formatQuotaWindowLabel(window.label, quotaSource, window.modelIds);
             return (
               <div
                 className="quota-window-row grid grid-cols-quota-window min-w-0 items-center gap-x-6 gap-y-2 max-small:grid-cols-[minmax(0,1fr)_auto] max-small:gap-x-4 max-small:gap-y-2.5"
@@ -650,8 +657,10 @@ function QuotaCard({
                 </div>
               </div>
             );
-          })}
-          {pagination.pageCount > 1 && (
+              })}
+            </>
+          )}
+          {quotaWindows.length > 0 && pagination.pageCount > 1 && (
             <nav
               aria-label={`Quota windows for ${account.name}`}
               className="quota-window-pagination mt-auto flex items-center justify-between gap-4 border-t border-inner-border pt-4 max-small:flex-wrap"
@@ -744,7 +753,9 @@ export default function QuotaPage(): ReactNode {
   const filteredAccounts = useMemo(() => {
     const result = accounts.filter((account) => {
       if (providerFilter !== "all" && account.provider !== providerFilter) return false;
-      const hasQuota = Boolean(account.quota?.windows.length);
+      const hasQuota = Boolean(
+        account.quota?.windows.some((window) => !isGrokHeaderQuotaWindow(window)),
+      );
       if (accountFilter === "untracked") return !hasQuota;
       if (!hasQuota) return false;
       if (accountFilter === "active" && !account.active) return false;
@@ -776,7 +787,7 @@ export default function QuotaPage(): ReactNode {
   };
 
   const turnOffEmpty = async () => {
-    const targets = accounts.filter((account) => account.active && quotaPillSummary(account.quota?.windows ?? []).empty);
+    const targets = accounts.filter((account) => account.active && quotaPillSummary(visibleQuotaWindows(account)).empty);
     await setActiveBatch.mutateAsync({ ids: targets.map((target) => target.id), active: false });
     toast.success(`Disabled ${targets.length} empty accounts`);
   };
@@ -785,7 +796,7 @@ export default function QuotaPage(): ReactNode {
     const targets = accounts.filter(
       (account) =>
         !account.active &&
-        quotaPillSummary(account.quota?.windows ?? []).available,
+        quotaPillSummary(visibleQuotaWindows(account)).available,
     );
     await setActiveBatch.mutateAsync({ ids: targets.map((target) => target.id), active: true });
     toast.success(`Enabled ${targets.length} available accounts`);
@@ -803,7 +814,9 @@ export default function QuotaPage(): ReactNode {
           minute: "2-digit",
         })
       : "Not updated";
-  const emptyCount = accounts.filter((account) => quotaPillSummary(account.quota?.windows ?? []).empty).length;
+  const visibleQuotaWindows = (account: QuotaEntry) =>
+    (account.quota?.windows ?? []).filter((window) => !isGrokHeaderQuotaWindow(window));
+  const emptyCount = accounts.filter((account) => quotaPillSummary(visibleQuotaWindows(account)).empty).length;
 
   return (
     <Stack gap="16px" className="dashboard-page min-h-0 flex-1">

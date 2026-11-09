@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   Download,
   FlaskConical,
   LockOpen,
@@ -8,7 +9,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { consoleRequest } from "../../../data/api";
 import { mapWithConcurrency } from "../../../lib/concurrency";
@@ -36,12 +37,15 @@ export { AccountStatusBadge } from "./AccountStatusBadge";
 export { AddAccountModal } from "./AddAccountModal";
 
 /**
- * Cooldown is the union the badge uses: status, an account-wide deadline still
- * in the future, or any live per-model backoff. A pool-as-account row is never
- * a target — it has no credential to disable or delete.
+ * A cooldown this toolbar can still disable: status, an account-wide deadline
+ * still in the future, or any live per-model backoff. A pool-as-account row is
+ * never a target — it has no credential to disable or delete. A disabled row
+ * is not one either: disable keeps the deadline columns as evidence, and
+ * counting them leaves "Disable cooldown (n)" stuck after the action lands.
  */
 export function accountHasCooldown(account: ProviderAccountResponse): boolean {
   if (account.kind === "pool") return false;
+  if (account.status === "disabled") return false;
   if (account.status === "cooldown") return true;
   if (account.cooldownUntil !== undefined && account.cooldownUntil !== null) {
     const until = Date.parse(account.cooldownUntil);
@@ -109,6 +113,103 @@ function compareAccounts(
   const bt = new Date(b.lastSuccessAt ?? b.createdAt).getTime();
   return bt - at || stableTie(a, b);
 }
+
+function ToolbarMenu({
+  label,
+  disabled = false,
+  title,
+  children,
+}: {
+  readonly label: string;
+  readonly disabled?: boolean;
+  readonly title?: string;
+  readonly children: ReactNode;
+}): ReactNode {
+  const [open, setOpen] = useState(false);
+  const container = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (container.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative shrink-0" ref={container}>
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={disabled}
+        title={title}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {label}
+        <ChevronDown size={12} className={open ? "rotate-180" : ""} aria-hidden="true" />
+      </Button>
+      {/* Always mounted. Hiding it with `hidden` (not unmounting) keeps the
+          item buttons addressable and stops the panel from disappearing in the
+          same click that opens it. */}
+      <div
+        role="menu"
+        hidden={!open}
+        className="absolute right-0 top-full z-popover mt-1 min-w-56 rounded-card border border-border-strong bg-popover-bg p-1 shadow-popout"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ToolbarMenuItem({
+  label,
+  hint,
+  icon,
+  disabled = false,
+  danger = false,
+  title,
+  onClick,
+}: {
+  readonly label: string;
+  readonly hint?: string;
+  readonly icon: ReactNode;
+  readonly disabled?: boolean;
+  readonly danger?: boolean;
+  readonly title?: string;
+  readonly onClick: () => void;
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      title={title}
+      className={`flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-caption font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${
+        danger
+          ? "text-red hover:bg-red-soft"
+          : "text-text-primary hover:bg-hover"
+      }`}
+      onClick={onClick}
+    >
+      <span className="inline-flex shrink-0" aria-hidden="true">{icon}</span>
+      <span className="min-w-0 flex-1">{label}</span>
+      {hint ? <span className="text-badge font-medium text-text-tertiary">{hint}</span> : null}
+    </button>
+  );
+}
+
 export function AccountsList({
   providerId,
   accounts,
@@ -409,206 +510,244 @@ const TEST_ALL_CONCURRENCY = 3;
 
   return (
     <Stack gap="8px">
-      {/* Flat toolbar: every action is a persistent button that greys out when
-          it does not apply, instead of hiding behind a dropdown. A control that
-          appears only once you have selected accounts hides what the toolbar
-          can do, and moves the remaining buttons sideways every time the
-          selection changes.
-          One row: compact search on the left, bulk actions right after it in a
-          stable order, and sort/select pinned to the right edge. On narrow
-          viewports the search takes the full width and everything wraps
-          naturally, so no space is left empty on either side. */}
-      <div className="flex min-w-0 flex-wrap items-center gap-2 p-3 border border-inner-border rounded-control bg-surface-2">
-        <label className="relative w-full min-medium:w-56 shrink-0">
-          <Search
-            size={13}
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary"
-          />
-          <Input
-            id="accounts-search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search accounts..."
-            aria-label="Search accounts"
-            className="pl-9 h-15 py-0"
-          />
-        </label>
-        <Button
-          size="sm"
-          variant="primary"
-          icon={<FlaskConical size={12} />}
-          disabled={bulkBusy || accounts.length === 0}
-          onClick={testAllAccounts}
-          aria-label={
-            testAllProgress === null
-              ? "Test all accounts"
-              : `Testing accounts, ${testAllProgress.done} of ${testAllProgress.total} tested`
-          }
-          title="Test every account, regardless of selection or filters"
-        >
-          {testAllProgress === null
-            ? "Test all"
-            : `Tested ${testAllProgress.done}/${testAllProgress.total}`}
-        </Button>
-        {/* Selection-scoped actions. Each stays mounted and greys out when it
-            does not apply — `nothingSelected` and `bulkBusy` disable, they do
-            not remove — so the toolbar's shape never depends on what happens
-            to be selected. */}
-        <Button
-          size="sm"
-          variant="secondary"
-          icon={<RotateCcw size={12} />}
-          disabled={bulkBusy || nothingSelected}
-          title={
-            nothingSelected
-              ? "Select at least one account to recover it"
-              : "Clear cooldowns and retry-wait states on the selected accounts"
-          }
-          onClick={() => void bulkRecover()}
-        >
-          Recover
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          icon={<LockOpen size={12} />}
-          disabled={bulkBusy || !selectionHasDisabled}
-          title={
-            nothingSelected
-              ? "Select at least one disabled account to enable it"
-              : selectionHasDisabled
-                ? "Enable the selected accounts"
-                : "No selected account is currently disabled"
-          }
-          onClick={() => void bulkSetActive(true)}
-        >
-          Enable
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          icon={<PowerOff size={12} />}
-          disabled={bulkBusy || !selectionHasEnabled}
-          title={
-            nothingSelected
-              ? "Select at least one enabled account to disable it"
-              : selectionHasEnabled
-                ? "Disable the selected accounts"
-                : "No selected account is currently enabled"
-          }
-          onClick={() => void bulkSetActive(false)}
-        >
-          Disable
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          icon={<Download size={12} />}
-          disabled={bulkBusy || nothingSelected}
-          title={
-            nothingSelected
-              ? "Select at least one account to export"
-              : "Download the selected accounts as JSON"
-          }
-          onClick={() => void bulkExport()}
-        >
-          Export
-        </Button>
-        <Button
-          size="sm"
-          variant="danger"
-          icon={<Trash2 size={12} />}
-          disabled={bulkBusy || nothingSelected}
-          title={
-            nothingSelected
-              ? "Select at least one account to delete"
-              : `Delete ${selectedAccounts.length} selected account${selectedAccounts.length === 1 ? "" : "s"}`
-          }
-          onClick={() => setBulkDeleteOpen(true)}
-        >
-          Delete
-        </Button>
-        {/* Provider-wide actions: always mounted, greyed out when their target
-            set is empty. The count is computed from `accounts`, not the current
-            selection or search filter, so the label says what the action will
-            actually touch. */}
-        <Button
-          size="sm"
-          variant="secondary"
-          icon={<PowerOff size={12} />}
-          disabled={bulkBusy || disableCooldowns.isPending || cooldownAccounts.length === 0}
-          title={
-            cooldownAccounts.length === 0
-              ? "No account is currently cooling down"
-              : `Disable ${cooldownAccounts.length} account(s) in cooldown (account-wide or per-model)`
-          }
-          onClick={runDisableCooldowns}
-        >
-          {`Disable cooldown (${cooldownAccounts.length})`}
-        </Button>
-        <Button
-          size="sm"
-          variant="danger"
-          icon={<Trash2 size={12} />}
-          disabled={bulkBusy || deleteBanned.isPending || bannedAccounts.length === 0}
-          title={
-            bannedAccounts.length === 0
-              ? "No policy-banned account to delete"
-              : `Permanently delete ${bannedAccounts.length} policy-banned account(s)`
-          }
-          onClick={() => setBannedDeleteOpen(true)}
-        >
-          {`Delete banned (${bannedAccounts.length})`}
-        </Button>
-        {/* Grok-only: the 407 streaming probe is meaningless on any other
-            provider, so it is not merely greyed out elsewhere — it is absent.
-            The actions above stay mounted because they are always meaningful
-            operations that only need a selection; this one is not an
-            operation a non-Grok provider has at all. */}
-        {showGrokProbe ? (
+      {/* Two strips, so find/view never share a row with destructive actions.
+          Search stays the wide control. Sort, select, and the selection count
+          stay mounted beside it. Selection-scoped and provider-wide actions
+          live in two menus whose triggers never unmount, so the strip does not
+          jump when the selection changes. On wide screens the actions render as
+          flat buttons (no gate on the selection); the menus remain for narrow
+          screens where a toolbar of six buttons would overflow. */}
+      <div className="min-w-0 border border-inner-border rounded-control bg-surface-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 p-2">
+          <label className="relative min-w-44 flex-1">
+            <Search
+              size={13}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary"
+            />
+            <Input
+              id="accounts-search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search accounts..."
+              aria-label="Search accounts"
+              className="pl-9 h-15 py-0"
+            />
+          </label>
+          <label className="inline-flex h-15 shrink-0 items-center [&_.radix-select-trigger]:font-semibold [&_.radix-select-trigger]:bg-hover [&_.radix-select-trigger]:text-text-primary">
+            <Select
+              size="sm"
+              value={sort}
+              onValueChange={(value) => setSort(value as AccountSortValue)}
+              options={ACCOUNT_SORT_OPTIONS}
+              aria-label="Sort accounts by"
+            />
+          </label>
+          <label className="inline-flex h-15 shrink-0 items-center gap-2 text-caption font-semibold text-text-secondary">
+            <input
+              type="checkbox"
+              checked={allFilteredSelected}
+              onChange={toggleSelectAll}
+              aria-label="Select accounts"
+            />
+            <span>Select</span>
+          </label>
+          {nothingSelected ? null : (
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="inline-flex h-15 shrink-0 items-center gap-1 rounded-control border border-inner-border px-3 text-badge font-semibold text-text-secondary hover:bg-hover"
+              title="Clear selection"
+            >
+              {selectedAccounts.length} selected
+              <X size={11} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 border-t border-inner-border p-2">
           <Button
             size="sm"
-            variant="secondary"
-            icon={<FlaskConical size={12} className={grokProbePending ? "animate-spin" : ""} />}
-            disabled={grokProbePending || accounts.length === 0}
-            onClick={onGrokProbe}
-            title="Probe every Grok account with the live 407 streaming request"
+            variant="primary"
+            icon={<FlaskConical size={12} />}
+            disabled={bulkBusy || accounts.length === 0}
+            onClick={testAllAccounts}
+            aria-label={
+              testAllProgress === null
+                ? "Test all accounts"
+                : `Testing accounts, ${testAllProgress.done} of ${testAllProgress.total} tested`
+            }
+            title="Test every account, regardless of selection or filters"
           >
-            {grokProbePending ? "Testing…" : "Test 407"}
+            {testAllProgress === null
+              ? "Test all"
+              : `Tested ${testAllProgress.done}/${testAllProgress.total}`}
           </Button>
-        ) : null}
-        <label className="inline-flex h-15 shrink-0 items-center gap-2 text-caption font-semibold text-text-secondary ml-auto max-small:ml-0 [&_.radix-select-trigger]:font-semibold [&_.radix-select-trigger]:bg-hover [&_.radix-select-trigger]:text-text-primary">
-          <Select
-            size="sm"
-            value={sort}
-            onValueChange={(value) => setSort(value as AccountSortValue)}
-            options={ACCOUNT_SORT_OPTIONS}
-            aria-label="Sort accounts by"
-          />
-        </label>
-        <label className="inline-flex h-15 shrink-0 items-center gap-2 text-caption font-semibold text-text-secondary">
-          <input
-            type="checkbox"
-            checked={allFilteredSelected}
-            onChange={toggleSelectAll}
-            aria-label="Select accounts"
-          />
-          <span>Select</span>
-        </label>
-        {/* The selection count doubles as the clear affordance, so clearing
-            does not cost a toolbar slot on every row width. */}
-        {nothingSelected ? null : (
-          <button
-            type="button"
-            onClick={() => setSelected(new Set())}
-            className="inline-flex h-15 shrink-0 items-center gap-1 rounded-control border border-inner-border px-3 text-badge font-semibold text-text-secondary hover:bg-hover"
-            title="Clear selection"
+          {/* Grok-only: the 407 streaming probe is meaningless on any other
+              provider, so it is absent rather than greyed out. */}
+          {showGrokProbe ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<FlaskConical size={12} className={grokProbePending ? "animate-spin" : ""} />}
+              disabled={grokProbePending || accounts.length === 0}
+              onClick={onGrokProbe}
+              title="Probe every Grok account with the live 407 streaming request"
+            >
+              {grokProbePending ? "Testing…" : "Test 407"}
+            </Button>
+          ) : null}
+          <span className="min-w-2 flex-1" />
+          {/* Wide screens: flat, always-visible buttons. Recover works on any
+              selection; Enable/Disable depend on the selected accounts' states.
+              Counts for the two provider-wide actions stay on the buttons. */}
+          <div className="hidden items-center gap-2 lg:flex">
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<RotateCcw size={12} />}
+              disabled={bulkBusy || nothingSelected}
+              title={nothingSelected ? "Select at least one account" : "Clear cooldowns and retry-wait states on the selected accounts"}
+              onClick={() => void bulkRecover()}
+            >
+              Recover
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<LockOpen size={12} />}
+              disabled={bulkBusy || !selectionHasDisabled}
+              title={
+                selectionHasDisabled
+                  ? "Enable the selected accounts"
+                  : "No selected account is currently disabled"
+              }
+              onClick={() => void bulkSetActive(true)}
+            >
+              Enable
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<PowerOff size={12} />}
+              disabled={bulkBusy || !selectionHasEnabled}
+              title={
+                selectionHasEnabled
+                  ? "Disable the selected accounts"
+                  : "No selected account is currently enabled"
+              }
+              onClick={() => void bulkSetActive(false)}
+            >
+              Disable
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<Download size={12} />}
+              disabled={bulkBusy || nothingSelected}
+              title={nothingSelected ? "Select at least one account" : "Download the selected accounts as JSON"}
+              onClick={() => void bulkExport()}
+            >
+              Export
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              icon={<Trash2 size={12} />}
+              disabled={bulkBusy || nothingSelected}
+              title={`Delete ${selectedAccounts.length} selected account${selectedAccounts.length === 1 ? "" : "s"}`}
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              Delete
+            </Button>
+          </div>
+          {/* Narrow screens: the selection actions collapse into a menu; the
+              provider-wide Cleanup menu stays a dropdown at every width. */}
+          <div className="flex items-center gap-2 lg:hidden">
+            <ToolbarMenu
+              label="Selection"
+              disabled={bulkBusy || nothingSelected}
+              title={nothingSelected ? "Select at least one account" : "Actions for the selected accounts"}
+            >
+              <ToolbarMenuItem
+                label="Recover"
+                icon={<RotateCcw size={12} />}
+                disabled={bulkBusy || nothingSelected}
+                title="Clear cooldowns and retry-wait states on the selected accounts"
+                onClick={() => void bulkRecover()}
+              />
+              <ToolbarMenuItem
+                label="Enable"
+                icon={<LockOpen size={12} />}
+                disabled={bulkBusy || !selectionHasDisabled}
+                title={
+                  selectionHasDisabled
+                    ? "Enable the selected accounts"
+                    : "No selected account is currently disabled"
+                }
+                onClick={() => void bulkSetActive(true)}
+              />
+              <ToolbarMenuItem
+                label="Disable"
+                icon={<PowerOff size={12} />}
+                disabled={bulkBusy || !selectionHasEnabled}
+                title={
+                  selectionHasEnabled
+                    ? "Disable the selected accounts"
+                    : "No selected account is currently enabled"
+                }
+                onClick={() => void bulkSetActive(false)}
+              />
+              <ToolbarMenuItem
+                label="Export"
+                hint="JSON"
+                icon={<Download size={12} />}
+                disabled={bulkBusy || nothingSelected}
+                title="Download the selected accounts as JSON"
+                onClick={() => void bulkExport()}
+              />
+              <div className="mx-2 my-1 h-px bg-inner-border" />
+              <ToolbarMenuItem
+                label="Delete"
+                icon={<Trash2 size={12} />}
+                danger
+                disabled={bulkBusy || nothingSelected}
+                title={`Delete ${selectedAccounts.length} selected account${selectedAccounts.length === 1 ? "" : "s"}`}
+                onClick={() => setBulkDeleteOpen(true)}
+              />
+            </ToolbarMenu>
+          </div>
+          <ToolbarMenu
+            label={cooldownAccounts.length + bannedAccounts.length > 0 ? `Cleanup (${cooldownAccounts.length + bannedAccounts.length})` : "Cleanup"}
+            disabled={bulkBusy || (cooldownAccounts.length === 0 && bannedAccounts.length === 0)}
+            title="Provider-wide actions. Counts ignore the current search and selection."
           >
-            {selectedAccounts.length} selected
-            <X size={11} aria-hidden="true" />
-          </button>
-        )}
+            <ToolbarMenuItem
+              label="Disable cooldown"
+              hint={String(cooldownAccounts.length)}
+              icon={<PowerOff size={12} />}
+              disabled={bulkBusy || disableCooldowns.isPending || cooldownAccounts.length === 0}
+              title={
+                cooldownAccounts.length === 0
+                  ? "No account is currently cooling down"
+                  : `Disable ${cooldownAccounts.length} account(s) in cooldown (account-wide or per-model)`
+              }
+              onClick={runDisableCooldowns}
+            />
+            <ToolbarMenuItem
+              label="Delete banned"
+              hint={String(bannedAccounts.length)}
+              icon={<Trash2 size={12} />}
+              danger
+              disabled={bulkBusy || deleteBanned.isPending || bannedAccounts.length === 0}
+              title={
+                bannedAccounts.length === 0
+                  ? "No policy-banned account to delete"
+                  : `Permanently delete ${bannedAccounts.length} policy-banned account(s)`
+              }
+              onClick={() => setBannedDeleteOpen(true)}
+            />
+          </ToolbarMenu>
+        </div>
       </div>
 
       <div className="account-list flex flex-col gap-3 max-h-230 overflow-y-auto pr-1 [container-type:inline-size] [container-name:account-list]" role="list" aria-label="Provider accounts">

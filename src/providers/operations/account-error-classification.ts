@@ -284,6 +284,12 @@ export interface AccountErrorClassification {
    */
   readonly modelUnsupported?: boolean;
   /**
+   * This quota verdict closes only the requested model on an otherwise usable
+   * account. Kept separate from `category`: quota exhaustion remains the
+   * operator-facing cause, while the writer routes it through modelCooldowns.
+   */
+  readonly modelScoped?: boolean;
+  /**
    * Where the cooldown duration came from (D18). A duration resolved from a
    * tier/provider rule (`provider-rule`) is a policy decision and must NOT go
    * through `escalateFallbackCooldown` — the 1h escalation cap would cut the
@@ -647,6 +653,7 @@ interface AccountErrorContext {
     explanation: string,
     mutatesAccount?: boolean,
     modelUnsupported?: boolean,
+    modelScoped?: boolean,
   ) => AccountErrorClassification;
 }
 
@@ -869,6 +876,7 @@ function accountErrorContext(error: unknown, options?: AccountFailureEvidence): 
     explanation: string,
     mutatesAccount = canMutate,
     modelUnsupported = false,
+    modelScoped = false,
   ): AccountErrorClassification => ({
     category,
     status,
@@ -893,6 +901,7 @@ function accountErrorContext(error: unknown, options?: AccountFailureEvidence): 
       !(statusCode === 429 && transientRateLimitWording(lower)) &&
       !(statusCode === 503 || statusCode === 529),
     modelUnsupported,
+    modelScoped,
   });
 
   return {
@@ -1538,6 +1547,13 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
       // stated by the provider when present; otherwise park for the conservative
       // 24-hour fallback.
       const grokFreeTier = isGrokFreeTierExhaustion(s);
+      // Only the explicit free-usage allowance is model-scoped. Subscription
+      // spending caps are account-level and still park the whole credential.
+      const grokFreeUsageModelScope =
+        s.providerId === "grok" &&
+        (s.providerCode === "subscription:free-usage-exhausted" ||
+          s.lower.includes("subscription:free-usage-exhausted") ||
+          s.lower.includes("included free usage"));
       const buddyCreditsExhausted =
         s.providerCode === "14018" || s.lower.includes("credits exhausted");
       const cooldownMs = grokFreeTier
@@ -1556,6 +1572,8 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
         new Date(Date.now() + cooldownMs),
         s.reason("Provider quota exhausted"),
         s.origin === "upstream",
+        false,
+        grokFreeUsageModelScope && s.modelId !== undefined,
       );
     },
   },

@@ -32,13 +32,17 @@ import type { ProviderAccountBulkActionResult } from "../providers/catalog/contr
  * The same live-cooldown predicate as the tenant-scoped store, evaluated in
  * SQL so one statement covers the whole shared-account set. `status='cooldown'`
  * counts even when its deadline elapsed; a live `model_cooldowns` entry counts
- * even while `status` is still `active` (D07). Scoped strictly to shared rows
- * (`tenant_id IS NULL`); the shared JSON subquery lives in the dialect module.
+ * even while `status` is still `active` (D07). A row already `disabled` does
+ * not: disable keeps the deadline columns as evidence, and counting them would
+ * make a second pass look like it still has work. Scoped strictly to shared
+ * rows (`tenant_id IS NULL`); the shared JSON subquery lives in the dialect
+ * module.
  */
 function globalLiveCooldownPredicate(database: unknown): ReturnType<typeof and> {
   const nowIso = new Date().toISOString();
   return and(
     isNull(providerAccounts.tenantId),
+    sql`${providerAccounts.status} <> 'disabled'`,
     sql`${providerAccounts.status} = 'cooldown' OR ${providerAccounts.cooldownUntil} > ${nowIso} OR ${liveModelCooldownExistsSql(database, nowIso)}`,
   )!;
 }

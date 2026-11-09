@@ -196,6 +196,7 @@ export async function recordAccountFailure(
     //   1m limit must keep its short cooldown, not park the account for 24h).
     const autoDisableTarget =
       AUTO_DISABLE_TARGET_CATEGORIES.has(effective.category) &&
+      effective.modelScoped !== true &&
       effective.status === "cooldown" &&
       effective.mutatesAccount &&
       options?.origin === "upstream";
@@ -230,7 +231,10 @@ export async function recordAccountFailure(
     // D02: when the auto-disable intercept fired, the target category must not
     // sink into a model-scoped cooldown — the outcome is an account-wide
     // disable.
-    const shouldModelCooldown = !autoDisableActive && modelId !== undefined && isThrottle;
+    const shouldModelCooldown =
+      !autoDisableActive &&
+      modelId !== undefined &&
+      (isThrottle || effective.modelScoped === true);
     // The account-wide streak, escalated for a provider-stated window. Read once
     // so the model-scoped and account-wide paths below cannot disagree about it:
     // this is the count *before* this failure, which the UPDATE below increments.

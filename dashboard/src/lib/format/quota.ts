@@ -4,6 +4,7 @@ export interface QuotaBarTone {
 }
 
 interface QuotaSummaryWindow {
+  readonly kind?: string;
   readonly accounting: "pooled" | "independent";
   readonly remainingPercent: number | null;
   readonly remaining?: number | null;
@@ -13,6 +14,11 @@ interface QuotaSummaryWindow {
   readonly resetsAt?: string | null;
   readonly recurring?: boolean;
   readonly modelIds?: readonly string[];
+}
+
+/** Grok CLI transport buckets are diagnostic headers, not user quota balances. */
+export function isGrokHeaderQuotaWindow(window: Pick<QuotaSummaryWindow, "kind">): boolean {
+  return window.kind === "grok:cli-header" || window.kind === "grok:cli-header-requests";
 }
 
 /** A scoped reset ends that grant, even when the provider calls it recurring. */

@@ -30,6 +30,7 @@ import {
   formatQuotaWindowLabel,
   formatResetDistance,
   friendlyQuotaError,
+  isGrokHeaderQuotaWindow,
   paginateQuotaWindows,
   quotaBarTone,
   quotaPillSummary,
@@ -39,6 +40,15 @@ import {
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+
+describe("Grok header quota visibility", () => {
+  test("identifies only the two CLI header windows as hidden", () => {
+    expect(isGrokHeaderQuotaWindow({ kind: "grok:cli-header" })).toBe(true);
+    expect(isGrokHeaderQuotaWindow({ kind: "grok:cli-header-requests" })).toBe(true);
+    expect(isGrokHeaderQuotaWindow({ kind: "grok:free-usage-authoritative" })).toBe(false);
+    expect(isGrokHeaderQuotaWindow({ kind: "1w" })).toBe(false);
+  });
+});
 
 /** An ISO instant `ms` from now, so the formatter's own clock is the reference. */
 function fromNow(ms: number): string {

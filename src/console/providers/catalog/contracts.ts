@@ -83,8 +83,8 @@ export interface ProviderAccountBulkActionResult {
   readonly globalSkipped: number;
 }
 
-/** Cap on one discovery-commit request (D29). */
-export const DISCOVER_MODEL_COMMIT_MAX = 100;
+/** Cap on one discovery-commit request (D29). Kept pure (no `node:*`) so the dashboard can import it. */
+export { DISCOVER_MODEL_COMMIT_MAX } from "./discover-constants";
 
 /**
  * One model the provider's own listing advertised, projected for the Add-Model

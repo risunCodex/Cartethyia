@@ -77,9 +77,13 @@ function stubApi() {
 
 function buttonByText(view: Awaited<ReturnType<typeof mount>>, text: string): HTMLElement | null {
   return (
-    ([...view.container.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === text,
-    ) as HTMLElement | undefined) ?? null
+    ([...view.container.querySelectorAll("button")].find((button) => {
+      const label = button.textContent?.replace(/\s+/g, " ").trim() ?? "";
+      // A menu item's count sits in its own span, so textContent is
+      // "Disable cooldown2" rather than "Disable cooldown 2".
+      const withoutCount = label.replace(/\d+$/, "").trim();
+      return label === text || withoutCount === text;
+    }) as HTMLElement | undefined) ?? null
   );
 }
 
@@ -107,6 +111,17 @@ describe("cooldown / banned predicates", () => {
     ).toBe(true);
     expect(accountHasCooldown(account({ cooldownUntil: new Date(Date.now() - 60_000).toISOString() }))).toBe(false);
     expect(accountHasCooldown(account({ kind: "pool", status: "cooldown" }))).toBe(false);
+    // Disable keeps the deadline columns as evidence. Counting them would leave
+    // the cleanup action claiming work after it has already done it.
+    expect(
+      accountHasCooldown(
+        account({
+          status: "disabled",
+          cooldownUntil: new Date(Date.now() + 60_000).toISOString(),
+          modelCooldowns: { "demo/m": new Date(Date.now() + 60_000).toISOString() },
+        }),
+      ),
+    ).toBe(false);
   });
 
   test("banned is strictly disabled + policy_blocked_banned", () => {
@@ -132,13 +147,20 @@ describe("AccountsList provider-wide actions", () => {
     account({ id: "pool", kind: "pool", status: "cooldown" }),
   ];
 
-  test("both buttons are always mounted with counts from the whole list", async () => {
+  test("cleanup stays mounted and names both counts from the whole list", async () => {
     const { view } = await renderAccounts(ACCOUNTS);
     try {
-      const disable = buttonByText(view, "Disable cooldown (2)");
-      const banned = buttonByText(view, "Delete banned (1)");
+      const cleanup = buttonByText(view, "Cleanup (3)");
+      expect(cleanup).not.toBeNull();
+      expect(cleanup?.hasAttribute("disabled")).toBe(false);
+      await view.act(() => cleanup!.click());
+      await view.flush();
+      const disable = buttonByText(view, "Disable cooldown");
+      const banned = buttonByText(view, "Delete banned");
       expect(disable).not.toBeNull();
       expect(banned).not.toBeNull();
+      expect(disable?.textContent).toContain("2");
+      expect(banned?.textContent).toContain("1");
       expect(disable?.hasAttribute("disabled")).toBe(false);
       expect(banned?.hasAttribute("disabled")).toBe(false);
     } finally {
@@ -146,15 +168,29 @@ describe("AccountsList provider-wide actions", () => {
     }
   });
 
-  test("empty target sets grey the buttons out instead of unmounting them", async () => {
+  test("an empty cleanup target greys the menu out instead of unmounting it", async () => {
     const { view } = await renderAccounts([account({ id: "ok" })]);
     try {
-      const disable = buttonByText(view, "Disable cooldown (0)");
-      const banned = buttonByText(view, "Delete banned (0)");
-      expect(disable).not.toBeNull();
-      expect(banned).not.toBeNull();
-      expect(disable?.hasAttribute("disabled")).toBe(true);
-      expect(banned?.hasAttribute("disabled")).toBe(true);
+      const cleanup = buttonByText(view, "Cleanup");
+      expect(cleanup).not.toBeNull();
+      expect(cleanup?.hasAttribute("disabled")).toBe(true);
+    } finally {
+      view.unmount();
+    }
+  });
+
+  test("a disabled row that still carries cooldown evidence is not a target", async () => {
+    const { view } = await renderAccounts([
+      account({
+        id: "parked",
+        status: "disabled",
+        cooldownUntil: new Date(Date.now() + 60_000).toISOString(),
+        modelCooldowns: { "demo/x": new Date(Date.now() + 60_000).toISOString() },
+      }),
+    ]);
+    try {
+      const cleanup = buttonByText(view, "Cleanup");
+      expect(cleanup?.hasAttribute("disabled")).toBe(true);
     } finally {
       view.unmount();
     }
@@ -163,6 +199,8 @@ describe("AccountsList provider-wide actions", () => {
   test("Disable cooldown posts the C3 action route once", async () => {
     const { view, calls } = await renderAccounts(ACCOUNTS);
     try {
+      await view.act(() => buttonByText(view, "Cleanup (3)")!.click());
+      await view.flush();
       await view.click('button[title="Disable 2 account(s) in cooldown (account-wide or per-model)"]');
       await view.flush();
       await view.flush();
@@ -177,6 +215,8 @@ describe("AccountsList provider-wide actions", () => {
   test("Delete banned opens a ConfirmDialog and only writes after confirmation", async () => {
     const { view, calls } = await renderAccounts(ACCOUNTS);
     try {
+      await view.act(() => buttonByText(view, "Cleanup (3)")!.click());
+      await view.flush();
       await view.click('button[title="Permanently delete 1 policy-banned account(s)"]');
       await view.flush();
       const dialog = view.find('[role="dialog"]');
@@ -205,6 +245,8 @@ describe("AccountsList provider-wide actions", () => {
       expect(all).not.toBeNull();
       await view.act(() => all!.click());
       await view.flush();
+      await view.act(() => buttonByText(view, "Selection")!.click());
+      await view.flush();
       await view.click('button[title="Delete 2 selected accounts"]');
       await view.flush();
       const dialog = view.find('[role="dialog"]');
@@ -229,6 +271,8 @@ describe("AccountsList provider-wide actions", () => {
     try {
       const all = view.find('input[aria-label="Select accounts"]') as HTMLInputElement | null;
       await view.act(() => all!.click());
+      await view.flush();
+      await view.act(() => buttonByText(view, "Selection")!.click());
       await view.flush();
       const enable = buttonByText(view, "Enable");
       expect(enable).not.toBeNull();

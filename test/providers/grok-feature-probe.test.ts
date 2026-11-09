@@ -70,6 +70,33 @@ describe("Grok 407 feature probe", () => {
     expect(failure.code).toBe("quota_exceeded");
     expect(failure.details.providerCode).toBe("subscription:free-usage-exhausted");
     expect(classification.cooldownMs).toBe(24 * 60 * 60 * 1000);
+    expect(classification.modelScoped).toBe(false);
+  });
+
+  test("a named free-usage exhaustion is scoped to the requested model", () => {
+    const failure = new GatewayError(
+      "quota_exceeded",
+      429,
+      JSON.stringify({
+        code: "subscription:free-usage-exhausted",
+        error: "You've used all the included free usage for model grok-4.7 for now. Usage resets over a rolling 24-hour window — tokens (actual/limit): 699617/600000.",
+      }),
+      { providerId: "grok", providerCode: "subscription:free-usage-exhausted" },
+      "upstream",
+    );
+    const classification = classifyAccountError(failure, {
+      origin: "upstream",
+      scope: "account",
+      providerId: "grok",
+      providerCode: "subscription:free-usage-exhausted",
+      statusCode: 429,
+      credentialEvidence: true,
+      modelId: "grok-4.7",
+    });
+
+    expect(classification.category).toBe("quota_exhausted");
+    expect(classification.modelScoped).toBe(true);
+    expect(classification.cooldownMs).toBe(24 * 60 * 60 * 1000);
   });
 
   test("parks any other failed feature probe for the same quota window", () => {

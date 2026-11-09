@@ -14,6 +14,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
   classifyAccountError,
+  listAccountHealthEvents,
   reportAttemptOutcome,
 } from "../../src/providers/operations/account-health-service";
 import { GatewayError } from "../../src/protocol/gateway-error";
@@ -175,6 +176,62 @@ describe("model cooldown route snapshot invalidation", () => {
       expect(cooldowns["glm-5.3-flash"]).toBeUndefined();
     } finally {
       await trial.cleanup();
+    }
+  });
+
+  test("Grok free usage exhaustion cools one model and logs no account transition", async () => {
+    const world = await createWorld({ modelId: "grok-4.7", extraModels: ["grok-4.6"] });
+    try {
+      const error = new GatewayError(
+        "quota_exceeded",
+        429,
+        JSON.stringify({
+          code: "subscription:free-usage-exhausted",
+          error: "You've used all the included free usage for model grok-4.7 for now. Usage resets over a rolling 24-hour window — tokens (actual/limit): 699617/600000.",
+        }),
+        { providerId: "grok", providerCode: "subscription:free-usage-exhausted" },
+        "upstream",
+      );
+      await reportAttemptOutcome(getDb(), {
+        accountId: world.accountId,
+        modelId: "grok-4.7",
+        error,
+        evidence: {
+          origin: "upstream",
+          scope: "account",
+          providerId: "grok",
+          providerCode: "subscription:free-usage-exhausted",
+          statusCode: 429,
+          credentialEvidence: true,
+        },
+      });
+
+      const rows = await getDb()
+        .select({
+          status: providerAccounts.status,
+          cooldownUntil: providerAccounts.cooldownUntil,
+          modelCooldowns: providerAccounts.modelCooldowns,
+          category: providerAccounts.lastErrorCategory,
+        })
+        .from(providerAccounts)
+        .where(eq(providerAccounts.id, world.accountId));
+      expect(rows[0]?.status).toBe("active");
+      expect(rows[0]?.cooldownUntil).toBeNull();
+      expect(rows[0]?.category).toBe("quota_exhausted");
+      const cooldowns = rows[0]?.modelCooldowns as Record<string, string>;
+      expect(Date.parse(cooldowns["grok-4.7"] ?? "")).toBeGreaterThan(Date.now());
+      expect(cooldowns["grok-4.6"]).toBeUndefined();
+
+      const events = await listAccountHealthEvents(getDb(), world.accountId);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        fromStatus: "active",
+        toStatus: "active",
+        modelId: "grok-4.7",
+        errorCategory: "quota_exhausted",
+      });
+    } finally {
+      await world.cleanup();
     }
   });
 

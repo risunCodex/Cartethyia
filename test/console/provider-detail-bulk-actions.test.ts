@@ -160,6 +160,13 @@ describe("provider detail bulk actions", () => {
       const alreadyDisabled = await addAccount(fx.db, fx.tenantId, "disabled", {
         status: "disabled",
       });
+      // Evidence left behind by a previous disable. The deadline columns stay,
+      // but the row must not match the predicate again.
+      const disabledWithEvidence = await addAccount(fx.db, fx.tenantId, "disabled-evidence", {
+        status: "disabled",
+        cooldownUntil: new Date(Date.now() + 60_000),
+        modelCooldowns: { "some-model": new Date(Date.now() + 60_000).toISOString() },
+      });
       const shared = await addAccount(fx.db, null, "shared", { status: "cooldown" });
       // A pool-as-account row with the same provider is a different table and
       // must never be mutated by either action.
@@ -182,6 +189,8 @@ describe("provider detail bulk actions", () => {
       expect(body.ok).toBe(true);
       expect(body.updated).toBe(3);
       expect(body.globalSkipped).toBe(1);
+      expect((await statusOf(fx.db, disabledWithEvidence))?.status).toBe("disabled");
+      expect((await statusOf(fx.db, disabledWithEvidence))?.cooldownUntil).not.toBeNull();
 
       for (const id of [cooling, futureDeadline, modelCooling]) {
         expect((await statusOf(fx.db, id))?.status).toBe("disabled");

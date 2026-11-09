@@ -23,7 +23,12 @@ import { Dialog } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Inline } from "../../../components/ui/inline";
 import { Stack } from "../../../components/ui/stack";
-import { formatResetDistance, quotaPillSummary, quotaWindowState } from "../../../lib/format/quota";
+import {
+  formatResetDistance,
+  isGrokHeaderQuotaWindow,
+  quotaPillSummary,
+  quotaWindowState,
+} from "../../../lib/format/quota";
 import { toast } from "../../../lib/toast";
 import { usePoolHealthEvents, usePoolProviderProbe } from "../../../hooks/network";
 import { EmptyState, LoadingState, ErrorState } from "../../../components/ui/state";
@@ -45,7 +50,7 @@ function QuotaPill({
 }: {
   readonly windows: readonly QuotaWindow[] | undefined;
 }): ReactNode {
-  const all = windows ?? [];
+  const all = (windows ?? []).filter((window) => !isGrokHeaderQuotaWindow(window));
   const sessionWindows = all.filter((window) => window.kind === "session_active");
   const summary = quotaPillSummary(all.filter((window) => window.kind !== "session_active"));
   const inactive = all.filter((window) => quotaWindowState(window) !== "current" && window.kind !== "session_active");

@@ -137,7 +137,7 @@ export function Select({
         <RadixSelect.Content
           position="popper"
           sideOffset={4}
-          className="radix-select-content z-toast min-w-[var(--radix-select-trigger-width)] max-h-140 max-h-[var(--radix-select-content-available-height)] overflow-hidden overflow-y-auto border border-border-strong rounded-card bg-popover-bg shadow-popout backdrop-blur-xl p-2.5 box-border"
+          className="radix-select-content z-toast min-w-[var(--radix-select-trigger-width)] w-max max-w-[min(22rem,calc(100vw-2rem))] max-h-140 max-h-[var(--radix-select-content-available-height)] overflow-hidden overflow-y-auto border border-border-strong rounded-card bg-popover-bg shadow-popout backdrop-blur-xl p-2.5 box-border"
         >
           <RadixSelect.Viewport>
             {options.map((option) => (

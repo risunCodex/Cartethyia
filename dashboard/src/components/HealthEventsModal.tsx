@@ -50,6 +50,22 @@ function statusTone(status: string): "ok" | "disabled" | "warn" {
   if (status === "disabled") return "disabled";
   return "warn";
 }
+
+/** Old Grok free-usage rows were recorded as account transitions before the
+ * writer learned to persist this verdict in `modelCooldowns`. Keep those
+ * historical rows from claiming the still-active account itself cooled. */
+function isHistoricalGrokModelCooldown(event: {
+  readonly modelId: string | null;
+  readonly errorCategory: string | null;
+  readonly reason: string | null;
+}, providerId: string): boolean {
+  return (
+    providerId === "grok" &&
+    event.modelId !== null &&
+    event.errorCategory === "quota_exhausted" &&
+    /subscription:free-usage-exhausted|included free usage/i.test(event.reason ?? "")
+  );
+}
 function staticModeCopy(enabling: boolean, title: string): {
   readonly title: string;
   readonly message: string;
@@ -203,22 +219,31 @@ export function HealthEventsModal({
                       {new Date(ev.createdAt).toLocaleString()}
                     </td>
                     <td className="whitespace-nowrap">
-                      {/*
-                        * A same-status row is a recorded failure that did not
-                        * move the account — a provider-scoped rate limit, for
-                        * instance: nothing was cooled, so the account stays
-                        * active. Rendering it as "ACTIVE → ACTIVE" looked like
-                        * a broken transition; naming it as an event beside the
-                        * unchanged status is what it actually is.
-                        */}
-                      {ev.fromStatus !== null && ev.fromStatus !== ev.toStatus ? (
-                        <span className="text-badge text-text-secondary">
-                          {ev.fromStatus} →{" "}
-                        </span>
+                      {isHistoricalGrokModelCooldown(ev, providerId) ? (
+                        <>
+                          <span className="text-badge text-text-tertiary">logged · </span>
+                          <Badge tone={statusTone("active")}>active</Badge>
+                        </>
                       ) : (
-                        <span className="text-badge text-text-tertiary">logged · </span>
+                        <>
+                          {/*
+                            * A same-status row is a recorded failure that did not
+                            * move the account — a provider-scoped rate limit, for
+                            * instance: nothing was cooled, so the account stays
+                            * active. Rendering it as "ACTIVE → ACTIVE" looked like
+                            * a broken transition; naming it as an event beside the
+                            * unchanged status is what it actually is.
+                            */}
+                          {ev.fromStatus !== null && ev.fromStatus !== ev.toStatus ? (
+                            <span className="text-badge text-text-secondary">
+                              {ev.fromStatus} →{" "}
+                            </span>
+                          ) : (
+                            <span className="text-badge text-text-tertiary">logged · </span>
+                          )}
+                          <Badge tone={statusTone(ev.toStatus)}>{ev.toStatus}</Badge>
+                        </>
                       )}
-                      <Badge tone={statusTone(ev.toStatus)}>{ev.toStatus}</Badge>
                     </td>
                     <td className="font-mono tabular-nums text-badge text-text-secondary wrap-anywhere">
                       {ev.modelId ?? "—"}
