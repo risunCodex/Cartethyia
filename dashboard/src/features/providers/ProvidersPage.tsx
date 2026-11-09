@@ -803,6 +803,9 @@ const FREE_LIMITED_IDS = new Set([
   // Zro serves open models with a small per-key allowance; a key only sees
   // the models it may call, and the free allowance is metered per use.
   "zro",
+  // Freebuff's plan is a metered free allowance (freebucks + per-model
+  // sessions), surfaced with a small daily credit.
+  "freebuff",
 ]);
 /**
  * The providers an operator reaches for first: household names with a

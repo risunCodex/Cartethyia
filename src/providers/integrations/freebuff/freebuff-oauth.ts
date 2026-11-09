@@ -42,17 +42,13 @@ interface CodeIssued {
   readonly expiresAt: string;
 }
 
-class FreebuffOAuthClient implements OAuthLoginClient {
+export class FreebuffOAuthClient implements OAuthLoginClient {
   readonly supportsDeviceCode = true;
   readonly supportsBrowserCode = false;
-  readonly deviceLoginFields = [
-    {
-      key: "email",
-      label: "Freebuff account email (optional, for the account label)",
-      placeholder: "you@example.com",
-      required: false,
-    },
-  ] as const;
+  // No operator fields: the device flow issues a code and the account
+  // identity (email/name) comes back in the poll response — asking for an
+  // email up front is both unnecessary and wrong.
+  readonly deviceLoginFields = [] as const;
   readonly importFields = [
     {
       key: "token",
@@ -71,12 +67,35 @@ class FreebuffOAuthClient implements OAuthLoginClient {
 
   async startDeviceAuth(_context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
     const fingerprintId = crypto.randomUUID();
-    const res = await this.fetchFn(`${FREEBUFF_API_HOST}${CODE_PATH}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ fingerprintId }),
-      signal: AbortSignal.timeout(15_000),
-    });
+    let res: Response;
+    try {
+      res = await this.fetchFn(`${FREEBUFF_API_HOST}${CODE_PATH}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fingerprintId }),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error) {
+      // Transient network/timeout failure — retry once on the same route. The
+      // donor's login path does the same (freebuff-proxy: fetchLoginUpstream)
+      // because a single jitter would otherwise bounce the whole login flow.
+      const err = error as { name?: string; code?: string };
+      const transient =
+        err?.name === "AbortError" ||
+        err?.name === "TypeError" ||
+        err?.code === "ECONNRESET" ||
+        err?.code === "ETIMEDOUT" ||
+        err?.code === "ENOTFOUND" ||
+        err?.code === "ECONNREFUSED" ||
+        err?.code === "EPIPE";
+      if (!transient) throw error;
+      res = await this.fetchFn(`${FREEBUFF_API_HOST}${CODE_PATH}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fingerprintId }),
+        signal: AbortSignal.timeout(15_000),
+      });
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new GatewayError("platform_unavailable", 502, `Freebuff code issue failed (HTTP ${res.status}): ${text.slice(0, 200)} (request {requestId}).`, {}, "upstream");
@@ -87,7 +106,12 @@ class FreebuffOAuthClient implements OAuthLoginClient {
     }
     const loginUrl = typeof body["loginUrl"] === "string" ? body["loginUrl"] : "";
     const fingerprintHash = typeof body["fingerprintHash"] === "string" ? body["fingerprintHash"] : "";
-    const expiresAt = typeof body["expiresAt"] === "string" ? body["expiresAt"] : "";
+    // The server reports expiresAt as an epoch-millisecond number; keep it as
+    // the raw value so the poll query matches what the donor sends (a string
+    // coercion of a numeric field was silently dropping it, leaving the poll
+    // URL incomplete — the upstream then answers 401 forever).
+    const expiresAtRaw = body["expiresAt"];
+    const expiresAt = typeof expiresAtRaw === "number" ? String(expiresAtRaw) : typeof expiresAtRaw === "string" ? expiresAtRaw : "";
     if (!loginUrl || !fingerprintHash) {
       throw new GatewayError("platform_unavailable", 502, "Freebuff code issue returned no login URL (request {requestId}).", {}, "upstream");
     }
@@ -114,14 +138,24 @@ class FreebuffOAuthClient implements OAuthLoginClient {
     });
     if (state.fingerprintHash) params.set("fingerprintHash", state.fingerprintHash);
     if (state.expiresAt) params.set("expiresAt", state.expiresAt);
-    const res = await this.fetchFn(`${FREEBUFF_API_HOST}${STATUS_PATH}?${params.toString()}`, {
-      method: "GET",
-      signal: AbortSignal.timeout(15_000),
-    });
+    let res: Response;
+    try {
+      res = await this.fetchFn(`${FREEBUFF_API_HOST}${STATUS_PATH}?${params.toString()}`, {
+        method: "GET",
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      // Transient poll failure — the donor keeps polling through these; a
+      // dropped poll must not kill the flow.
+      return { status: "pending", retryAfterSeconds: 3 };
+    }
+    if (res.status === 401 || res.status === 404) {
+      // 401 is "not authorized yet" — the status endpoint refuses before the
+      // browser sign-in completes. Treat it as pending, never as a failure
+      // (mirrors freebuff-proxy: loginStatus -> 401 => { pending: true }).
+      return { status: "pending", retryAfterSeconds: 3 };
+    }
     if (!res.ok) {
-      if (res.status === 404) {
-        return { status: "pending", retryAfterSeconds: 3 };
-      }
       return { status: "pending", retryAfterSeconds: 3 };
     }
     const body: unknown = await res.json().catch(() => null);
