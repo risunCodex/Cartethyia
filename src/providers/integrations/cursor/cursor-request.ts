@@ -237,9 +237,6 @@ export function buildRunRequest(input: {
   readonly text: string;
   readonly modelId: string;
   readonly conversationId: string;
-  /** Stable parent group; unlike the conversation id it survives a rebase. */
-  readonly conversationGroupId?: string;
-  readonly runId?: string;
   readonly messageId?: string;
   readonly history?: readonly CursorHistoryEntry[];
   /** Cursor-declared parameter tuple (effort/context/fast) for this model. */
@@ -279,12 +276,17 @@ export function buildRunRequest(input: {
   userMessageAction["request_context"] = requestContext;
   const runRequest: Record<string, unknown> = {
     conversation_id: input.conversationId,
-    conversation_group_id: input.conversationGroupId ?? input.conversationId,
-    run_id: input.runId ?? messageId,
     action:
       input.action === "resume"
         ? { resume_action: { request_context: requestContext } }
         : { user_message_action: userMessageAction },
+    // `model_details` (#3) carries the safe wire id; `requested_model` (#9)
+    // carries the parameter tuple. Matches `agent.proto` exactly — the old
+    // schema invented extra fields that have no wire meaning.
+    model_details: {
+      model_id: input.modelId,
+      max_mode: input.maxMode ?? false,
+    },
     requested_model: {
       model_id: input.modelId,
       max_mode: input.maxMode ?? false,
@@ -292,8 +294,6 @@ export function buildRunRequest(input: {
     },
     conversation_state: seeded ? buildSeedConversationState() : input.conversationState,
     mcp_tools: { mcp_tools: [] },
-    unknown_flag: 0,
-    field_12: 0,
   };
   return encodeMessage("AgentClientMessage", { run_request: runRequest });
 }
@@ -311,9 +311,12 @@ export function buildExecStreamClose(execId: number, execIdString?: string): Uin
 }
 
 /** Stops the live Run, as Cursor CLI does before closing the stream. */
-export function buildCancelAction(reason: string): Uint8Array {
+export function buildCancelAction(_reason: string): Uint8Array {
+  // `agent.proto` CancelAction is empty — the oneof presence is the signal,
+  // and the reason travels out-of-band (stream close). Sending a `reason`
+  // field would encode bytes the server does not expect.
   return encodeMessage("AgentClientMessage", {
-    conversation_action: { cancel_action: { reason } },
+    conversation_action: { cancel_action: {} },
   });
 }
 

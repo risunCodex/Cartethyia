@@ -175,7 +175,6 @@ async function probeHitOnce(
     text: message,
     modelId,
     conversationId: crypto.randomUUID(),
-    runId: crypto.randomUUID(),
     history: [],
   });
   const { session, stream } = openRunStream(origin, headers);

@@ -278,7 +278,6 @@ async function main(): Promise<void> {
         text: values.prompt!,
         modelId: values.model!,
         conversationId: crypto.randomUUID(),
-        runId: crypto.randomUUID(),
       }),
     );
     // Mirror the adapter's 5s client-heartbeat cadence so the raw path proves

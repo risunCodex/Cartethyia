@@ -1788,8 +1788,8 @@ export function createMessageTypes(): protobuf.Root {
   ])
 
   addType(root, "CancelAction", [
-    // Cursor CLI CancelAction field #1 is the interruption reason, not an id.
-    { id: 1, name: "reason", type: "string" },
+    // `agent.proto` declares CancelAction empty (oneof presence is the signal);
+    // the reason travels on the stream, not in the message.
   ])
 
   // Deferred answers for an AskQuestion the client already replied to with
@@ -1901,8 +1901,24 @@ export function createMessageTypes(): protobuf.Root {
     { id: 8, name: "turns", type: "ConversationTurn", repeated: true },
   ])
 
+  // `agent.proto` ModelDetails.thinking_details — empty in the current build;
+  // declared for wire-shape completeness.
+  addType(root, "ThinkingDetails", [])
+
+  // `agent.proto` AgentRunRequest.skill_options (deprecated upstream; kept for
+  // wire-shape completeness).
+  addType(root, "SkillOptions", [
+    { id: 1, name: "skill_descriptors", type: "SkillDescriptor", repeated: true },
+  ])
+
   addType(root, "ModelDetails", [
     { id: 1, name: "model_id", type: "string" },
+    { id: 2, name: "thinking_details", type: "ThinkingDetails" },
+    { id: 3, name: "display_model_id", type: "string" },
+    { id: 4, name: "display_name", type: "string" },
+    { id: 5, name: "display_name_short", type: "string" },
+    { id: 6, name: "aliases", type: "string", repeated: true },
+    { id: 7, name: "max_mode", type: "bool" },
   ])
 
   addType(root, "McpTools", [
@@ -1912,15 +1928,13 @@ export function createMessageTypes(): protobuf.Root {
   addType(root, "AgentRunRequest", [
     { id: 1, name: "conversation_state", type: "bytes" },
     { id: 2, name: "action", type: "ConversationAction" },
+    { id: 3, name: "model_details", type: "ModelDetails" },
     { id: 4, name: "mcp_tools", type: "McpTools" },
     { id: 5, name: "conversation_id", type: "string" },
+    { id: 6, name: "mcp_file_system_options", type: "McpFileSystemOptions" },
+    { id: 7, name: "skill_options", type: "SkillOptions" },
     { id: 8, name: "custom_system_prompt", type: "string" },
     { id: 9, name: "requested_model", type: "RequestedModel" },
-    { id: 10, name: "unknown_flag", type: "uint32" },
-    { id: 12, name: "field_12", type: "uint32" },
-    { id: 14, name: "selected_subagent_models", type: "RequestedModel", repeated: true },
-    { id: 16, name: "conversation_group_id", type: "string" },
-    { id: 25, name: "run_id", type: "string" },
   ])
 
   // ── Client heartbeat ──

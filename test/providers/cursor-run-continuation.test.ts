@@ -715,7 +715,7 @@ describe("Cursor cross-request Run continuation", () => {
     expect(cursorRunSessions.size).toBe(0);
   });
 
-  test("replaying an older Cursor result beside the live one is refused instead of rebased", async () => {
+  test("replaying an older Cursor result beside the live one rebases into a fresh Run", async () => {
     const adapter = createCursorAdapter();
     const first = await openRunAwaitingToolCall(adapter, { execId: 1 });
     first.stream.push(turnEndedFrame());
@@ -740,14 +740,17 @@ describe("Cursor cross-request Run continuation", () => {
       tools: [LOOKUP_TOOL],
     };
 
-    const refused = await collect(adapter, mixedReplay, continuationHarness(scopeOf(), second.stream));
-    expect(refused.error).toBeDefined();
-    expect(String((refused.error as Error).message)).toContain("mixes live Cursor tool results");
-    expect(second.stream.mcpResults().length).toBe(0);
-    expect(cursorRunSessions.size).toBe(1);
+    const replay = harnessWith([turnEndedFrame()], scopeOf());
+    const rebased = await collect(adapter, mixedReplay, replay);
+    expect(rebased.error).toBeUndefined();
+    // Both live Runs are cancelled and the whole transcript is rebuilt as a
+    // fresh Run turn — never a hard 400.
+    expect(replay.streams.length).toBe(1);
+    expect(replay.streams[0]?.runRequestCount()).toBe(1);
+    expect(cursorRunSessions.size).toBe(0);
   });
 
-  test("results for two different Runs in one request are refused whole", async () => {
+  test("results for two different Runs in one partial request are refused whole", async () => {
     const adapter = createCursorAdapter();
     const first = await openRunAwaitingToolCall(adapter, { execId: 1 });
     const secondStream = new FakeStream([mcpCallFrame(2, "lookup")]);
@@ -774,7 +777,7 @@ describe("Cursor cross-request Run continuation", () => {
     const mixed = continuationHarness(scopeOf(), first.stream);
     const refused = await collect(adapter, mixedRequest, mixed);
     expect(refused.error).toBeDefined();
-    expect(String((refused.error as Error).message)).toContain("different Cursor Runs");
+    expect(String((refused.error as Error).message)).toContain("no matching tool call");
     // Neither Run received a result: a partial write would corrupt both.
     expect(first.stream.mcpResults().length).toBe(0);
     expect(secondStream.mcpResults().length).toBe(0);

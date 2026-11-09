@@ -9,7 +9,7 @@ import { gatewayErrorFromStreamError } from "../stream-error-frames";
 import { mergeResponsesUsage } from "./responses";
 import { usageFromProvider, readReasoningText } from "../../providers/provider-usage";
 import { createToolEmitLedger } from "../tool-identity";
-import { ThinkSplitter, stripThinkingTags } from "../think-split";
+import { ThinkingTagStripper, ThinkSplitter, stripThinkingTags } from "../think-split";
 import { DsmlStreamParser, parseDsmlToolCalls } from "../dsml";
 import {
   OmpToolCallMarkupParser,
@@ -267,10 +267,13 @@ export async function* decodeChatSseStream(
   // Single emission ledger: one entry per logical call.
   const ledger = createToolEmitLedger();
   const think = new ThinkSplitter();
-  // Separate splitter for the reasoning channel: `reasoning_content` is its own
+  // Separate stripper for the reasoning channel: `reasoning_content` is its own
   // stream, and interleaving it into the answer splitter would let a tag in one
-  // channel swallow the other's text.
-  const reasoningThink = new ThinkSplitter();
+  // channel swallow the other's text. The reasoning channel is thought in its
+  // entirety — untagged prose included — so it strips paired tags statefully
+  // while preserving source order instead of splitting into text/reasoning
+  // buckets that a `${reasoning}${text}` join would reorder.
+  const reasoningThink = new ThinkingTagStripper();
   const declaredToolNames = declaredToolNamesForRequest(request);
   const callableToolNames = callableToolNamesForRequest(request);
   const contentMarkup =
@@ -364,21 +367,13 @@ export async function* decodeChatSseStream(
           typeof reasoningRaw === "string" ? reasoningMarkup?.push(reasoningRaw) : undefined;
         // Strip stray `<think>` tags the upstream double-wrapped inside its own
         // reasoning stream (buddy's hy4-preview-f leaks them per-delta). This
-        // is the splitter's job, not `stripThinkingTags`'s: a stateless strip
+        // is the stripper's job, not `stripThinkingTags`'s: a stateless strip
         // cannot see a tag split across two deltas, so `"<thi"` was emitted
         // verbatim and only the following `</think>` removed.
-        const reasoningSplit =
+        const reasoningText =
           typeof reasoningRaw === "string"
             ? reasoningThink.push(reasoningMarkupResult?.text ?? reasoningRaw)
             : undefined;
-        // Both sides are reasoning. The splitter routes text outside a
-        // `<think>` span to its `.text` side, but this field is the reasoning
-        // stream in its entirety: untagged prose here is still thought, not
-        // answer. Taking only `.reasoning` dropped every un-tagged delta.
-        const reasoningText =
-          reasoningSplit === undefined
-            ? undefined
-            : `${reasoningSplit.reasoning}${reasoningSplit.text}`;
         if (typeof reasoningText === "string" && reasoningText.length > 0) {
           yield {
             type: "content_delta",
@@ -538,9 +533,7 @@ export async function* decodeChatSseStream(
   }
   const reasoningMarkupTail = reasoningMarkup?.flush();
   if (reasoningMarkupTail?.text) {
-    const split = reasoningThink.push(reasoningMarkupTail.text);
-    // Both sides are reasoning: see the per-delta branch above.
-    const reasoningText = `${split.reasoning}${split.text}`;
+    const reasoningText = reasoningThink.push(reasoningMarkupTail.text);
     if (reasoningText.length > 0) {
       yield {
         type: "content_delta",
@@ -549,10 +542,9 @@ export async function* decodeChatSseStream(
       } as CanonicalEvent;
     }
   }
-  // Release anything the reasoning splitter held for a tag that never
+  // Release anything the reasoning stripper held for a tag that never
   // completed, before `think.flush()` and the terminal.
-  const reasoningRest = reasoningThink.flush();
-  const reasoningTail = `${reasoningRest.reasoning}${reasoningRest.text}`;
+  const reasoningTail = reasoningThink.flush();
   if (reasoningTail.length > 0) {
     yield {
       type: "content_delta",

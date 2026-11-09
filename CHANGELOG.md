@@ -84,6 +84,28 @@ on a strong boundary (a sentence ending before a capitalized continuation, or
 a Markdown block marker); weaker boundaries merge into the open block with a
 space. Coverage: `test/transport/surface/messages-stream-encoder.test.ts` and
 `test/transport/reasoning-summary-separator.test.ts`.
+- **Copilot reasoning channel keeps source order when stripping double-wrapped
+`<think>` tags.** The chat decoder's reasoning path split each delta with
+`ThinkSplitter` and joined `${reasoning}${text}`, which reordered the stream:
+untagged thought that preceded a tag fell after the tagged span. The channel
+now strips paired tags statefully in source order (`ThinkingTagStripper`), so
+a reasoning stream like `thought A <think>inner</think> thought B` reads
+`thought A inner thought B` instead of `innerthought A thought B`. Coverage:
+`test/providers/strip-thinking-tags.test.ts`.
+- **Cursor wire aligned to the vendored `agent.proto`.** The Run-request
+schema dropped invented fields that have no wire meaning (`unknown_flag`,
+`field_12`, `run_id`, `conversation_group_id`, `selected_subagent_models`) and
+gained `model_details` (#3), `mcp_file_system_options` (#6), and `skill_options`
+(#7), matching the donor `oh-my-pi` proto. `CancelAction` is now sent empty per
+the proto (the oneof presence is the signal). Proto vendored at
+`vendor/proto/cursor/agent.proto`.
+- **Cursor mixed-run tool-result replays rebase instead of refusing.** A
+continuation whose results resolve to more than one live Run — the "mixes
+live Cursor tool results" 400 — now cancels the resolved Runs and rebases the
+complete transcript into a fresh Run, matching the donor's behavior instead of
+stalling the client loop. A partial tail (a result with no matching call) and
+a foreign-tenant call id remain hard refusals. Coverage:
+`test/providers/cursor-run-continuation.test.ts`.
 
 ### Removed
 
