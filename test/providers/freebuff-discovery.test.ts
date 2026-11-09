@@ -5,16 +5,6 @@ import { describe, expect, test } from "bun:test";
 import { FREEBUFF_MODELS } from "../../src/providers/integrations/freebuff/freebuff-catalog";
 import { freebuffModelDiscovery } from "../../src/providers/integrations/freebuff/freebuff-discovery";
 import { fetchFreebuffQuota } from "../../src/providers/integrations/freebuff/freebuff-quota";
-import { freebuffMintDeviceKey } from "../../src/providers/integrations/freebuff/freebuff";
-
-async function testDevice() {
-  const fetchFn = (async () =>
-    new Response(JSON.stringify({ keyId: "k_test" }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    })) as unknown as typeof fetch;
-  return freebuffMintDeviceKey("token-1", { fetchFn, accountId: "acc_1" });
-}
 
 describe("Freebuff static catalog", () => {
   test("seeds the live 13-row surface with chat wire", () => {
@@ -99,6 +89,15 @@ describe("Freebuff model discovery", () => {
 });
 
 describe("Freebuff quota collector", () => {
+  function catalogResponseBody() {
+    return JSON.stringify({
+      fetchId: "fbf1.fixture",
+      rows: [
+        { key: "m-9a7e098cc1", displayName: "Solar Pro 4", handle: "fbm1.quota", access: "open", premium: false },
+      ],
+    });
+  }
+
   test("builds windows from an admission response", async () => {
     const admissionBody = {
       status: "active",
@@ -107,12 +106,17 @@ describe("Freebuff quota collector", () => {
         balance: 10,
         daily: { limit: 25, spent: 15, remaining: 10, resetAt: "2026-11-10T08:00:00.000Z" },
       },
-      rateLimit: { model: "m-096e75164d", limit: 6, recentCount: 3, resetAt: "2026-11-10T08:00:00.000Z" },
+      rateLimitsByModel: {
+        "m-096e75164d": { model: "m-096e75164d", limit: 6, recentCount: 3, resetAt: "2026-11-10T08:00:00.000Z" },
+      },
     };
     let calls = 0;
     const fetcher = (async (input: RequestInfo | URL): Promise<Response> => {
       calls += 1;
       const url = String(input);
+      if (url.includes("/freebuff/models")) {
+        return new Response(catalogResponseBody(), { status: 200 });
+      }
       if (url.includes("/session/admission")) {
         return new Response(JSON.stringify(admissionBody), { status: 200 });
       }
@@ -132,7 +136,8 @@ describe("Freebuff quota collector", () => {
     const rate = quota.windows.find((w) => w.kind === "rate_limit");
     expect(rate?.used).toBe(3);
     expect(rate?.limit).toBe(6);
-    expect(calls).toBe(2); // admission + release
+    expect(rate?.modelIds).toEqual(["m-096e75164d"]);
+    expect(calls).toBe(3); // catalog + admission + release
   });
 
   test("reports an error when admission is refused", async () => {
@@ -141,31 +146,25 @@ describe("Freebuff quota collector", () => {
     expect(quota.error).not.toBeNull();
   });
 
-  test("emits session_active windows from a live GET /session with device identity", async () => {
+  test("emits session_active windows from admission desktopPurchases", async () => {
     const future = new Date(Date.now() + 4 * 3_600_000 + 29 * 60_000).toISOString(); // 4h29m from now
-    const admissionBody = { status: "active", accessTier: "limited", freebucks: { balance: 15, daily: { limit: 25, spent: 10, remaining: 15, resetAt: "2026-11-10T08:00:00.000Z" } } };
-    const device = await testDevice();
+    const admissionBody = {
+      status: "active",
+      accessTier: "limited",
+      freebucks: { balance: 15, daily: { limit: 25, spent: 10, remaining: 15, resetAt: "2026-11-10T08:00:00.000Z" } },
+      desktopPurchases: [{ model: "m-096e75164d", expiresAt: future, holderInstanceId: "inst-1" }],
+    };
     const fetcher = (async (input: RequestInfo | URL): Promise<Response> => {
       const url = String(input);
+      if (url.includes("/freebuff/models")) {
+        return new Response(catalogResponseBody(), { status: 200 });
+      }
       if (url.includes("/session/admission")) {
         return new Response(JSON.stringify(admissionBody), { status: 200 });
       }
-      if (url.endsWith("/session")) {
-        return new Response(
-          JSON.stringify({
-            status: "active",
-            desktopPurchases: [{ model: "m-096e75164d", expiresAt: future, holderInstanceId: "inst-1" }],
-          }),
-          { status: 200 },
-        );
-      }
       return new Response(JSON.stringify({ status: "ended" }), { status: 200 });
     }) as unknown as typeof fetch;
-    const quota = await fetchFreebuffQuota("token-1", fetcher, {
-      auth_state: { accountId: "acc_1", device },
-      credential_kind: "oauth",
-      accountId: "acc_1",
-    });
+    const quota = await fetchFreebuffQuota("token-1", fetcher);
     expect(quota.error).toBeNull();
     const session = quota.windows.find((w) => w.kind === "session_active");
     expect(session).toBeDefined();
@@ -178,46 +177,39 @@ describe("Freebuff quota collector", () => {
 
   test("skips session windows for expired purchases", async () => {
     const past = new Date(Date.now() - 5_000).toISOString();
-    const admissionBody = { status: "active", accessTier: "limited", freebucks: { balance: 15, daily: { limit: 25, spent: 10, remaining: 15, resetAt: "2026-11-10T08:00:00.000Z" } } };
-    const device = await testDevice();
+    const admissionBody = {
+      status: "active",
+      accessTier: "limited",
+      freebucks: { balance: 15, daily: { limit: 25, spent: 10, remaining: 15, resetAt: "2026-11-10T08:00:00.000Z" } },
+      desktopPurchases: [{ model: "m-096e75164d", expiresAt: past, holderInstanceId: "inst-1" }],
+    };
     const fetcher = (async (input: RequestInfo | URL): Promise<Response> => {
       const url = String(input);
+      if (url.includes("/freebuff/models")) {
+        return new Response(catalogResponseBody(), { status: 200 });
+      }
       if (url.includes("/session/admission")) {
         return new Response(JSON.stringify(admissionBody), { status: 200 });
       }
-      if (url.endsWith("/session")) {
-        return new Response(
-          JSON.stringify({
-            status: "active",
-            desktopPurchases: [{ model: "m-096e75164d", expiresAt: past, holderInstanceId: "inst-1" }],
-          }),
-          { status: 200 },
-        );
-      }
       return new Response(JSON.stringify({ status: "ended" }), { status: 200 });
     }) as unknown as typeof fetch;
-    const quota = await fetchFreebuffQuota("token-1", fetcher, {
-      auth_state: { accountId: "acc_1", device },
-      credential_kind: "oauth",
-      accountId: "acc_1",
-    });
+    const quota = await fetchFreebuffQuota("token-1", fetcher);
     expect(quota.windows.some((w) => w.kind === "session_active")).toBe(false);
   });
 
-  test("without device identity, quota still works and emits no session windows", async () => {
+  test("admission without purchases emits no session windows", async () => {
     const admissionBody = { status: "active", accessTier: "limited", freebucks: { balance: 15, daily: { limit: 25, spent: 10, remaining: 15, resetAt: "2026-11-10T08:00:00.000Z" } } };
     const fetcher = (async (input: RequestInfo | URL): Promise<Response> => {
       const url = String(input);
+      if (url.includes("/freebuff/models")) {
+        return new Response(catalogResponseBody(), { status: 200 });
+      }
       if (url.includes("/session/admission")) {
         return new Response(JSON.stringify(admissionBody), { status: 200 });
       }
       return new Response(JSON.stringify({ status: "ended" }), { status: 200 });
     }) as unknown as typeof fetch;
-    const quota = await fetchFreebuffQuota("token-1", fetcher, {
-      auth_state: { accountId: "acc_1" },
-      credential_kind: "oauth",
-      accountId: "acc_1",
-    });
+    const quota = await fetchFreebuffQuota("token-1", fetcher);
     expect(quota.error).toBeNull();
     expect(quota.windows.some((w) => w.kind === "session_active")).toBe(false);
   });

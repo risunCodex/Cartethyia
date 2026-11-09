@@ -14,7 +14,7 @@
 // read requires the device identity (auth_state.device); if it is absent the
 // collector skips the session read and still returns the admission windows.
 
-import type { QuotaFetcher, QuotaCollectionContext } from "../../quota/quota-support";
+import type { QuotaFetcher } from "../../quota/quota-support";
 import type { ProviderQuotaResult, ProviderQuotaWindow } from "../../quota/quota-contracts";
 import { isRecord } from "../../../protocol/codecs";
 import {
@@ -23,13 +23,12 @@ import {
   FREEBUFF_CATALOG_PROTOCOL_VERSION,
   FREEBUFF_CLIENT_HEADER,
   FREEBUFF_CLIENT_HEADER_VALUE,
-  FREEBUFF_CLIENT_VERSION_HEADER,
   FREEBUFF_DESKTOP_ATTEMPT_HEADER,
-  FREEBUFF_DESKTOP_AGENT_VERSION,
   FREEBUFF_FIRST_TAB_DISCOUNT_HEADER,
   FREEBUFF_INSTALL_ID_HEADER,
   FREEBUFF_INSTANCE_HEADER,
   FREEBUFF_MODEL_HEADER,
+  FREEBUFF_MODEL_CATALOG_PATH,
   FREEBUFF_MULTI_SESSION_HEADER,
   FREEBUFF_PURCHASE_CONTINUITY_HEADER,
   FREEBUFF_SESSION_ADMISSION_PATH,
@@ -37,85 +36,25 @@ import {
   FREEBUFF_TIMEZONE_HEADER,
   FREEBUFF_WALLET_SPEND_LIMIT_HEADER,
   FREEBUFF_ADMISSION_USER_AGENT,
-  FREEBUFF_ACTING_USER_HEADER,
-  freebuffSignRequest,
-  type FreebuffAuthState,
 } from "./freebuff";
 
 /** Cheapest open model for the probe admission (price 0). */
 const QUOTA_PROBE_MODEL = "m-9a7e098cc1"; // Solar Pro 4
 
-function readAuthState(context: QuotaCollectionContext | undefined): FreebuffAuthState {
-  const authState = context?.auth_state;
-  if (!isRecord(authState)) return {};
-  const accountId = typeof authState["accountId"] === "string" ? authState["accountId"] : undefined;
-  const deviceRaw = authState["device"];
-  if (!isRecord(deviceRaw)) return { accountId };
-  const version = deviceRaw["version"];
-  const publicKey = deviceRaw["publicKey"];
-  const privateKey = deviceRaw["privateKey"];
-  const keyId = deviceRaw["keyId"];
-  const installId = deviceRaw["installId"];
-  if (
-    version === 1 &&
-    typeof publicKey === "string" &&
-    typeof privateKey === "string" &&
-    typeof keyId === "string" &&
-    typeof installId === "string"
-  ) {
-    return { accountId, device: { version: 1, publicKey, privateKey, keyId, installId } };
-  }
-  return { accountId };
-}
-
 /**
- * Live read of the current session state: `GET /api/v1/freebuff/session`.
- * Returns the parsed `desktopPurchases` array (with model / expiresAt), or null
- * when the device identity is missing or the read fails (caller falls back).
+ * Parses `desktopPurchases` from the admission body. Returns the active
+ * purchases (model + expiresAt) carried by the entitlement surface.
  */
-async function freebuffReadSession(
-  token: string,
-  authState: FreebuffAuthState,
-  fetchFn: typeof fetch,
-): Promise<Array<{ model: string; expiresAt: string; holderInstanceId?: string }> | null> {
-  const device = authState.device;
-  if (!device) return null;
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    [FREEBUFF_CATALOG_PROTOCOL_HEADER]: FREEBUFF_CATALOG_PROTOCOL_VERSION,
-    [FREEBUFF_CLIENT_HEADER]: FREEBUFF_CLIENT_HEADER_VALUE,
-    [FREEBUFF_CLIENT_VERSION_HEADER]: FREEBUFF_DESKTOP_AGENT_VERSION,
-    [FREEBUFF_INSTALL_ID_HEADER]: device.installId,
-    "user-agent": FREEBUFF_ADMISSION_USER_AGENT,
-  };
-  if (authState.accountId) headers[FREEBUFF_ACTING_USER_HEADER] = authState.accountId;
-  Object.assign(
-    headers,
-    await freebuffSignRequest(device, { method: "GET", path: FREEBUFF_SESSION_PATH }),
-  );
-  let res: Response;
-  try {
-    res = await fetchFn(`${FREEBUFF_API_HOST}${FREEBUFF_SESSION_PATH}`, {
-      method: "GET",
-      headers,
-      signal: AbortSignal.timeout(15_000),
-    });
-  } catch {
-    return null;
-  }
-  if (!res.ok) return null;
-  const body: unknown = await res.json().catch(() => null);
-  if (!isRecord(body)) return null;
+function parsePurchases(body: Record<string, unknown>): Array<{ model: string; expiresAt: string }> {
   const purchases = body["desktopPurchases"];
-  if (!Array.isArray(purchases)) return null;
-  const result: Array<{ model: string; expiresAt: string; holderInstanceId?: string }> = [];
+  if (!Array.isArray(purchases)) return [];
+  const result: Array<{ model: string; expiresAt: string }> = [];
   for (const raw of purchases) {
     if (!isRecord(raw)) continue;
     const model = typeof raw["model"] === "string" ? raw["model"] : undefined;
     const expiresAt = typeof raw["expiresAt"] === "string" ? raw["expiresAt"] : undefined;
     if (!model || !expiresAt) continue;
-    const holderInstanceId = typeof raw["holderInstanceId"] === "string" ? raw["holderInstanceId"] : undefined;
-    result.push({ model, expiresAt, ...(holderInstanceId !== undefined ? { holderInstanceId } : {}) });
+    result.push({ model, expiresAt });
   }
   return result;
 }
@@ -144,19 +83,48 @@ function buildSessionWindows(purchases: Array<{ model: string; expiresAt: string
   return windows;
 }
 
-export const fetchFreebuffQuota: QuotaFetcher = async (credential, fetcher, context) => {
+async function freebuffResolveHandle(token: string, fetchFn: typeof fetch): Promise<string | null> {
+  const res = await fetchFn(`${FREEBUFF_API_HOST}${FREEBUFF_MODEL_CATALOG_PATH}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      [FREEBUFF_CATALOG_PROTOCOL_HEADER]: FREEBUFF_CATALOG_PROTOCOL_VERSION,
+      [FREEBUFF_CLIENT_HEADER]: FREEBUFF_CLIENT_HEADER_VALUE,
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) return null;
+  const body: unknown = await res.json().catch(() => null);
+  if (!isRecord(body)) return null;
+  const rows = body["rows"];
+  if (!Array.isArray(rows)) return null;
+  const row = rows.find((r) => isRecord(r) && r["key"] === QUOTA_PROBE_MODEL);
+  if (!isRecord(row)) return null;
+  const handle = row["handle"];
+  return typeof handle === "string" && handle.length > 0 ? handle : null;
+}
+
+export const fetchFreebuffQuota: QuotaFetcher = async (credential, fetcher) => {
   const token = credential.trim();
   const fetchFn = fetcher ?? globalThis.fetch;
-  const authState = readAuthState(context);
   const instanceId = crypto.randomUUID();
   const attemptId = crypto.randomUUID();
+  const modelHandle = await freebuffResolveHandle(token, fetchFn);
+  if (modelHandle === null) {
+    return {
+      source: "freebuff",
+      plan: null,
+      windows: [],
+      error: "Freebuff quota check failed: could not resolve catalog handle",
+    };
+  }
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     [FREEBUFF_CATALOG_PROTOCOL_HEADER]: FREEBUFF_CATALOG_PROTOCOL_VERSION,
     [FREEBUFF_CLIENT_HEADER]: FREEBUFF_CLIENT_HEADER_VALUE,
     [FREEBUFF_TIMEZONE_HEADER]: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     [FREEBUFF_FIRST_TAB_DISCOUNT_HEADER]: "0",
-    [FREEBUFF_MODEL_HEADER]: QUOTA_PROBE_MODEL,
+    [FREEBUFF_MODEL_HEADER]: modelHandle,
     [FREEBUFF_WALLET_SPEND_LIMIT_HEADER]: "0",
     [FREEBUFF_INSTANCE_HEADER]: instanceId,
     [FREEBUFF_MULTI_SESSION_HEADER]: "1",
@@ -208,11 +176,12 @@ export const fetchFreebuffQuota: QuotaFetcher = async (credential, fetcher, cont
   }
 
   const windows = buildQuotaWindows(body);
-  // Live session-active windows (per purchase, countdown to expiresAt). The
-  // read is graceful: missing device identity or a failed GET /session yields
-  // no session windows — never fails the quota fetch.
-  const purchases = await freebuffReadSession(token, authState, fetchFn);
-  const sessionWindows = purchases === null ? [] : buildSessionWindows(purchases);
+  // Session-active windows come from the ADMISSION body's `desktopPurchases`
+  // (the only surface that reports active purchases). A live GET /session does
+  // NOT carry desktopPurchases — verified live 2026-11-09. Missing purchases or
+  // malformed entries simply yield no session windows; never fail the fetch.
+  const purchases = parsePurchases(body);
+  const sessionWindows = buildSessionWindows(purchases);
   const plan = typeof body["accessTier"] === "string" ? body["accessTier"] : null;
   const result: ProviderQuotaResult = {
     source: "freebuff",
@@ -259,16 +228,21 @@ function buildQuotaWindows(body: Record<string, unknown>): ProviderQuotaResult["
       });
     }
   }
-  const rateLimit = body["rateLimit"];
-  if (isRecord(rateLimit)) {
-    const limit = typeof rateLimit["limit"] === "number" ? rateLimit["limit"] : null;
-    const recentCount = typeof rateLimit["recentCount"] === "number" ? rateLimit["recentCount"] : null;
-    const resetAt = typeof rateLimit["resetAt"] === "string" ? rateLimit["resetAt"] : null;
-    if (limit !== null) {
+  // Rate limits are reported per model in `rateLimitsByModel` (a map keyed by
+  // model id) — there is no top-level `rateLimit` in the live admission body.
+  const rateLimitsByModel = body["rateLimitsByModel"];
+  if (isRecord(rateLimitsByModel)) {
+    for (const [modelId, raw] of Object.entries(rateLimitsByModel)) {
+      if (!isRecord(raw)) continue;
+      const limit = typeof raw["limit"] === "number" ? raw["limit"] : null;
+      const recentCount = typeof raw["recentCount"] === "number" ? raw["recentCount"] : null;
+      const resetAt = typeof raw["resetAt"] === "string" ? raw["resetAt"] : null;
+      if (limit === null) continue;
       windows.push({
         kind: "rate_limit",
         label: "Daily session rate limit",
         accounting: "independent",
+        modelIds: [modelId],
         usedPercent: recentCount !== null && limit > 0 ? Math.round((recentCount / limit) * 100) : null,
         remainingPercent: recentCount !== null && limit > 0 ? Math.round(((limit - recentCount) / limit) * 100) : null,
         resetsAt: resetAt,
