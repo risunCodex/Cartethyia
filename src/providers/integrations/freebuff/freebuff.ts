@@ -180,6 +180,34 @@ export async function freebuffMintDeviceKey(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    let upstreamInvalid: { error?: unknown; message?: unknown } | undefined;
+    try {
+      upstreamInvalid = JSON.parse(text) as { error?: unknown; message?: unknown };
+    } catch {
+      upstreamInvalid = undefined;
+    }
+    const upstreamError =
+      upstreamInvalid && typeof upstreamInvalid["error"] === "string"
+        ? upstreamInvalid["error"]
+        : undefined;
+    // The upstream refuses this device with a structured reason (e.g.
+    // `account_suspended`, `free_mode_cli_required`). Surface it to the
+    // operator as its own stable code and the upstream's exact HTTP status —
+    // NOT the synthetic 401 below. A pasted/login token that is simply bad
+    // (`authentication_failed`) stays 401.
+    if (upstreamError !== undefined) {
+      const upstreamMessage =
+        upstreamInvalid && typeof upstreamInvalid["message"] === "string"
+          ? upstreamInvalid["message"]
+          : "Freebuff refused this device key";
+      throw new GatewayError(
+        "policy_rejected",
+        res.status,
+        `${upstreamMessage} (request {requestId}).`,
+        { error: upstreamError, upstreamStatus: res.status },
+        "upstream",
+      );
+    }
     throw new GatewayError(
       "authentication_failed",
       401,

@@ -496,9 +496,13 @@ export function DeviceCodeDialog({
               schedule(intervalMs);
             }
           },
-          onError: () => {
+          onError: (err) => {
             pollInFlight = false;
-            if (!stale) schedule(intervalMs);
+            if (stale) return;
+            clearTimer();
+            const message = (err as { message?: string }).message;
+            toast.error("Device login failed", message ?? "The device flow ended without a result.");
+            onClose();
           },
         },
       );

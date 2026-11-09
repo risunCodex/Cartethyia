@@ -108,4 +108,42 @@ describe("Freebuff device signature", () => {
     expect(a["x-freebuff-device-sig"]).toBe(b["x-freebuff-device-sig"]);
     expect(a["x-freebuff-device-ts"]).toBe("1234");
   });
+
+  test("surfaces a structured upstream refusal with its real status, not synthetic 401", async () => {
+    const fetchFn = (async () =>
+      new Response(
+        JSON.stringify({
+          error: "account_suspended",
+          message: "Your account has been suspended.",
+        }),
+        { status: 403, headers: { "content-type": "application/json" } },
+      )) as unknown as typeof fetch;
+    try {
+      await freebuffMintDeviceKey("test-token", { fetchFn });
+      expect.unreachable("expected a GatewayError");
+    } catch (error) {
+      const gateway = error as { code?: unknown; status?: unknown; origin?: unknown; details?: unknown; message?: unknown };
+      expect(gateway.code).toBe("policy_rejected");
+      expect(gateway.status).toBe(403);
+      expect(gateway.origin).toBe("upstream");
+      const details = gateway.details as { error?: unknown; upstreamStatus?: unknown };
+      expect(details["error"]).toBe("account_suspended");
+      expect(details["upstreamStatus"]).toBe(403);
+      expect(String(gateway.message)).toContain("suspended");
+    }
+  });
+
+  test("keeps 401 for a plain bad token (no structured body)", async () => {
+    const fetchFn = (async () =>
+      new Response("Unauthorized", { status: 401 })) as unknown as typeof fetch;
+    try {
+      await freebuffMintDeviceKey("test-token", { fetchFn });
+      expect.unreachable("expected a GatewayError");
+    } catch (error) {
+      const gateway = error as { code?: unknown; status?: unknown; origin?: unknown };
+      expect(gateway.code).toBe("authentication_failed");
+      expect(gateway.status).toBe(401);
+      expect(gateway.origin).toBe("upstream");
+    }
+  });
 });

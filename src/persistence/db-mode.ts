@@ -48,7 +48,10 @@ export function resolveDbMode(env: NodeJS.ProcessEnv = process.env): DbMode {
  */
 export function resolveDataDir(env: NodeJS.ProcessEnv = process.env): string {
   const override = env.CARTETHYIA_DATA_DIR?.trim();
-  if (override) return override;
+  // Guard against a literal `"undefined"` value: a launcher that stringifies
+  // a missing env var (`String(undefined)`) would otherwise make the gateway
+  // write its state into a folder named `undefined/` in the CWD.
+  if (override && override !== "undefined") return override;
   if (process.platform === "win32") {
     const roaming = env.APPDATA?.trim();
     if (roaming) return join(roaming, "Cartethyia");

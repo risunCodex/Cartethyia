@@ -8,8 +8,6 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
-
 ## [2.8.0] - 2026-11-09
 
 ### Added
@@ -171,6 +169,20 @@ complete transcript into a fresh Run, matching the donor's behavior instead of
 stalling the client loop. A partial tail (a result with no matching call) and
 a foreign-tenant call id remain hard refusals. Coverage:
 `test/providers/cursor-run-continuation.test.ts`.
+- **Freebuff OAuth device flow no longer hangs or logs out.** A device-key
+registration refused by upstream (e.g. `account_suspended`) now surfaces its
+real status (403) and message instead of a synthetic 401, and the dashboard's
+device dialog reports the failure and closes instead of silently polling
+forever on "Waiting for authorization…".
+- **Freebuff quota reads are read-only.** `fetchFreebuffQuota` now reads
+`GET /api/v1/freebuff/session` with the account's device identity from
+`auth_state` instead of performing a session-admission probe, so a quota
+refresh never spends a session, locks a model purchase, or hits the upstream's
+gates. Accounts without a device identity report a clear error instead of a
+synthetic probe.
+- **Data-dir guard.** `resolveDataDir` ignores a literal `CARTETHYIA_DATA_DIR`
+value of `"undefined"`, which previously made the process write gateway state
+into a folder named `undefined/` in the working directory.
 
 ### Removed
 
