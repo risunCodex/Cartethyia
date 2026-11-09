@@ -162,6 +162,9 @@ describe("Freebuff adapter dispatch", () => {
     const messages = body["messages"] as Array<{ role: string; content: string }>;
     expect(messages[0]?.role).toBe("system");
     expect(messages[0]?.content).toBe(FREEBUFF_WORKER_SYSTEM_PROMPT);
+    // The caller's user turn must survive after the worker system message.
+    expect(messages[1]?.role).toBe("user");
+    expect(messages[1]?.content).toContain("say hello");
 
     // The stream decoded into content_delta events.
     const texts = events

@@ -70,15 +70,23 @@ export function freebuffModelDiscovery(): ProviderModelDiscovery {
       if (!key) continue;
       const isPremium = premium || access === "locked" || KNOWN_PREMIUM_KEYS.has(key);
       const isFree = KNOWN_FREE_KEYS.has(key) || access === "open";
+      // The server publishes the real context window, modality, and reasoning
+      // efforts per row — use them verbatim rather than a hardcoded guess.
+      const ctx = typeof r["contextWindow"] === "number" && r["contextWindow"] > 0 ? r["contextWindow"] : undefined;
+      const multimodal = r["multimodal"] === true;
+      const efforts = Array.isArray(r["efforts"]) && r["efforts"].every((e) => typeof e === "string")
+        ? (r["efforts"] as string[])
+        : undefined;
       models.push(
         defineModel({
           id: key,
           providerId: "freebuff",
           wireFamily: "chat",
           endpoint: FREEBUFF_CHAT_COMPLETIONS_PATH,
-          ctx: 131_072,
-          out: 8_192,
+          ...(ctx !== undefined ? { ctx } : {}),
+          ...(multimodal ? { vision: true } : {}),
           reasoning: true,
+          ...(efforts !== undefined ? { reasoningEfforts: efforts } : {}),
           toolCall: true,
           ...(isFree ? { free: true, freeTier: true } : {}),
           ...(isPremium ? { proOnly: true } : {}),

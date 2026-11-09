@@ -495,16 +495,16 @@ function expiresbuffChatBody(
     codebuff_metadata: metadata,
     provider: { allow_fallbacks: true },
   };
-  // The upstream wants exactly one system message and it must be the official
-  // worker template. The canonical request's own system parts are dropped — the
-  // gate validates the official template, not the caller's.
+  // The upstream wants the official worker template as the system message, and
+  // the caller's own turns (user/assistant/tool) must survive intact. Prepend
+  // the worker as a system message; never overwrite the caller's first message
+  // (which is usually the user turn).
   const messages = body["messages"];
   if (Array.isArray(messages)) {
-    const first = messages[0];
-    if (isRecord(first) && typeof first["content"] === "string") {
-      first["content"] = FREEBUFF_WORKER_SYSTEM_PROMPT;
-      first["role"] = "system";
-    }
+    body["messages"] = [
+      { role: "system", content: FREEBUFF_WORKER_SYSTEM_PROMPT },
+      ...messages,
+    ];
   } else {
     body["messages"] = [{ role: "system", content: FREEBUFF_WORKER_SYSTEM_PROMPT }];
   }

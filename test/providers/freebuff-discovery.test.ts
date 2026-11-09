@@ -27,6 +27,15 @@ describe("Freebuff static catalog", () => {
     expect(luna?.proOnly).toBe(true);
     expect(luna?.freeTier).toBeUndefined();
   });
+
+  test("uses the server-published context windows, not a hardcoded guess", () => {
+    const byId = new Map(FREEBUFF_MODELS.map((m) => [m.modelId, m]));
+    expect(byId.get("m-096e75164d")?.contextLimit).toBe(1_048_576); // DeepSeek Fast
+    expect(byId.get("m-5a5d0e255e")?.contextLimit).toBe(1_000_000); // GPT-6 Luna
+    expect(byId.get("m-9a7e098cc1")?.contextLimit).toBe(500_000); // Solar Pro 4
+    expect(byId.get("m-02244092cb")?.contextLimit).toBe(256_000); // Glyph Cluster
+    expect(byId.get("m-5b6a604eb6")?.contextLimit).toBe(100_000); // Claude Haiku 100k
+  });
 });
 
 describe("Freebuff model discovery", () => {
@@ -38,9 +47,9 @@ describe("Freebuff model discovery", () => {
           protocol: 1,
           fetchId: "fbf1.test",
           rows: [
-            { key: "m-096e75164d", displayName: "DeepSeek Fast", handle: "fbm1.x", access: "open", premium: false },
-            { key: "m-5a5d0e255e", displayName: "GPT-6 Luna", handle: "fbm1.y", access: "locked", premium: true },
-            { key: "m-9a7e098cc1", displayName: "Solar Pro 4", handle: "fbm1.z", access: "open", premium: false },
+            { key: "m-096e75164d", displayName: "DeepSeek Fast", handle: "fbm1.x", access: "open", premium: false, contextWindow: 1_048_576, multimodal: true, efforts: ["low", "high", "max"] },
+            { key: "m-5a5d0e255e", displayName: "GPT-6 Luna", handle: "fbm1.y", access: "locked", premium: true, contextWindow: 1_000_000, multimodal: true, efforts: ["low", "medium", "high"] },
+            { key: "m-9a7e098cc1", displayName: "Solar Pro 4", handle: "fbm1.z", access: "open", premium: false, contextWindow: 500_000 },
           ],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -55,8 +64,16 @@ describe("Freebuff model discovery", () => {
     const fast = result!.find((m) => m.modelId === "m-096e75164d");
     expect(fast?.freeTier).toBe(true);
     expect(fast?.proOnly).toBeUndefined();
+    // The server-published context window and modality must survive discovery.
+    expect(fast?.contextLimit).toBe(1_048_576);
+    expect(fast?.modalities.input).toContain("image");
+    expect(fast?.reasoningEfforts).toEqual(["low", "high", "max"]);
     const luna = result!.find((m) => m.modelId === "m-5a5d0e255e");
     expect(luna?.proOnly).toBe(true);
+    expect(luna?.contextLimit).toBe(1_000_000);
+    const solar = result!.find((m) => m.modelId === "m-9a7e098cc1");
+    expect(solar?.contextLimit).toBe(500_000);
+    expect(solar?.modalities.input).not.toContain("image");
   });
 
   test("returns null on non-OK or malformed catalog", async () => {
