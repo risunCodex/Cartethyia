@@ -677,9 +677,7 @@ export const PROVIDER_CAPABILITIES = {
     // dressed ZCode client request (see the integration). The credential is a
     // ZCode login JWT — pasted, or minted by the sign-in flow below.
     loadAdapter: async () =>
-      createApiKeyAdapter(
-        (await import("./integrations/zcode-start-plan/provider")).ZCODE_START_PLAN_SPEC,
-      ),
+      (await import("./integrations/zcode-start-plan/provider")).createZcodeStartPlanAdapter(),
     loadModels: async () =>
       (await import("./integrations/zcode-start-plan/provider")).ZCODE_START_PLAN_MODELS,
     // The device flow stores the issued ZCode login JWT, not a Coding Plan key.

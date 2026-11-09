@@ -1297,6 +1297,34 @@ describe("classifyUpstreamError", () => {
     });
   });
 
+  test("maps the ZCode plan-lane envelope codes to their canonical meanings", () => {
+    // 3009 model concurrency → transient rate limit (retried in place).
+    expect(classifyUpstreamError(429, "3009")).toEqual({
+      code: "rate_limited",
+      status: 429,
+      origin: "upstream",
+    });
+    // 3008 user concurrency → the desktop client is busy on that account.
+    expect(classifyUpstreamError(429, "3008")).toEqual({
+      code: "accounts_rate_limited",
+      status: 429,
+      origin: "upstream",
+    });
+    // 3012 identity/prompt-shape gate.
+    expect(classifyUpstreamError(405, "3012")).toEqual({
+      code: "policy_rejected",
+      status: 405,
+      origin: "upstream",
+    });
+    // 1113 grant spent / request not recognized as start-plan traffic.
+    expect(classifyUpstreamError(429, "1113")).toEqual({
+      code: "quota_exceeded",
+      status: 429,
+      origin: "upstream",
+      rateLimitScope: "provider",
+    });
+  });
+
   test("maps context-window identifiers to a 413", () => {
     for (const identifier of [
       "context_length_exceeded",

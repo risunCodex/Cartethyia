@@ -1,9 +1,23 @@
+import { createHash } from "node:crypto";
 import { asCoercedNumber, asRecord, asTrimmedString } from "../../../shared/coerce";
 import type { FetchLike, ProviderQuotaResult, ProviderQuotaWindow } from "../../quota/quota-contracts";
 
 const BALANCE_URL = "https://zcode.z.ai/api/v1/zcode-plan/billing/balance?app_version=3.16.3";
-const DEVICE_MID = "9f1b0d4e-3c2a-4e7b-9f1d-6a2c8b5e0d31";
 const APP_VERSION = "3.16.3";
+const PLATFORM = "linux-x64";
+
+/**
+ * Stable per-account device mid. The gateway validates `X-Device-Mid` as a
+ * UUID (billing answers `3001 parameter error` without it) and attributes
+ * usage to it; a hardcoded shared UUID would lump every account into one
+ * billing identity. Derivation matches the gift-claim device id, so quota and
+ * claim present the same device per account.
+ */
+function deviceMid(accountId: string): string {
+  const hash = createHash("sha256").update(`zcode-device\0${accountId}`).digest("hex");
+  const variant = ((parseInt(hash[16] as string, 16) & 3) | 8).toString(16);
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-${variant}${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+}
 
 function instant(value: unknown): string | null {
   const seconds = asCoercedNumber(value);
@@ -57,16 +71,19 @@ function samePlan(bucket: Record<string, unknown>, plan: Record<string, unknown>
 export async function fetchZcodeStartPlanQuota(
   credential: string,
   fetcher: FetchLike,
+  context?: { accountId?: string },
 ): Promise<ProviderQuotaResult> {
   const source = "zcode-start";
   try {
+    const accountId = context?.accountId ?? credential.trim();
     const response = await fetcher(BALANCE_URL, {
       headers: {
         authorization: `Bearer ${credential}`,
         accept: "application/json",
-        "x-device-mid": DEVICE_MID,
+        "x-device-mid": deviceMid(accountId),
         "x-zcode-app-version": APP_VERSION,
         "x-client-language": "en-US",
+        "x-platform": PLATFORM,
       },
       signal: AbortSignal.timeout(15_000),
     });

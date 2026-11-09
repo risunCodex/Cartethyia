@@ -114,7 +114,7 @@ test("ZCode Start Plan registry dispatch preserves caller instructions and model
   };
   const target: ProviderDispatchTarget = { provider_id: ID, model_id: request.model, wire_family: "messages", endpoint_path: "/v1/messages", capabilities: {} };
   const dispatchContext: ProviderDispatchContext = {
-    credential: { provider_id: ID, credential_kind: "api_key", secret: new TextEncoder().encode("fixture-token") },
+    credential: { provider_id: ID, credential_kind: "api_key", secret: new TextEncoder().encode(jwt("fixture-user")) },
     deadline: Date.now() + 30_000, abort_signal: new AbortController().signal,
     outbound_fetch: async (url, init) => {
       calls.push({ url: String(url), headers: new Headers(init?.headers), payload: JSON.parse(String(init?.body)) });
@@ -128,7 +128,19 @@ test("ZCode Start Plan registry dispatch preserves caller instructions and model
   expect(encoded.output[0].content[0].text).toBe("fixture answer");
   const call = calls[0];
   expect(call?.url).toBe("https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages");
-  expect(call?.headers.get("authorization")).toBe("Bearer fixture-token");
+  expect(call?.headers.get("authorization")).toBe(`Bearer ${jwt("fixture-user")}`);
+  // The plan-lane identity face mirrored from the desktop client.
+  expect(call?.headers.get("anthropic-beta")).toBe("mid-conversation-system-2026-04-07");
+  expect(call?.headers.get("x-query-id")).toMatch(/^01a1[0-9a-f]{28}$/);
+  expect(call?.headers.get("x-zcode-query-source")).toBe("main_turn");
+  expect(call?.headers.get("x-title")).toBe("Z Code@electron");
+  expect(call?.headers.get("anthropic-version")).toBe("2023-06-01");
+  const metadata = call?.payload.metadata as Record<string, string>;
+  expect(metadata?.user_id).toBeTruthy();
+  const parsedMeta = JSON.parse(String(metadata?.user_id)) as Record<string, string>;
+  expect(parsedMeta.device_id).toBeTruthy();
+  expect(parsedMeta.account_uuid).toBe("fixture-user");
+  expect(parsedMeta.session_id).toBeTruthy();
   const blocks = call?.payload.system as { text: string }[];
   expect(blocks[2]?.text).toContain("fixture user instructions");
 });

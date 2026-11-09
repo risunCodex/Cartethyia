@@ -818,6 +818,20 @@ export function classifyUpstreamError(
     return { code: "proxy_auth_required", status: 407, origin: "network" };
   if (normalized === "11140")
     return { code: "policy_rejected", status: 403, origin: "upstream" };
+  // ZCode plan-lane envelope codes (verified live 2026-10-30 by the donor and
+  // mirrored by the zcode-start provider). `3009` is model concurrency
+  // (transient, retried in place), `3008` user concurrency (the desktop client
+  // is busy on that account — switchable), `3012` is the identity/prompt-shape
+  // gate, `1113` the paid-lane "insufficient balance or no resource package"
+  // (a request that was not recognized as start-plan traffic).
+  if (normalized === "3009")
+    return { code: "rate_limited", status: 429, origin: "upstream" };
+  if (normalized === "3008")
+    return { code: "accounts_rate_limited", status: 429, origin: "upstream" };
+  if (normalized === "3012")
+    return { code: "policy_rejected", status: 405, origin: "upstream" };
+  if (normalized === "1113")
+    return { code: "quota_exceeded", status: 429, origin: "upstream", rateLimitScope: "provider" };
   if (normalized !== undefined && CONTEXT_LENGTH_CODES.has(normalized))
     return { code: "context_length_exceeded", status: 413, origin: "upstream" };
   if (normalized !== undefined && QUOTA_ERROR_IDENTIFIERS.has(normalized))
