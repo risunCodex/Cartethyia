@@ -111,6 +111,31 @@ describe("createValidatedFetch", () => {
     expect(body).toBe("{}");
   });
 
+  test("non-idempotent methods dial with keep-alive disabled (Bun #45138)", async () => {
+    // Bun's fetch pools keep-alive sockets for up to 300s and does not detect a
+    // server-side idle close before reuse. A POST handed a stale pooled socket
+    // fails with ECONNRESET when the origin closed the idle connection without a
+    // `Keep-Alive: timeout` hint (issue #45138). POST/other methods must dial
+    // fresh; GET/HEAD keep the pool.
+    const initSeen: RequestInit[] = [];
+    const fetcher = createValidatedFetch({
+      policy: {},
+      resolveFn: resolver("93.184.216.34"),
+      fetchFn: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        initSeen.push(init ?? {});
+        return new Response("{}", { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    await fetcher("https://example.test/", { method: "POST", body: "x" });
+    await fetcher("https://example.test/", { method: "PUT", body: "x" });
+    await fetcher("https://example.test/");
+    await fetcher("https://example.test/", { method: "HEAD" });
+    expect(initSeen[0]!.keepalive).toBe(false);
+    expect(initSeen[1]!.keepalive).toBe(false);
+    expect(initSeen[2]!.keepalive).toBeUndefined();
+    expect(initSeen[3]!.keepalive).toBeUndefined();
+  });
+
   test("a relay endpoint is dialed directly with relay headers, not as a CONNECT proxy", async () => {
     // A hosted relay front door (Vercel/Workers/Deno) refuses CONNECT. The
     // egress must fetch the relay URL directly (no `proxy` option) and hand
