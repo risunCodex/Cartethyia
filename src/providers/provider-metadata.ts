@@ -490,6 +490,19 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
   // rows are served by `/v1/search`, never by the canonical chat pipeline.
   { id: "exa", displayName: "Exa", baseUrl: "https://mcp.exa.ai", serviceKinds: ["websearch"], requiresAccount: false, credentialHint: "No API key. Search goes through the public MCP." },
   { id: "parallel", displayName: "Parallel", baseUrl: "https://search.parallel.ai", serviceKinds: ["websearch"], requiresAccount: false, credentialUrl: "https://platform.parallel.ai/settings?tab=api-keys", credentialHint: "Optional. Leave empty for the public MCP, or paste an API key for the higher-limit search API." },
+  {
+    // Freebuff (Codebuff Desktop). OAuth code flow → bearer token; every
+    // dispatch carries the desktop identity group + Ed25519 device signature
+    // (see documentation/research/freebuff/). The chat surface is
+    // OpenAI-compatible on `/api/v1/chat/completions` but requires a stateful
+    // session admission + agent-runs preflight — handled by the custom adapter.
+    id: "freebuff",
+    displayName: "Freebuff",
+    baseUrl: "https://www.codebuff.com",
+    hasAdapterUserAgent: true,
+    credentialUrl: "https://www.codebuff.com/login",
+    credentialHint: "Sign in with your Freebuff account (Desktop/CLI code flow).",
+  },
 ] as const;
 
 /**

@@ -46,6 +46,16 @@ parts are replaced with a `[image omitted]` text marker instead of being
 filtered out, so the main model knows something was there. Coverage:
 `test/transport/vision-handoff.test.ts` (Option E of the vision-handoff
 context-preservation proposal).
+- **Freebuff provider adapter (new).** Full integration for Freebuff
+(Codebuff Desktop): OAuth code-flow login (`freebuffOAuthClient`, device-flow
+shape) with per-account Ed25519 device-key minting; static 13-row catalog plus
+live `/models` discovery; quota collector reading the session-admission
+entitlement (`freebucks` + per-model `rateLimit`); and a custom chat adapter
+that runs the stateful preflight (session admission → agent-runs START →
+chat → FINISH → session release) with the desktop identity-group headers and
+the locked official 7918-char worker system prompt + 37-tool set. Wire facts
+live-verified 2026-11-09 (see `documentation/research/freebuff/`). Coverage:
+`test/providers/freebuff-{adapter,signature,discovery}.test.ts`.
 
 ### Changed
 

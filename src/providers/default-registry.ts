@@ -794,6 +794,18 @@ export const PROVIDER_CAPABILITIES = {
     loadQuotaCollector: quotaCapability(() => import("./integrations/ollamacloud"), "fetchOllamaQuota"),
     loadModelDiscovery: openAIModelDiscovery("ollamacloud", { headers: (credential) => ({ authorization: `Bearer ${credential}` }) }),
   },
+  freebuff: {
+    // Freebuff chat is OpenAI-compatible on `/api/v1/chat/completions`, but the
+    // adapter runs a stateful preflight (session admission + agent-runs START)
+    // and a device-signature header set — see the integration.
+    endpointPathsByWireFamily: { chat: "/api/v1/chat/completions" },
+    loadAdapter: async () => (await import("./integrations/freebuff/freebuff")).createFreebuffAdapter(),
+    loadModels: async () => (await import("./integrations/freebuff/freebuff-catalog")).FREEBUFF_MODELS,
+    loadAuthentication: oauthCapability(() => import("./integrations/freebuff/freebuff-oauth"), "freebuffOAuthClient"),
+    loadQuotaCollector: quotaCapability(() => import("./integrations/freebuff/freebuff-quota"), "fetchFreebuffQuota"),
+    loadModelDiscovery: async () =>
+      (await import("./integrations/freebuff/freebuff-discovery")).freebuffModelDiscovery(),
+  },
 
   ...createDiscoveryBackedProviderCapabilities(openAIModelDiscovery),
 
