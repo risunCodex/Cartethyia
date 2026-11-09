@@ -366,9 +366,28 @@ function officialTools() {
   return tools;
 }
 
-/** Load the official worker system template (7918 chars, desktop thread-local v3). */
+/**
+ * Load the official worker system template (7918 chars, desktop thread-local v3).
+ * LOCKED: the upstream gate validates the system message contents — shortening,
+ * replacing the opening, or changing "Buffy" gets 403 (see wire-audit ledger,
+ * system-prompt fingerprint section). Keep this byte-identical; only append at
+ * the end if extra instructions are needed.
+ */
 function officialSystemWorker() {
-  return readFileSync(new URL("./assets/official-system-worker.txt", import.meta.url), "utf8");
+  const sys = readFileSync(new URL("./assets/official-system-worker.txt", import.meta.url), "utf8");
+  if (sys.length !== 7918) {
+    throw new Error(
+      `official-system-worker.txt: expected 7918 chars, got ${sys.length} — ` +
+        "system prompt is fingerprint-locked (shortening/replacing → 403); restore the official worker.",
+    );
+  }
+  if (!sys.startsWith("You are Buffy, the coding agent behind Codebuff.")) {
+    throw new Error(
+      "official-system-worker.txt: opening changed — the system prompt opening is fingerprint-locked " +
+        "(non-official opening → 403 free_mode_cli_required); restore the official worker.",
+    );
+  }
+  return sys;
 }
 
 /** 13-char base36 client id (official SDK shape). */

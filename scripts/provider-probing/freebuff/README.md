@@ -138,6 +138,15 @@ shape: catalog handle in `model`, `codebuff_metadata` with `freebuff_instance_id
 (`assets/official-tools.json`), `tool_choice: "auto"`, and the official worker
 system template (`assets/official-system-worker.txt`).
 
+**System prompt — locked, do not modify.** The chat gate validates the system
+message *contents*, not just the opening. Live A/B (2026-11-09): shortening the
+7918-char worker → 403 `third_party_client_warning`; replacing the opening with
+a non-official string or replacing `"Buffy"` (even same-length) → 403
+`free_mode_cli_required`; only the verbatim worker (or appending at the end, or
+swapping to another official marker) passes the shape gate. Rule: **keep the
+worker byte-identical; only append at the end.** See the wire-audit ledger for
+the full A/B table.
+
 `--chat` runs the full validated chain (admission handle + agent-runs START →
 chat → FINISH → release) and reports the chat response verbatim; it never
 loops retries.
