@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-11-09
+
 ### Added
 
 - **Unified routing decision engine (feature-gated).** New full-request
@@ -64,6 +66,15 @@ Expires in Nh Nm` — that re-renders every 30s from the absolute expiry, withou
 polling. Quota summary treats `session_active` windows as display-only. Coverage:
 `test/providers/freebuff-discovery.test.ts` (session windows, expired skip,
 no-device fallback).
+- **Freebuff: virtual model ids.** The opaque `m-<hex>` roster keys are now
+published as readable caller-facing ids (`deepseek-fast`, `solar-pro-4`,
+`gpt-6-luna`, `claude-haiku-5.5`, …) across the catalog, discovery, quota
+windows (so routing's `filterCandidateQuotaWindows` matches), and dispatch —
+the roster key is resolved at call time. Probe prompts are minimal and unique
+per model (`ping <modelId>`, no worker system template) to stay clear of the
+admission policy gate that flags repeated identical probes.
+Coverage: `test/providers/freebuff-discovery.test.ts` and
+`test/providers/freebuff-adapter.test.ts`.
 
 ### Changed
 
@@ -128,6 +139,16 @@ on a strong boundary (a sentence ending before a capitalized continuation, or
 a Markdown block marker); weaker boundaries merge into the open block with a
 space. Coverage: `test/transport/surface/messages-stream-encoder.test.ts` and
 `test/transport/reasoning-summary-separator.test.ts`.
+- **Transport: upstream socket drops are normalized and retried once.** A
+mid-response socket death (Bun `TypeError` with `code: ECONNRESET`) no longer
+leaks to the client as a raw `ECONNRESET`/400 with origin `cartethyia` — the
+dispatch loop materializes it as `transport_unavailable`/502/upstream before
+classification, so telemetry, the captured Client Response, and the wire
+agree. With a single-account provider (the common case) the socket drop now
+receives one bounded extra dial; the fresh dial recovers the transient reset
+(verified live 2026-11-09, 7/7 on the first retry). The keepalive=false
+workaround for stalled pooled sockets is removed.
+Coverage: `test/transport/failure-policy.test.ts` and the transport suite.
 
 ### Removed
 
