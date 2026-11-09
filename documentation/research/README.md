@@ -29,6 +29,7 @@ or foundational notes stay at this root.
 | `cursor/`   | Cursor Run protocol + entitlement + agent CLI 2026.11.05 wire audit (hosts, endpoint inventory, headers)                                                   | 2 files    |
 | `grok/`     | Grok Build CLI 1.0.70 binary unpack — endpoint, headers, payload, quota                                                                                    | 1 file     |
 | `trae/`     | Trae IDE 3.6.13 unpack — endpoint inventory (chat/agent/commercial), auth headers, wire verification vs adapter                                            | 2 files   |
+| `freebuff/` | Freebuff Desktop 0.0.201 unpack — OAuth code flow, session admission/catalog, cloud runs (chat) + device gate, ads surface, device-signature spoofing, live probe (ID region, 8/12 sweep) | 1 file    |
 
 
 ## Root notes
