@@ -37,6 +37,7 @@ import {
   FREEBUFF_OFFICIAL_TOOLS,
   FREEBUFF_WORKER_SYSTEM_PROMPT,
 } from "./freebuff-constants";
+import { freebuffDispatchModelId } from "./freebuff-virtual";
 
 export const FREEBUFF_PROVIDER_ID = "freebuff" as const;
 
@@ -545,7 +546,11 @@ export function createFreebuffAdapter(): ProviderAdapter {
       }
 
       // 1. Resolve catalog handle + fetchId (ephemeral, per dispatch).
-      const { handle: modelHandle, fetchId } = await resolveCatalogHandle(secret, candidate.model_id, context);
+      //    A caller-facing virtual name is translated to its `m-<hex>` roster
+      //    key first (see freebuff-virtual.ts); the handle resolution then
+      //    works unchanged, in the same vocabulary as the catalog rows.
+      const modelId = freebuffDispatchModelId(candidate.model_id || request.model);
+      const { handle: modelHandle, fetchId } = await resolveCatalogHandle(secret, modelId, context);
 
       // 2. Admission.
       const admission = await freebuffAdmission(secret, authState, modelHandle, fetchId, context);

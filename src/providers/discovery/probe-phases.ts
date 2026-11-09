@@ -665,8 +665,16 @@ export function buildProbeCanonicalRequest(args: {
    * probe.
    */
   readonly providerSystemPrompt?: string | undefined;
+  /**
+   * A provider-specific default probe prompt, used when the operator sent no
+   * prompt. Lets a provider whose policy gate flags repeated identical probes
+   * (Freebuff: `prompt_policy_refused` / "same message sent over and over")
+   * receive a minimal, per-model-varying probe instead of the shared identity
+   * question every provider otherwise sends.
+   */
+  readonly defaultPromptOverride?: string | undefined;
 }): CanonicalRequest {
-  const { modelId, request, probeReasoning, sourceSurface, maxOutputTokens, providerSystemPrompt } = args;
+  const { modelId, request, probeReasoning, sourceSurface, maxOutputTokens, providerSystemPrompt, defaultPromptOverride } = args;
   const fast = maxOutputTokens === PROBE_FAST_MAX_OUTPUT_TOKENS;
   return {
     model: modelId,
@@ -681,6 +689,7 @@ export function buildProbeCanonicalRequest(args: {
             kind: "text",
             text:
               request.prompt ??
+              defaultPromptOverride ??
               (fast ? PROBE_FAST_DEFAULT_PROMPT : "What model are you, and what is your knowledge cutoff date? Answer in one sentence."),
           },
         ],

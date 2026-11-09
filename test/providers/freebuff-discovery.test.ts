@@ -1,45 +1,66 @@
 /**
- * Freebuff catalog + discovery + quota tests.
+ * Freebuff catalog + discovery + virtual-model + quota tests.
  */
 import { describe, expect, test } from "bun:test";
 import { FREEBUFF_MODELS } from "../../src/providers/integrations/freebuff/freebuff-catalog";
 import { freebuffModelDiscovery } from "../../src/providers/integrations/freebuff/freebuff-discovery";
+import {
+  FREEBUFF_VIRTUAL_MODELS,
+  freebuffDispatchModelId,
+  freebuffDisplayNameFor,
+  freebuffVirtualIdFor,
+  isFreebuffVirtualModel,
+} from "../../src/providers/integrations/freebuff/freebuff-virtual";
 import { fetchFreebuffQuota } from "../../src/providers/integrations/freebuff/freebuff-quota";
 
 describe("Freebuff static catalog", () => {
-  test("seeds the live 13-row surface with chat wire", () => {
+  test("publishes caller-facing virtual ids on the chat wire", () => {
     expect(FREEBUFF_MODELS.length).toBeGreaterThanOrEqual(10);
     for (const model of FREEBUFF_MODELS) {
       expect(model.wireFamily).toBe("chat");
       expect(model.endpointPath).toBe("/api/v1/chat/completions");
-      expect(model.modelId).toMatch(/^m-[0-9a-f]+$/);
+      // Virtual ids are readable names, not the raw `m-<hex>` roster keys.
+      expect(model.modelId).not.toMatch(/^m-[0-9a-f]+$/);
     }
     const ids = new Set(FREEBUFF_MODELS.map((m) => m.modelId));
     expect(ids.size).toBe(FREEBUFF_MODELS.length);
   });
 
+  test("every virtual id is catalogued and maps to a distinct roster key", () => {
+    for (const virtual of FREEBUFF_VIRTUAL_MODELS) {
+      const row = FREEBUFF_MODELS.find((m) => m.modelId === virtual.id);
+      expect(row, `virtual row ${virtual.id}`).toBeDefined();
+      expect(freebuffDispatchModelId(virtual.id)).toBe(virtual.target);
+      expect(isFreebuffVirtualModel(virtual.id)).toBe(true);
+      expect(freebuffVirtualIdFor(virtual.target)).toBe(virtual.id);
+      expect(freebuffDisplayNameFor(virtual.id)).toBe(virtual.displayName);
+    }
+    const targets = FREEBUFF_VIRTUAL_MODELS.map((virtual) => virtual.target);
+    expect(new Set(targets).size).toBe(targets.length);
+  });
+
   test("marks open rows free-tier and locked rows proOnly", () => {
-    const fast = FREEBUFF_MODELS.find((m) => m.modelId === "m-096e75164d");
+    const fast = FREEBUFF_MODELS.find((m) => m.modelId === "deepseek-fast");
     expect(fast?.freeTier).toBe(true);
     expect(fast?.proOnly).toBeUndefined();
     expect(fast?.cost.input).toBe(0);
-    const luna = FREEBUFF_MODELS.find((m) => m.modelId === "m-5a5d0e255e");
+    const luna = FREEBUFF_MODELS.find((m) => m.modelId === "gpt-6-luna");
     expect(luna?.proOnly).toBe(true);
     expect(luna?.freeTier).toBeUndefined();
   });
 
   test("uses the server-published context windows, not a hardcoded guess", () => {
     const byId = new Map(FREEBUFF_MODELS.map((m) => [m.modelId, m]));
-    expect(byId.get("m-096e75164d")?.contextLimit).toBe(1_048_576); // DeepSeek Fast
-    expect(byId.get("m-5a5d0e255e")?.contextLimit).toBe(1_000_000); // GPT-6 Luna
-    expect(byId.get("m-9a7e098cc1")?.contextLimit).toBe(500_000); // Solar Pro 4
-    expect(byId.get("m-02244092cb")?.contextLimit).toBe(256_000); // Glyph Cluster
-    expect(byId.get("m-5b6a604eb6")?.contextLimit).toBe(100_000); // Claude Haiku 100k
+    expect(byId.get("deepseek-fast")?.contextLimit).toBe(1_048_576); // DeepSeek Fast
+    expect(byId.get("gpt-6-luna")?.contextLimit).toBe(1_000_000); // GPT-6 Luna
+    expect(byId.get("solar-pro-4")?.contextLimit).toBe(500_000); // Solar Pro 4
+    expect(byId.get("glyph-cluster")?.contextLimit).toBe(256_000); // Glyph Cluster
+    expect(byId.get("claude-haiku-5.5")?.contextLimit).toBe(100_000); // Claude Haiku 100k
   });
 });
 
 describe("Freebuff model discovery", () => {
-  test("maps a live catalog response to ModelDefinitions", async () => {
+  test("maps a live catalog response to virtual ModelDefinitions", async () => {
     const discovery = freebuffModelDiscovery();
     const fetcher = (async () =>
       new Response(
@@ -61,19 +82,21 @@ describe("Freebuff model discovery", () => {
     });
     expect(result).not.toBeNull();
     expect(result!.length).toBe(3);
-    const fast = result!.find((m) => m.modelId === "m-096e75164d");
+    const fast = result!.find((m) => m.modelId === "deepseek-fast");
     expect(fast?.freeTier).toBe(true);
     expect(fast?.proOnly).toBeUndefined();
     // The server-published context window and modality must survive discovery.
     expect(fast?.contextLimit).toBe(1_048_576);
     expect(fast?.modalities.input).toContain("image");
     expect(fast?.reasoningEfforts).toEqual(["low", "high", "max"]);
-    const luna = result!.find((m) => m.modelId === "m-5a5d0e255e");
+    const luna = result!.find((m) => m.modelId === "gpt-6-luna");
     expect(luna?.proOnly).toBe(true);
     expect(luna?.contextLimit).toBe(1_000_000);
-    const solar = result!.find((m) => m.modelId === "m-9a7e098cc1");
+    const solar = result!.find((m) => m.modelId === "solar-pro-4");
     expect(solar?.contextLimit).toBe(500_000);
     expect(solar?.modalities.input).not.toContain("image");
+    // No raw `m-<hex>` key survives when it has a virtual name.
+    expect(result!.every((m) => !m.modelId.startsWith("m-"))).toBe(true);
   });
 
   test("returns null on non-OK or malformed catalog", async () => {
@@ -85,6 +108,17 @@ describe("Freebuff model discovery", () => {
       fetcher,
     });
     expect(bad).toBeNull();
+  });
+});
+
+describe("Freebuff virtual dispatch translation", () => {
+  test("translates a virtual id to its roster key and leaves raw ids unchanged", () => {
+    expect(freebuffDispatchModelId("deepseek-fast")).toBe("m-096e75164d");
+    expect(freebuffDispatchModelId("solar-pro-4")).toBe("m-9a7e098cc1");
+    expect(freebuffDispatchModelId("m-096e75164d")).toBe("m-096e75164d");
+    expect(freebuffDispatchModelId("unknown-model")).toBe("unknown-model");
+    expect(isFreebuffVirtualModel("gpt-6-luna")).toBe(true);
+    expect(isFreebuffVirtualModel("m-5a5d0e255e")).toBe(false);
   });
 });
 
@@ -136,7 +170,8 @@ describe("Freebuff quota collector", () => {
     const rate = quota.windows.find((w) => w.kind === "rate_limit");
     expect(rate?.used).toBe(3);
     expect(rate?.limit).toBe(6);
-    expect(rate?.modelIds).toEqual(["m-096e75164d"]);
+    // The window carries the caller-facing virtual name, matching the catalog.
+    expect(rate?.modelIds).toEqual(["deepseek-fast"]);
     expect(calls).toBe(3); // catalog + admission + release
   });
 
@@ -168,7 +203,7 @@ describe("Freebuff quota collector", () => {
     expect(quota.error).toBeNull();
     const session = quota.windows.find((w) => w.kind === "session_active");
     expect(session).toBeDefined();
-    expect(session!.modelIds).toEqual(["m-096e75164d"]);
+    expect(session!.modelIds).toEqual(["deepseek-fast"]);
     expect(session!.resetsAt).toBe(future);
     expect(session!.recurring).toBe(false);
     expect(session!.remaining).toBeGreaterThanOrEqual(269); // ~4h29m in minutes

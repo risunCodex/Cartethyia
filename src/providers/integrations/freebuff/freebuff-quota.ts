@@ -37,9 +37,10 @@ import {
   FREEBUFF_WALLET_SPEND_LIMIT_HEADER,
   FREEBUFF_ADMISSION_USER_AGENT,
 } from "./freebuff";
+import { freebuffDispatchModelId, freebuffVirtualIdFor } from "./freebuff-virtual";
 
-/** Cheapest open model for the probe admission (price 0). */
-const QUOTA_PROBE_MODEL = "m-9a7e098cc1"; // Solar Pro 4
+/** Cheapest open model for the probe admission (price 0), caller-facing name. */
+const QUOTA_PROBE_MODEL = "solar-pro-4";
 
 /**
  * Parses `desktopPurchases` from the admission body. Returns the active
@@ -54,7 +55,10 @@ function parsePurchases(body: Record<string, unknown>): Array<{ model: string; e
     const model = typeof raw["model"] === "string" ? raw["model"] : undefined;
     const expiresAt = typeof raw["expiresAt"] === "string" ? raw["expiresAt"] : undefined;
     if (!model || !expiresAt) continue;
-    result.push({ model, expiresAt });
+    // The upstream reports the `m-<hex>` roster key; the catalog publishes the
+    // caller-facing virtual name, so the window must carry the same id a route
+    // candidate does (`filterCandidateQuotaWindows` matches modelIds).
+    result.push({ model: freebuffVirtualIdFor(model) ?? model, expiresAt });
   }
   return result;
 }
@@ -98,7 +102,7 @@ async function freebuffResolveHandle(token: string, fetchFn: typeof fetch): Prom
   if (!isRecord(body)) return null;
   const rows = body["rows"];
   if (!Array.isArray(rows)) return null;
-  const row = rows.find((r) => isRecord(r) && r["key"] === QUOTA_PROBE_MODEL);
+  const row = rows.find((r) => isRecord(r) && r["key"] === freebuffDispatchModelId(QUOTA_PROBE_MODEL));
   if (!isRecord(row)) return null;
   const handle = row["handle"];
   return typeof handle === "string" && handle.length > 0 ? handle : null;
@@ -242,7 +246,9 @@ function buildQuotaWindows(body: Record<string, unknown>): ProviderQuotaResult["
         kind: "rate_limit",
         label: "Daily session rate limit",
         accounting: "independent",
-        modelIds: [modelId],
+        // Publish the caller-facing virtual name, matching the catalog and the
+        // routing candidate id (`filterCandidateQuotaWindows`).
+        modelIds: [freebuffVirtualIdFor(modelId) ?? modelId],
         usedPercent: recentCount !== null && limit > 0 ? Math.round((recentCount / limit) * 100) : null,
         remainingPercent: recentCount !== null && limit > 0 ? Math.round(((limit - recentCount) / limit) * 100) : null,
         resetsAt: resetAt,

@@ -2,9 +2,10 @@
 //
 // `GET /api/v1/freebuff/models` with catalog protocol 1 + desktop client. The
 // response rows carry `m-<hex>` keys, `legacyDigests`, display names, and an
-// ephemeral handle (`fbm1.*`). Discovery maps rows to ModelDefinitions keyed on
-// the `m-<hex>` id; the handle is NOT stored (it is single-fetch ephemeral and
-// re-resolved per dispatch).
+// ephemeral handle (`fbm1.*`). Discovery maps rows to ModelDefinitions: a key
+// with a caller-facing virtual name is published under that name (see
+// `freebuff-virtual.ts`), and an unnamed key keeps its raw id. The handle is
+// NOT stored (it is single-fetch ephemeral and re-resolved per dispatch).
 
 import type { ModelDefinition } from "../../provider-model-definition";
 import { defineModel } from "../../provider-model-definition";
@@ -17,6 +18,7 @@ import {
   FREEBUFF_CLIENT_HEADER,
   FREEBUFF_CLIENT_HEADER_VALUE,
 } from "./freebuff";
+import { FREEBUFF_VIRTUAL_MODELS } from "./freebuff-virtual";
 
 const KNOWN_PREMIUM_KEYS: ReadonlySet<string> = new Set([
   "m-127314bb39", // DeepSeek V4.1 Flash Fast
@@ -36,6 +38,11 @@ const KNOWN_FREE_KEYS: ReadonlySet<string> = new Set([
   "m-02244092cb", // Glyph Cluster
   "m-ddc687c50f", // Nemotron 3.5 Lightning
 ]);
+
+/** Virtual id by roster key: a key with a known name publishes under that name. */
+const VIRTUAL_ID_BY_KEY: ReadonlyMap<string, string> = new Map(
+  FREEBUFF_VIRTUAL_MODELS.map((virtual) => [virtual.target, virtual.id]),
+);
 
 /**
  * Live discovery over the static floor: `GET /api/v1/freebuff/models` answers
@@ -64,7 +71,6 @@ export function freebuffModelDiscovery(): ProviderModelDiscovery {
       if (typeof row !== "object" || row === null) continue;
       const r = row as Record<string, unknown>;
       const key = typeof r["key"] === "string" ? r["key"] : undefined;
-      const display = typeof r["displayName"] === "string" ? r["displayName"] : undefined;
       const access = typeof r["access"] === "string" ? r["access"] : undefined;
       const premium = r["premium"] === true;
       if (!key) continue;
@@ -79,7 +85,9 @@ export function freebuffModelDiscovery(): ProviderModelDiscovery {
         : undefined;
       models.push(
         defineModel({
-          id: key,
+          // A known roster key publishes under its caller-facing virtual name;
+          // an unnamed key keeps its raw id (still reachable, never renamed).
+          id: VIRTUAL_ID_BY_KEY.get(key) ?? key,
           providerId: "freebuff",
           wireFamily: "chat",
           endpoint: FREEBUFF_CHAT_COMPLETIONS_PATH,
@@ -90,8 +98,6 @@ export function freebuffModelDiscovery(): ProviderModelDiscovery {
           toolCall: true,
           ...(isFree ? { free: true, freeTier: true } : {}),
           ...(isPremium ? { proOnly: true } : {}),
-          // Preserve the display name for the console list.
-          ...(display ? { warnings: [{ kind: "freebuff_display", message: display, severity: "info" as const }] } : {}),
         }),
       );
     }

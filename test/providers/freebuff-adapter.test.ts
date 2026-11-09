@@ -177,6 +177,24 @@ describe("Freebuff adapter dispatch", () => {
     expect(texts).toBe("Hello");
   });
 
+  test("dispatching a virtual id resolves the roster key's handle", async () => {
+    const seen: Array<{ url: string; init: RequestInit }> = [];
+    const adapter = createFreebuffAdapter();
+    const request = canonicalRequest();
+    request.model = "deepseek"; // virtual name for m-8db1ccbba6
+    const target: ProviderDispatchTarget = { ...dispatchTarget(), model_id: "deepseek" };
+    const events: unknown[] = [];
+    for await (const ev of adapter.dispatch(request, target, await dispatchContext(seen))) {
+      events.push(ev);
+    }
+    const chatCall = seen.find((c) => c.url.includes("/chat/completions"));
+    expect(chatCall).toBeDefined();
+    const body = JSON.parse(String(chatCall!.init.body)) as Record<string, unknown>;
+    // The virtual id resolved to the m-8db1ccbba6 roster key's handle.
+    expect(body["model"]).toBe("fbm1.AAAFixture");
+    expect(events.some((e) => (e as { type: string }).type === "content_delta")).toBe(true);
+  });
+
   test("errors when device identity is missing", async () => {
     const context = await dispatchContext([]);
     const credential = { ...context.credential, auth_state: { accountId: "acc_1" } };
