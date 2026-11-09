@@ -23,7 +23,7 @@
  * the operator to type it rather than press Enter on a menu row.
  */
 import { GatewayError } from "../../protocol/gateway-error";
-import { isLoopbackPeer, tokenMatches } from "../../transport/drain-endpoint";
+import { requireLoopbackAdmin } from "../../transport/drain-endpoint";
 
 interface ConsoleAccountResetDeps {
   /** Shared secret; the route is registered only when this is set. */
@@ -40,14 +40,12 @@ export function createConsoleAccountResetHandler(
   deps: ConsoleAccountResetDeps,
 ): (context: { request: Request; body: unknown }) => Promise<Response> {
   return async ({ request, body }) => {
-    if (!isLoopbackPeer(deps.resolvePeerAddress(request)))
-      throw new GatewayError(
-        "policy_rejected",
-        403,
-        "console account reset is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂",
-      );
-    if (!tokenMatches(request.headers.get("x-drain-token"), deps.token))
-      throw new GatewayError("authentication_failed", 401, "invalid reset token (request {requestId}). Wrong key, right door — check the token 🔑");
+    requireLoopbackAdmin(request, {
+      peer: deps.resolvePeerAddress(request),
+      token: deps.token,
+      policyRejectedMessage: "console account reset is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂",
+      authenticationFailedMessage: "invalid reset token (request {requestId}). Wrong key, right door — check the token 🔑",
+    });
     const confirm =
       body !== null && typeof body === "object" && "confirm" in body
         ? body.confirm

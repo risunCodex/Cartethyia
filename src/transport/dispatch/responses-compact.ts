@@ -4,6 +4,7 @@ import type { CodexCompactAdapter } from "../../providers/integrations/codex/cod
 import { completeAttempt, estimatedUsage, nativeCompletionBase } from "./attempt-finalize";
 import { runAttemptLoop } from "./attempt-loop";
 import {
+  forwardUpstreamResponse,
   networkFetchContext,
   requireRecordBody,
   resolveAttemptCredential,
@@ -143,14 +144,7 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
           responseBody: null,
         });
         metrics.proxy_requests_total.inc(1, { status: "completed" });
-        return new Response(response.body, {
-          status: response.status,
-          headers: {
-            "content-type": response.headers.get("content-type") ?? "application/json",
-            "cache-control": "no-store",
-            "x-request-id": state.requestId,
-          },
-        });
+        return forwardUpstreamResponse(response, state.requestId);
       },
     });
   };

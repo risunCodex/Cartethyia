@@ -10,33 +10,7 @@
  */
 
 import protobuf from "protobufjs";
-
-// ── Helpers ──
-
-type FieldDef = { id: number; name: string; type: string; repeated?: boolean };
-type OneofDef = { name: string; fields: string[] };
-
-function addType(
-  root: protobuf.Root,
-  name: string,
-  fields: FieldDef[],
-  oneofs?: OneofDef[],
-): protobuf.Type {
-  const t = new protobuf.Type(name);
-  for (const f of fields) {
-    t.add(new protobuf.Field(f.name, f.id, f.type, f.repeated ? "repeated" : undefined));
-  }
-  for (const o of oneofs ?? []) {
-    t.add(new protobuf.OneOf(o.name, o.fields));
-  }
-  root.add(t);
-  return t;
-}
-
-function addEnum(root: protobuf.Root, name: string, values: Record<string, number>): void {
-  const e = new protobuf.Enum(name, values);
-  root.add(e);
-}
+import { addEnum, addType } from "../../cursor/protocol/protobuf-schema";
 
 // ── Enums ──
 

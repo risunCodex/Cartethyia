@@ -17,7 +17,13 @@
  * costs one refused request that the cooldown machinery already handles; a
  * wrong paid match silently blackholes a model.
  */
-const FREE_PLAN_MARKERS: readonly string[] = ["free"];
+/**
+ * The marker set that proves a plan string is free. Exported so every
+ * free-plan consumer — the routing plan gate here and the cooldown-tier
+ * derivation in `account-tier.ts` — reads the same list, so the two cannot
+ * drift apart about an account.
+ */
+export const FREE_PLAN_MARKERS: readonly string[] = ["free"];
 
 export function isFreePlanAccount(plan: string | null | undefined): boolean {
   if (plan === null || plan === undefined) return false;

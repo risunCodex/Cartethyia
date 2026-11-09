@@ -2,6 +2,15 @@ import type { CanonicalEvent } from "../../protocol/canonical-model";
 import type { AttemptLeaseOwnership, ValidatedOutboundFetch, ValidatedOutboundHttp2Bidi } from "../../providers/provider-contracts";
 import type { ProviderCaptureExchange, ProviderContinuationScope } from "../../providers/provider-contracts";
 import { GATEWAY_SECURITY_HEADERS } from "../../security/outbound-headers";
+import type { ValidatedNetworkBindingFactory } from "../../network/pool/resolver";
+import type { CartethyiaDatabase } from "../../persistence/db-handle";
+import { captureProviderExchange, type ProviderExchangeCapture } from "./attempt-finalize";
+import {
+  providerCaptureMaxBytes,
+  resolveCaptureDepthForRequest,
+  shouldCaptureProviderBodyForRequest,
+  type CapturePreferenceState,
+} from "./capture-policy";
 
 const FORWARDED_REQUEST_HEADERS = new Set([
   "user-agent",
@@ -31,6 +40,60 @@ export function proxySuccessHeaders(state: { requestId: string }): Record<string
     "cache-control": "no-store",
     "x-request-id": state.requestId,
     ...GATEWAY_SECURITY_HEADERS,
+  };
+}
+
+/** The three validated egress bindings shared by every dispatch attempt. */
+export interface DispatchNetworkBindings {
+  readonly outboundFetch?: ValidatedOutboundFetch;
+  readonly outboundAttachmentFetch?: ValidatedOutboundFetch;
+  readonly outboundHttp2?: ValidatedOutboundHttp2Bidi;
+}
+
+/**
+ * Builds the outbound network bindings for one attempt's dispatch context,
+ * shared by the non-streaming proxy path and the streaming branch.
+ *
+ * Both previously assembled the same three objects by hand (wrapped fetch,
+ * attachment fetch, HTTP/2 bidi), which drifted in the capture wrap. The
+ * capture-body gating is preserved exactly: the DB-backed capture-preference
+ * read is skipped when no network binding exists (`outboundFetch ? ... :
+ * false`), so a request that can never tee a provider exchange does not pay
+ * for the preference read. The reads are memoized on the request state, so
+ * resolving them here costs no extra DB reads.
+ */
+export async function buildDispatchNetworkBindings(input: {
+  readonly deps: {
+    readonly networkBindingFactory?: ValidatedNetworkBindingFactory | undefined;
+    readonly db: CartethyiaDatabase;
+  };
+  readonly networkPoolId: string | undefined;
+  readonly tenantId: string | null;
+  readonly providerCapture: ProviderExchangeCapture;
+  readonly state: CapturePreferenceState;
+}): Promise<DispatchNetworkBindings> {
+  const factory = input.deps.networkBindingFactory;
+  if (factory === undefined) return {};
+  const outboundFetch = factory.fetch(input.networkPoolId, input.tenantId ?? undefined);
+  const captureBody = await shouldCaptureProviderBodyForRequest(
+    input.deps.db,
+    input.tenantId,
+    input.state,
+  );
+  const captureDepth = await resolveCaptureDepthForRequest(
+    input.deps.db,
+    input.tenantId,
+    input.state,
+  );
+  return {
+    outboundFetch: captureProviderExchange(
+      outboundFetch,
+      input.providerCapture,
+      captureBody,
+      providerCaptureMaxBytes(captureDepth),
+    ),
+    outboundAttachmentFetch: factory.fetch(input.networkPoolId, input.tenantId ?? undefined),
+    outboundHttp2: factory.http2Bidi(input.networkPoolId, input.tenantId ?? undefined),
   };
 }
 

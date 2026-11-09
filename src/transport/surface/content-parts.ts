@@ -7,6 +7,27 @@ export function textPart(text: string): ContentPart {
 }
 
 /**
+ * Decodes a wire body value into its parsed JSON form.
+ *
+ * Every surface parser receives bodies in the same three shapes — raw bytes,
+ * an already-decoded string, or an object handed in directly (surface
+ * detection and tests pass objects without a wire round-trip). Bytes and
+ * strings are parsed as JSON; anything else passes through unchanged. The
+ * `SyntaxError` thrown on malformed JSON propagates to the same
+ * error-normalization path on every surface, so one shared decoder keeps the
+ * four surfaces' wire-read convention identical.
+ */
+export function decodeWireBody(value: unknown): unknown {
+  if (value instanceof Uint8Array) {
+    return JSON.parse(new TextDecoder().decode(value)) as unknown;
+  }
+  if (typeof value === "string") {
+    return JSON.parse(value) as unknown;
+  }
+  return value;
+}
+
+/**
  * Fields a raw file/document block may carry, normalized across every origin
  * vocabulary (OpenAI Chat `file`, OpenAI Responses `input_file`, Anthropic
  * `document.source`). Each parser reads its own shape and hands the extracted

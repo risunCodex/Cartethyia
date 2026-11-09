@@ -11,21 +11,7 @@ import type { FetchLike, ProviderQuotaResult, ProviderQuotaWindow } from "../../
 import { cleanError, percentWindow, text } from "../../quota/quota-contracts";
 import type { QuotaCollectionContext } from "../../quota/quota-support";
 import { PERCH_APP_URL } from "./perch-realm";
-
-interface PerchSessionCredential {
-  readonly accessToken?: string;
-  readonly access_token?: string;
-}
-
-function credentialToken(credential: string): string {
-  try {
-    const parsed = JSON.parse(credential) as PerchSessionCredential;
-    const found = parsed.accessToken ?? parsed.access_token;
-    return typeof found === "string" ? found : "";
-  } catch {
-    return credential.trim();
-  }
-}
+import { parsePerchCredentialToken } from "./perch-credential";
 
 async function readAccount(
   baseUrl: string,
@@ -61,7 +47,7 @@ export async function fetchPerchQuota(
   _context?: QuotaCollectionContext,
 ): Promise<ProviderQuotaResult> {
   try {
-    const token = credentialToken(credential);
+    const token = parsePerchCredentialToken(credential) ?? "";
     const account = await readAccount(PERCH_APP_URL, token, fetcher);
     if (!account) {
       return { source: "perch", plan: null, windows: [], error: "Perch account endpoint unavailable" };

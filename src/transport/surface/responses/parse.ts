@@ -1,6 +1,6 @@
 import type { CanonicalMessage, CanonicalRequest, ContentPart, GenerationControls, ToolDefinition } from "../../../protocol/canonical-model";
 import { isRecord } from "../../../protocol/codecs";
-import { textPart, normalizeInlineFile } from "../content-parts";
+import { decodeWireBody, textPart, normalizeInlineFile } from "../content-parts";
 import {
   isServiceTier,
   parseReasoningIntent,
@@ -66,23 +66,15 @@ export function hasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.hasOwn(value, key);
 }
 
-function parseJsonBody(value: unknown): unknown {
-  if (value instanceof Uint8Array) {
-    return JSON.parse(new TextDecoder().decode(value)) as unknown;
-  }
-  if (typeof value === "string") return JSON.parse(value) as unknown;
-  return value;
-}
-
 export function unwrapBody(input: unknown): unknown {
   if (
     isRecord(input) &&
     hasOwn(input, "body") &&
     (hasOwn(input, "headers") || hasOwn(input, "path"))
   ) {
-    return parseJsonBody(input.body);
+    return decodeWireBody(input.body);
   }
-  return parseJsonBody(input);
+  return decodeWireBody(input);
 }
 
 /**

@@ -10,7 +10,7 @@ import { chatAdapter } from "../transport/surface/chat/adapter";
 import { responsesAdapter } from "../transport/surface/responses/adapter";
 import { messagesAdapter } from "../transport/surface/messages/adapter";
 import { completionAdapter } from "../transport/surface/completion";
-import { SurfaceAdapterRegistry } from "../transport/surface/adapters";
+import { SurfaceAdapterRegistry, type SurfaceAdapter } from "../transport/surface/adapters";
 import { GatewayError, publicGatewayErrorBody } from "../protocol/gateway-error";
 import { shutdownError, shutdownNotice } from "../transport/shutdown-notice";
 import type { CanonicalAdapter } from "../transport/contracts";
@@ -47,7 +47,7 @@ import {
 import { createTokenCountHandler } from "../transport/dispatch/token-count";
 
 import { createTransportPipeline } from "../transport/guards/pipeline";
-import { createDrainHandler, isLoopbackPeer, tokenMatches } from "../transport/drain-endpoint";
+import { createDrainHandler, requireLoopbackAdmin } from "../transport/drain-endpoint";
 import { createConsoleAccountResetHandler } from "../console/auth/account-reset";
 import { resetConsoleAuthState } from "../console/auth/account-reset-store";
 import { createBackupExportHandler } from "../console/backup/export-endpoint";
@@ -210,7 +210,7 @@ export function createGatewayApp(deps: GatewayAppDeps) {
     deps.mode === "route-only"
       ? (deps.checkRedis ?? checkRedisConnection)
       : checkRedisConnection;
-  const registry = new SurfaceAdapterRegistry([
+  const registry = new SurfaceAdapterRegistry<SurfaceAdapter & CanonicalAdapter>([
     chatAdapter,
     responsesAdapter,
     messagesAdapter,
@@ -424,12 +424,7 @@ export function createGatewayApp(deps: GatewayAppDeps) {
       db: deps.db,
       stateStore: requestStateStore,
       surfaceRegistry: registry,
-      adapters: new Map<string, CanonicalAdapter>([
-        ["chat", chatAdapter],
-        ["responses", responsesAdapter],
-        ["messages", messagesAdapter],
-        ["completion", completionAdapter],
-      ]),
+      adapters: new Map<string, CanonicalAdapter>(registry.bySurface()),
       preparer: deps.proxyPreparer,
       readiness: deps.readiness,
       trustedProxyBoundary: deps.trustedProxyBoundary,
@@ -652,10 +647,12 @@ export function createGatewayApp(deps: GatewayAppDeps) {
         // well-formed. What refused it is where it came from — the client asked
         // for something only the local host may ask. `invalid_request` told an
         // operator to fix the body, when the body was never the problem.
-        if (!isLoopbackPeer(peerAddresses.get(request) ?? null))
-          throw new GatewayError("policy_rejected", 403, "task trigger is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂");
-        if (!tokenMatches(request.headers.get("x-drain-token"), token))
-          throw new GatewayError("authentication_failed", 401, "invalid drain token (request {requestId}). Wrong key, right door — check the token 🔑");
+        requireLoopbackAdmin(request, {
+          peer: peerAddresses.get(request) ?? null,
+          token,
+          policyRejectedMessage: "task trigger is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂",
+          authenticationFailedMessage: "invalid drain token (request {requestId}). Wrong key, right door — check the token 🔑",
+        });
         const name = params.name;
         if (!tasks.names().includes(name))
           throw new GatewayError("not_found", 404, `no such task: ${name} (request {requestId}). Nothing here but dust — check the task name 🌙`);

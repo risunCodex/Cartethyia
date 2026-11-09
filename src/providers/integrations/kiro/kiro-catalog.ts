@@ -15,6 +15,22 @@ export const KIRO_GENERATE_PATH = "/generateAssistantResponse" as const;
 /** AWS region shape, checked before a region is interpolated into a URL. */
 export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
 
+/**
+ * Maps an auth method onto the `TokenType` header the 1.4.62 client sends.
+ *
+ * Observed map (`qje`): `api_key → API_KEY`, `external_idp → EXTERNAL_IDP`,
+ * `idc → SSO_OIDC`, `machine_token → KIRO_MACHINE_TOKEN`. Google/GitHub/
+ * Builder-ID sessions send no `TokenType` header. Every surface (dispatch,
+ * usage, discovery) must classify the same account identically or the upstream
+ * sees one credential as different token types across surfaces.
+ */
+export function kiroTokenTypeHeader(authMethod: string | undefined): string | undefined {
+  if (authMethod === "api_key") return "API_KEY";
+  if (authMethod === "external_idp") return "EXTERNAL_IDP";
+  if (authMethod === "idc") return "SSO_OIDC";
+  return undefined;
+}
+
 /** Fallback region when no (or an invalid) region is configured. */
 export const KIRO_DEFAULT_REGION = "us-east-1" as const;
 
@@ -37,7 +53,7 @@ export const KIRO_MANAGEMENT_HOST_TEMPLATE = "https://management.{region}.kiro.d
  * The upstream has no `minimal` or `max` tier on either schema, so the ladder
  * stops at `xhigh` and the builder maps the canonical extremes onto it.
  */
-const KIRO_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
+export const KIRO_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 
 /**
  * One Kiro model row.

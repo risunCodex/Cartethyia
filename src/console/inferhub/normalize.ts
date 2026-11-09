@@ -35,19 +35,12 @@ const FAMILY_STATES: readonly FamilyState[] = [
   "low_traffic",
 ];
 
-/** Reads a finite number, or null. Never coerces a missing metric to zero. */
-function num(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  // Catalog and budgets carry decimal strings; market carries numbers. Both
-  // are read here so one helper covers the wire's own inconsistency.
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-}
-
-/** Reads a finite number, or null. Never coerces a missing metric to zero. */
+/**
+ * Reads a finite number, or null. Never coerces a missing metric to zero.
+ *
+ * Catalog and budgets carry decimal strings; market carries numbers. Both
+ * are read here so one helper covers the wire's own inconsistency.
+ */
 export function numOrNull(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim().length > 0) {
@@ -122,8 +115,8 @@ function pricePointsToTiers(
   const seen = new Map<number, Tier>();
   for (const point of points) {
     if (!Array.isArray(point) || point.length < 2) continue;
-    const price = num(point[0]);
-    const avail = num(point[1]);
+    const price = numOrNull(point[0]);
+    const avail = numOrNull(point[1]);
     if (price === null || avail === null) continue;
     const count = Math.max(0, Math.trunc(avail));
     const key = Math.round(price * 10 ** PRICE_PRECISION) / 10 ** PRICE_PRECISION;
@@ -208,8 +201,8 @@ export function normalizeCatalogModel(
   const prefix = str(upstream.prefix) ?? "";
   if (modelSlug === null || prefix.length === 0) return null;
   const id = `${prefix}/${modelSlug}`;
-  const officialIn = num(raw.officialIn);
-  const officialOut = num(raw.officialOut);
+  const officialIn = numOrNull(raw.officialIn);
+  const officialOut = numOrNull(raw.officialOut);
   const tiersIn = pricePointsToTiers(raw.pricePointsIn, officialIn);
   const tiersOut = pricePointsToTiers(raw.pricePointsOut, officialOut);
   // Live providers is the capacity behind the cheapest tier, not a row count:
@@ -240,7 +233,7 @@ export function normalizeCatalogModel(
     providersLive,
     // Not carried by the catalog; merged from `/api/market` by the store.
     lastRate: null,
-    cacheHitRate: num(raw.cacheHitRate),
+    cacheHitRate: numOrNull(raw.cacheHitRate),
     health: {
       successRatePct: null,
       avgTtftMs: null,
@@ -248,8 +241,8 @@ export function normalizeCatalogModel(
       familyState: null,
     },
     capabilities: {
-      contextWindow: num(raw.contextWindow),
-      maxOutputTokens: num(raw.maxOutputTokens),
+      contextWindow: numOrNull(raw.contextWindow),
+      maxOutputTokens: numOrNull(raw.maxOutputTokens),
       modalities: stringArray(raw.modalities),
       outputModality:
         outputModality === "image" || outputModality === "video" ? outputModality : "text",
@@ -277,13 +270,13 @@ export function mergeMarketPrices(
     if (entry === undefined) return model;
     return {
       ...model,
-      lastRate: num(entry.lastRate),
+      lastRate: numOrNull(entry.lastRate),
       // Market is the cheaper source for the extremes, but the catalog's tier
       // grouping is what gives them capacity, so only the nulls are filled.
-      minAskIn: model.minAskIn ?? num(entry.minAskIn),
-      minAskOut: model.minAskOut ?? num(entry.minAskOut),
-      maxAskIn: model.maxAskIn ?? num(entry.maxAskIn),
-      maxAskOut: model.maxAskOut ?? num(entry.maxAskOut),
+      minAskIn: model.minAskIn ?? numOrNull(entry.minAskIn),
+      minAskOut: model.minAskOut ?? numOrNull(entry.minAskOut),
+      maxAskIn: model.maxAskIn ?? numOrNull(entry.maxAskIn),
+      maxAskOut: model.maxAskOut ?? numOrNull(entry.maxAskOut),
     };
   });
 }
@@ -309,9 +302,9 @@ export function mergeModelHealth(
       ...model,
       health: {
         ...model.health,
-        successRatePct: num(entry.successRatePct),
-        avgTtftMs: num(entry.avgTtftMs),
-        avgTps: num(entry.avgTps),
+        successRatePct: numOrNull(entry.successRatePct),
+        avgTtftMs: numOrNull(entry.avgTtftMs),
+        avgTps: numOrNull(entry.avgTps),
       },
     };
   });

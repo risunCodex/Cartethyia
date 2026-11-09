@@ -28,3 +28,22 @@ export function reasoningTextOf(part: ReasoningTextSource): string | undefined {
   if (typeof summary === "string" && summary.length > 0) return summary;
   return undefined;
 }
+
+/**
+ * The one reader for reasoning text replayed to upstream providers.
+ *
+ * Request builders echo the previous turn's reasoning back to a provider, and
+ * they deliberately prefer `summary` (the digest) ahead of `payload` (the
+ * stream) — the opposite of `reasoningTextOf`, which is for display. Returning
+ * `undefined` when neither field is a string lets each call site keep its exact
+ * fallback ("" for the chat/messages/gemini builders, the raw payload for
+ * Qoder's echo), so upstream-visible bytes do not change. Opaque parts are not
+ * special-cased here: the replay readers never consulted `opaque` either.
+ */
+export function reasoningTextForReplay(part: ReasoningTextSource): string | undefined {
+  const summary = part.summary;
+  if (typeof summary === "string") return summary;
+  const payload = part.payload;
+  if (typeof payload === "string") return payload;
+  return undefined;
+}

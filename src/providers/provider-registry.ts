@@ -125,12 +125,6 @@ function assertAdapterIdentity(expected: ProviderId, adapter: ProviderAdapter): 
   });
 }
 
-/** Result of loading the configured provider registrations. */
-export interface ProviderRegistrySnapshot {
-  readonly revision: number;
-  readonly adapters: ReadonlyMap<ProviderId, ProviderAdapter>;
-}
-
 /**
  * Single provider-registration authority. Every registration loads on
  * demand through its own loader; registrations that are not added are
@@ -146,7 +140,6 @@ export class ProviderRegistry {
   #quotaLoading = new Map<ProviderId, Promise<QuotaFetcher>>();
   #modelDiscovery = new Map<ProviderId, ProviderModelDiscovery>();
   #modelDiscoveryLoading = new Map<ProviderId, Promise<ProviderModelDiscovery>>();
-  #revision = 0;
 
   /** Adds one registration and rejects duplicate canonical IDs. */
   register(registration: ProviderRegistration): void {
@@ -162,7 +155,6 @@ export class ProviderRegistry {
       });
     }
     this.#registrations.set(providerId, registration);
-    this.#revision += 1;
   }
   /** Removes one registration and any cached adapter/auth/quota/discovery state. */
   unregister(providerId: string): boolean {
@@ -172,7 +164,6 @@ export class ProviderRegistry {
     this.#authentication.delete(normalized);
     this.#quotaCollectors.delete(normalized);
     this.#modelDiscovery.delete(normalized);
-    if (removed) this.#revision += 1;
     return removed;
   }
 
@@ -200,7 +191,6 @@ export class ProviderRegistry {
     this.#authentication.delete(providerId);
     this.#quotaCollectors.delete(providerId);
     this.#modelDiscovery.delete(providerId);
-    this.#revision += 1;
     return replaced;
   }
 
@@ -336,21 +326,12 @@ export class ProviderRegistry {
       metrics.proxy_provider_adapter_load_ms.observe(durationMs);
       trackAdapterLoad(providerId, durationMs);
       this.#loaded.set(providerId, adapter);
-      this.#revision += 1;
       return adapter;
     })().finally(() => {
       this.#loading.delete(providerId);
     });
     this.#loading.set(providerId, task);
     return task;
-  }
-
-  /** Returns the immutable registry snapshot; disabled optional providers are absent. */
-  snapshot(): ProviderRegistrySnapshot {
-    return {
-      revision: this.#revision,
-      adapters: new Map(this.#loaded),
-    };
   }
 
   /** Returns registration metadata without loading optional code. */

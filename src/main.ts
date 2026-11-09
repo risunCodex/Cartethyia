@@ -3,6 +3,7 @@
 import "./boot/elysia-typebox-bridge";
 import { createGatewayApp, createGatewayShell } from "./boot/app";
 import { bootstrap } from "./boot/lifecycle";
+import { flushAllBuffers } from "./boot/flush";
 import type { CartethyiaBoot } from "./boot/lifecycle";
 import {
   resolveDrainToken,
@@ -90,9 +91,7 @@ const app = boot
         // for the queues, minus the stop.
         flushBuffers: {
           flush: async () => {
-            await boot.deps.telemetryBuffer.flush();
-            await boot.deps.usageFlush.flush();
-            await boot.deps.healthEventFlush.flush();
+            await flushAllBuffers(boot.deps);
           },
         },
       },

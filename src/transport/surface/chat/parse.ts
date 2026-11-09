@@ -2,7 +2,7 @@ import type { CanonicalMessage, ContentPart, GenerationControls } from "../../..
 import type { SurfaceInput } from "../adapters";
 import { isRecord } from "../../../protocol/codecs";
 import { asNumber } from "../../../shared/coerce";
-import { textPart, normalizeInlineFile } from "../content-parts";
+import { decodeWireBody, textPart, normalizeInlineFile } from "../content-parts";
 import { SERVICE_TIERS } from "../dialects";
 import { readNumber, readString } from "../../../protocol/codecs";
 import type { OpenAiUsage } from "../../../providers/provider-usage";
@@ -61,18 +61,8 @@ function isSurfaceInput(value: unknown): value is SurfaceInput {
   return isRecord(value) && "body" in value && "path" in value && typeof value.path === "string";
 }
 
-export function decodeBody(value: unknown): unknown {
-  if (value instanceof Uint8Array) {
-    return JSON.parse(new TextDecoder().decode(value)) as unknown;
-  }
-  if (typeof value === "string") {
-    return JSON.parse(value) as unknown;
-  }
-  return value;
-}
-
 export function requestBody(input: unknown): unknown {
-  return decodeBody(isSurfaceInput(input) ? input.body : input);
+  return decodeWireBody(isSurfaceInput(input) ? input.body : input);
 }
 
 function nonNegativeNumber(value: unknown): number | undefined {

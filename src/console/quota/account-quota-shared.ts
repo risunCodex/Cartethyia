@@ -21,6 +21,55 @@ export const ACCOUNT_STATUSES = ["active", "cooldown", "disabled"] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 
 /**
+ * The merged result of interpreting a PATCH account-status body. On success it
+ * carries the resolved `AccountStatus`; on failure it carries the exact 400
+ * response the tenant and global routes both return.
+ */
+export type ResolveNextAccountStatusResult =
+  | { readonly ok: true; readonly nextStatus: AccountStatus }
+  | {
+      readonly ok: false;
+      readonly status: 400;
+      readonly body: { readonly error: string; readonly code: string };
+    };
+
+/**
+ * Resolves the next account status from a PATCH body: an explicit `active`
+ * boolean wins over `status`, and a missing `status` (or an invalid one) is
+ * rejected with the shared 400 shape. Both account PATCH handlers interpret
+ * the same input contract, so it lives here once.
+ */
+export function resolveNextAccountStatus(body: {
+  readonly active?: boolean;
+  readonly status?: string;
+}): ResolveNextAccountStatusResult {
+  if (body.status !== undefined && !ACCOUNT_STATUSES.includes(body.status as AccountStatus)) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: `status must be one of: ${ACCOUNT_STATUSES.join(", ")}`,
+        code: "invalid_status",
+      },
+    };
+  }
+  const nextStatus: AccountStatus | undefined =
+    body.active !== undefined
+      ? body.active
+        ? "active"
+        : "disabled"
+      : (body.status as AccountStatus | undefined);
+  if (nextStatus === undefined) {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: "active or status is required", code: "invalid_request" },
+    };
+  }
+  return { ok: true, nextStatus };
+}
+
+/**
  * Wraps a stored api_key credential in the envelope its collector expects.
  *
  * Exported because every refresh path needs it, and the ones that omit it

@@ -12,6 +12,27 @@ import { fastPathname } from "../transport/pathname";
 import { parseCookieValue, SESSION_COOKIE_NAME, isCsrfValid } from "../security/csrf";
 
 /**
+ * Console auth routes are excluded from CSRF and mutation-rate limiting: they
+ * run before a session exists or are the very requests that mint the session,
+ * so they must not require a CSRF token or count against the session's budget.
+ */
+const AUTH_ROUTE_SUFFIXES = ["/auth/login", "/auth/setup", "/auth/setup/restore", "/auth/session"] as const;
+
+/**
+ * Whether `request` is a protected console mutation: a `/console/api/*` route
+ * in an unsafe method, excluding the auth-route suffixes. Shared by the CSRF
+ * and mutation-limiter guards so a change to the protected set lands in both.
+ */
+function isProtectedConsoleMutation(request: Request): boolean {
+  const path = fastPathname(request.url);
+  return (
+    path.startsWith("/console/api/") &&
+    ["POST", "PUT", "PATCH", "DELETE"].includes(request.method) &&
+    !AUTH_ROUTE_SUFFIXES.some((suffix) => path.endsWith(suffix))
+  );
+}
+
+/**
  * Stateless double-submit CSRF guard for unsafe `/console/api/*` mutations.
  * Compares the `x-csrf-token` header against the readable `csrf_token`
  * cookie — zero database I/O, so dashboard writes pay no token
@@ -19,16 +40,9 @@ import { parseCookieValue, SESSION_COOKIE_NAME, isCsrfValid } from "../security/
  * store whose outage could masquerade as an auth failure.
  */
 export function createConsoleCsrfMiddleware(): Elysia {
-  const excluded = ["/auth/login", "/auth/setup", "/auth/setup/restore", "/auth/session"];
   return new Elysia()
     .beforeHandle(async ({ request }) => {
-      const path = fastPathname(request.url);
-      if (
-        !path.startsWith("/console/api/") ||
-        !["POST", "PUT", "PATCH", "DELETE"].includes(request.method) ||
-        excluded.some((suffix) => path.endsWith(suffix))
-      )
-        return;
+      if (!isProtectedConsoleMutation(request)) return;
       const token = parseCookieValue(request, SESSION_COOKIE_NAME);
       // No session cookie means no ambient authority to forge: logout and
       // other mutations without a session fail authentication downstream.
@@ -75,16 +89,9 @@ function pruneConsoleMutationHits(now: number): void {
 }
 
 export function createConsoleMutationLimiterMiddleware(): Elysia {
-  const excluded = ["/auth/login", "/auth/setup", "/auth/setup/restore", "/auth/session"];
   return new Elysia()
     .beforeHandle(async ({ request, set }) => {
-      const path = fastPathname(request.url);
-      if (
-        !path.startsWith("/console/api/") ||
-        !["POST", "PUT", "PATCH", "DELETE"].includes(request.method) ||
-        excluded.some((suffix) => path.endsWith(suffix))
-      )
-        return;
+      if (!isProtectedConsoleMutation(request)) return;
       const key = consoleMutationKey(request);
       // No session cookie means no ambient authority to abuse: the request
       // fails authentication downstream. Only tracked sessions are throttled.

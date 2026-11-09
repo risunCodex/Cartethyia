@@ -98,6 +98,75 @@ function findReset(root: unknown, mapping: QuotaWindowMapping): string | null {
   return mapping.resetFallback ?? null;
 }
 
+/**
+ * The raw per-window candidates the shared emission core resolves.
+ *
+ * Both quota walkers (`parseQuotaWindows` and `parseLimitWindows`) feed their
+ * independently-read fields into one resolution so the percent fallback chain
+ * and the skip rule cannot drift between them.
+ */
+export interface WindowFieldCandidates {
+  /** Provider-preferred percent (e.g. a `derivePercent` result). */
+  readonly explicitPercent: number | null;
+  /** Raw used-percent read from the payload. */
+  readonly usedPercent: number | null;
+  /** Raw remaining-percent read from the payload. */
+  readonly remainingPercent: number | null;
+  /** Absolute used value. */
+  readonly used: number | null;
+  /** Absolute limit value. */
+  readonly limit: number | null;
+  /** Reset timestamp; required to emit a reset-only window. */
+  readonly reset: string | null;
+  /**
+   * Whether percent may be derived from absolute used/limit when no percentage
+   * was reported. Only `parseQuotaWindows` does this — `parseLimitWindows`
+   * reports percentages and resets the upstream gave it, never ones it
+   * invented, so Cline entries stay reset-only instead of gaining a derived
+   * percent.
+   */
+  readonly deriveFromUsedLimit: boolean;
+  /**
+   * When true, a reset-only window (percent null, reset present) is still
+   * emitted. When false/absent, an entry with neither percent nor reset is
+   * dropped — never rendered as 0% — and a reset-only window is dropped too.
+   */
+  readonly emitWithoutPercent?: boolean;
+}
+
+/**
+ * Shared per-window field resolution: the percent fallback chain plus the
+ * "emit or skip" decision.
+ *
+ * Percent resolution order is exact: explicit percent, then used-percent, then
+ * remaining-percent inverted (100 − remaining), then derived from absolute
+ * used/limit (only when the limit is positive and `deriveFromUsedLimit` is
+ * set). The result is never coerced to 0: a missing percentage stays `null`,
+ * so a window can be omitted or rendered as a countdown depending on
+ * `emitWithoutPercent`.
+ */
+export function resolveWindowEmission(candidates: WindowFieldCandidates): {
+  readonly emit: boolean;
+  readonly percent: number | null;
+} {
+  let percent = candidates.explicitPercent;
+  if (percent === null && candidates.usedPercent !== null) percent = candidates.usedPercent;
+  if (percent === null && candidates.remainingPercent !== null) {
+    percent = Math.max(0, 100 - candidates.remainingPercent);
+  }
+  if (
+    percent === null &&
+    candidates.deriveFromUsedLimit &&
+    candidates.used !== null &&
+    candidates.limit !== null &&
+    candidates.limit > 0
+  ) {
+    percent = (candidates.used / candidates.limit) * 100;
+  }
+  const emit = percent !== null || (candidates.emitWithoutPercent === true && candidates.reset !== null);
+  return { emit, percent };
+}
+
 /** Parses a generic quota payload using the provided window mappings. */
 export function parseQuotaWindows(
   body: unknown,
@@ -110,27 +179,30 @@ export function parseQuotaWindows(
   for (const mapping of windowMappings) {
     const used = findNumber(payload, mapping.usedPaths);
     const limit = findNumber(payload, mapping.limitPaths);
-
-    let percent: number | null = mapping.derivePercent ? mapping.derivePercent(payload) : null;
-    if (percent === null) {
-      const usedPercent = findNumber(payload, mapping.usedPercentPaths);
-      const remainingPercent = findNumber(payload, mapping.remainingPercentPaths);
-      if (usedPercent !== null) {
-        percent = usedPercent;
-      } else if (remainingPercent !== null) {
-        percent = Math.max(0, 100 - remainingPercent);
-      } else if (used !== null && limit !== null && limit > 0) {
-        percent = (used / limit) * 100;
-      }
-    }
-    if (percent !== null && mapping.valueMultiplier !== undefined && mapping.valueMultiplier !== 0) {
-      percent = Math.min(100, Math.max(0, percent * mapping.valueMultiplier));
-    }
-
     const reset = findReset(payload, mapping);
-    if (percent === null && !(mapping.emitWithoutPercent === true && reset !== null)) continue;
 
-    windows.push(percentWindow(mapping.kind, mapping.label, percent, reset, used, limit, "independent"));
+    const { emit, percent } = resolveWindowEmission({
+      explicitPercent: mapping.derivePercent ? mapping.derivePercent(payload) : null,
+      usedPercent: findNumber(payload, mapping.usedPercentPaths),
+      remainingPercent: findNumber(payload, mapping.remainingPercentPaths),
+      used,
+      limit,
+      reset,
+      deriveFromUsedLimit: true,
+      ...(mapping.emitWithoutPercent === undefined ? {} : { emitWithoutPercent: mapping.emitWithoutPercent }),
+    });
+    if (!emit) continue;
+
+    let resolvedPercent = percent;
+    if (
+      resolvedPercent !== null &&
+      mapping.valueMultiplier !== undefined &&
+      mapping.valueMultiplier !== 0
+    ) {
+      resolvedPercent = Math.min(100, Math.max(0, resolvedPercent * mapping.valueMultiplier));
+    }
+
+    windows.push(percentWindow(mapping.kind, mapping.label, resolvedPercent, reset, used, limit, "independent"));
   }
 
   if (options.extraWindows) windows.push(...options.extraWindows(payload));

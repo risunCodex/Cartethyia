@@ -17,7 +17,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import type { CanonicalEvent, CanonicalRequest, ContentPart } from "../../src/protocol/canonical-model";
-import { reasoningTextOf } from "../../src/protocol/reasoning-text";
+import { reasoningTextForReplay, reasoningTextOf } from "../../src/protocol/reasoning-text";
 import { StreamEventPipeline } from "../../src/transport/dispatch/streaming/encoder";
 import { CodexStreamFrameProcessor } from "../../src/protocol/response/codex";
 import {
@@ -65,6 +65,32 @@ describe("reasoningTextOf", () => {
     // The double-write shape: one value, not two emissions.
     const part: ContentPart = { kind: "reasoning", payload: THINKING, summary: THINKING };
     expect(reasoningTextOf(part)).toBe(THINKING);
+  });
+});
+
+describe("reasoningTextForReplay", () => {
+  test("reads summary ahead of payload (replay precedence)", () => {
+    const part: ContentPart = { kind: "reasoning", payload: "stream", summary: "digest" };
+    expect(reasoningTextForReplay(part)).toBe("digest");
+  });
+
+  test("falls back to payload when summary is absent", () => {
+    const stream: ContentPart = { kind: "reasoning", payload: "stream" };
+    const digest: ContentPart = { kind: "reasoning", payload: null, summary: "digest" };
+    expect(reasoningTextForReplay(stream)).toBe("stream");
+    expect(reasoningTextForReplay(digest)).toBe("digest");
+  });
+
+  test("an empty-string summary wins over a non-empty payload", () => {
+    const part: ContentPart = { kind: "reasoning", payload: "stream", summary: "" };
+    expect(reasoningTextForReplay(part)).toBe("");
+  });
+
+  test("returns undefined when neither field is a string", () => {
+    const blank: ContentPart = { kind: "reasoning", payload: null };
+    const emptySummary: ContentPart = { kind: "reasoning", payload: null, summary: "" };
+    expect(reasoningTextForReplay(blank)).toBeUndefined();
+    expect(reasoningTextForReplay(emptySummary)).toBe("");
   });
 });
 

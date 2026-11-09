@@ -207,6 +207,11 @@ const DISCOVERY_BACKED_PROVIDER_SPECS = {
 
 type DiscoveryBackedProviderId = keyof typeof DISCOVERY_BACKED_PROVIDER_SPECS;
 
+/** Canonical discovery-backed provider ids, in declaration order. */
+export const DISCOVERY_BACKED_PROVIDER_IDS = Object.keys(
+  DISCOVERY_BACKED_PROVIDER_SPECS,
+) as readonly DiscoveryBackedProviderId[];
+
 export function discoveryBackedCapabilities(
   providerId: string,
   spec: ApiKeyProviderSpec,
@@ -230,28 +235,14 @@ export function discoveryBackedCapabilities(
 export function createDiscoveryBackedProviderCapabilities(
   openAIModelDiscovery: OpenAIModelDiscoveryFactory,
 ): Readonly<Record<DiscoveryBackedProviderId, DiscoveryBackedCapabilities>> {
-  return {
-    groq: discoveryBackedCapabilities("groq", DISCOVERY_BACKED_PROVIDER_SPECS.groq, openAIModelDiscovery),
-    together: discoveryBackedCapabilities("together", DISCOVERY_BACKED_PROVIDER_SPECS.together, openAIModelDiscovery),
-    deepinfra: discoveryBackedCapabilities("deepinfra", DISCOVERY_BACKED_PROVIDER_SPECS.deepinfra, openAIModelDiscovery),
-    siliconflow: discoveryBackedCapabilities("siliconflow", DISCOVERY_BACKED_PROVIDER_SPECS.siliconflow, openAIModelDiscovery),
-    siliconflowcn: discoveryBackedCapabilities("siliconflowcn", DISCOVERY_BACKED_PROVIDER_SPECS.siliconflowcn, openAIModelDiscovery),
-    novita: discoveryBackedCapabilities("novita", DISCOVERY_BACKED_PROVIDER_SPECS.novita, openAIModelDiscovery),
-    larprouter: discoveryBackedCapabilities("larprouter", DISCOVERY_BACKED_PROVIDER_SPECS.larprouter, openAIModelDiscovery),
-    venice: discoveryBackedCapabilities("venice", DISCOVERY_BACKED_PROVIDER_SPECS.venice, openAIModelDiscovery),
-    nanogpt: discoveryBackedCapabilities("nanogpt", DISCOVERY_BACKED_PROVIDER_SPECS.nanogpt, openAIModelDiscovery),
-    baseten: discoveryBackedCapabilities("baseten", DISCOVERY_BACKED_PROVIDER_SPECS.baseten, openAIModelDiscovery),
-    synthetic: discoveryBackedCapabilities("synthetic", DISCOVERY_BACKED_PROVIDER_SPECS.synthetic, openAIModelDiscovery),
-    stepfun: discoveryBackedCapabilities("stepfun", DISCOVERY_BACKED_PROVIDER_SPECS.stepfun, openAIModelDiscovery),
-    sakana: discoveryBackedCapabilities("sakana", DISCOVERY_BACKED_PROVIDER_SPECS.sakana, openAIModelDiscovery),
-    helmcode: discoveryBackedCapabilities("helmcode", DISCOVERY_BACKED_PROVIDER_SPECS.helmcode, openAIModelDiscovery),
-    coralbricks: discoveryBackedCapabilities("coralbricks", DISCOVERY_BACKED_PROVIDER_SPECS.coralbricks, openAIModelDiscovery),
-    aiand: discoveryBackedCapabilities("aiand", DISCOVERY_BACKED_PROVIDER_SPECS.aiand, openAIModelDiscovery),
-    wafer: discoveryBackedCapabilities("wafer", DISCOVERY_BACKED_PROVIDER_SPECS.wafer, openAIModelDiscovery),
-    firepass: discoveryBackedCapabilities("firepass", DISCOVERY_BACKED_PROVIDER_SPECS.firepass, openAIModelDiscovery),
-    zhipucoding: discoveryBackedCapabilities("zhipucoding", DISCOVERY_BACKED_PROVIDER_SPECS.zhipucoding, openAIModelDiscovery),
-    dashscope: discoveryBackedCapabilities("dashscope", DISCOVERY_BACKED_PROVIDER_SPECS.dashscope, openAIModelDiscovery),
-    qianfan: discoveryBackedCapabilities("qianfan", DISCOVERY_BACKED_PROVIDER_SPECS.qianfan, openAIModelDiscovery),
-  };
+  const capabilities = {} as Record<DiscoveryBackedProviderId, DiscoveryBackedCapabilities>;
+  for (const providerId of DISCOVERY_BACKED_PROVIDER_IDS) {
+    capabilities[providerId] = discoveryBackedCapabilities(
+      providerId,
+      DISCOVERY_BACKED_PROVIDER_SPECS[providerId],
+      openAIModelDiscovery,
+    );
+  }
+  return capabilities;
 }
 

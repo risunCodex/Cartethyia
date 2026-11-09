@@ -14,9 +14,10 @@ import type {
 } from "../../../protocol/canonical-model";
 import { toolResultParts, toolCallParts } from "../../../protocol/canonical-model";
 import { reasoningEffortFromIntent } from "../../../protocol/reasoning";
+import { reasoningTextForReplay } from "../../../protocol/reasoning-text";
 import { resolveImageSource } from "../../../protocol/codecs";
 import { getQoderVersion } from "../../operations/client-versions";
-import { qoderDiscoveredMaxContexts, QODER_CN_MODEL_CONFIGS, QODER_INTL_MODEL_CONFIGS } from "./qoder-catalog";
+import { qoderMaxContextFor, qoderRosterMaxOutput } from "./qoder-catalog";
 import { transformQoderBody, qoderBuildCosyHeaders } from "./qoder-cosy";
 import { qoderSessionId } from "./qoder-auth";
 import { flattenCanonicalContent, qoderToolChoice, qoderTools } from "./qoder-body";
@@ -69,12 +70,6 @@ function qoderStableRecordId(modelId: string, messages: CanonicalRequest["messag
  * never capped at the *currently active* window (often 180k) when the account
  * can use 1M. Falls back to the static roster's stated window otherwise.
  */
-function qoderMaxContextFor(modelId: string, modelConfig: QoderModelConfig, realm: QoderRealm): number {
-  const discovered = qoderDiscoveredMaxContexts(realm).get(modelId);
-  if (discovered !== undefined) return discovered;
-  return modelConfig.max_input_tokens;
-}
-
 function qoderRequestedMaxTokens(
   request: CanonicalRequest,
   modelConfig: QoderModelConfig,
@@ -91,7 +86,7 @@ function qoderRequestedMaxTokens(
   const configured =
     typeof modelConfig.max_output_tokens === "number"
       ? modelConfig.max_output_tokens
-      : qoderRosterMaxOutput(modelConfig.id, realm) ?? 65_536;
+      : qoderRosterMaxOutput(realm === "cn" ? "qodercn" : "qoder", modelConfig.id) ?? 65_536;
   const controls = request.generation_controls as Record<string, unknown>;
   const requested =
     typeof controls["max_tokens"] === "number"
@@ -100,17 +95,6 @@ function qoderRequestedMaxTokens(
         ? (controls["max_output_tokens"] as number)
         : null;
   return typeof requested === "number" && requested > 0 ? Math.min(requested, configured) : configured;
-}
-
-/**
- * The static roster's stated output ceiling for one key, when the roster states
- * one. Dispatch builds a live-discovered model's config without an output limit
- * (upstream's model list reports none); this lookup restores the roster's
- * ceiling so such a model is not capped at the 65_536 last resort.
- */
-function qoderRosterMaxOutput(modelId: string, realm: QoderRealm): number | undefined {
-  const configs = realm === "cn" ? QODER_CN_MODEL_CONFIGS : QODER_INTL_MODEL_CONFIGS;
-  return configs[modelId]?.max_output_tokens;
 }
 
 /**
@@ -159,7 +143,9 @@ function qoderReasoningEcho(
     return hasReasoningTrace ? { reasoning_content: "" } : {};
   }
   const text = reasoning
-    .map((part) => (part.kind === "reasoning" ? (part.summary ?? part.payload ?? "") : ""))
+    .map((part) =>
+      part.kind === "reasoning" ? (reasoningTextForReplay(part) ?? part.payload ?? "") : "",
+    )
     .join("");
   return { reasoning_content: text };
 }
@@ -448,7 +434,7 @@ export function buildQoderRequest(
       // for every model alike, so the request would declare a cap the catalog
       // does not publish. A discovered model's config carries no output limit,
       // so consult the roster for the key before the 65_536 last resort.
-      max_output_tokens: modelConfig.max_output_tokens ?? qoderRosterMaxOutput(modelId, realm) ?? 65_536,
+      max_output_tokens: modelConfig.max_output_tokens ?? qoderRosterMaxOutput(realm === "cn" ? "qodercn" : "qoder", modelId) ?? 65_536,
       source: modelConfig.source ?? "system",
     },
     messages: qoderMessages,

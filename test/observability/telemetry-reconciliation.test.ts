@@ -31,6 +31,7 @@ const { createSqliteDatabase, applySqliteMigrations, buildSqliteHandle } = await
 );
 const { TELEMETRY_EVENT_DIR } = await import("../../src/observability/event-log");
 const { reconcileTelemetry } = await import("../../src/observability/telemetry-reconciliation");
+const { queryTelemetryEvents } = await import("../../src/observability/event-query");
 
 const dbPath = join(sandbox, "reconcile.sqlite");
 const sqliteDb = createSqliteDatabase(dbPath);
@@ -169,6 +170,42 @@ describe("telemetry reconcile", () => {
     expect(report.eventsExamined).toBe(1);
     expect(report.eventsInserted).toBe(0);
     expect(await countEvents(tenantId)).toBe(0);
+  });
+
+  test("a raw line carrying the newer telemetry columns backfills them", async () => {
+    // The reconciliation mapper must fill exactly the columns the write path
+    // persists — a backfilled row that drops tokensPerSec/creditUsed/
+    // degenerateStop reads as if those events never happened, and the raw file
+    // is pruned after retention so the gap is permanent.
+    const tenantId = crypto.randomUUID();
+    await createTenant(tenantId);
+    const file = `${oldHour(6)}-${crypto.randomUUID()}.jsonl`;
+    await writeRawFile(file, [
+      line(tenantId, crypto.randomUUID(), new Date(Date.now() - 6 * 3_600_000), {
+        creditUsed: 1.01,
+        resolveMs: 55,
+        tokensPerSec: 42.5,
+        firstContentDeltaAtMs: 1_800_000_000_000,
+        lastEventAtMs: 1_800_000_004_000,
+        payloadCaptureState: "captured",
+        degenerateStop: true,
+      }),
+    ]);
+
+    const report = await reconcileTelemetry(db, { verify: false });
+    expect(report.eventsInserted).toBe(1);
+    // Read back through the canonical reader, which normalizes the stored
+    // numeric text to the same numbers the write-path suite asserts.
+    const page = await queryTelemetryEvents(db, { tenantId, since: new Date(0) });
+    expect(page.events).toHaveLength(1);
+    const row = page.events[0];
+    expect(row?.creditUsed).toBe(1.01);
+    expect(row?.resolveMs).toBe(55);
+    expect(row?.tokensPerSec).toBe(42.5);
+    expect(row?.firstContentDeltaAtMs).toBe(1_800_000_000_000);
+    expect(row?.lastEventAtMs).toBe(1_800_000_004_000);
+    expect(row?.payloadCaptureState).toBe("captured");
+    expect(row?.degenerateStop).toBe(true);
   });
 
   test("the current and previous UTC hour are never reconciled", async () => {

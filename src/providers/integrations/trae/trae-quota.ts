@@ -40,10 +40,9 @@ import { log } from "../../../observability/logger";
 import {
   TRAE_ENT_USAGE_PATH,
   TRAE_ENT_USAGE_PATH_V2,
-  TRAE_REGION_CORE_HOSTS,
-  TRAE_REGION_PAY_HOSTS,
-  TRAE_REALMS,
   TRAE_SESSION_USAGE_PATH,
+  traeCoreForAccount,
+  traePayHostForAccount,
   type TraeRealm,
 } from "./trae-realm";
 
@@ -326,27 +325,6 @@ function logTraeQuotaMiss(errors: readonly string[]): void {
  * whose pay host is unreachable still has a readable meter, and reporting
  * "no quota" for it would park an account that can still serve.
  */
-/**
- * The core host for this account.
- *
- * A provisioned region overrides the realm default: an `sg` account sent to the
- * US core is answered 401 code 1001, which looks exactly like a dead token.
- */
-function coreHost(region: string, config: (typeof TRAE_REALMS)[TraeRealm]): string {
-  return (region !== "" ? TRAE_REGION_CORE_HOSTS[region] : undefined) ?? config.core;
-}
-
-/**
- * The pay host for this account.
- *
- * The pay surface correlates the credential against its region, too: an `sg`
- * account sent to the US pay host is answered 401 code 1001, while the SG pay
- * host accepts the same token (verified live 2026-11-06).
- */
-function payHost(region: string, config: (typeof TRAE_REALMS)[TraeRealm]): string {
-  return (region !== "" ? TRAE_REGION_PAY_HOSTS[region] : undefined) ?? config.pay;
-}
-
 export async function fetchTraeQuota(
   credential: string,
   fetcher: FetchLike,
@@ -412,13 +390,13 @@ export async function fetchTraeQuota(
    * realm is tried: one of them accepts, and that is the answer.
    */
   const tryRealms = async (
-    path: (config: (typeof TRAE_REALMS)[TraeRealm]) => string,
+    path: (realm: TraeRealm) => string,
     surface: string,
     parse: (payload: unknown) => { readonly windows: readonly ProviderQuotaWindow[]; readonly plan: string | null },
   ): Promise<{ readonly windows: readonly ProviderQuotaWindow[]; readonly plan: string | null } | null> => {
     for (const candidate of realm === "cn" ? (["cn", "intl"] as const) : (["intl", "cn"] as const)) {
       try {
-        const payload = await call(candidate, path(TRAE_REALMS[candidate]), surface);
+        const payload = await call(candidate, path(candidate), surface);
         return parse(payload);
       } catch (error) {
         errors.push(`${candidate} ${surface}: ${cleanError(error)}`);
@@ -427,11 +405,11 @@ export async function fetchTraeQuota(
     return null;
   };
 
-  const session = await tryRealms((config) => coreHost(region, config) + TRAE_SESSION_USAGE_PATH, "session usage", parseSessionUsage);
+  const session = await tryRealms((r) => traeCoreForAccount(r, region) + TRAE_SESSION_USAGE_PATH, "session usage", parseSessionUsage);
   // The entitlement path differs by realm: the CN realm answers v2 (v1 lacks
   // `usage_summary` there), the intl realm answers v1 (v2 is a 404).
   const entPath = realm === "cn" ? TRAE_ENT_USAGE_PATH_V2 : TRAE_ENT_USAGE_PATH;
-  const entitlement = await tryRealms((config) => payHost(region, config) + entPath, "entitlement", parseEntitlement);
+  const entitlement = await tryRealms((r) => traePayHostForAccount(r, region) + entPath, "entitlement", parseEntitlement);
 
   const windows = [...(session?.windows ?? []), ...(entitlement?.windows ?? [])];
   if (!session && !entitlement) {

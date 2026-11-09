@@ -62,6 +62,15 @@ export function trackMemoryUsage(component: string, bytes: number): void {
   memoryUsage.record(component, bytes);
 }
 
+/**
+ * The recorded memory figures keyed by component name (`rss`, `heap_used`,
+ * `heap_total`, `external`). This series is the canonical memory view the
+ * Prometheus gauges are derived from, so the two registries cannot disagree.
+ */
+export function memoryUsageBytes(): Record<string, number> {
+  return memoryUsage.snapshot();
+}
+
 /** Returns the current snapshot for the console performance endpoint. */
 export function performanceMetricsSnapshot(): PerformanceMetricsSnapshot {
   return {

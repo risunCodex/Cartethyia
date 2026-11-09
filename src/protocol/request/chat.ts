@@ -16,6 +16,7 @@ import { clampThinkingLevelForModel } from "../../protocol/translation/dialect/m
 import { isClaudeBillingHeaderText, resolveImageSource } from "../codecs";
 import { resolvePromptCacheKey } from "../../providers/operations/session-resolution";
 import { reasoningEffortFromIntent } from "../../protocol/reasoning";
+import { reasoningTextForReplay } from "../reasoning-text";
 import { parseChatResponseToEvents, decodeChatSseStream } from "../response/chat";
 
 /** Fallback when no resolved policy is supplied — today's exact behavior. */
@@ -220,6 +221,13 @@ export function canonicalToChatPayload(
     }
   }
   for (const m of request.messages) {
+    // Reasoning parts and their presence are computed once per message and
+    // shared by every branch below; the presence gate is on the *existence* of
+    // a reasoning part, not on non-empty text (see the comment at the first use).
+    const reasoningParts = m.content.filter(
+      (c): c is Extract<typeof c, { kind: "reasoning" }> => c.kind === "reasoning",
+    );
+    const hasReasoning = reasoningParts.length > 0;
     if (m.role === "assistant" && m.content.some((c) => c.kind === "toolCall")) {
       const toolCalls = m.content
         .filter((c): c is Extract<typeof c, { kind: "toolCall" }> => c.kind === "toolCall")
@@ -251,16 +259,12 @@ export function canonicalToChatPayload(
       // thinking mode" (CodeBuddy 400). Chat Completions has no
       // reasoning content part, so it travels in the provider-native
       // `reasoning_content` side channel, same as the branches below.
-      const reasoningContent = m.content
-        .filter((c): c is Extract<typeof c, { kind: "reasoning" }> => c.kind === "reasoning")
-        .map((c) => c.summary ?? (typeof c.payload === "string" ? c.payload : ""))
-        .join("\n");
+      const reasoningContent = reasoningParts.map((c) => reasoningTextForReplay(c) ?? "").join("\n");
       // Gated on the *presence* of a reasoning part, not on non-empty text:
       // with `display: "omitted"` the provider emits a thinking block whose
       // text is empty but whose signature marks the turn as a thinking turn,
       // and the upstream still demands the field back. Omitting it there
       // reproduces the same 400, so an empty string is the correct value.
-      const hasReasoning = m.content.some((c) => c.kind === "reasoning");
       messages.push({
         role: "assistant",
         content: effectiveContent,
@@ -295,13 +299,9 @@ export function canonicalToChatPayload(
           content: p.is_error === true ? `[tool_error] ${resultContent}` : resultContent,
         });
       }
-      const reasoningContent = m.content
-        .filter((c): c is Extract<typeof c, { kind: "reasoning" }> => c.kind === "reasoning")
-        .map((c) => c.summary ?? (typeof c.payload === "string" ? c.payload : ""))
-        .join("\n");
+      const reasoningContent = reasoningParts.map((c) => reasoningTextForReplay(c) ?? "").join("\n");
       // Presence, not length: an `omitted`-display thinking block carries an
       // empty text with a signature, and the field is still required back.
-      const hasReasoning = m.content.some((c) => c.kind === "reasoning");
       const hasRichContent = m.content.some(
         (c) => c.kind === "image" || c.kind === "file" || c.kind === "audio" || c.kind === "document",
       );

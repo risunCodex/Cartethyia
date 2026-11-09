@@ -6,7 +6,7 @@ import { DEFAULT_BOUNDS } from "../config/network";
 import { type SourceSurface, type UsageRecord } from "../protocol/canonical-model";
 import { log } from "./logger";
 import { scrubSecrets } from "./redaction";
-import { clientNameFromUserAgent } from "./client-name";
+import { telemetryInsertRow, tokenCountToInt, type TelemetryInsertRowSource } from "./telemetry-row";
 
 
 /**
@@ -73,10 +73,6 @@ export interface TelemetryEventInput {
   readonly degenerateStop?: boolean;
 }
 
-function tokenCountToInt(value: number | "unavailable" | undefined): number | undefined {
-  return typeof value === "number" ? Math.round(value) : undefined;
-}
-
 /** Conservative byte estimate for queue accounting.
  *  Telemetry events contain only bounded scalar metadata; serializing every
  *  event just to measure queue size added a JSON allocation on every request.
@@ -104,23 +100,19 @@ function estimateTelemetryEventBytes(event: TelemetryEventInput): number {
 }
 
 /** Maps a durable event to its `telemetry_events` insert row for the
- * batched multi-row writer (`TelemetryBatchBuffer.drain`). */
+ * batched multi-row writer (`TelemetryBatchBuffer.drain`). Normalizes the
+ * `TelemetryEventInput` shape (nested `usage`, token-count coercion) into the
+ * shared record shape; the column spelling itself lives in
+ * {@link telemetryInsertRow}, which the reconciliation backfill shares. */
 function telemetryEventRow(event: TelemetryEventInput) {
-  // Every column below has a live producer: `accountId`/`networkPoolId` flow
-  // `ttfbMs` is measured by the model-probe path, and `usage` (including
-  // `cachedInputTokens` stays — `health` aggregates it into the Overview
-  // cache-hit rate.
-  return {
-    // Stable identity: the request's own id. Retries reuse the materialized
-    // row (the buffer retries the same rows across its five attempts), and
-    // the (tenant_id, request_id) unique boundary makes a re-drain or a
-    // cross-process race converge to one row via ON CONFLICT DO NOTHING
-    // instead of double-charging.
+  // Only the normalization lives here: collapse the nested `usage` record onto
+  // the flat shared shape, and coerce token counts to the integers the schema
+  // columns store. Every field below has a live producer; the column spelling
+  // and the client-name derivation are `telemetryInsertRow`'s.
+  const source: TelemetryInsertRowSource = {
     id: event.requestId,
     tenantId: event.tenantId,
     requestId: event.requestId,
-    // Stamped here, not by the reader. A row without it has no real time, and a
-    // reader that invented one made every such row look like it happened just now.
     createdAt: new Date(),
     sourceSurface: event.sourceSurface,
     requestedModel: event.requestedModel,
@@ -129,8 +121,6 @@ function telemetryEventRow(event: TelemetryEventInput) {
     endpoint: event.endpoint ?? null,
     apiKeyId: event.apiKeyId ?? null,
     userAgent: event.userAgent ?? null,
-    // Canonical client grouping, stamped once so SQL breakdowns group by it.
-    clientName: clientNameFromUserAgent(event.userAgent),
     clientIp: event.clientIp ?? null,
     providerId: event.providerId ?? null,
     accountId: event.accountId ?? null,
@@ -152,18 +142,18 @@ function telemetryEventRow(event: TelemetryEventInput) {
     estimatedCostUsd:
       event.usage?.estimated_cost === null || event.usage === undefined
         ? null
-        : String(event.usage.estimated_cost),
+        : event.usage.estimated_cost,
     // Provider-billed credit (Tencent buddy-meter `credit`, Qoder `credits`);
     // NULL when the upstream reported no credit field.
-    // Numeric columns are string-typed in Drizzle, like `estimatedCostUsd`.
-    creditUsed: event.usage?.credit_used != null ? String(event.usage.credit_used) : null,
+    creditUsed: event.usage?.credit_used ?? null,
     resolveMs: event.resolveMs ?? null,
-    tokensPerSec: event.tokensPerSec != null ? String(event.tokensPerSec) : null,
+    tokensPerSec: event.tokensPerSec ?? null,
     firstContentDeltaAtMs: event.firstContentDeltaAtMs ?? null,
     lastEventAtMs: event.lastEventAtMs ?? null,
     payloadCaptureState: event.payloadCaptureState ?? null,
-    degenerateStop: event.degenerateStop ?? null,
+    ...(event.degenerateStop !== undefined ? { degenerateStop: event.degenerateStop } : {}),
   };
+  return telemetryInsertRow(source);
 }
 
 interface TelemetryBatchBufferOptions {

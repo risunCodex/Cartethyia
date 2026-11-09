@@ -113,11 +113,20 @@ function endpointPathSurface(path: string): SourceSurface | undefined {
   return undefined;
 }
 
-export class SurfaceAdapterRegistry {
-  constructor(private readonly adapters: SurfaceAdapter[]) {
+export class SurfaceAdapterRegistry<T extends SurfaceAdapter = SurfaceAdapter> {
+  constructor(private readonly adapters: T[]) {
     if (!adapters || adapters.length === 0) {
       throw new Error("SurfaceAdapterRegistry requires at least one adapter");
     }
+  }
+
+  /**
+   * Map of surface → adapter. The keys are the adapters' `surface` values, so
+   * this is the single place pipeline composition derives the adapter lookup
+   * from — never re-spell the adapter list beside the registry.
+   */
+  bySurface(): ReadonlyMap<SourceSurface, T> {
+    return new Map(this.adapters.map((adapter) => [adapter.surface, adapter]));
   }
 
   /**

@@ -28,7 +28,6 @@ import {
 } from "../../provider-contracts";
 import { usageFromProvider } from "../../provider-usage";
 import {
-  PERCH_APP_URL,
   PERCH_CLI_USER_AGENT,
   PERCH_SAFFRON_SYSTEM_PROMPT,
   buildPerchModelCallBody,
@@ -39,7 +38,8 @@ import {
   PERCH_MODEL_PINS,
   PERCH_MODEL_ROOST_TIERS,
 } from "./perch-catalog";
-import { PERCH_PROVIDER_ID } from "./perch-realm";
+import { PERCH_APP_URL, PERCH_PROVIDER_ID } from "./perch-realm";
+import { parsePerchCredentialToken } from "./perch-credential";
 
 interface PerchAdapterOptions {
   readonly providerId?: string;
@@ -126,7 +126,7 @@ export class PerchAdapter implements ProviderAdapter {
     }
     const secret = readCredentialSecret(context.credential, "Perch credential is required");
     const modelId = candidate.model_id || request.model || "standard";
-    const access = secret.startsWith("{") ? parseAccessToken(secret) : secret.trim();
+    const access = parsePerchCredentialToken(secret) ?? secret.trim();
     // Probes pass a validated outbound fetch (with capture wrapped around it);
     // live dispatch passes one too. `globalThis.fetch` here silently split the
     // probe from the route's egress policy and left Request Detail empty.
@@ -279,16 +279,6 @@ function normalizePerchUsage(usage: Record<string, unknown>): Record<string, unk
     out["total_tokens"] = usage["totalTokens"];
   }
   return out;
-}
-
-function parseAccessToken(secret: string): string {
-  try {
-    const parsed = JSON.parse(secret) as Record<string, unknown>;
-    const found = parsed["accessToken"] ?? parsed["access_token"];
-    return typeof found === "string" ? found : secret.trim();
-  } catch {
-    return secret.trim();
-  }
 }
 
 /**

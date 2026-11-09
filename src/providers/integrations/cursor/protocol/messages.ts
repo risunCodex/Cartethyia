@@ -25,28 +25,7 @@
  */
 
 import protobuf from "protobufjs"
-
-// ── Helper: create a root and add a Type with fields ──
-
-type FieldDef = { id: number; name: string; type: string; repeated?: boolean }
-type OneofDef = { name: string; fields: string[] }
-
-function addType(
-  root: protobuf.Root,
-  name: string,
-  fields: FieldDef[],
-  oneofs?: OneofDef[],
-): protobuf.Type {
-  const t = new protobuf.Type(name)
-  for (const f of fields) {
-    t.add(new protobuf.Field(f.name, f.id, f.type, f.repeated ? "repeated" : undefined))
-  }
-  for (const o of oneofs ?? []) {
-    t.add(new protobuf.OneOf(o.name, o.fields))
-  }
-  root.add(t)
-  return t
-}
+import { addType } from "./protobuf-schema"
 
 // ── Utility messages ──
 

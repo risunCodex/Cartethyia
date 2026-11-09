@@ -19,7 +19,11 @@ import type { ValidatedFetch } from "../../../network/outbound-fetch";
 import { getQoderVersion } from "../../operations/client-versions";
 import { qoderRealmForProvider, QODER_REALMS } from "./qoder-realm";
 import {
+  asNumber,
+  asRecord,
   buildCampaignHeaders,
+  normalizeCampaign,
+  safeParse,
 } from "./qoder-checkin";
 import { qoderMachineHeaders } from "./qoder-umid";
 import {
@@ -37,31 +41,6 @@ export interface QoderCreditClaimResult {
 export const QODER_CREDIT_PROVIDER_IDS = ["qoder", "qodercn"] as const;
 
 const PAT_PREFIX = "pt-";
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null) return null;
-  return value as Record<string, unknown>;
-}
-
-function asNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function normalizeCampaign(raw: Record<string, unknown>): Record<string, unknown> {
-  const benefit = asRecord(raw["benefit"]);
-  return {
-    campaign_id: String(raw["campaignId"] ?? raw["campaign_id"] ?? ""),
-    campaign_key: String(raw["campaignKey"] ?? raw["campaign_key"] ?? ""),
-    action_type: String(raw["actionType"] ?? raw["action_type"] ?? ""),
-    claim_status: String(raw["claimStatus"] ?? raw["claim_status"] ?? ""),
-    ...(benefit !== null ? { benefit } : {}),
-  };
-}
 
 /**
  * Exchanges a PAT (`pt-…`) for a job token (`jt-…`) on the realm's openapi
@@ -246,13 +225,5 @@ export async function claimQoderCredits(args: {
     return { state: "error", amount: 0, detail: `Claim failed (${res.status})` };
   } catch {
     return { state: "error", amount: 0, detail: "Claim request failed." };
-  }
-}
-
-function safeParse(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
   }
 }

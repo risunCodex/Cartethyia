@@ -72,6 +72,31 @@ export function jsonResponse(payload: unknown, status: number, requestId: string
 }
 
 /**
+ * Forwards an upstream response body verbatim with the shared native-response
+ * header set.
+ *
+ * The native handlers (System One, responses-compact, token-count,
+ * generation's passThrough) each spelled the same three headers by hand; the
+ * copies drifted at least once (generation's JSON builder lost `cache-control`).
+ * Status and body come from the upstream untouched; only the content-type
+ * default differs per route (SSE vs JSON) and is passed per call.
+ */
+export function forwardUpstreamResponse(
+  response: Response,
+  requestId: string,
+  defaultContentType = "application/json",
+): Response {
+  return new Response(response.body, {
+    status: response.status,
+    headers: {
+      "content-type": response.headers.get("content-type") ?? defaultContentType,
+      "cache-control": "no-store",
+      "x-request-id": requestId,
+    },
+  });
+}
+
+/**
  * Strips a thinking suffix (`model(high)`) from the model name and rebuilds
  * the body with the bare model when it changed. Returns the bare model and
  * the body to forward upstream.

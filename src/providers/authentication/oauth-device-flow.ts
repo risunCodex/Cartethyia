@@ -8,8 +8,9 @@ import type {
   OAuthDeviceFlowContext,
   OAuthDevicePollResult,
   OAuthDeviceStartResult,
+  OAuthExchangeResult,
 } from "./oauth-flow-store";
-import { OAuthClient } from "./oauth-client";
+import { OAuthClient, type NormalizedTokenResponse } from "./oauth-client";
 
 /** Configuration for standard device-code start and poll requests. */
 export interface DeviceFlowConfig {
@@ -67,6 +68,58 @@ export abstract class OAuthDeviceFlow extends OAuthClient {
     return new URLSearchParams(params);
   }
 
+  /**
+   * Optional verdict computed from the parsed token body before the status
+   * code is considered. Defaults to undefined (continue with standard
+   * handling). A provider whose authoritative endpoint states the poll state
+   * in the body on any status can return a backoff verdict here — e.g. Grok,
+   * which votes on `error` before the HTTP status.
+   */
+  protected preVerdict?(_payload: unknown): OAuthDevicePollResult | undefined;
+
+  /**
+   * Post-success hook for the standard device-token poll.
+   *
+   * Receives the raw token response payload and the normalized parsed token.
+   * Returns the exchange result to complete with, or a verdict (typically
+   * `failed`) instead. The default reproduces the generic behavior exactly.
+   * Errors thrown by a hook are converted to a `failed` verdict by
+   * `pollGenericDeviceAuth`, keeping the poll contract (verdicts, never
+   * throws).
+   */
+  protected afterDeviceTokenExchange?(
+    _payload: unknown,
+    _normalized: NormalizedTokenResponse,
+  ): OAuthExchangeResult | OAuthDevicePollResult | Promise<OAuthExchangeResult | OAuthDevicePollResult>;
+
+  /**
+   * Failure reason for a non-JSON token body. Defaults to the generic
+   * phrasing; providers whose wire carries a distinct message override it.
+   */
+  protected unparsablePollReason(status: number): string {
+    return `device polling failed (${status})`;
+  }
+
+  /**
+   * Failure reason for a non-OK token response. The default preserves the
+   * generic behavior: the response's `error` field names the reason on the
+   * RFC 8628 400/428 statuses, and every other non-OK status gets the generic
+   * phrasing (the body is not trusted there).
+   */
+  protected pollFailureReason(
+    status: number,
+    errorKey: string | undefined,
+    _errorDescription: string | undefined,
+  ): string {
+    if (status === 400 || status === 428) return errorKey || `device polling failed (${status})`;
+    return `device polling failed (${status})`;
+  }
+
+  /** Failure reason when a token response omits `access_token`. */
+  protected missingTokenReason(_errorKey: string | undefined, _errorDescription: string | undefined): string {
+    return `${this.providerLabel} token response omitted access_token`;
+  }
+
   /** Standard device-token poll. Returns pending while authorization is incomplete. */
   protected async pollGenericDeviceAuth(
     deviceAuthId: string,
@@ -88,20 +141,57 @@ export abstract class OAuthDeviceFlow extends OAuthClient {
     } catch {
       payload = undefined;
     }
-    const root = record(payload) ?? {};
-    if (response.status === 400 || response.status === 428) {
-      const err = typeof root.error === "string" ? root.error : "";
-      const verdict = devicePollBackoff(err, root.interval);
-      if (verdict !== undefined) return verdict;
-      return { status: "failed", reason: err || `device polling failed (${response.status})` };
+    // A body that is not JSON is a failed poll regardless of status: verdicts
+    // must never throw, and the reason below lets providers keep their own
+    // phrasing (e.g. Grok's "returned invalid JSON").
+    if (payload === undefined) {
+      return { status: "failed", reason: this.unparsablePollReason(response.status) };
     }
-    if (!response.ok || payload === undefined) {
-      return { status: "failed", reason: `device polling failed (${response.status})` };
+    const root = record(payload) ?? {};
+    if (this.preVerdict) {
+      const verdict = this.preVerdict(payload);
+      if (verdict !== undefined) return verdict;
+    }
+    const errorKey = typeof root.error === "string" ? root.error : undefined;
+    const errorDescription = typeof root.error_description === "string" ? root.error_description : undefined;
+    if (response.status === 400 || response.status === 428) {
+      const verdict = devicePollBackoff(errorKey, root.interval);
+      if (verdict !== undefined) return verdict;
+      return {
+        status: "failed",
+        reason: this.pollFailureReason(response.status, errorKey, errorDescription),
+      };
+    }
+    if (!response.ok) {
+      return { status: "failed", reason: this.pollFailureReason(response.status, errorKey, errorDescription) };
     }
     if (typeof root.access_token !== "string" || !root.access_token) {
-      return { status: "failed", reason: `${this.providerLabel} token response omitted access_token` };
+      return {
+        status: "failed",
+        reason: this.missingTokenReason(errorKey, errorDescription),
+      };
     }
-    const normalized = this.parseTokenResponse(payload);
+    let normalized: NormalizedTokenResponse;
+    try {
+      normalized = this.parseTokenResponse(payload);
+    } catch (error) {
+      return {
+        status: "failed",
+        reason: error instanceof Error ? error.message : `${this.providerLabel} token response omitted access_token`,
+      };
+    }
+    if (this.afterDeviceTokenExchange) {
+      try {
+        const hooked = await this.afterDeviceTokenExchange(payload, normalized);
+        if ("status" in hooked) return hooked;
+        return { status: "complete", result: hooked };
+      } catch (error) {
+        return {
+          status: "failed",
+          reason: error instanceof Error ? error.message : `${this.providerLabel} authentication failed`,
+        };
+      }
+    }
     return { status: "complete", result: this.toExchangeResult(normalized) };
   }
 }

@@ -23,7 +23,7 @@ import type { OAuthTokenRefreshResult, OAuthTokenRefresher } from "./oauth-refre
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 /** Normalized token shape returned by provider token endpoints. */
-interface NormalizedTokenResponse {
+export interface NormalizedTokenResponse {
   readonly access: string;
   readonly refresh: string;
   readonly expiresAt: Date;

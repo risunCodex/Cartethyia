@@ -1,7 +1,7 @@
 /** Bounded process-local authorization cache; shared-cache I/O stays in the auth service. */
 export const AUTH_CACHE_TTL_MS = 3_000;
 const AUTH_CACHE_MAX_ENTRIES = 10_000;
-const AUTH_NEGATIVE_CACHE_TTL_MS = 1_500;
+export const AUTH_NEGATIVE_CACHE_TTL_MS = 1_500;
 const AUTH_FAILURE_COOLDOWN_MS = 1_000;
 
 interface CacheEntry<T> {

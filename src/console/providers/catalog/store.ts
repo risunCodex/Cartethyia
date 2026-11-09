@@ -1,6 +1,6 @@
 // Drizzle-backed provider, account, model, routing, and API-key repositories.
 import { and, asc, eq, gte, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
-import { isSqliteDatabase } from "../../../persistence/dialect";
+import { liveModelCooldownExistsSql } from "../../../persistence/dialect";
 import { ConsoleDomainError } from "../../shared/errors";
 import { parseCustomProviderId, isBundledProviderId } from "../../../providers/provider-contracts";
 import { providerRateLimitIsIpScoped } from "../../../providers/provider-metadata";
@@ -1791,20 +1791,15 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
 
   /**
    * `status='cooldown' OR cooldown_until > now OR model_cooldowns` carries a
-   * live entry. The JSON check is dialect-specific: PostgreSQL uses
-   * `jsonb_each_text` (with a shape guard), SQLite `json_each` on its `text`
-   * column. Only entries whose ISO deadline is still in the future count, mirroring
-   * `liveModelCooldowns`. Timestamps are stored as ISO strings on both backends,
-   * so the lexical comparison against `nowIso` is stable.
+   * live entry, scoped to the caller's own rows (the tenant path never touches
+   * `tenant_id IS NULL` rows). The shared JSON subquery lives in the dialect
+   * module; only the surrounding scoping is the store's.
    */
   private liveCooldownPredicate(nowIso: string): SQL {
-    const liveModelCooldown = isSqliteDatabase(this.db)
-      ? sql`EXISTS (SELECT 1 FROM json_each(${providerAccounts.modelCooldowns}) AS entry WHERE json_valid(${providerAccounts.modelCooldowns}) AND json_type(${providerAccounts.modelCooldowns}) = 'object' AND entry.value > ${nowIso})`
-      : sql`EXISTS (SELECT 1 FROM jsonb_each_text(${providerAccounts.modelCooldowns}) AS entry WHERE jsonb_typeof(${providerAccounts.modelCooldowns}) = 'object' AND entry.value > ${nowIso})`;
     return or(
       eq(providerAccounts.status, "cooldown"),
       sql`${providerAccounts.cooldownUntil} > ${nowIso}`,
-      liveModelCooldown,
+      liveModelCooldownExistsSql(this.db, nowIso),
     ) as SQL;
   }
 

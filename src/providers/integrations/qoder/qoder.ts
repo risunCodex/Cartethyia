@@ -42,7 +42,6 @@ export {
   buildQoderIdeRequest,
   qoderBodyToCanonicalEvents,
   qoderEnvelopeToFrames,
-  fetchQoderIdeWithEmptyRecovery,
 } from "./qoder-ide";
 
 // gRPC transport

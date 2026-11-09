@@ -12,6 +12,9 @@
 /** One Trae deployment. */
 export type TraeRealm = "intl" | "cn";
 
+/** Provider ids served by the Trae integration (intl + CN). */
+export const TRAE_PROVIDER_IDS: ReadonlySet<string> = new Set(["trae", "traecn"]);
+
 /** Per-realm upstream addresses, client identity, and auth scheme. */
 export interface TraeRealmConfig {
   /** Data-plane host: chat + model list (`/api/ide/v1/*`). */
@@ -244,4 +247,39 @@ export function traeCoreCandidates(realm: TraeRealm): readonly string[] {
 export function traeAccountCandidates(realm: TraeRealm): readonly string[] {
   const config = TRAE_REALMS[realm];
   return [config.account, ...config.accountFallbacks];
+}
+
+/**
+ * The core host for this account.
+ *
+ * A provisioned region overrides the realm default: an `sg` account sent to the
+ * US core is answered 401 code 1001 (which looks exactly like a dead token), so
+ * the region lookup must win when it is known. Falling back to the realm keeps
+ * older accounts (stored before the region was captured) working exactly as
+ * before.
+ */
+export function traeCoreForAccount(
+  realm: TraeRealm,
+  region: string,
+): string {
+  const regional = TRAE_REGION_CORE_HOSTS[region];
+  if (regional !== undefined) return regional;
+  return traeCoreCandidates(realm)[0] ?? "";
+}
+
+/**
+ * The pay host for this account.
+ *
+ * The pay surface correlates the credential against its region, too: an `sg`
+ * account sent to the US pay host is answered 401 code 1001, while the SG pay
+ * host accepts the same token (verified live 2026-11-06). Falls back to the
+ * realm default host when no region is provisioned.
+ */
+export function traePayHostForAccount(
+  realm: TraeRealm,
+  region: string,
+): string {
+  const regional = TRAE_REGION_PAY_HOSTS[region];
+  if (regional !== undefined) return regional;
+  return TRAE_REALMS[realm].pay;
 }

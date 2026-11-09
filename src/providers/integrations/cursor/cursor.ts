@@ -64,6 +64,7 @@ import { decodeValueToJson, decodeStructEntriesToJson } from "./protocol/struct"
 import { encodeMessage } from "./protocol/messages";
 import { executeNativeTool, resolveExecFrame } from "./cursor-exec";
 import { fnv1a32 } from "../shared/hash";
+import { TtlCache } from "../../../persistence/ttl-cache";
 
 /**
  * Client-heartbeat cadence for every Cursor Run.
@@ -84,25 +85,25 @@ const CURSOR_HEARTBEAT_INTERVAL_MS = 5_000;
  */
 const CURSOR_ROSTER_TTL_MS = 300_000;
 /**
- * credential → { roster, fetchedAt } for the parameter lookup.
+ * credential → roster for the parameter lookup.
  *
  * Keyed by an FNV-1a digest of the credential rather than the raw token so a
  * long-lived map does not hold live credentials as keys. Bounded by
- * `ROSTER_CACHE_MAX` with oldest-first eviction: the TTL is only checked on
- * read, so without a cap rotated tokens would grow the map without bound.
+ * `ROSTER_CACHE_MAX` with LRU eviction: the TTL is only checked on read, so
+ * without a cap rotated tokens would grow the map without bound. Implemented
+ * by the canonical `TtlCache` in LRU mode — re-setting moves the entry to the
+ * newest position, and the cap evicts the least-recently-used entry.
  */
 const ROSTER_CACHE_MAX = 1024;
-const rosterCache = new Map<string, { roster: readonly CursorModelInfo[]; fetchedAt: number }>();
+const rosterCache = new TtlCache<{ roster: readonly CursorModelInfo[] }>({
+  ttlMs: CURSOR_ROSTER_TTL_MS,
+  maxEntries: ROSTER_CACHE_MAX,
+  lru: true,
+});
 
 function rosterCacheSet(credential: string, roster: readonly CursorModelInfo[]): void {
   const key = String(fnv1a32(credential));
-  rosterCache.delete(key); // re-set moves the entry to newest position
-  rosterCache.set(key, { roster, fetchedAt: Date.now() });
-  while (rosterCache.size > ROSTER_CACHE_MAX) {
-    const oldest = rosterCache.keys().next().value;
-    if (oldest === undefined) break;
-    rosterCache.delete(oldest);
-  }
+  rosterCache.set(key, { roster });
 }
 
 /**
@@ -112,7 +113,7 @@ function rosterCacheSet(credential: string, roster: readonly CursorModelInfo[]):
 export const rosterCacheForTests = {
   size: (): number => rosterCache.size,
   set: rosterCacheSet,
-  get: (credential: string): { roster: readonly CursorModelInfo[]; fetchedAt: number } | undefined =>
+  get: (credential: string): { roster: readonly CursorModelInfo[] } | undefined =>
     rosterCache.get(String(fnv1a32(credential))),
 };
 /** Client-heartbeat cadence the Cursor edge expects (donor `heartbeatMs`). */
@@ -905,10 +906,11 @@ class CursorAdapter implements ProviderAdapter {
     context: ProviderDispatchContext,
   ): Promise<readonly CursorModelInfo[]> {
     const key = String(fnv1a32(credential));
+    // Peek first: `get` deletes expired entries, but the stale roster must
+    // survive as the fallback when the refetch fails (see the catch below).
+    const stale = rosterCache.peek(key);
     const cached = rosterCache.get(key);
-    if (cached !== undefined && Date.now() - cached.fetchedAt < CURSOR_ROSTER_TTL_MS) {
-      return cached.roster;
-    }
+    if (cached !== undefined) return cached.roster;
     try {
       const roster = await fetchCursorModels({
         credential,
@@ -920,7 +922,7 @@ class CursorAdapter implements ProviderAdapter {
       rosterCacheSet(credential, roster);
       return roster;
     } catch {
-      return cached?.roster ?? [];
+      return stale?.roster ?? [];
     }
   }
 

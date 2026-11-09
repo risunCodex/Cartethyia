@@ -78,6 +78,38 @@ function parseSharedChildrenQuery(query: URLSearchParams): SharedChildrenPageOpt
   return { limit, offset, sortBy, order, status };
 }
 
+/**
+ * Drops the auth-cache snapshot for a key family: the parent first, then
+ * every child.
+ *
+ * Parent policy is live-inherited by children at auth time, so their cached
+ * snapshots must die with the parent — otherwise a denylist / budget edit
+ * looks like a no-op for up to AUTH_CACHE_TTL_MS per child.
+ */
+function invalidateFamilyCaches(keyId: string, children: readonly ApiKeyRecord[]): void {
+  invalidateApiKeyCache(keyId);
+  for (const child of children) invalidateApiKeyCache(child.id);
+}
+
+/**
+ * Purges admission counters for a key family: the parent first, then every
+ * child.
+ *
+ * Share children admit under the parent id, so the parent's counter must die
+ * with a revoked/regenerated parent too — otherwise a family budget can be
+ * bypassed by a counter seeded under the old credential.
+ */
+async function purgeFamilyAdmission(
+  admissionService: { purgeKey(apiKeyId: string): Promise<void> },
+  keyId: string,
+  children: readonly ApiKeyRecord[],
+): Promise<void> {
+  await Promise.all([
+    admissionService.purgeKey(keyId),
+    ...children.map((child) => admissionService.purgeKey(child.id)),
+  ]);
+}
+
 export function createApiKeyOperations(config: ApiKeyConfig) {
   const operations = {
     async listKeys(access: AccessDecision | undefined, includeChildren = false): Promise<ApiKeyResponse[]> {
@@ -92,17 +124,7 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
         const visible = includeChildren
           ? records.filter((record) => record.revokedAt === undefined)
           : topLevel;
-        // A share template's own counter is the live family accumulator now:
-        // every recipient commit adds to it (see ApiKeyAdmissionService
-        // commitUsage), so reporting it raw gives the enforced family total.
-        // No telemetry add-on is needed, and adding it here would double-count.
-        return Promise.all(
-          visible.map(async (record) => {
-            const response = sanitizeApiKeyResponse(record);
-            if (record.keyMode !== "share") return response;
-            return response;
-          }),
-      );
+        return visible.map(sanitizeApiKeyResponse);
     },
     async listActiveBannedKeys(access: AccessDecision | undefined): Promise<ApiKeyResponse[]> {
       const authorized = requireTenantScope(access, "dashboard:read");
@@ -343,11 +365,7 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
       });
       if (!updated) throw new ConsoleDomainError("key_not_found", 404, "Key not found");
       const children = await config.store.listChildren(authorized.tenantId, keyId);
-      // Parent policy is live-inherited by children at auth time, so their
-      // cached snapshots must die with the parent — otherwise a denylist /
-      // budget edit looks like a no-op for up to AUTH_CACHE_TTL_MS per child.
-      invalidateApiKeyCache(keyId);
-      for (const child of children) invalidateApiKeyCache(child.id);
+      invalidateFamilyCaches(keyId, children);
       // The allow/deny list and prefix decide which models `/v1/models`
       // returns, which is a different cache from the auth snapshot: the
       // listing is cached per (tenant, key, mode, list, prefix), so editing
@@ -397,10 +415,7 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
         // Drop stale admission counters so a newly lowered one-time/recurring
         // budget cannot be bypassed by a counter seeded under the looser limit.
         // Share children admit under the parent id, so purge the parent too.
-        await Promise.all([
-          config.admissionService.purgeKey(keyId),
-          ...children.map((child) => config.admissionService.purgeKey(child.id)),
-        ]);
+        await purgeFamilyAdmission(config.admissionService, keyId, children);
       }
       // Adding a daily/monthly ceiling to a key that already spent in the
       // current bucket must not hand it a full fresh budget: seed the counter
@@ -447,12 +462,8 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
       const children = await config.store.listChildren(authorized.tenantId, keyId);
       const removed = await config.store.remove(authorized.tenantId, keyId);
       if (!removed) throw new ConsoleDomainError("key_not_found", 404, "Key not found");
-      invalidateApiKeyCache(keyId);
-      for (const child of children) invalidateApiKeyCache(child.id);
-      await Promise.all([
-        config.admissionService.purgeKey(keyId),
-        ...children.map((child) => config.admissionService.purgeKey(child.id)),
-      ]);
+      invalidateFamilyCaches(keyId, children);
+      await purgeFamilyAdmission(config.admissionService, keyId, children);
       await config.auditSink?.record({
         access: authorized,
         action: "api_key.deleted",
@@ -626,8 +637,9 @@ export function createApiKeyOperations(config: ApiKeyConfig) {
         keyPrefix: generated.prefix,
       });
       if (!updated) throw new ConsoleDomainError("key_not_found", 404, "Key not found");
-      invalidateApiKeyCache(keyId);
-      await config.admissionService.purgeKey(keyId);
+      // Regeneration is personal-key only, so the family is the key itself.
+      invalidateFamilyCaches(keyId, []);
+      await purgeFamilyAdmission(config.admissionService, keyId, []);
       const shareStore = config.shareStore;
       let share: ShareKeyResponse | null = null;
       if (shareStore) {

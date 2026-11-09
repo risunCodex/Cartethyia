@@ -27,6 +27,7 @@ import { completeAttempt, estimatedUsage, nativeCompletionBase } from "./attempt
 import { runAttemptLoop } from "./attempt-loop";
 import { captureProviderRateLimit } from "./ratelimit-capture";
 import {
+  forwardUpstreamResponse,
   hasScope,
   jsonResponse,
   networkFetchContext,
@@ -133,14 +134,7 @@ async function passThrough(
     responseBody: null,
   });
   metrics.proxy_requests_total.inc(1, { status: "completed" });
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: {
-      "content-type": upstream.headers.get("content-type") ?? "text/event-stream",
-      "cache-control": "no-store",
-      "x-request-id": state.requestId,
-    },
-  });
+  return forwardUpstreamResponse(upstream, state.requestId, "text/event-stream");
 }
 
 /** Builds the handler for one generation surface. */

@@ -16,6 +16,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { SQLiteBunSession } from "drizzle-orm/bun-sqlite";
 import { resolveDbMode } from "./db-mode";
+import { providerAccounts } from "./schema";
 
 /** True when the running backend is the embedded SQLite database. */
 export function sqliteDialect(): boolean {
@@ -65,6 +66,23 @@ function hasSqliteDialect(database: unknown): boolean {
  */
 export function isSqliteDatabase(database: unknown): boolean {
   return hasSqliteDialect(database);
+}
+
+/**
+ * The `EXISTS` subquery for "the column's cooldown object has an entry whose
+ * ISO deadline is still in the future". The JSON check is dialect-specific:
+ * PostgreSQL uses `jsonb_each_text` (with a shape guard), SQLite `json_each`
+ * on its `text` column (D07). Timestamps are stored as ISO strings on both
+ * backends, so the lexical comparison against `nowIso` is stable.
+ *
+ * Callers keep their own scoping around this fragment — a tenant path must
+ * never touch `tenant_id IS NULL` rows, and the global path must only touch
+ * them — so only the shared JSON subquery lives here.
+ */
+export function liveModelCooldownExistsSql(database: unknown, nowIso: string): SQL {
+  return isSqliteDatabase(database)
+    ? sql`EXISTS (SELECT 1 FROM json_each(${providerAccounts.modelCooldowns}) AS entry WHERE json_valid(${providerAccounts.modelCooldowns}) AND json_type(${providerAccounts.modelCooldowns}) = 'object' AND entry.value > ${nowIso})`
+    : sql`EXISTS (SELECT 1 FROM jsonb_each_text(${providerAccounts.modelCooldowns}) AS entry WHERE jsonb_typeof(${providerAccounts.modelCooldowns}) = 'object' AND entry.value > ${nowIso})`;
 }
 
 /**

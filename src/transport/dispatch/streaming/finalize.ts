@@ -23,7 +23,7 @@ import type { AdmissionLease } from "../../../security/admission/contracts";
 import type { Reservation } from "../../routing/route-model";
 import { repriceUsage } from "../../../providers/provider-usage";
 import { metrics } from "../../../observability/metrics";
-import { flagPoolBlocked, flagPoolCooldown } from "../../../network/pool-health";
+import { flagPoolOnEgressFailure } from "../../../network/pool-health";
 import { classifyEgressFailure } from "../../../network/rate-limit-verdict";
 import { releaseAttemptLeases } from "../leases";
 import type { AttemptLeaseOwnership } from "../leases";
@@ -581,11 +581,14 @@ export class StreamFinalizer {
     this.streamSettled = true;
     if (candidate.networkPoolId && !cancelled && deps.poolSelector && err instanceof GatewayError) {
       const egressVerdict = classifyEgressFailure(err, candidate.providerId);
-      if (egressVerdict.kind === "cooldown") {
-        flagPoolCooldown(deps.poolSelector, deps.db, candidate.networkPoolId, candidate.providerId, err);
-      } else if (egressVerdict.kind === "blocked") {
-        flagPoolBlocked(deps.poolSelector, deps.db, candidate.networkPoolId, candidate.providerId, err);
-      }
+      flagPoolOnEgressFailure(
+        deps.poolSelector,
+        deps.db,
+        candidate.networkPoolId,
+        candidate.providerId,
+        err,
+        egressVerdict,
+      );
     }
     if (!cancelled) metrics.proxy_requests_total.inc(1, { status: "failed" });
     else metrics.proxy_requests_total.inc(1, { status: "cancelled" });

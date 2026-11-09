@@ -96,6 +96,59 @@ is now implemented; the audit was folded into its findings).
 under `documentation/proposals/parts/` were removed — the campaigns they
 describe are landed, so the proposals no longer document anything in flight.
 
+### Maintenance
+
+- **Source maintenance deepscan executed.** The composed audit
+(`documentation/proposals/src-maintenance-deepscan.md`, 60 CONFIRMED findings
+across 16 clusters) was implemented end-to-end: deduplication, dead-code
+removal, and canonical-owner consolidation across boot/config, transport
+(request/surface/dispatch/routing), providers (core, ops, integrations a–d),
+console (domains a/b), network/security, persistence/observability, and
+protocol. Highlights:
+  - Routing: soft-cooldown candidates now rank `COOLING` (ordered after every
+    healthy sibling); an all-soft pool answers 429 with the earliest reset
+    instead of routing into a cooling account.
+  - Routing: free-plan marker `FREE_PLAN_MARKERS` single-sourced; candidate
+    construction deduplicated via `buildCandidateBase`; dead
+    `EligibilityEvaluator.filter` removed.
+  - Provider core: bundled-metadata lookups hoisted to module-load time; a
+    canonical discovery-backed provider-id set replaces three re-spelled lists
+    and a drifted test copy; dead `ProviderRegistry.snapshot`/`#revision`
+    removed; JSON-credential token extraction single-sourced; provider-family
+    id sets now import canonical exports (`TRAE_PROVIDER_IDS` added).
+  - Provider ops: Claude module-local quota cache removed (shared two-tier
+    cache owns dedup; debit-ahead survives sweeps); quota-window parsers share
+    one field-resolution core; account+OAuth-state loading consolidated; five
+    client-version extractors removed in favor of `defaultExtract`.
+  - Integrations: Kiro conversation id resolved once per dispatch (single UUID
+    fallback); Kiro TokenType/effort mappings single-sourced; Perch envelope/
+    URL deduplicated; Trae region→host resolution centralized in
+    `trae-realm.ts`; Qoder roster-context/output resolvers single-sourced,
+    dead gRPC `_contextWindow` parameter dropped, empty-stream recovery net
+    removed (test-only), claim/check-in normalization helpers shared; provider
+    device-poll overrides and protobuf helpers deduplicated; Command Code and
+    OpenCode Go quota reuse shared coercion/date helpers.
+  - Console: loopback+drain-token gate (`requireLoopbackAdmin`), API-key
+    family cache-invalidation, account-status PATCH validation, pool-response
+    enrichment, live-cooldown SQL fragment, CSRF/mutation-limiter predicate,
+    and the IP-ban duration list all single-sourced; dead console code removed
+    (`summarizeUsagePerformance`, `injectorFor`, duplicate `numOrNull`).
+  - Network/security: provider-scoped egress-verdict audit writers
+    deduplicated; negative-auth-cache comment corrected.
+  - Persistence/observability: telemetry write/reconciliation row mapping
+    unified (backfill now fills `creditUsed`, `resolveMs`, `tokensPerSec`,
+    `firstContentDeltaAtMs`, `lastEventAtMs`, `payloadCaptureState`,
+    `degenerateStop`); dead file-based event-log reader removed; memory gauges
+    consolidated to one canonical series.
+  - Protocol: completion reasoning-effort parsing routes through shared
+    `parseReasoningIntent` (accepts `"instant"`); `reasoningTextForReplay`
+    single-sourced with summary-first precedence; the DSML/OMP/Qwen markup
+    parser scaffold unified behind `MarkupStreamParser<T>`.
+  - Validation: `tsc --noEmit` zero errors; full backend suite 4735 pass /
+    1 skip / 0 fail. Deferred: M-16/M-57 (Tier-3 latency batching, needs
+    benchmark), M-23/M-59 (plausible-unverified), M-42 PAT-exchange host
+    unification (needs live-host verification).
+
 ## [2.7.9] - 2026-11-08
 
 ### Added

@@ -43,17 +43,11 @@ import type { AdmissionLease } from "../../../security/admission/contracts";
 import type { NetworkPoolSelector } from "../../../network/pool/selector";
 import type { TelemetryBatchBuffer } from "../../../observability/telemetry-buffer";
 import type { ProviderExchangeCapture } from "../attempt-finalize";
-import { captureProviderExchange } from "../attempt-finalize";
-import {
-  providerCaptureMaxBytes,
-  resolveCaptureDepthForRequest,
-  resolveCaptureModeForRequest,
-  shouldCaptureProviderBodyForRequest,
-} from "../capture-policy";
+import { resolveCaptureModeForRequest } from "../capture-policy";
 import { resolveTenantImageClampMaxBytes, readTenantSystemPromptsForDispatch } from "../../request/tenant-preferences";
 import { resolveTenantSystemPrompt } from "../../request/system-prompt-injection";
 import { isWrappedInjectionProvider } from "../../../console/system-prompt/contracts";
-import { proxySuccessHeaders, buildUpstreamDispatchContext } from "../upstream";
+import { proxySuccessHeaders, buildUpstreamDispatchContext, buildDispatchNetworkBindings } from "../upstream";
 import type { AttemptLeaseOwnership } from "../leases";
 import type { ProviderContinuationScope } from "../../../providers/provider-contracts";
 import { resolveStreamFirstChunkTimeoutMs, resolveStreamStallTimeoutMs, resolveUpstreamTimeoutMs } from "../../../config/timeouts";
@@ -170,18 +164,13 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
     continuationScope,
   } = input;
 
-  const outboundFetch = deps.networkBindingFactory?.fetch(
+  const bindings = await buildDispatchNetworkBindings({
+    deps,
     networkPoolId,
-    prepared.authorization.snapshot.tenant_id,
-  );
-  const captureBody = outboundFetch
-    ? await shouldCaptureProviderBodyForRequest(deps.db, prepared.authorization.snapshot.tenant_id, state)
-    : false;
-  const captureDepth = await resolveCaptureDepthForRequest(
-    deps.db,
-    prepared.authorization.snapshot.tenant_id,
+    tenantId: prepared.authorization.snapshot.tenant_id,
+    providerCapture,
     state,
-  );
+  });
   // Resolved once, before the pipeline exists: the pipeline's diagnostics are
   // gated on it from construction, so `none`/`metadata` tenants never pay the
   // transcript serialization or the client-response copy for any event.
@@ -190,14 +179,6 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
     prepared.authorization.snapshot.tenant_id,
     state,
   );
-  const wrappedOutboundFetch = outboundFetch
-    ? captureProviderExchange(
-        outboundFetch,
-        providerCapture,
-        captureBody,
-        providerCaptureMaxBytes(captureDepth),
-      )
-    : undefined;
   // Same memoized ceiling the non-streaming path resolves, read before the
   // dispatch context is built so a stream gets the same limit as a normal
   // request rather than silently falling back to the deployment default.
@@ -237,16 +218,7 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
       return text === undefined ? {} : { tenantSystemPrompt: text };
     })()),
     ...(candidate.user_agent === undefined ? {} : { userAgent: candidate.user_agent }),
-    ...(wrappedOutboundFetch ? { outboundFetch: wrappedOutboundFetch } : {}),
-    ...(outboundFetch ? { outboundAttachmentFetch: outboundFetch } : {}),
-    ...(deps.networkBindingFactory
-      ? {
-          outboundHttp2: deps.networkBindingFactory.http2Bidi(
-            networkPoolId,
-            prepared.authorization.snapshot.tenant_id,
-          ),
-        }
-      : {}),
+    ...bindings,
     ...(leaseOwnership === undefined ? {} : { leaseOwnership }),
     ...(continuationScope === undefined ? {} : { continuationScope }),
     ...(providerCapture ? { providerCapture } : {}),

@@ -177,11 +177,22 @@ describe("client version monitor snapshot", () => {
     expect(VERSION_SOURCES.kiro.sources[0]?.url).toBe(
       "https://formulae.brew.sh/api/cask/kiro.json",
     );
-    await expect(
-      VERSION_SOURCES.kiro.sources[0]?.extract?.(
-        new Response(JSON.stringify({ version: "1.2.56" })),
-      ),
-    ).resolves.toBe("1.2.56");
+    // The cask source uses the default extractor (no bespoke `extract`), which
+    // reads the JSON `version` field — prove the effective path resolves it.
+    const resolver = createClientVersionResolver({
+      key: `test-kiro-cask-${crypto.randomUUID()}`,
+      client: "kiro",
+      fallback: "1.4.121",
+      sources: [VERSION_SOURCES.kiro.sources[0]!],
+    });
+    await resolver.ensure(
+      async () =>
+        new Response(JSON.stringify({ version: "1.2.56" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    expect(resolver.snapshot().version).toBe("1.2.56");
   });
 
   test("matches Claude and Kiro SDK fingerprints embedded in their current clients", () => {
@@ -193,6 +204,75 @@ describe("client version monitor snapshot", () => {
     expect(buildKiroSsoUserAgent()).toContain("aws-sdk-js/3.980.0");
     expect(buildKiroSsoAmzUserAgent()).toBe("aws-sdk-js/3.980.0 KiroIDE");
   });
+});
+
+describe("default extractor covers the consolidated sources", () => {
+  // M-27: qoder, cline client, cline sdk, kiro cask, and kimi used to carry
+  // bespoke extractors that were exact subsets of the resolver's default; they
+  // now rely on it. Each must still resolve its source's newer version through
+  // `ensure()` — the same pin the old extractor produced.
+  const cases: readonly {
+    readonly name: string;
+    readonly key: string;
+    readonly source: { url: string };
+    readonly body: unknown;
+    readonly expected: string;
+  }[] = [
+    {
+      name: "qoder npm",
+      key: "test-qoder",
+      source: VERSION_SOURCES.qoder.sources[0]!,
+      body: { version: "1.1.81" },
+      expected: "1.1.81",
+    },
+    {
+      name: "cline vscode extension",
+      key: "test-cline-client",
+      source: VERSION_SOURCES.clineClient.sources[0]!,
+      body: { name: "cline", version: "4.1.27" },
+      expected: "4.1.27",
+    },
+    {
+      name: "cline sdk npm",
+      key: "test-cline-sdk",
+      source: VERSION_SOURCES.clineSdk.sources[0]!,
+      body: { version: "0.2.1", "dist-tags": { latest: "0.2.1" } },
+      expected: "0.2.1",
+    },
+    {
+      name: "kiro cask",
+      key: "test-kiro-cask",
+      source: VERSION_SOURCES.kiro.sources[0]!,
+      body: { version: "1.4.122" },
+      expected: "1.4.122",
+    },
+    {
+      name: "kimi pypi",
+      key: "test-kimi",
+      source: VERSION_SOURCES.kimiCli.sources[0]!,
+      body: { info: { version: "1.52.1" } },
+      expected: "1.52.1",
+    },
+  ];
+
+  for (const { name, key, source, body, expected } of cases) {
+    test(`${name} resolves through the default extractor`, async () => {
+      const resolver = createClientVersionResolver({
+        key: `${key}-${crypto.randomUUID()}`,
+        client: key,
+        fallback: "0.0.0",
+        sources: [source],
+      });
+      await resolver.ensure(
+        async () =>
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      );
+      expect(resolver.snapshot().version).toBe(expected);
+    });
+  }
 });
 
 describe("pinnedClientVersions", () => {

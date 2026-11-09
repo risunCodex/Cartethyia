@@ -2,6 +2,7 @@ import { closeDb } from "../persistence/boot";
 import { closeRedis } from "../persistence/redis";
 import { buildProductionDeps } from "./dependencies";
 import type { ProductionDeps } from "./dependencies";
+import { flushAllBuffers } from "./flush";
 import { withTimeout } from "./timeout";
 import { resolveShutdownDrainWindowMs } from "../config/runtime";
 import { log } from "../observability/logger";
@@ -35,8 +36,11 @@ export class ShutdownCoordinator {
   ) {
     this.hooks = hooks ?? {};
     this.drainWindowMs = opts?.drainWindowMs ?? 20_000;
-    this.drainTimeoutMs = opts?.drainTimeoutMs ?? 5_000;
-    this.flushTimeoutMs = opts?.flushTimeoutMs ?? 2_000;
+    // Defaults mirror what `bootstrap()` passes (8_000 / 1_000; drainWindowMs
+    // 20_000 is the spec default `resolveShutdownDrainWindowMs()` returns), so
+    // reasoning about drain timing from the class alone matches production.
+    this.drainTimeoutMs = opts?.drainTimeoutMs ?? 8_000;
+    this.flushTimeoutMs = opts?.flushTimeoutMs ?? 1_000;
   }
 
   /**
@@ -217,9 +221,7 @@ export async function bootstrap(): Promise<CartethyiaBoot> {
     shutdownCoordinator: new ShutdownCoordinator(
       {
         flushTelemetry: async () => {
-          await deps.telemetryBuffer.flush();
-          await deps.usageFlush.flush();
-          await deps.healthEventFlush.flush();
+          await flushAllBuffers(deps);
         },
         closePools: async () => {
           await boot.server?.stop();

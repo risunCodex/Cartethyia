@@ -58,8 +58,14 @@ export function isProxyDispatchRoute(path: string | undefined): path is string {
   return path !== undefined && isJsonProxyRoute(path);
 }
 
+/**
+ * The same canonical JSON-route membership as `isProxyDispatchRoute`, kept as
+ * a non-narrowing alias for callers that already hold a string path. One
+ * predicate, two spellings, so a route-table change cannot diverge between
+ * the body-read policy and the canonical-parse gate.
+ */
 export function isJsonProxyRoutePath(path: string): boolean {
-  return isJsonProxyRoute(path);
+  return isProxyDispatchRoute(path);
 }
 
 interface IngressPolicyOptions {

@@ -145,6 +145,110 @@ export interface AccountWithFreshness {
   readonly dueAt: number | undefined;
 }
 
+/** Columns every account+OAuth-state reader selects; narrower readers pick from it. */
+export interface AccountWithOauthStateRow {
+  readonly id: string;
+  readonly providerId: string;
+  readonly credentialKind: CredentialKind;
+  readonly credentialCiphertext: Buffer | null;
+  readonly refreshCiphertext: Buffer | null;
+  readonly authState: unknown;
+  readonly clientSecretCiphertext: Buffer | null;
+  readonly staticToken: boolean;
+}
+
+/** Which optional columns a reader wants on top of the shared base. */
+export interface LoadAccountWithOauthStateOptions {
+  /** Select `status` from providerAccounts. */
+  readonly includeStatus?: boolean;
+  /** Select `expiresAt` from providerOauthStates. */
+  readonly includeExpiry?: boolean;
+  /** Also compute the skew-adjusted OAuth due time (see `loadAccountWithFreshness`). */
+  readonly includeDueAt?: boolean;
+  /** Refresh lead override for the `dueAt` skew; defaults to `refreshLeadMs(providerId)`. */
+  readonly skewMs?: number;
+}
+
+/** One loaded account row plus whatever optional columns were requested. */
+export interface LoadedAccountWithOauthState {
+  readonly id: string;
+  readonly providerId: string;
+  readonly credentialKind: CredentialKind;
+  readonly credentialCiphertext: Buffer | null;
+  readonly refreshCiphertext: Buffer | null;
+  readonly authState: unknown;
+  readonly clientSecretCiphertext: Buffer | null;
+  readonly staticToken: boolean;
+  readonly status?: string;
+  readonly expiresAt?: Date | null;
+  readonly dueAt?: number;
+}
+
+/**
+ * Shared account+OAuth-state loader behind every status/health reader.
+ *
+ * Builds the same `select(...).from(providerAccounts)` with the conditional
+ * `leftJoin` on `providerOauthStates` (the memory/Postgres dialect guard), so
+ * a schema or dialect change is fixed once instead of in four copies. The
+ * `dueAt` skew logic lives here too; `loadAccountWithFreshness` is a thin
+ * wrapper that returns it beside the row.
+ */
+export async function loadAccountWithOauthState(
+  db: CartethyiaDatabase,
+  accountId: string,
+  options: LoadAccountWithOauthStateOptions = {},
+): Promise<LoadedAccountWithOauthState | undefined> {
+  const selectBuilder = db
+    .select({
+      id: providerAccounts.id,
+      providerId: providerAccounts.providerId,
+      credentialKind: providerAccounts.credentialKind,
+      credentialCiphertext: providerAccounts.credentialCiphertext,
+      refreshCiphertext: providerOauthStates.refreshCiphertext,
+      authState: providerAccounts.authState,
+      clientSecretCiphertext: providerOauthStates.clientSecretCiphertext,
+      staticToken: providerAccounts.staticToken,
+      ...(options.includeStatus === true ? { status: providerAccounts.status } : {}),
+      ...(options.includeExpiry === true || options.includeDueAt === true
+        ? { expiresAt: providerOauthStates.expiresAt }
+        : {}),
+    })
+    .from(providerAccounts);
+  const query = "leftJoin" in selectBuilder
+    ? selectBuilder.leftJoin(
+        providerOauthStates,
+        eq(providerOauthStates.providerAccountId, providerAccounts.id),
+      )
+    : selectBuilder;
+  const rows = await query.where(eq(providerAccounts.id, accountId)).limit(1);
+  const row = rows[0];
+  if (!row) return undefined;
+  if (options.includeDueAt !== true) return row;
+  const lead = options.skewMs ?? refreshLeadMs(row.providerId);
+  // A refresh-capable OAuth account with no stored expiry is unknown-liveness:
+  // we have no evidence the access token still works. Marking the token due
+  // immediately refreshes it on first use; the sweep handles the normal case
+  // where `expires_at` is populated.
+  const hasRefreshGrant = row.refreshCiphertext != null;
+  const kindOauth = row.credentialKind === "oauth";
+  const unknownExpiryButRefreshable =
+    kindOauth && !row.staticToken && hasRefreshGrant && row.expiresAt == null;
+  // A static token is never "due": it is used as issued and there is no
+  // refresh to run, so the dispatch path must not treat it as stale.
+  const dueAt =
+    row.staticToken
+      ? undefined
+      : row.expiresAt != null
+        ? row.expiresAt.getTime() - lead
+        : unknownExpiryButRefreshable
+          ? 0
+          : undefined;
+  return {
+    ...row,
+    ...(dueAt === undefined ? {} : { dueAt }),
+  };
+}
+
 /**
  * Loads an account and its optional OAuth state in one query.
  *
@@ -158,57 +262,23 @@ export async function loadAccountWithFreshness(
   accountId: string,
   skewMs?: number,
 ): Promise<AccountWithFreshness | undefined> {
-  const selectBuilder = db
-    .select({
-      id: providerAccounts.id,
-      providerId: providerAccounts.providerId,
-      credentialKind: providerAccounts.credentialKind,
-      credentialCiphertext: providerAccounts.credentialCiphertext,
-      refreshCiphertext: providerOauthStates.refreshCiphertext,
-      authState: providerAccounts.authState,
-      clientSecretCiphertext: providerOauthStates.clientSecretCiphertext,
-      expiresAt: providerOauthStates.expiresAt,
-      staticToken: providerAccounts.staticToken,
-    })
-    .from(providerAccounts);
-  const query = "leftJoin" in selectBuilder
-    ? selectBuilder.leftJoin(
-        providerOauthStates,
-        eq(providerOauthStates.providerAccountId, providerAccounts.id),
-      )
-    : selectBuilder;
-  const rows = await query.where(eq(providerAccounts.id, accountId)).limit(1);
-  const row = rows[0];
-  if (!row) return undefined;
-  const lead = skewMs ?? refreshLeadMs(row.providerId);
-  // A refresh-capable OAuth account with no stored expiry is unknown-liveness:
-  // we have no evidence the access token still works. The old rule left
-  // `dueAt` undefined for these, so `resolveCredentialForAccount` skipped the
-  // refresh branch and dispatch sent the pasted token as-is. For a token that
-  // had already expired on another installation (a 9router/Omniroute import
-  // carrying `accessToken` + `refreshToken` + a past `expiresAt` that was
-  // dropped by validation, a hand-pasted OAuth bundle with no expiry field,
-  // or an upstream that stopped minting expiries) that produced the exact
-  // "re-authenticate" refusal the refresh grant exists to prevent. Marking the
-  // token due immediately refreshes it on first use; the sweep handles the
-  // normal case where `expires_at` is populated.
-  const hasRefreshGrant = row.refreshCiphertext != null;
-  const kindOauth = row.credentialKind === "oauth";
-  const unknownExpiryButRefreshable =
-    kindOauth && !row.staticToken && hasRefreshGrant && row.expiresAt == null;
-  return {
-    row,
-    // A static token is never "due": it is used as issued and there is no
-    // refresh to run, so the dispatch path must not treat it as stale.
-    dueAt:
-      row.staticToken
-        ? undefined
-        : row.expiresAt != null
-          ? row.expiresAt.getTime() - lead
-          : unknownExpiryButRefreshable
-            ? 0
-            : undefined,
+  const loaded = await loadAccountWithOauthState(db, accountId, {
+    includeDueAt: true,
+    ...(skewMs === undefined ? {} : { skewMs }),
+  });
+  if (!loaded) return undefined;
+  const row: AccountWithFreshnessRow = {
+    id: loaded.id,
+    providerId: loaded.providerId,
+    credentialKind: loaded.credentialKind,
+    credentialCiphertext: loaded.credentialCiphertext,
+    refreshCiphertext: loaded.refreshCiphertext,
+    authState: loaded.authState,
+    clientSecretCiphertext: loaded.clientSecretCiphertext,
+    expiresAt: loaded.expiresAt ?? null,
+    staticToken: loaded.staticToken,
   };
+  return { row, dueAt: loaded.dueAt };
 }
 
 /** OAuth refresh collaborators, injected by the composition root. */

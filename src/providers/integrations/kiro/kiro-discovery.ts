@@ -22,13 +22,18 @@ import {
 } from "../../operations/client-versions";
 import { machineIdForAuthState } from "./kiro-machine-id";
 import { resolveKiroProfileArn } from "./kiro-profile";
-import { AWS_REGION_PATTERN, KIRO_DEFAULT_REGION, KIRO_GENERATE_PATH, KIRO_MODELS, KIRO_MANAGEMENT_HOST_TEMPLATE } from "./kiro-catalog";
+import {
+  AWS_REGION_PATTERN,
+  KIRO_DEFAULT_REGION,
+  KIRO_EFFORTS,
+  KIRO_GENERATE_PATH,
+  KIRO_MODELS,
+  KIRO_MANAGEMENT_HOST_TEMPLATE,
+  kiroTokenTypeHeader,
+} from "./kiro-catalog";
 
 /** Longest model list this will read; the upstream sends a few dozen at most. */
 const MAX_DISCOVERED_MODELS = 500;
-
-/** Effort tiers the models that accept an effort field advertise. */
-const KIRO_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 
 /** The management service target used in `x-amz-target`. */
 const KIRO_MANAGEMENT_TARGET = "KiroControlPlaneBearerService.ListAvailableModels" as const;
@@ -105,14 +110,7 @@ export async function fetchKiroModels(
     // `TokenType`; social/Builder-ID sessions send none. Mirror the client's
     // `qje` map and the probe verified against the live service.
     const authMethod = options.authState?.["authMethod"];
-    const tokenType =
-      authMethod === "api_key"
-        ? "API_KEY"
-        : authMethod === "external_idp"
-          ? "EXTERNAL_IDP"
-          : authMethod === "idc"
-            ? "SSO_OIDC"
-            : undefined;
+    const tokenType = kiroTokenTypeHeader(typeof authMethod === "string" ? authMethod : undefined);
     if (tokenType !== undefined) headers["TokenType"] = tokenType;
     response = await fetcher(`${host}/List-Available-Models?${params.toString()}`, {
       headers,

@@ -33,7 +33,7 @@ import { join } from "node:path";
 import type { CartethyiaDatabase } from "../persistence/db-handle";
 import { telemetryEvents, telemetryReconciliationState } from "../persistence/schema";
 import { TELEMETRY_EVENT_DIR } from "./event-log";
-import { clientNameFromUserAgent } from "./client-name";
+import { telemetryInsertRow } from "./telemetry-row";
 import type { TelemetryEventRecord } from "./event-log";
 import { hourStamp } from "../shared/time";
 
@@ -143,43 +143,15 @@ function parseChunk(text: string): { readonly events: TelemetryEventRecord[]; re
   return { events, carry };
 }
 
-/** The columns the backfill inserts. Mirrors `telemetryEventRow` on the write path. */
+/** The columns the backfill inserts. Shared with the write path via
+ * {@link telemetryInsertRow}, so a recovered row carries exactly the columns
+ * the request path persists — including creditUsed, resolveMs, tokensPerSec,
+ * firstContentDeltaAtMs, lastEventAtMs, payloadCaptureState, and degenerateStop,
+ * which a hand-maintained mirror used to drop. */
 function toRow(event: TelemetryEventRecord): typeof telemetryEvents.$inferInsert {
-  return {
-    // `id = requestId` is what makes the unique index a working idempotency
-    // boundary: a retry of the same request carries the same id.
-    id: event.requestId,
-    tenantId: event.tenantId!,
-    requestId: event.requestId,
-    sourceSurface: event.sourceSurface as typeof telemetryEvents.$inferInsert.sourceSurface,
-    requestedModel: event.requestedModel,
-    reportedModel: event.reportedModel,
-    requestedEffort: event.requestedEffort,
-    providerId: event.providerId,
-    accountId: event.accountId,
-    networkPoolId: event.networkPoolId,
-    endpoint: event.endpoint,
-    apiKeyId: event.apiKeyId,
-    userAgent: event.userAgent,
-    // Derived the same way ingestion derives it, so a backfilled row groups
-    // with the rows the request path wrote instead of forming its own bucket.
-    clientName: clientNameFromUserAgent(event.userAgent),
-    clientIp: event.clientIp,
-    latencyMs: event.latencyMs,
-    ttfbMs: event.ttfbMs,
-    stream: event.stream,
-    httpStatus: event.httpStatus,
-    status: event.status as typeof telemetryEvents.$inferInsert.status,
-    errorCategory: event.errorCategory,
-    errorOrigin: event.errorOrigin,
-    inputTokens: event.inputTokens,
-    cachedInputTokens: event.cachedInputTokens,
-    outputTokens: event.outputTokens,
-    reasoningTokens: event.reasoningTokens,
-    estimatedCostUsd:
-      event.estimatedCostUsd === null ? null : String(event.estimatedCostUsd),
-    createdAt: new Date(event.createdAt),
-  };
+  // `parseChunk` guarantees `tenantId` is a string before a record reaches
+  // here; the type keeps it optional because the raw shape predates that gate.
+  return telemetryInsertRow({ ...event, tenantId: event.tenantId! });
 }
 
 /**

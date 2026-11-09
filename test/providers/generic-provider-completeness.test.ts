@@ -20,6 +20,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+  DISCOVERY_BACKED_PROVIDER_IDS,
   GENERIC_API_KEY_PROVIDER_IDS,
   GENERIC_API_KEY_SPECS,
   VERSIONED_ROOT_API_KEY_PROVIDER_IDS,
@@ -34,30 +35,6 @@ import type { WireFamily } from "../../src/protocol/canonical-model";
 
 const registry = createDefaultProviderRegistry();
 
-/** Ids registered through the shared discovery-backed helper. */
-const DISCOVERY_BACKED = [
-  "groq",
-  "together",
-  "deepinfra",
-  "siliconflow",
-  "siliconflowcn",
-  "novita",
-  "venice",
-  "nanogpt",
-  "baseten",
-  "synthetic",
-  "stepfun",
-  "sakana",
-  "helmcode",
-  "coralbricks",
-  "aiand",
-  "wafer",
-  "coreweave",
-  "qianfan",
-  "zhipucoding",
-  "firepass",
-] as const;
-
 describe("bundled API-key provider completeness", () => {
   test("every generic spec id has a spec row and a registry entry", () => {
     for (const providerId of GENERIC_API_KEY_PROVIDER_IDS) {
@@ -71,14 +48,14 @@ describe("bundled API-key provider completeness", () => {
   test("every discovery-backed provider registers a discovery resolver", () => {
     // The assertion that catches a catalog-less, discovery-less provider. Each
     // id here is one an operator can otherwise never populate.
-    for (const providerId of DISCOVERY_BACKED) {
+    for (const providerId of DISCOVERY_BACKED_PROVIDER_IDS) {
       expect(registry.hasModelDiscovery(providerId)).toBe(true);
     }
   });
 
   test("a discovery-backed provider declares an endpoint path for its wire", () => {
     // A resolver with no path behind it discovers models it cannot dispatch.
-    for (const providerId of DISCOVERY_BACKED) {
+    for (const providerId of DISCOVERY_BACKED_PROVIDER_IDS) {
       const module = BUNDLED_PROVIDER_MODULES.find((m) => m.id === providerId);
       expect(module).toBeDefined();
       expect(Object.keys(module!.endpointPathsByWireFamily ?? {}).length).toBeGreaterThan(0);

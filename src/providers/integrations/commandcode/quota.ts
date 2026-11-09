@@ -15,6 +15,8 @@
  * independent: retain the balance or subscription when the other is unavailable.
  */
 import type { FetchLike, ProviderQuotaResult, ProviderQuotaWindow } from "../../quota/quota-contracts";
+import { isoDate } from "../../quota/quota-contracts";
+import { asCoercedNumber, asRecord } from "../../../shared/coerce";
 
 const COMMANDCODE_API_BASE = "https://api.commandcode.ai" as const;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -73,29 +75,21 @@ async function readJson(
   }
 }
 
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
+/** Numeric value coerced via the shared helper, or `null` (shared sentinel). */
 function numberOrNull(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) {
-    return Number(value);
-  }
-  return null;
+  return asCoercedNumber(value) ?? null;
 }
 
+/**
+ * ISO timestamp from a numeric epoch (seconds vs ms via the 1e12 boundary) or
+ * a parseable date string, else `null` — the shared `isoDate` semantics. The
+ * one local delta kept: a non-positive numeric is `null` (no deadline) rather
+ * than an epoch 0/negative instant.
+ */
 function isoTimestamp(value: unknown): string | null {
   const numeric = numberOrNull(value);
-  if (numeric !== null) {
-    if (numeric <= 0) return null;
-    const date = new Date(numeric > 1_000_000_000_000 ? numeric : numeric * 1000);
-    return Number.isFinite(date.getTime()) ? date.toISOString() : null;
-  }
-  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return null;
-  return new Date(value).toISOString();
+  if (numeric !== null && numeric <= 0) return null;
+  return isoDate(value);
 }
 
 function withQuery(path: string, params: Readonly<Record<string, string | null>>): string {
@@ -149,8 +143,8 @@ function windowLimits(
   limits: Record<string, unknown>,
 ): readonly ProviderQuotaWindow[] {
   const out: ProviderQuotaWindow[] = [];
-  const fiveHour = recordValue(limits["fiveHour"]);
-  const weekly = recordValue(limits["weekly"]);
+  const fiveHour = asRecord(limits["fiveHour"]);
+  const weekly = asRecord(limits["weekly"]);
   const push = (source: Record<string, unknown> | undefined, kind: string, label: string) => {
     if (source === undefined) return;
     const used = numberOrNull(source["used"]) ?? 0;
@@ -191,9 +185,9 @@ export async function fetchCommandCodeQuota(
     };
   }
 
-  const whoamiBody = whoami.ok ? recordValue(whoami.value) : undefined;
-  const user = recordValue(whoamiBody?.["user"]);
-  const organization = recordValue(whoamiBody?.["org"]);
+  const whoamiBody = whoami.ok ? asRecord(whoami.value) : undefined;
+  const user = asRecord(whoamiBody?.["user"]);
+  const organization = asRecord(whoamiBody?.["org"]);
   const orgId = typeof organization?.["id"] === "string" ? organization["id"] : null;
   const accountLabel =
     (typeof user?.["email"] === "string" && user["email"]) ||
@@ -215,8 +209,8 @@ export async function fetchCommandCodeQuota(
     };
   }
 
-  const subscriptionBody = subscriptionRaw.ok ? recordValue(subscriptionRaw.value) : undefined;
-  const planRecord = recordValue(subscriptionBody?.["data"]);
+  const subscriptionBody = subscriptionRaw.ok ? asRecord(subscriptionRaw.value) : undefined;
+  const planRecord = asRecord(subscriptionBody?.["data"]);
   const planId = typeof planRecord?.["planId"] === "string" ? planRecord["planId"] : null;
   const parsedPlan = planId === null ? null : commandCodePlan(planId);
   const plan =
@@ -225,12 +219,12 @@ export async function fetchCommandCodeQuota(
     (creditsRaw.ok ? "Credits" : null);
   const periodEnd = isoTimestamp(planRecord?.["currentPeriodEnd"]);
 
-  const creditsBody = creditsRaw.ok ? recordValue(creditsRaw.value) : undefined;
+  const creditsBody = creditsRaw.ok ? asRecord(creditsRaw.value) : undefined;
   const windows: ProviderQuotaWindow[] = [];
   if (creditsBody !== undefined) {
-    const credits = recordValue(creditsBody["credits"]);
+    const credits = asRecord(creditsBody["credits"]);
     if (credits !== undefined) windows.push(...creditWindows(credits, parsedPlan?.cap ?? null, periodEnd));
-    const limits = recordValue(creditsBody["windowLimits"]);
+    const limits = asRecord(creditsBody["windowLimits"]);
     if (limits !== undefined) windows.push(...windowLimits(limits));
   }
 

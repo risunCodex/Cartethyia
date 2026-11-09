@@ -497,13 +497,6 @@ export class EligibilityEvaluator {
       return { eligible: true, reason: "cooldown", candidate, ...spreadDeadline(candidate.cooldown_until) };
     return { eligible: true, reason: "healthy", candidate };
   }
-
-  filter(candidates: readonly RouteCandidate[]): readonly RouteCandidate[] {
-    return candidates
-      .map((c) => this.evaluate(c))
-      .filter((d) => d.eligible)
-      .map((d) => d.candidate);
-  }
 }
 
 export class RoutingEngine {
@@ -787,6 +780,28 @@ export class RoutingEngine {
           },
         };
       }
+    }
+    // A soft cooldown is a deprioritization, not an exclusion: the evaluator
+    // returned it eligible (so a single-account deployment still routes), but
+    // it must still behind every fresh/slow sibling. Without this branch the
+    // candidate falls through to the quota classification below, which labels
+    // it FRESH_KNOWN/FRESH_UNKNOWN and lets it sort ahead of healthy accounts —
+    // the "still hit a cooled-down account, never failed over" report. The raw
+    // `reason` stays `"cooldown"` so `ELIGIBILITY_REASON_LABELS` and the
+    // envelope `reasons` stream are untouched, and the reset deadline rides
+    // along for the all-cooling 429 answer.
+    if (eligibility.reason === "cooldown") {
+      return {
+        candidate,
+        decision: {
+          eligible: true,
+          rank: ROUTING_RANK.COOLING,
+          reason: "cooldown",
+          ...(eligibility.cooldown_until !== undefined
+            ? { cooldown_until: eligibility.cooldown_until }
+            : {}),
+        },
+      };
     }
     // Unified engine: unknown quota is eligible but lower-rank than known-available.
     if (fact !== undefined) {

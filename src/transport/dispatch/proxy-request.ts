@@ -11,7 +11,7 @@ import { chatAdapter } from "../surface/chat/adapter";
 import { responsesAdapter } from "../surface/responses/adapter";
 import { messagesAdapter } from "../surface/messages/adapter";
 import { completionAdapter } from "../surface/completion";
-import { forwardedRequestHeaders, proxySuccessHeaders, buildUpstreamDispatchContext, reportedModelFrom } from "./upstream";
+import { forwardedRequestHeaders, proxySuccessHeaders, buildUpstreamDispatchContext, buildDispatchNetworkBindings, reportedModelFrom } from "./upstream";
 import { resolvePromptCacheKey } from "../../providers/operations/session-resolution";
 import {
   applyTenantPreferences,
@@ -21,18 +21,12 @@ import {
 import { metrics } from "../../observability/metrics";
 import { repriceUsage } from "../../providers/provider-usage";
 import {
-  captureProviderExchange,
   completeAttempt,
   completionContext,
   estimatedUsage,
   parseCapturedBody,
   terminalFailure,
 } from "./attempt-finalize";
-import {
-  providerCaptureMaxBytes,
-  resolveCaptureDepthForRequest,
-  shouldCaptureProviderBodyForRequest,
-} from "./capture-policy";
 import { runAttemptLoop } from "./attempt-loop";
 import { projectForRoute, routeCapabilitiesFor } from "../../protocol/translation/capabilities";
 import { dispatchStreamingAttempt } from "./streaming/stream";
@@ -264,45 +258,13 @@ export async function handleProviderProxyRequest(
         ...(tenantSystemPromptText === undefined ? {} : { tenantSystemPrompt: tenantSystemPromptText }),
         ...(candidate.user_agent === undefined ? {} : { userAgent: candidate.user_agent }),
         ...(providerCapture ? { providerCapture } : {}),
-        ...(deps.networkBindingFactory
-          ? {
-              outboundFetch: captureProviderExchange(
-                deps.networkBindingFactory.fetch(
-                  networkPoolId,
-                  prepared.authorization.snapshot.tenant_id,
-                ),
-                providerCapture,
-                await shouldCaptureProviderBodyForRequest(
-                  deps.db,
-                  prepared.authorization.snapshot.tenant_id,
-                  state,
-                ),
-                providerCaptureMaxBytes(
-                  await resolveCaptureDepthForRequest(
-                    deps.db,
-                    prepared.authorization.snapshot.tenant_id,
-                    state,
-                  ),
-                ),
-              ),
-            }
-          : {}),
-        ...(deps.networkBindingFactory
-          ? {
-              outboundAttachmentFetch: deps.networkBindingFactory.fetch(
-                networkPoolId,
-                prepared.authorization.snapshot.tenant_id,
-              ),
-            }
-          : {}),
-        ...(deps.networkBindingFactory
-          ? {
-              outboundHttp2: deps.networkBindingFactory.http2Bidi(
-                networkPoolId,
-                prepared.authorization.snapshot.tenant_id,
-              ),
-            }
-          : {}),
+        ...(await buildDispatchNetworkBindings({
+          deps,
+          networkPoolId,
+          tenantId: prepared.authorization.snapshot.tenant_id,
+          providerCapture,
+          state,
+        })),
         ...(leaseOwnership === undefined ? {} : { leaseOwnership }),
         ...(continuationScope === undefined ? {} : { continuationScope }),
       });

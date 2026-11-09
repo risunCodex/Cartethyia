@@ -1,5 +1,6 @@
 import {
   getJson,
+  isoDate,
   type FetchLike,
   type ProviderQuotaResult,
   type ProviderQuotaWindow,
@@ -42,13 +43,6 @@ function labelFor(kind: string): string {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
-function resetIso(value: string | null | undefined): string | null {
-  if (typeof value !== "string" || value.trim() === "") return null;
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed)) return null;
-  return new Date(parsed).toISOString();
-}
-
 /**
  * One window, or `undefined` when the upstream omitted what makes it usable.
  *
@@ -75,7 +69,7 @@ function windowFor(
     accounting: "independent",
     usedPercent: percent,
     remainingPercent: 100 - percent,
-    resetsAt: resetIso(raw.resetsAt),
+    resetsAt: isoDate(raw.resetsAt),
   };
 }
 

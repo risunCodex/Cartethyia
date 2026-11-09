@@ -1,11 +1,12 @@
 import { GatewayError } from "../../protocol/gateway-error";
 import type { CanonicalEvent, CanonicalRequest, GenerationControls } from "../../protocol/canonical-model";
-import type { ReasoningIntent } from "../../protocol/canonical-model";
+import { parseReasoningIntent } from "./dialects";
 import type { SurfaceAdapter, SurfaceInput, SurfaceOutput } from "./adapters";
 import { eventText } from "./adapters";
 import { isRecord } from "../../protocol/codecs";
 import { textPart } from "./content-parts";
 import { usageToChatWire, type OpenAiUsage } from "../../providers/provider-usage";
+import { completionFinishReason } from "../../protocol/stop-reason";
 import { TEXT_ENCODER } from "../../protocol/sse-frame";
 import { SurfaceStreamEncoder } from "./stream-frame";
 
@@ -35,24 +36,24 @@ function textPrompts(value: unknown): string[] {
   return value.flatMap((prompt) => (typeof prompt === "string" ? [prompt] : []));
 }
 
-function stopReason(events: readonly CanonicalEvent[]): string | null {
-  const terminal = [...events].reverse().find((event) => event.type === "terminal");
+/**
+ * Completion's wire stop reason from a terminal event (or `null` when no
+ * terminal has been seen). Both the sync adapter and the streaming encoder
+ * derive it through the shared canonical stop-reason mapping so the two
+ * halves of the completion surface cannot drift.
+ */
+function completionStopReason(terminal: CanonicalEvent | undefined): string | null {
   if (terminal?.type !== "terminal") return null;
-  if (terminal.stop_reason === "length") return "length";
-  if (terminal.stop_reason === "content_filter") return "content_filter";
-  if (terminal.state === "complete" || terminal.stop_reason === "stop") return "stop";
-  return null;
+  return completionFinishReason(terminal.stop_reason, terminal.state);
 }
 
 /**
  * Completion wire usage. Delegates to the chat builder (same wire family), so
  * completion responses carry cache/reasoning details, not just the three totals.
  */
-function usage(events: readonly CanonicalEvent[]): OpenAiUsage | undefined {
-  const terminal = [...events].reverse().find((event) => event.type === "terminal");
+function completionUsage(terminal: CanonicalEvent | undefined, usageEvent: CanonicalEvent | undefined): OpenAiUsage | undefined {
   const record = terminal?.type === "terminal" ? terminal.usage : undefined;
-  const event = [...events].reverse().find((item) => item.type === "usage");
-  const source = record ?? (event?.type === "usage" ? event.usage : undefined);
+  const source = record ?? (usageEvent?.type === "usage" ? usageEvent.usage : undefined);
   if (!source) return undefined;
   return usageToChatWire(source);
 }
@@ -141,22 +142,12 @@ export class CompletionStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent
 
   /** The wire stop reason from the terminal event seen so far. */
   private stopReason(): string | null {
-    const terminal = this.terminalEvent;
-    if (terminal?.type !== "terminal") return null;
-    if (terminal.stop_reason === "length") return "length";
-    if (terminal.stop_reason === "content_filter") return "content_filter";
-    if (terminal.state === "complete" || terminal.stop_reason === "stop") return "stop";
-    return null;
+    return completionStopReason(this.terminalEvent);
   }
 
   /** The wire usage from the terminal event, else the last usage event. */
   private usage(): OpenAiUsage | undefined {
-    const terminal = this.terminalEvent;
-    const record = terminal?.type === "terminal" ? terminal.usage : undefined;
-    const event = this.usageEvent;
-    const source = record ?? (event?.type === "usage" ? event.usage : undefined);
-    if (!source) return undefined;
-    return usageToChatWire(source);
+    return completionUsage(this.terminalEvent, this.usageEvent);
   }
 
   finish(): Record<string, unknown>[] {
@@ -205,14 +196,7 @@ class CompletionAdapter implements SurfaceAdapter {
     if (typeof value.logprobs === "boolean") controls.logprobs = value.logprobs;
     if (typeof value.stop === "string" || (Array.isArray(value.stop) && value.stop.every((item) => typeof item === "string")))
       controls.stop = value.stop as string | readonly string[];
-    const requestedReasoning = value.reasoning_effort ?? value.reasoning_level;
-    const reasoningEfforts = new Set<NonNullable<ReasoningIntent["effort"]>>([
-      "none", "minimal", "low", "medium", "high", "xhigh", "max",
-    ]);
-    const reasoning =
-      typeof requestedReasoning === "string" && reasoningEfforts.has(requestedReasoning as NonNullable<ReasoningIntent["effort"]>)
-        ? { effort: requestedReasoning as NonNullable<ReasoningIntent["effort"]> }
-        : undefined;
+    const reasoning = parseReasoningIntent(value);
     const cacheKey = value.prompt_cache_key;
     const cacheHint =
       (typeof cacheKey === "string" && cacheKey.length > 0) || value.cache_control === "auto"
@@ -236,8 +220,10 @@ class CompletionAdapter implements SurfaceAdapter {
 
   encodeOutput(events: readonly CanonicalEvent[], options: CompletionEncodingOptions = {}): SurfaceOutput {
     const model = modelFor(events, options);
-    const reason = stopReason(events);
-    const responseUsage = usage(events);
+    const terminal = [...events].reverse().find((event) => event.type === "terminal");
+    const usageEvent = [...events].reverse().find((event) => event.type === "usage");
+    const reason = completionStopReason(terminal);
+    const responseUsage = completionUsage(terminal, usageEvent);
     const response = {
       id: options.response_id ?? `cmpl-${crypto.randomUUID()}`,
       object: "text_completion",
