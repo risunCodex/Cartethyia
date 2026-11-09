@@ -13,6 +13,8 @@
  * byte, and nothing is allocated.
  */
 
+import { evictOldestEntry } from "../../transport/routing/bounded-lru";
+
 /** Running totals for one pool. */
 interface PoolByteTotals {
   /** Bytes sent to the proxy (uploads, TLS handshake, CONNECT). */
@@ -33,8 +35,7 @@ function entry(poolId: string): { sent: number; received: number } {
   let current = totals.get(poolId);
   if (!current) {
     if (totals.size >= MAX_BYTE_ENTRY_COUNT) {
-      const oldest = totals.keys().next().value;
-      if (oldest !== undefined) totals.delete(oldest);
+      evictOldestEntry(totals, MAX_BYTE_ENTRY_COUNT - 1);
     }
     current = { sent: 0, received: 0 };
     totals.set(poolId, current);

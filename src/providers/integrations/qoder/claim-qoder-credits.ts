@@ -16,8 +16,8 @@
  */
 import type { CartethyiaDatabase } from "../../../persistence/db-handle";
 import type { ValidatedFetch } from "../../../network/outbound-fetch";
-import { getQoderVersion } from "../../operations/client-versions";
 import { qoderRealmForProvider, QODER_REALMS } from "./qoder-realm";
+import { exchangeQoderPatForHost } from "./qoder-auth";
 import {
   asNumber,
   asRecord,
@@ -49,7 +49,8 @@ const PAT_PREFIX = "pt-";
  * The real client binds the machine identity at exchange time
  * (`getMachineIdentityRequestFields`), so `machine_id` + `machine_token` are
  * sent when available — the job token is then bound to that machine. The
- * User-Agent and Cosy version mirror the real client (`qoder/<version>`).
+ * request is the shared `exchangeQoderPatForHost` (same v1 body and client
+ * identity headers as the auth path), parameterized by this site's own host.
  */
 async function exchangePatToJobToken(
   base: string,
@@ -57,30 +58,17 @@ async function exchangePatToJobToken(
   fetcher: ValidatedFetch,
   machine?: { readonly id?: string; readonly token?: string },
 ): Promise<string | null> {
-  try {
-    const body: Record<string, unknown> = { personal_token: pat };
-    if (machine?.id) body.machine_id = machine.id;
-    if (machine?.token) body.machine_token = machine.token;
-    const version = getQoderVersion();
-    const res = await fetcher(`${base}/api/v1/jobToken/exchange`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": `qoder/${version}`,
-        "Cosy-ClientType": "5",
-        "Cosy-Version": version,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(25_000),
-    });
-    if (!res.ok) return null;
-    const payload: unknown = await res.json().catch(() => null);
-    const rec = asRecord(payload);
-    const token = String(rec?.["token"] ?? rec?.["device_token"] ?? rec?.["access_token"] ?? "");
-    return token.length > 0 ? token : null;
-  } catch {
-    return null;
-  }
+  const exchanged = await exchangeQoderPatForHost({
+    pat,
+    url: `${base}/api/v1/jobToken/exchange`,
+    ...(machine === undefined ? {} : { machine }),
+    fetcher,
+    signal: AbortSignal.timeout(25_000),
+    tokenKeys: ["token", "device_token", "access_token"],
+  });
+  if (exchanged === null) return null;
+  if (!exchanged.response.ok) return null;
+  return exchanged.result?.token ?? null;
 }
 
 /**

@@ -472,8 +472,9 @@ export async function selectProbeAccount(args: {
  * back to the generic OpenAI-compatible adapter so probe/dispatch still works.
  * The low-level compatible adapter is used directly to avoid importing concrete
  * integrations from discovery (which would violate the provider-architecture
- * layering test). `loadOne` returning `undefined` means "no bundled adapter";
- * a throw is a registry failure and propagates rather than being reported as
+ * layering test). `resolve(..., { force: true })` rebuilds the bundled adapter
+ * against the current registration; `undefined` means "no bundled adapter"; a
+ * throw is a registry failure and propagates rather than being reported as
  * "no adapter registered".
  */
 export async function resolveProbeAdapter(args: {
@@ -482,7 +483,7 @@ export async function resolveProbeAdapter(args: {
   readonly providerWireRow: ProbeProviderRow | undefined;
 }): Promise<ProviderAdapter | undefined> {
   const { providerRegistry, providerId, providerWireRow } = args;
-  let adapter = await providerRegistry.loadOne(providerId);
+  let adapter = await providerRegistry.resolve(providerId, { force: true });
   if (!adapter) {
     try {
       if (providerWireRow?.baseUrl) {

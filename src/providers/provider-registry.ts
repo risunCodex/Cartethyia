@@ -194,24 +194,22 @@ export class ProviderRegistry {
     return replaced;
   }
 
-  /** Loads one registered provider, or `undefined` when it is not registered. */
-  async loadOne(providerId: string): Promise<ProviderAdapter | undefined> {
-    const normalized = parseProviderId(providerId);
-    const registration = this.#registrations.get(normalized);
-    if (registration === undefined) return undefined;
-    return this.#loadRegistration(normalized, registration);
-  }
-
   /**
    * Resolves one adapter on demand, returning the cached instance when it has
-   * already loaded. This never evaluates a provider's module graph until that
-   * provider is actually dispatched to, so heavy bespoke adapters
-   * (protobuf-based providers) stay out of the startup path.
+   * already loaded — unless `force` is set, which rebuilds the adapter from
+   * the registration (single-flight, and the fresh instance replaces the
+   * cache). This never evaluates a provider's module graph until that provider
+   * is actually dispatched to, so heavy bespoke adapters (protobuf-based
+   * providers) stay out of the startup path. `force` is used by the probe
+   * path, which wants the adapter rebuilt against the latest registration
+   * rather than a cached instance.
    */
-  async resolve(providerId: string): Promise<ProviderAdapter | undefined> {
+  async resolve(providerId: string, opts: { readonly force?: boolean } = {}): Promise<ProviderAdapter | undefined> {
     const normalized = parseProviderId(providerId);
-    const cached = this.#loaded.get(normalized);
-    if (cached !== undefined) return cached;
+    if (!opts.force) {
+      const cached = this.#loaded.get(normalized);
+      if (cached !== undefined) return cached;
+    }
     const registration = this.#registrations.get(normalized);
     if (registration === undefined) return undefined;
     return this.#loadRegistration(normalized, registration);

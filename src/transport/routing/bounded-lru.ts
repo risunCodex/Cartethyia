@@ -1,6 +1,20 @@
 // Bounded LRU map: the one shared implementation for routing-layer caches.
 
 /**
+ * Evicts the oldest-inserted entry while `map.size > cap`. The shared
+ * insertion-order bound for caches whose read path must not refresh recency
+ * (unlike `BoundedLruMap`, whose `get` does). Eviction is one `keys().next()`
+ * and no bookkeeping arrays.
+ */
+export function evictOldestEntry<K>(map: Map<K, unknown>, cap: number): void {
+  while (map.size > cap) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+}
+
+/**
  * A capacity-bounded LRU `Map`.
  *
  * `get()` refreshes recency; `set()` evicts exactly the least-recently-used

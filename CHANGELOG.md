@@ -152,9 +152,26 @@ protocol. Highlights:
   - Validation: `tsc --noEmit` zero errors; full backend suite 4735 pass /
     1 skip / 0 fail. 59 findings executed (56 CONFIRMED, including M-44/M-62
     verified-promoted from PLAUSIBLE, plus the three protocol findings P-F1..3).
-    Not executed: M-16/M-57 (Tier-3 latency batching, deferred pending
-    benchmark), M-23/M-59 (left plausible-unverified), and M-42's PAT-exchange
-    host unification (gated on a live-host check).
+  - **Deferred findings closed (follow-up pass).** The four remaining findings
+    were executed and verified against the same gates (typecheck zero errors,
+    full backend suite green):
+    - M-16: routing `plan()` now batch-reads quota evidence per lens
+      (`getCachedQuotaEntries` one MGET + `readQuotaSnapshots` one query)
+      instead of a serial read per candidate.
+    - M-57: `getSelectionFailure` reads cooldowns and inflight counters in one
+      `MGET` per key family, with a per-pool fallback on Redis error.
+    - M-23: probe adapter load now uses `resolve(providerId, { force: true })`
+      (single-flight, rebuilds against the current registration); the separate
+      `loadOne` method was deleted.
+    - M-59: the DNS cache uses `BoundedLruMap`; byte accounting uses the new
+      shared `evictOldestEntry` helper (insertion-order eviction preserved).
+      The API-key auth cache stays hand-rolled (deliberate exception).
+    - M-42 (PAT-exchange): the claim and auth PAT→job-token exchanges now
+      share `exchangeQoderPatForHost` — one v1 body + client-identity header
+      set, parameterized by each site's verified host (`center.qoder.sh` vs
+      the openapi host; both probed live, both accept the shared header set).
+      The auth path keeps its `mapUpstreamHttpError` behavior; the claim path
+      keeps its return-null behavior.
 
 ## [2.7.9] - 2026-11-08
 
