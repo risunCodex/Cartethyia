@@ -95,13 +95,18 @@ is now implemented; the audit was folded into its findings).
 `documentation/proposals/proactive-quota-routing.md`, and the four part files
 under `documentation/proposals/parts/` were removed — the campaigns they
 describe are landed, so the proposals no longer document anything in flight.
+- **Completed maintenance proposal removed:** `documentation/proposals/src-maintenance-deepscan.md`
+and the 15 part files under `documentation/proposals/parts/` were removed —
+the deepscan campaign is landed (see Maintenance above), so the proposal no
+longer documents anything in flight. Deferred items are tracked in the
+Maintenance entry, not in a stale proposal file.
 
 ### Maintenance
 
 - **Source maintenance deepscan executed.** The composed audit
-(`documentation/proposals/src-maintenance-deepscan.md`, 60 CONFIRMED findings
-across 16 clusters) was implemented end-to-end: deduplication, dead-code
-removal, and canonical-owner consolidation across boot/config, transport
+(`documentation/proposals/src-maintenance-deepscan.md`) was implemented
+end-to-end across the campaign clusters: deduplication, dead-code removal, and
+canonical-owner consolidation across boot/config, transport
 (request/surface/dispatch/routing), providers (core, ops, integrations a–d),
 console (domains a/b), network/security, persistence/observability, and
 protocol. Highlights:
@@ -145,9 +150,11 @@ protocol. Highlights:
     single-sourced with summary-first precedence; the DSML/OMP/Qwen markup
     parser scaffold unified behind `MarkupStreamParser<T>`.
   - Validation: `tsc --noEmit` zero errors; full backend suite 4735 pass /
-    1 skip / 0 fail. Deferred: M-16/M-57 (Tier-3 latency batching, needs
-    benchmark), M-23/M-59 (plausible-unverified), M-42 PAT-exchange host
-    unification (needs live-host verification).
+    1 skip / 0 fail. 59 findings executed (56 CONFIRMED, including M-44/M-62
+    verified-promoted from PLAUSIBLE, plus the three protocol findings P-F1..3).
+    Not executed: M-16/M-57 (Tier-3 latency batching, deferred pending
+    benchmark), M-23/M-59 (left plausible-unverified), and M-42's PAT-exchange
+    host unification (gated on a live-host check).
 
 ## [2.7.9] - 2026-11-08
 
