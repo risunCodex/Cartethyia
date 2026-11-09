@@ -3,6 +3,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { GatewayError } from "../protocol/gateway-error";
 import type { SsrfPolicy } from "../config/network";
+import { BoundedLruMap } from "../transport/routing/bounded-lru";
 import {
   cidrContainsAddress,
   ipv4ToNumberStrict,
@@ -12,17 +13,16 @@ import {
 
 const DNS_CACHE_TTL_MS = 60_000;
 const DNS_CACHE_MAX = 64;
-const dnsCache = new Map<string, { addrs: string[]; at: number }>();
+// Capacity-bounded: `set` re-inserts the host (moving it to the tail) and
+// evicts the least-recently-used entry when over the cap — the same
+// insertion-order eviction the hand-rolled loop performed, since every write
+// here re-inserts.
+const dnsCache = new BoundedLruMap<string, { addrs: string[]; at: number }>(DNS_CACHE_MAX);
 
 /** Bounds cache memory: evicts oldest entries once size exceeds the cap, not just expired ones. */
 function cacheDnsResult(hostname: string, addrs: string[], now: number): void {
   dnsCache.delete(hostname);
   dnsCache.set(hostname, { addrs, at: now });
-  while (dnsCache.size > DNS_CACHE_MAX) {
-    const oldest = dnsCache.keys().next().value;
-    if (oldest === undefined) break;
-    dnsCache.delete(oldest);
-  }
 }
 
 

@@ -21,6 +21,10 @@
 import { expect, test } from "bun:test";
 import { RuntimeMetricsSampler } from "../../src/observability/runtime-metrics";
 import { metrics } from "../../src/observability/metrics";
+import {
+  performanceMetricsSnapshot,
+  resetPerformanceMetricsForTesting,
+} from "../../src/observability/performance-metrics";
 
 function makeSampler(): RuntimeMetricsSampler {
   return new RuntimeMetricsSampler({
@@ -74,4 +78,33 @@ test("the source is read fresh on every sample, not captured once", () => {
     seen.push(publishedInFlight(sampler) ?? -1);
   }
   expect(seen).toEqual([1, 2, 3]);
+});
+
+// The memory four are recorded once per sample into the performance-metrics
+// series, and the Prometheus gauges are derived from that same series — the
+// two views must always agree, and the snapshot must keep the `external` key
+// (which has no gauge equivalent).
+test("the memory gauges equal the performance snapshot after one sample", () => {
+  resetPerformanceMetricsForTesting();
+  try {
+    makeSampler().sample();
+    const snapshot = performanceMetricsSnapshot().memory_bytes;
+    const sampleLine = (name: string): number => {
+      const line = metrics.render().split("\n").find((text) => text.startsWith(`${name} `));
+      if (line === undefined) throw new Error(`gauge ${name} missing from registry`);
+      const value = Number(line.slice(line.lastIndexOf(" ") + 1));
+      expect(Number.isFinite(value)).toBe(true);
+      return value;
+    };
+    expect(snapshot["rss"]).toBe(sampleLine("cartethyia_memory_rss_bytes"));
+    expect(snapshot["heap_used"]).toBe(sampleLine("cartethyia_memory_heap_used_bytes"));
+    expect(snapshot["heap_total"]).toBe(sampleLine("cartethyia_memory_heap_total_bytes"));
+    // `external` lives only in the series/snapshot — no gauge exists for it.
+    expect(typeof snapshot["external"]).toBe("number");
+    expect(Number.isFinite(snapshot["external"])).toBe(true);
+    // All four keys are fixed contract.
+    expect(Object.keys(snapshot).sort()).toEqual(["external", "heap_total", "heap_used", "rss"]);
+  } finally {
+    resetPerformanceMetricsForTesting();
+  }
 });

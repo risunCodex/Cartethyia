@@ -22,7 +22,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { GatewayError } from "../../protocol/gateway-error";
-import { isLoopbackPeer, tokenMatches } from "../../transport/drain-endpoint";
+import { requireLoopbackAdmin } from "../../transport/drain-endpoint";
 import { tablesForSection } from "./contracts";
 import { compressBackupStream, exportBackupStream } from "./store";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
@@ -52,10 +52,12 @@ export function createBackupExportHandler(
     // both: neither refusal is about the body. The first is where the request
     // came from, the second is the credential it carried — and `invalid_request`
     // told an operator to fix a body that was never the problem.
-    if (!isLoopbackPeer(deps.resolvePeerAddress(request)))
-      throw new GatewayError("policy_rejected", 403, "backup export is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂");
-    if (!tokenMatches(request.headers.get("x-drain-token"), deps.token))
-      throw new GatewayError("authentication_failed", 401, "invalid export token (request {requestId}). Wrong key, right door — check the token 🔑");
+    requireLoopbackAdmin(request, {
+      peer: deps.resolvePeerAddress(request),
+      token: deps.token,
+      policyRejectedMessage: "backup export is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂",
+      authenticationFailedMessage: "invalid export token (request {requestId}). Wrong key, right door — check the token 🔑",
+    });
 
     const directory =
       body !== null && typeof body === "object" && "directory" in body

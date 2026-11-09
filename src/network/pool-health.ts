@@ -1,12 +1,11 @@
-import { randomUUID } from "node:crypto";
 import type { CartethyiaDatabase } from "../persistence/db-handle";
-import { healthEvents } from "../persistence/schema";
 import type { NetworkPoolSelector } from "./pool/selector";
-import type { GatewayError } from "../protocol/gateway-error";
+import { GatewayError } from "../protocol/gateway-error";
 import { metrics } from "../observability/metrics";
 import { log } from "../observability/logger";
-import { upsertProviderCooldownMarker } from "./pool-cooldown-store";
+import { appendPoolProviderEgressAuditRow, upsertProviderCooldownMarker } from "./pool-cooldown-store";
 import { resolvePoolProviderRateLimitCooldownMs } from "../config/cooldowns";
+import type { EgressVerdict } from "./rate-limit-verdict";
 
 /**
  * Durable pool rate-limit history.
@@ -29,9 +28,6 @@ import { resolvePoolProviderRateLimitCooldownMs } from "../config/cooldowns";
  * needs one row per cooldown episode — not one per throttled request.
  */
 const POOL_COOLDOWN_EVENT_WINDOW_MS = 15 * 60 * 1000;
-const MAX_TRACKED_PAIRS = 5_000;
-
-const lastRecordedByPoolProvider = new Map<string, number>();
 
 /** Durable half of `flagPoolCooldown`; not a second public entry point. */
 async function recordPoolCooldownEvent(
@@ -40,35 +36,13 @@ async function recordPoolCooldownEvent(
   providerId: string,
   reason: string,
 ): Promise<void> {
-  const key = `${poolId}::${providerId.toLowerCase()}`;
-  const now = Date.now();
-  const last = lastRecordedByPoolProvider.get(key);
-  if (last !== undefined && now - last < POOL_COOLDOWN_EVENT_WINDOW_MS) return;
-  try {
-    await db.insert(healthEvents).values({
-      id: randomUUID(),
-      entityKind: "pool",
-      networkPoolId: poolId,
-      fromStatus: null,
-      toStatus: "cooldown",
-      reason: `provider ${providerId}: ${reason}`,
-      errorCategory: "rate_limit_transient",
-      createdAt: new Date(),
-    });
-  } catch {
-    // Non-fatal: observability writes must never fail dispatch. The
-    // coalescing stamp is only written below, so a failed insert does not
-    // suppress the next attempt for the whole window.
-    return;
-  }
-  lastRecordedByPoolProvider.set(key, now);
-  if (lastRecordedByPoolProvider.size > MAX_TRACKED_PAIRS) {
-    for (const [trackedKey, recordedAt] of lastRecordedByPoolProvider) {
-      if (now - recordedAt >= POOL_COOLDOWN_EVENT_WINDOW_MS) {
-        lastRecordedByPoolProvider.delete(trackedKey);
-      }
-    }
-  }
+  await appendPoolProviderEgressAuditRow(db, {
+    poolId,
+    providerId,
+    reason,
+    blocked: false,
+    coalesceWindowMs: POOL_COOLDOWN_EVENT_WINDOW_MS,
+  });
 }
 
 /**
@@ -106,14 +80,7 @@ export function flagPoolBlocked(
         error: String(cause),
       });
     });
-  void recordPoolBlockEvent(db, poolId, providerId, reason, error).catch((cause: unknown) => {
-    metrics.pool_cooldown_record_failed.inc(1);
-    log.warn("pool block event failed", {
-      networkPoolId: poolId,
-      providerId,
-      error: String(cause),
-    });
-  });
+  void recordPoolBlockEvent(db, poolId, providerId, reason, error);
 }
 
 /**
@@ -131,15 +98,12 @@ async function recordPoolBlockEvent(
   reason: string,
   error: GatewayError,
 ): Promise<void> {
-  await db.insert(healthEvents).values({
-    id: randomUUID(),
-    entityKind: "pool",
-    networkPoolId: poolId,
-    fromStatus: null,
-    toStatus: "cooldown",
-    reason: `provider ${providerId}: ${reason}${providerCodeSuffix(error)}`,
-    errorCategory: "egress_blocked",
-    createdAt: new Date(),
+  await appendPoolProviderEgressAuditRow(db, {
+    poolId,
+    providerId,
+    reason,
+    blocked: true,
+    codeSuffix: providerCodeSuffix(error),
   });
 }
 
@@ -199,12 +163,36 @@ export function flagPoolCooldown(
         error: String(cause),
       });
     });
-  void recordPoolCooldownEvent(db, poolId, providerId, reason).catch((cause: unknown) => {
-    metrics.pool_cooldown_record_failed.inc(1);
-    log.warn("pool cooldown event failed", {
-      networkPoolId: poolId,
-      providerId,
-      error: String(cause),
-    });
-  });
+  void recordPoolCooldownEvent(db, poolId, providerId, reason);
+}
+
+/**
+ * One egress-failure verdict → pool-flag dispatch, shared by the attempt loop
+ * and the streaming finalizer.
+ *
+ * Both paths classify the same failure with `classifyEgressFailure`, then must
+ * retire the same pool the same way; a policy change — which verdict maps to a
+ * cooldown vs a block, or a new verdict — belongs here so the two response
+ * modes cannot drift in telemetry.
+ *
+ * The call sites compute the verdict (the attempt loop also needs it for its
+ * retry decision) and pass it in; the gating is identical to what both
+ * previously applied by hand: only a real pool id + selector pair, only a
+ * `GatewayError`, and never a `"none"` verdict. The flags themselves are
+ * fire-and-forget advisory writes that never fail the request.
+ */
+export function flagPoolOnEgressFailure(
+  poolSelector: NetworkPoolSelector | undefined,
+  db: CartethyiaDatabase,
+  poolId: string | undefined,
+  providerId: string,
+  error: unknown,
+  verdict: EgressVerdict,
+): void {
+  if (poolId === undefined || poolSelector === undefined || !(error instanceof GatewayError)) return;
+  if (verdict.kind === "cooldown") {
+    flagPoolCooldown(poolSelector, db, poolId, providerId, error);
+  } else if (verdict.kind === "blocked") {
+    flagPoolBlocked(poolSelector, db, poolId, providerId, error);
+  }
 }

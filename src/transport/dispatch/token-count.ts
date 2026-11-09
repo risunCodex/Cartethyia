@@ -43,7 +43,7 @@ import type { PreparedNativeRequest } from "../request/preparer";
 import { completeAttempt, estimatedUsage, nativeCompletionBase } from "./attempt-finalize";
 import { finalizeRequestTelemetry } from "../guards/error-lifecycle";
 import { runAttemptLoop } from "./attempt-loop";
-import { hasScope, networkFetchContext, requireRecordBody, resolveAttemptCredential } from "./native-shared";
+import { forwardUpstreamResponse, hasScope, networkFetchContext, requireRecordBody, resolveAttemptCredential } from "./native-shared";
 
 import type { GatewayHandlerDeps } from "./handler-deps";
 
@@ -189,11 +189,7 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
 
         // Verbatim: the client reads the provider's own number, and the
         // provider's own error when it refuses to produce one.
-        const contentType = upstream.headers.get("content-type") ?? "application/json";
-        return new Response(upstream.body, {
-          status: upstream.status,
-          headers: { "content-type": contentType, "cache-control": "no-store", "x-request-id": state.requestId },
-        });
+        return forwardUpstreamResponse(upstream, state.requestId);
       },
     });
   };

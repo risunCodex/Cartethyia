@@ -12,6 +12,7 @@
 // Keyed by account id: two Grok accounts carry different buckets, and a reading
 // filed against the wrong one is worse than no reading at all.
 
+import { TtlCache } from "../../../persistence/ttl-cache";
 import type { ProviderQuotaWindow } from "../../quota/quota-contracts";
 import { grokHeaderRequestsWindow, grokHeaderWindow, type GrokRateLimitReading } from "./grok-ratelimit";
 
@@ -27,39 +28,31 @@ const SNAPSHOT_TTL_MS = 5 * 60 * 1000;
 
 interface Snapshot {
   readonly windows: readonly ProviderQuotaWindow[];
-  readonly capturedAt: number;
 }
 
-const snapshots = new Map<string, Snapshot>();
+// Bounded FIFO cache keyed by account id; the TTL and `maxEntries` cap are
+// enforced by the cache itself (oldest-first eviction past 4096 entries).
+const snapshots = new TtlCache<Snapshot>({
+  ttlMs: SNAPSHOT_TTL_MS,
+  maxEntries: 4096,
+});
 
 /** Files a reading captured from a real dispatch against one account. */
 export function rememberGrokRateLimit(
   accountId: string,
   reading: GrokRateLimitReading,
-  now = Date.now(),
 ): void {
   const windows = [grokHeaderWindow(reading), grokHeaderRequestsWindow(reading)].filter(
     (value): value is ProviderQuotaWindow => value !== null,
   );
   if (windows.length === 0) return;
-  snapshots.set(accountId, { windows, capturedAt: now });
-  if (snapshots.size > 4096) {
-    // Bounded: an unbounded map keyed by account is a leak dressed as a cache.
-    for (const [key, value] of snapshots) {
-      if (now - value.capturedAt > SNAPSHOT_TTL_MS) snapshots.delete(key);
-    }
-  }
+  snapshots.set(accountId, { windows });
 }
 
 /** The stored window for one account, or `null` when none is fresh enough. */
-export function storedGrokRateLimit(accountId: string, now = Date.now()): readonly ProviderQuotaWindow[] | null {
+export function storedGrokRateLimit(accountId: string): readonly ProviderQuotaWindow[] | null {
   const snapshot = snapshots.get(accountId);
-  if (!snapshot) return null;
-  if (now - snapshot.capturedAt > SNAPSHOT_TTL_MS) {
-    snapshots.delete(accountId);
-    return null;
-  }
-  return snapshot.windows;
+  return snapshot?.windows ?? null;
 }
 
 /** Test seam. */

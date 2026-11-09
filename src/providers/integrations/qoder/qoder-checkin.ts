@@ -79,12 +79,12 @@ function campaignHeaders(credential: string): Record<string, string> {
   return buildCampaignHeaders(credential);
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
+export function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null) return null;
   return value as Record<string, unknown>;
 }
 
-function asNumber(value: unknown): number | null {
+export function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
@@ -93,7 +93,7 @@ function asNumber(value: unknown): number | null {
   return null;
 }
 
-function safeParse(raw: string): unknown {
+export function safeParse(raw: string): unknown {
   try {
     return JSON.parse(raw);
   } catch {
@@ -127,7 +127,7 @@ function asState(state: string, today: string, lastClaimedAt: unknown): { active
  * consumes. The API returns camelCase keys (`campaignId`, `actionType`,
  * `claimStatus`); the fixtures and the donor hub use snake_case — accept both.
  */
-function normalizeCampaign(raw: Record<string, unknown>): Record<string, unknown> {
+export function normalizeCampaign(raw: Record<string, unknown>): Record<string, unknown> {
   const benefit = asRecord(raw["benefit"]);
   return {
     campaign_id: String(raw["campaignId"] ?? raw["campaign_id"] ?? ""),

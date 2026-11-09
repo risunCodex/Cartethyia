@@ -32,7 +32,7 @@ import { metrics } from "../../observability/metrics";
 import type { NetworkPoolSelector } from "../../network/pool/selector";
 import type { ProxyRequestState } from "../request/state";
 import type { TelemetryBatchBuffer } from "../../observability/telemetry-buffer";
-import { flagPoolBlocked, flagPoolCooldown } from "../../network/pool-health";
+import { flagPoolOnEgressFailure } from "../../network/pool-health";
 import {
   completeAttempt,
   errorClientResponseBody,
@@ -453,16 +453,14 @@ export async function runAttemptLoop<TResult, TAdapter>(
       // the pool excluded. Both flag helpers write the local entry
       // synchronously, so the ordering holds even though the Redis mirror is
       // fire-and-forget.
-      if (networkPoolId && deps.poolSelector && error instanceof GatewayError) {
-        if (rateLimitedPool) {
-          flagPoolCooldown(deps.poolSelector, deps.db, networkPoolId, candidate.provider_id, error);
-        } else if (blockedPool) {
-          // The address itself is refused, not the request: retire the egress
-          // so the next attempt leaves by a different one instead of retrying
-          // a proxy the upstream has already flagged.
-          flagPoolBlocked(deps.poolSelector, deps.db, networkPoolId, candidate.provider_id, error);
-        }
-      }
+      flagPoolOnEgressFailure(
+        deps.poolSelector,
+        deps.db,
+        networkPoolId,
+        candidate.provider_id,
+        error,
+        egressVerdict,
+      );
       // A mid-response upstream socket drop (`transport_unavailable`) is the one
       // retryable failure that receives an extra dial even when the candidate
       // list is exhausted: an origin that closes the connection before the
@@ -530,7 +528,7 @@ export async function runAttemptLoop<TResult, TAdapter>(
       // A 403 can be a deterministic provider policy rejection, not an
       // invalid OAuth credential. Only the evidence-based classifier above
       // may trigger a refresh.
-      const candidateKey = `${candidate.provider_id}:${candidate.provider_account_id ?? "global"}:${candidate.model_id}:${candidate.endpoint}`;
+      const candidateKey = comboCandidateKey(candidate);
       const authInvalidated = isOAuthCredentialInvalidated(error);
       if (
         !cancelled &&

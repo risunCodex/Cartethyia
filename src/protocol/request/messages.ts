@@ -27,6 +27,7 @@ import {
   splitDataUrl,
   finiteNumber,
 } from "../codecs";
+import { reasoningTextForReplay } from "../reasoning-text";
 import { log } from "../../observability/logger";
 import { base64DecodedByteLength, clampImage } from "../image-clamp";
 import { LEVEL_TO_BUDGET } from "../../protocol/translation/thinking";
@@ -374,7 +375,7 @@ function partToClaudeBlock(
         !part.opaque &&
         (typeof part.signature !== "string" || part.signature.trim().length === 0)
       ) {
-        const text = part.summary ?? (stringValue(part.payload) ? part.payload : "");
+        const text = reasoningTextForReplay(part) ?? "";
         return text.length > 0 ? { type: "text", text: toWellFormedString(text) } : undefined;
       }
       if (part.opaque) {
@@ -384,9 +385,7 @@ function partToClaudeBlock(
       }
       return {
         type: "thinking",
-        thinking: toWellFormedString(
-          part.summary ?? (stringValue(part.payload) ? part.payload : ""),
-        ),
+        thinking: toWellFormedString(reasoningTextForReplay(part) ?? ""),
         ...(part.signature === undefined
           ? {}
           : { signature: toWellFormedString(part.signature) }),

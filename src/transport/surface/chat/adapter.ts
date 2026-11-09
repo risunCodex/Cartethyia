@@ -2,9 +2,9 @@ import type { CanonicalEvent, CanonicalMessage, CanonicalRequest, ContentPart } 
 import type { SurfaceAdapter, SurfaceInput, SurfaceOutput } from "../adapters";
 import { isRecord } from "../../../protocol/codecs";
 import { readString } from "../../../protocol/codecs";
+import { decodeWireBody } from "../content-parts";
 import type { ChatEncodeOptions } from "./parse";
 import {
-  decodeBody,
   parseGenerationControls,
   parseMessage,
   requestBody,
@@ -38,7 +38,7 @@ export class ChatAdapter implements SurfaceAdapter {
    * false "ambiguous body shape" disagreement while routing correctly.
    */
   matchesBodyShape(body: unknown): boolean {
-    const value = decodeBody(body);
+    const value = decodeWireBody(body);
     if (!isRecord(value) || "input" in value || !Array.isArray(value.messages)) return false;
     if (value.messages.length === 0) return false;
     return value.messages.some((message) => isRecord(message) && typeof message.role === "string");

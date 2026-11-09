@@ -10,6 +10,7 @@
  */
 import type { ProviderQuotaWindow } from "./quota-contracts";
 import { isoDate, number, percentWindow, record, text } from "./quota-contracts";
+import { resolveWindowEmission } from "./quota-window-parser";
 
 /** Where one provider's limit entries and their fields live. */
 export interface LimitWindowShape {
@@ -77,14 +78,24 @@ export function parseLimitWindows(
     const kind = text(readFirst(limit, shape.kindPaths)) ?? `window-${index + 1}`;
     const percent = number(readFirst(limit, shape.percentPaths));
     const reset = isoDate(readFirst(limit, shape.resetPaths));
-    if (percent === null && reset === null) continue;
+    const rawUsed = shape.usedPaths ? number(readFirst(limit, shape.usedPaths)) : null;
     const limitValue = shape.limitPaths
       ? number(readFirst(limit, shape.limitPaths))
       : null;
-    const usedValue =
-      (shape.usedPaths ? number(readFirst(limit, shape.usedPaths)) : null) ??
-      shape.deriveUsed?.(limit, percent, limitValue) ??
-      null;
+    const { emit } = resolveWindowEmission({
+      explicitPercent: null,
+      usedPercent: percent,
+      remainingPercent: null,
+      used: rawUsed,
+      limit: limitValue,
+      reset,
+      deriveFromUsedLimit: false,
+      // The array walker has always emitted a reset-only window (percent null,
+      // reset present); only an entry with neither is dropped.
+      emitWithoutPercent: true,
+    });
+    if (!emit) continue;
+    const usedValue = rawUsed ?? shape.deriveUsed?.(limit, percent, limitValue) ?? null;
     const label =
       shape.labelFor?.(kind, limit) ?? shape.fallbackLabel?.(kind) ?? humanize(kind);
     windows.push(percentWindow(kind, label, percent, reset, usedValue, limitValue, "independent"));

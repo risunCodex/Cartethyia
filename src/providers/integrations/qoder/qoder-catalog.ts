@@ -322,7 +322,7 @@ export function mapQoderCatalogResponse(raw: unknown): QoderCatalogEntry[] {
  * to a base-catalog/majority vote that can sit below the roster's ceiling
  * (e.g. `qwen3.7-plus` votes 64k while the roster says 131k).
  */
-function qoderRosterMaxOutputFor(providerId: string, key: string): number | undefined {
+export function qoderRosterMaxOutput(providerId: string, key: string): number | undefined {
   const configs = providerId === "qodercn" ? QODER_CN_MODEL_CONFIGS : QODER_INTL_MODEL_CONFIGS;
   return configs[key]?.max_output_tokens;
 }
@@ -332,7 +332,7 @@ export function qoderCatalogModel(
   entry: QoderCatalogEntry,
   providerId: string,
 ): ModelDefinition {
-  const rosterOutput = qoderRosterMaxOutputFor(providerId, entry.key);
+  const rosterOutput = qoderRosterMaxOutput(providerId, entry.key);
   return defineModel({
     id: entry.key,
     providerId,
@@ -350,7 +350,7 @@ export function qoderCatalogModel(
     free: entry.isFree,
     freeTier: entry.isFree,
     // The live row carries no output ceiling, so inherit the static roster's
-    // stated one when it exists (see `qoderRosterMaxOutputFor`).
+    // stated one when it exists (see `qoderRosterMaxOutput`).
     ...(rosterOutput === undefined ? {} : { out: rosterOutput }),
     warnings: QODER_PROVIDER_WARNINGS,
   });
@@ -446,6 +446,21 @@ export function qoderDiscoveredMaxContexts(realm: QoderRealm): ReadonlyMap<strin
   return discoveryMaxContextByKey.get(realm) ?? new Map();
 }
 
+/**
+ * The widest selectable context window for one model key.
+ *
+ * The live list's `context_config` is the authority when discovery has run:
+ * it names every window the account can switch to, and the widest one is what
+ * a dispatch should send (`model_config.max_input_tokens`) so a conversation is
+ * never capped at the *currently active* window (often 180k) when the account
+ * can use 1M. Falls back to the static roster's stated window otherwise.
+ */
+export function qoderMaxContextFor(modelId: string, modelConfig: QoderModelConfig, realm: QoderRealm): number {
+  const discovered = qoderDiscoveredMaxContexts(realm).get(modelId);
+  if (discovered !== undefined) return discovered;
+  return modelConfig.max_input_tokens;
+}
+
 export async function discoverQoderModels(input: {
   readonly realm: QoderRealm;
   /** Account secret the injected signer signs with; blank fails fast. */
@@ -526,7 +541,7 @@ export async function discoverQoderModels(input: {
         // is published.
         const virtuals = QODER_VIRTUAL_MODELS.filter((virtual) => virtual.target === entry.key);
         if (virtuals.length === 0) return [qoderCatalogModel(entry, providerId)];
-        const rosterOutput = qoderRosterMaxOutputFor(providerId, entry.key);
+        const rosterOutput = qoderRosterMaxOutput(providerId, entry.key);
         return virtuals.map((virtual) =>
           defineModel({
             id: virtual.id,
@@ -538,7 +553,7 @@ export async function discoverQoderModels(input: {
             reasoning: entry.isReasoning,
             // A virtual override wins; otherwise inherit the static roster's
             // ceiling for the slot instead of a base-catalog/majority estimate
-            // (see `qoderRosterMaxOutputFor`).
+            // (see `qoderRosterMaxOutput`).
             ...(virtual.outputLimit !== undefined
               ? { out: virtual.outputLimit }
               : rosterOutput === undefined

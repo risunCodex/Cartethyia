@@ -45,35 +45,40 @@ function isBlockedEntry(entry: { readonly blocked?: boolean }): boolean {
 }
 
 export function createNetworkPoolOperations(config: NetworkPoolConfig) {
+  /**
+   * The read-only enrichment projection shared by the pool list and the pool
+   * detail page: live inflight (falling back to the stored row counter when no
+   * selector is configured), the derived available/utilization figures, and the
+   * active provider cooldowns (omitted entirely when there are none).
+   */
+  async function enrichPoolResponse(res: NetworkPoolResponse, poolId: string): Promise<NetworkPoolResponse> {
+    const cooldowns = await config.poolSelector?.getPoolCooldowns(poolId);
+    const inflight = config.poolSelector
+      ? await config.poolSelector.getInflightAuthoritative(poolId)
+      : res.inflight;
+    return {
+      ...res,
+      inflight,
+      available: Math.max(0, res.maxInflight - inflight),
+      utilization: res.maxInflight > 0 ? Math.min(1, inflight / res.maxInflight) : 1,
+      ...(cooldowns && cooldowns.length > 0
+        ? {
+            providerCooldowns: cooldowns.map((c) => ({
+              providerId: c.providerId,
+              until: new Date(c.until).toISOString(),
+              reason: c.reason,
+              blocked: isBlockedEntry(c),
+            })),
+          }
+        : {}),
+    };
+  }
+
   const operations = {
     async listPools(access: AccessDecision | undefined): Promise<NetworkPoolResponse[]> {
         const a = requireTenantScope(access, "dashboard:read");
         const rawPools = await config.store.list(a.tenantId);
-        return Promise.all(
-          rawPools.map(async (r) => {
-            const res = sanitizePoolResponse(r);
-            const cooldowns = await config.poolSelector?.getPoolCooldowns(r.id);
-            const inflight = config.poolSelector
-              ? await config.poolSelector.getInflightAuthoritative(r.id)
-              : res.inflight;
-            return {
-              ...res,
-              inflight,
-              available: Math.max(0, res.maxInflight - inflight),
-              utilization: res.maxInflight > 0 ? Math.min(1, inflight / res.maxInflight) : 1,
-              ...(cooldowns && cooldowns.length > 0
-                ? {
-                    providerCooldowns: cooldowns.map((c) => ({
-                      providerId: c.providerId,
-                      until: new Date(c.until).toISOString(),
-                      reason: c.reason,
-                      blocked: isBlockedEntry(c),
-                    })),
-                  }
-                : {}),
-            };
-          }),
-        );
+        return Promise.all(rawPools.map(async (r) => enrichPoolResponse(sanitizePoolResponse(r), r.id)));
       },
     async getPoolDetail(
         access: AccessDecision | undefined,
@@ -82,27 +87,7 @@ export function createNetworkPoolOperations(config: NetworkPoolConfig) {
         const a = requireTenantScope(access, "dashboard:read");
         const rec = await config.store.get(a.tenantId, poolId);
         if (!rec) throw new ConsoleDomainError("pool_not_found", 404, `Pool ${poolId} not found`);
-        const res = sanitizePoolResponse(rec);
-        const cooldowns = await config.poolSelector?.getPoolCooldowns(poolId);
-        const inflight = config.poolSelector
-          ? await config.poolSelector.getInflightAuthoritative(poolId)
-          : res.inflight;
-        return {
-          ...res,
-          inflight,
-          available: Math.max(0, res.maxInflight - inflight),
-          utilization: res.maxInflight > 0 ? Math.min(1, inflight / res.maxInflight) : 1,
-          ...(cooldowns && cooldowns.length > 0
-            ? {
-                providerCooldowns: cooldowns.map((c) => ({
-                  providerId: c.providerId,
-                  until: new Date(c.until).toISOString(),
-                  reason: c.reason,
-                  blocked: isBlockedEntry(c),
-                })),
-              }
-            : {}),
-        };
+        return enrichPoolResponse(sanitizePoolResponse(rec), poolId);
       },
     async clearPoolCooldown(
         access: AccessDecision | undefined,

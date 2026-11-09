@@ -28,7 +28,6 @@ import type {
   OAuthExchangeResult,
 } from "../../authentication/oauth-flow-store";
 import {
-  devicePollBackoff,
   decodeJwtPayload,
   nonEmptyTrimmedString,
   readJsonResponse,
@@ -152,55 +151,29 @@ export class FactoryOAuthClient extends OAuthDeviceFlow {
   }
 
   /**
-   * The device grant's token request, issued here rather than through
-   * `pollGenericDeviceAuth`.
-   *
-   * The shared helper collapses the response to an `OAuthExchangeResult`, which
-   * drops `refresh_token` on the floor: it keeps the access token and any
-   * `fallbackRefresh`. WorkOS issues a real refresh grant, and a credential
-   * stored with the access token in that slot would hand the refresh endpoint
-   * an expired bearer and strand the account on first expiry.
+   * The device grant's token poll delegates to the shared RFC 8628 state
+   * machine; only the post-success transformation is Factory-specific:
+   * the token is a JWT whose claims carry the org id, email, and subject the
+   * envelope and auth_state must record. The shared parser retains
+   * `refresh_token` (WorkOS issues a real refresh grant, never a mirror).
    */
   override async pollDeviceAuth(
     deviceAuthId: string,
     _context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDevicePollResult> {
-    const response = await this.fetchFn(FACTORY_DROID_TOKEN_URL, {
-      method: "POST",
-      headers: { ...WORKOS_HEADERS, "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: FACTORY_DROID_CLIENT_ID,
-        device_code: deviceAuthId,
-        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-      }),
+    return this.pollGenericDeviceAuth(deviceAuthId, {
+      tokenUrl: FACTORY_DROID_TOKEN_URL,
+      deviceAuthUrl: FACTORY_DROID_DEVICE_AUTH_URL,
+      clientId: FACTORY_DROID_CLIENT_ID,
+      formHeaders: { ...WORKOS_HEADERS, "content-type": "application/x-www-form-urlencoded" },
     });
-    const text = await response.text();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text) as unknown;
-    } catch {
-      parsed = undefined;
-    }
-    const payload = record(parsed) ?? {};
-    if (response.status === 400 || response.status === 428) {
-      const error = typeof payload["error"] === "string" ? payload["error"] : "";
-      // The shared backoff table owns RFC 8628 §3.5, including `slow_down`.
-      const verdict = devicePollBackoff(error, payload["interval"]);
-      if (verdict !== undefined) return verdict;
-      return { status: "failed", reason: error || `device polling failed (${response.status})` };
-    }
-    if (!response.ok || parsed === undefined) {
-      return { status: "failed", reason: `device polling failed (${response.status})` };
-    }
-    try {
-      const { result, authState } = buildEnvelope(payload, undefined);
-      return { status: "complete", result: { ...result, auth_state: authState } };
-    } catch (error) {
-      return {
-        status: "failed",
-        reason: error instanceof Error ? error.message : "Factory Droid authentication failed",
-      };
-    }
+  }
+
+  protected override afterDeviceTokenExchange(
+    payload: unknown,
+  ): OAuthExchangeResult | OAuthDevicePollResult {
+    const { result, authState } = buildEnvelope(record(payload) ?? {}, undefined);
+    return { ...result, auth_state: authState };
   }
 
   override async refresh(

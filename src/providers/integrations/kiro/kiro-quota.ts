@@ -34,7 +34,12 @@ import {
 } from "../../operations/client-versions";
 import { machineIdForAuthState } from "./kiro-machine-id";
 import { resolveKiroProfileArn } from "./kiro-profile";
-import { AWS_REGION_PATTERN, KIRO_DEFAULT_REGION, KIRO_MANAGEMENT_HOST_TEMPLATE } from "./kiro-catalog";
+import {
+  AWS_REGION_PATTERN,
+  KIRO_DEFAULT_REGION,
+  KIRO_MANAGEMENT_HOST_TEMPLATE,
+  kiroTokenTypeHeader,
+} from "./kiro-catalog";
 
 /**
  * The fetcher shape this module needs: a plain callable. `FetchLike` from the
@@ -82,9 +87,8 @@ function usageHeaders(credential: string, auth: KiroQuotaAuth): Record<string, s
     "user-agent": buildKiroRuntimeUserAgent(version, auth.machineId),
     "x-kiro-machineid": auth.machineId,
   };
-  if (auth.authMethod === "api_key") headers["TokenType"] = "API_KEY";
-  else if (auth.authMethod === "external_idp") headers["TokenType"] = "EXTERNAL_IDP";
-  else if (auth.authMethod === "idc") headers["TokenType"] = "SSO_OIDC";
+  const tokenType = kiroTokenTypeHeader(auth.authMethod);
+  if (tokenType !== undefined) headers["TokenType"] = tokenType;
   return headers;
 }
 

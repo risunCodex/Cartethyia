@@ -31,7 +31,7 @@ import {
   TRAE_AGENT_ENDPOINT,
   TRAE_CHAT_ENDPOINT,
 } from "./trae-protocol";
-import { TRAE_REGION_CORE_HOSTS, traeCoreCandidates, TRAE_MODEL_LIST_PATH, TRAE_AGENT_FUNCTION, type TraeRealm } from "./trae-realm";
+import { traeCoreForAccount, TRAE_MODEL_LIST_PATH, TRAE_AGENT_FUNCTION, type TraeRealm } from "./trae-realm";
 
 export interface TraeAdapterOptions {
   readonly providerId?: string;
@@ -269,7 +269,11 @@ class TraeAdapter implements ProviderAdapter {
       trafficType: agentSurface ? "agent" : "chat",
     });
 
-    const primary = traeCoreForAccount(this.realm, context.credential.auth_state);
+    const region =
+      typeof context.credential.auth_state?.["region"] === "string"
+        ? context.credential.auth_state["region"].toLowerCase()
+        : "";
+    const primary = traeCoreForAccount(this.realm, region);
     const path = agentSurface ? TRAE_AGENT_ENDPOINT : TRAE_CHAT_ENDPOINT;
     const url =
       candidate.endpoint_path && candidate.endpoint_path.startsWith("http")
@@ -572,10 +576,7 @@ export async function discoverTraeModels(input: {
     uid: input.uid,
     appVersion: getTraeVersion(),
   });
-  const core = traeCoreForAccount(
-    input.realm,
-    input.region === undefined ? undefined : { region: input.region },
-  );
+  const core = traeCoreForAccount(input.realm, (input.region ?? "").toLowerCase());
 
   if (input.realm === "intl") {
     // The agent picker: the only surface that lists the intl roster's configs.
@@ -649,21 +650,3 @@ export async function discoverTraeModels(input: {
 }
 
 export { TRAE_CN_MODELS, TRAE_INTL_MODELS };
-
-/**
- * Core host for one account.
- *
- * An intl account is provisioned into a region and its token only authenticates
- * against that region's host, so the account's own `region` wins over the
- * realm default. Falling back to the realm keeps older accounts (stored before
- * the region was captured) working exactly as before.
- */
-function traeCoreForAccount(
-  realm: TraeRealm,
-  authState: Readonly<Record<string, unknown>> | undefined,
-): string {
-  const region = typeof authState?.["region"] === "string" ? authState["region"].toLowerCase() : "";
-  const regional = TRAE_REGION_CORE_HOSTS[region];
-  if (regional !== undefined) return regional;
-  return traeCoreCandidates(realm)[0] ?? "";
-}

@@ -30,7 +30,7 @@ import { abortGatewayError, createUpstreamDeadlineLifecycle } from "../../operat
 import { getQoderVersion } from "../../operations/client-versions";
 import { qoderMachineHostname, qoderMachineOs } from "../../operations/cli-platform";
 import { mapUpstreamHttpError } from "../../../transport/failure-policy";
-import { QODER_CN_MODEL_CONFIGS, QODER_INTL_MODEL_CONFIGS, qoderDiscoveredMaxContexts } from "./qoder-catalog";
+import { QODER_CN_MODEL_CONFIGS, QODER_INTL_MODEL_CONFIGS } from "./qoder-catalog";
 import { isQoderVirtualModel, qoderDispatchModelId } from "./qoder-virtual";
 import { isQoderPat, qoderOAuthAuth, qoderSessionId, resolveQoderAuth } from "./qoder-auth";
 import { buildQoderRequest, callQoder } from "./qoder-chat";
@@ -82,16 +82,6 @@ export function resolveQoderTransport(
   // they must use the legacy COSY surface.
   if (chosen === "grpc" && modelConfig.is_free === true) return "cosy";
   return chosen;
-}
-
-/**
- * The widest selectable context window for one model key (from the live list's
- * `context_config`; falls back to the static roster's stated window).
- */
-function qoderMaxContextFor(modelId: string, modelConfig: QoderModelConfig, realm: QoderRealm): number {
-  const discovered = qoderDiscoveredMaxContexts(realm).get(modelId);
-  if (discovered !== undefined) return discovered;
-  return modelConfig.max_input_tokens;
 }
 
 class QoderAdapter implements ProviderAdapter {
@@ -256,7 +246,6 @@ class QoderAdapter implements ProviderAdapter {
           modelId,
           request,
           auth.userId,
-          qoderMaxContextFor(modelId, modelConfig, this.realm),
           {
             messages: legacy.messages as Array<Record<string, unknown>>,
             tools: legacy.tools as Array<Record<string, unknown>>,

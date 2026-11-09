@@ -114,6 +114,91 @@ export function qoderSessionId(userId: string, modelId: string): string {
 
 type QoderFetcher = (url: string, init: RequestInit) => Promise<Response>;
 
+/** The fields a PAT→job-token exchange response carries. */
+export interface ExchangeQoderPatResult {
+  readonly token: string;
+  readonly name?: string;
+  readonly userType?: string;
+  readonly refreshToken?: string;
+  readonly expiresAt?: string;
+}
+
+/**
+ * One PAT→job-token exchange against an explicit endpoint URL. Shared by
+ * `exchangeQoderPat` (auth) and the claim flow: both POST the same v1 body
+ * (`{personal_token, machine_id?, machine_token?}`) with the client identity
+ * headers and parse the same response token. Parameterized by URL so each call
+ * site keeps its own verified host (`center.qoder.sh` vs the openapi host);
+ * the header set is the one verified live against both (2026-11-05/05).
+ * Returns the raw `Response` plus the parsed result (or `null` when the body
+ * carried no usable token); `null` itself means the request failed to reach
+ * upstream. Callers decide how to surface each case (throw vs null).
+ */
+export async function exchangeQoderPatForHost(args: {
+  readonly pat: string;
+  readonly url: string;
+  readonly machine?: { readonly id?: string; readonly token?: string };
+  readonly fetcher: QoderFetcher;
+  readonly signal: AbortSignal;
+  readonly version?: string;
+  /** Response keys to read the job token from, tried in order. Defaults to `["token"]`. */
+  readonly tokenKeys?: readonly string[];
+}): Promise<{ readonly response: Response; readonly result: ExchangeQoderPatResult | null } | null> {
+  const body: Record<string, unknown> = { personal_token: args.pat };
+  if (args.machine?.id) body.machine_id = args.machine.id;
+  if (args.machine?.token) body.machine_token = args.machine.token;
+  const version = args.version ?? getQoderVersion();
+  const tokenKeys = args.tokenKeys ?? ["token"];
+  let response: Response;
+  try {
+    response = await args.fetcher(args.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": `qoder/${version}`,
+        "X-Request-ID": randomUUID().toUpperCase(),
+        "Cosy-ClientType": "5",
+        "Cosy-Version": version,
+        "Cosy-MachineOS": qoderMachineOs(),
+      },
+      body: JSON.stringify(body),
+      signal: args.signal,
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok) return { response, result: null };
+  let responseBody: unknown;
+  try {
+    responseBody = await response.json();
+  } catch {
+    return { response, result: null };
+  }
+  if (typeof responseBody !== "object" || responseBody === null || Array.isArray(responseBody)) {
+    return { response, result: null };
+  }
+  const rec = responseBody as Record<string, unknown>;
+  let token = "";
+  for (const key of tokenKeys) {
+    if (typeof rec[key] === "string" && (rec[key] as string).length > 0) {
+      token = rec[key] as string;
+      break;
+    }
+  }
+  if (token.length === 0) return { response, result: null };
+  return {
+    response,
+    result: {
+      token,
+      ...(typeof rec["name"] === "string" ? { name: rec["name"] as string } : {}),
+      ...(typeof rec["userType"] === "string" ? { userType: rec["userType"] as string } : {}),
+      ...(typeof rec["refresh_token"] === "string" ? { refreshToken: rec["refresh_token"] as string } : {}),
+      ...(typeof rec["expires_at"] === "string" ? { expiresAt: rec["expires_at"] as string } : {}),
+    },
+  };
+}
+
 /**
  * Exchanges a PAT (`pt-…`) for a short-lived job token (`jt-…`) using the
  * modern v1 endpoint. Verified live (2026-11-05): `POST
@@ -135,41 +220,28 @@ async function exchangeQoderPat(
   realm: QoderRealm = "intl",
 ): Promise<QoderAuth> {
   const machineId = qoderMachineIdFromPat(pat);
-  const response = await fetcher(QODER_REALMS[realm].jobTokenUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "User-Agent": `qoder/${version}`,
-      "X-Request-ID": randomUUID().toUpperCase(),
-      "Cosy-ClientType": "5",
-      "Cosy-Version": version,
-      "Cosy-MachineOS": qoderMachineOs(),
-    },
-    body: JSON.stringify({ personal_token: pat, machine_id: machineId }),
+  const exchanged = await exchangeQoderPatForHost({
+    pat,
+    url: QODER_REALMS[realm].jobTokenUrl,
+    machine: { id: machineId },
+    fetcher,
     signal,
+    version,
   });
-  if (!response.ok) throw await mapUpstreamHttpError(response, "qoder");
-  let responseBody: unknown;
-  try {
-    responseBody = await response.json();
-  } catch {
-    throw new GatewayError("platform_unavailable", 502, "Qoder PAT exchange returned invalid JSON (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
+  if (exchanged === null) {
+    throw new GatewayError("platform_unavailable", 502, "Qoder PAT exchange failed to reach upstream (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
   }
-  if (typeof responseBody !== "object" || responseBody === null || Array.isArray(responseBody)) {
-    throw new GatewayError("platform_unavailable", 502, "Qoder PAT exchange returned unexpected response (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
-  }
-  const rec = responseBody as Record<string, unknown>;
-  const token = typeof rec["token"] === "string" ? (rec["token"] as string) : "";
-  if (!token) {
-    throw new GatewayError("platform_unavailable", 502, "Qoder PAT exchange returned incomplete credentials (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
+  if (!exchanged.response.ok) throw await mapUpstreamHttpError(exchanged.response, "qoder");
+  const result = exchanged.result;
+  if (result === null) {
+    throw new GatewayError("platform_unavailable", 502, "Qoder PAT exchange returned no usable token (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
   }
   return {
     userId: machineId,
-    userName: typeof rec["name"] === "string" ? (rec["name"] as string) : "",
-    userType: typeof rec["userType"] === "string" ? (rec["userType"] as string) : "personal_standard",
-    securityOauthToken: token,
-    refreshToken: typeof rec["refresh_token"] === "string" ? (rec["refresh_token"] as string) : "",
+    userName: result.name ?? "",
+    userType: result.userType ?? "personal_standard",
+    securityOauthToken: result.token,
+    refreshToken: result.refreshToken ?? "",
     machineId,
   };
 }

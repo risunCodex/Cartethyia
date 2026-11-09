@@ -152,6 +152,118 @@ function pairedClose(
   return undefined;
 }
 
+/**
+ * Stateful strip of paired thinking tags that preserves source order.
+ *
+ * The reasoning channel (e.g. Chat `reasoning_content`) is one stream where
+ * every byte — tagged or not — is thought. The two-bucket split used by
+ * `ThinkSplitter` (`{ text, reasoning }`) cannot express interleaving, so a
+ * call site that joins `${reasoning}${text}` reorders the stream: untagged
+ * prose that preceded a `<think>` span lands after it. This stripper instead
+ * emits the whole settled content with paired tags removed, in source order,
+ * while keeping `ThinkSplitter`'s stateful guarantees: a tag split across two
+ * deltas is recognized, code spans are left alone, and an unclosed span fails
+ * open at the cap.
+ */
+export class ThinkingTagStripper {
+  #buffer = "";
+  #codeTicks = 0;
+  #codeFenced = false;
+  /** True once an opening tag has been seen and its close has not arrived yet. */
+  #inUnclosedSpan = false;
+  /** The opening tag currently held, restored verbatim on fail-open/flush. */
+  #openMarker = "";
+
+  /** Feeds a chunk; returns settled content with paired tags removed, in order. */
+  push(chunk: string): string {
+    this.#buffer += stripNul(chunk);
+    let out = "";
+    for (;;) {
+      if (this.#inUnclosedSpan) {
+        const closed = this.#findTag(CLOSE_TAGS);
+        if (closed === undefined) break;
+        out += this.#buffer.slice(0, closed.index);
+        this.#buffer = this.#buffer.slice(closed.index + closed.length);
+        this.#codeTicks = closed.codeTicks;
+        this.#codeFenced = closed.codeFenced;
+        this.#inUnclosedSpan = false;
+        this.#openMarker = "";
+        continue;
+      }
+      const opened = this.#findTag(OPEN_TAGS);
+      if (opened === undefined) break;
+      out += this.#buffer.slice(0, opened.index);
+      this.#openMarker = this.#buffer.slice(opened.index, opened.index + opened.length);
+      this.#buffer = this.#buffer.slice(opened.index + opened.length);
+      this.#codeTicks = opened.codeTicks;
+      this.#codeFenced = opened.codeFenced;
+      this.#inUnclosedSpan = true;
+    }
+    if (this.#inUnclosedSpan) {
+      // No close yet: hold the whole span content — including any text after it
+      // — until a later close or `flush()`. Streaming it now would release the
+      // span content before its opening tag on fail-open.
+      if (this.#buffer.length > MAX_THINK_BLOCK_BYTES) {
+        out += this.#openMarker + this.#buffer;
+        this.#buffer = "";
+        this.#inUnclosedSpan = false;
+        this.#openMarker = "";
+      }
+      return out;
+    }
+    const held = danglingTagPrefix(this.#buffer);
+    const settled = held.length > 0 ? this.#buffer.slice(0, -held.length) : this.#buffer;
+    this.#buffer = held;
+    return out + settled;
+  }
+
+  /** Releases content held back for a tag that never completed. */
+  flush(): string {
+    const rest = this.#buffer;
+    this.#buffer = "";
+    this.#codeTicks = 0;
+    this.#codeFenced = false;
+    if (this.#inUnclosedSpan) {
+      // An open tag that never closed is not evidence of reasoning — restore it
+      // byte-for-byte and release the whole tail as-is.
+      const marker = this.#openMarker;
+      this.#inUnclosedSpan = false;
+      this.#openMarker = "";
+      return marker + rest;
+    }
+    return rest;
+  }
+
+  #findTag(tags: readonly string[]): TagMatch | undefined {
+    const buffer = this.#buffer;
+    let ticks = this.#codeTicks;
+    let fenced = this.#codeFenced;
+    for (let i = 0; i < buffer.length; i++) {
+      const char = buffer[i];
+      if (char === "`") {
+        let run = 1;
+        while (buffer[i + run] === "`") run++;
+        if (ticks === 0) {
+          ticks = run;
+          fenced = run >= 3;
+        } else if (run === ticks) {
+          ticks = 0;
+          fenced = false;
+        }
+        i += run - 1;
+        continue;
+      }
+      if (char === "\n" && ticks > 0 && !fenced) ticks = 0;
+      if (char !== "<" || ticks > 0) continue;
+      for (const tag of tags) {
+        if (!buffer.startsWith(tag, i)) continue;
+        return { index: i, length: tag.length, codeTicks: ticks, codeFenced: fenced };
+      }
+    }
+    return undefined;
+  }
+}
+
 /** The longest suffix of `text` that is a proper prefix of any tag. */
 function danglingTagPrefix(text: string): string {
   const tags = [...OPEN_TAGS, ...CLOSE_TAGS];

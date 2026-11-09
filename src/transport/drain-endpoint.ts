@@ -50,14 +50,41 @@ export function tokenMatches(provided: string | null, expected: string): boolean
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+interface LoopbackAdminGate {
+  /** Peer address of the request, resolved by the composition root. */
+  readonly peer: string | null;
+  /** Shared secret; the route is registered only when this is set. */
+  readonly token: string;
+  /** `policy_rejected` (403) message, preserved per surface. */
+  readonly policyRejectedMessage: string;
+  /** `authentication_failed` (401) message, preserved per surface. */
+  readonly authenticationFailedMessage: string;
+}
+
+/**
+ * The shared security gate for host-local admin operations: the request must
+ * come from loopback, then it must carry the drain token compared in constant
+ * time. The peer check is independent of the secret, so a leaked token alone
+ * cannot reach a remote surface. The peer refusal comes first, then the token,
+ * with the codes and messages preserved verbatim per caller.
+ */
+export function requireLoopbackAdmin(request: Request, gate: LoopbackAdminGate): void {
+  if (!isLoopbackPeer(gate.peer))
+    throw new GatewayError("policy_rejected", 403, gate.policyRejectedMessage);
+  if (!tokenMatches(request.headers.get("x-drain-token"), gate.token))
+    throw new GatewayError("authentication_failed", 401, gate.authenticationFailedMessage);
+}
+
 export function createDrainHandler(
   deps: DrainEndpointDeps,
 ): (context: { request: Request }) => Promise<Response> {
   return async ({ request }) => {
-    if (!isLoopbackPeer(deps.resolvePeerAddress(request)))
-      throw new GatewayError("policy_rejected", 403, "drain is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂");
-    if (!tokenMatches(request.headers.get("x-drain-token"), deps.token))
-      throw new GatewayError("authentication_failed", 401, "invalid drain token (request {requestId}). Wrong key, right door — check the token 🔑");
+    requireLoopbackAdmin(request, {
+      peer: deps.resolvePeerAddress(request),
+      token: deps.token,
+      policyRejectedMessage: "drain is only available from loopback (request {requestId}). This operation is only allowed from a trusted loopback connection — no hard feelings 🫂",
+      authenticationFailedMessage: "invalid drain token (request {requestId}). Wrong key, right door — check the token 🔑",
+    });
     // Acknowledge first, then drain: the response must be on the wire before the
     // shutdown path starts closing sockets, or the caller sees a dropped
     // connection instead of a 202.

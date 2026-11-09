@@ -146,18 +146,21 @@ counters: one update per key per flush.
 
 ## Observability
 
-`src/observability/event-log.ts` appends one JSON object per request to a
-raw hourly file in the configured data dir's `telemetry-events/`. Legacy daily
-raw files remain readable until retention; there is no compaction or day-index
-module.
+`src/observability/event-log.ts` is the shared home for the raw-mirror
+directory constant (`TELEMETRY_EVENT_DIR`) and the `TelemetryEventRecord` type;
+the file-based reader that once lived there is gone. `src/observability/event-query.ts`
+is the canonical reader over `telemetry_events`, and
+`src/observability/telemetry-reconciliation.ts` replays the raw mirror
+(`telemetry-events/`) into the table. Legacy daily raw files remain readable to
+reconciliation until retention; there is no compaction or day-index module.
 
 Readers split by what they need:
 
-- **Usage, breakdown, traffic chart, per-key spend** — aggregate raw events via
-  `queryTelemetryEvents` and the short-lived period memo.
-- **Request list and detail drawer** — read raw events via
-  `queryTelemetryEvents`; an unfiltered newest page can use
-  `readEventFileTail`. Health and share stats also read events.
+- **Usage, breakdown, traffic chart, per-key spend** — SQL aggregates via
+  `event-query.ts` (`summarizeUsageWithPerformance`, `breakdownTelemetry`,
+  `chartTelemetry`, `sumTelemetryTokens`).
+- **Request list and detail drawer** — `queryTelemetryEvents` (SQL, keyset
+  pagination). Health and share stats also read via `event-query.ts`.
 
 Lifetime totals stay in `telemetry_usage_totals`.
 `isGatewayError(status, httpStatus)` is the only error predicate — 4xx, 499,
@@ -167,10 +170,11 @@ Retention deletes whole expired raw files. No summary replaces their requests.
 
 `telemetry-buffer.ts` batches inserts; the file appends after the aggregate
 transaction commits, a rejected batch is not rewritten per retry, and a
-non-UUID `tenantId` drops the batch. `payload-capture.ts` writes gzipped JSON
-frame files, indexed by `telemetry_payloads` rows naming their encoding
-(`jsonl-file` gzipped, `jsonb-file` pre-compression). Telemetry retention
-prunes expired raw event files without touching the current hour.
+non-UUID `tenantId` drops the batch. The insert-row mapping is shared with the
+reconciliation backfill via `telemetry-row.ts`. `payload-capture.ts` writes
+gzipped JSON frame files, indexed by `telemetry_payloads` rows naming their
+encoding (`jsonl-file` gzipped, `jsonb-file` pre-compression). Telemetry
+retention prunes expired raw event files without touching the current hour.
 
 ## Console API
 

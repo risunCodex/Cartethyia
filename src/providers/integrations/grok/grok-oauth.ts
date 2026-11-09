@@ -1,13 +1,14 @@
 /** xAI Grok Build device-code OAuth client. */
-import { devicePollBackoff, nonEmptyTrimmedString, parseDeviceAuthStart, postFormTokenRequest, readJsonResponse } from "../../authentication/oauth-flow-store";
+import { devicePollBackoff, nonEmptyTrimmedString, parseDeviceAuthStart, postFormTokenRequest, readJsonResponse, record } from "../../authentication/oauth-flow-store";
 import type {
   OAuthDeviceFlowContext,
   OAuthDevicePollResult,
   OAuthDeviceStartResult,
+  OAuthExchangeResult,
 } from "../../authentication/oauth-flow-store";
 import type { OAuthTokenRefreshResult } from "../../authentication/oauth-refresh-service";
 import { OAuthDeviceFlow } from "../../authentication/oauth-device-flow";
-import type { FetchLike } from "../../authentication/oauth-client";
+import type { FetchLike, NormalizedTokenResponse } from "../../authentication/oauth-client";
 import { XAI_AUTH_SERVER } from "../xai/xai-oauth";
 
 /**
@@ -178,56 +179,58 @@ export class GrokOAuthClient extends OAuthDeviceFlow {
   }
 
   override async pollDeviceAuth(deviceAuthId: string, _context?: OAuthDeviceFlowContext): Promise<OAuthDevicePollResult> {
-    const body = new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-      device_code: deviceAuthId,
-      client_id: GROK_CLIENT_ID,
+    return this.pollGenericDeviceAuth(deviceAuthId, {
+      tokenUrl: GROK_TOKEN_URL,
+      deviceAuthUrl: GROK_DEVICE_URL,
+      clientId: GROK_CLIENT_ID,
+      formHeaders: authHeaders(),
     });
-    const response = await this.fetchFn(GROK_TOKEN_URL, {
-      method: "POST",
-      headers: authHeaders(),
-      body,
-    });
-    const raw = await response.text();
-    let payload: TokenPayload;
-    try {
-      payload = JSON.parse(raw) as TokenPayload;
-    } catch {
-      return { status: "failed", reason: "grok token endpoint returned invalid JSON" };
-    }
-    const error = nonEmptyTrimmedString(payload.error);
-    const verdict = devicePollBackoff(error, payload.interval);
-    if (verdict !== undefined) return verdict;
-    if (!response.ok) {
-      return { status: "failed", reason: nonEmptyTrimmedString(payload.error_description) ?? error ?? `token polling failed (${response.status})` };
-    }
+  }
+
+  protected override unparsablePollReason(_status: number): string {
+    return "grok token endpoint returned invalid JSON";
+  }
+
+  protected override preVerdict(payload: unknown): OAuthDevicePollResult | undefined {
+    const root = record(payload) ?? {};
+    // Grok votes on the `error` field before the status: a 200 body can still
+    // state the poll state, and a pending/slow_down answer is honored wherever
+    // it appears on the wire.
+    return devicePollBackoff(nonEmptyTrimmedString(root.error), root.interval);
+  }
+
+  protected override pollFailureReason(
+    status: number,
+    errorKey: string | undefined,
+    errorDescription: string | undefined,
+  ): string {
+    // Grok's wire prefers the human-readable description over the error code,
+    // and falls back to the generic phrasing only when both are absent.
+    return nonEmptyTrimmedString(errorDescription) ?? nonEmptyTrimmedString(errorKey) ?? `token polling failed (${status})`;
+  }
+
+  protected override missingTokenReason(errorKey: string | undefined, errorDescription: string | undefined): string {
     // A 2xx is not by itself a completed authorization: the endpoint can answer
     // 200 with an `error` field and no token. Returning `failed` rather than
     // letting the shared parser throw keeps the verdict inside the poll
     // contract — the dashboard's poll error path stops polling but shows no
     // reason, so a throw would look like a spinner that never ends.
-    if (nonEmptyTrimmedString(payload.access_token) === undefined) {
-      return {
-        status: "failed",
-        reason:
-          nonEmptyTrimmedString(payload.error_description) ??
-          error ??
-          "grok token response omitted access_token",
-      };
-    }
-    const result = this.parseTokenResponse(payload);
-    const identity = await fetchGrokIdentity(result.access, this.fetchFn);
+    return nonEmptyTrimmedString(errorDescription) ?? nonEmptyTrimmedString(errorKey) ?? "grok token response omitted access_token";
+  }
+
+  protected override async afterDeviceTokenExchange(
+    _payload: unknown,
+    normalized: NormalizedTokenResponse,
+  ): Promise<OAuthExchangeResult> {
+    const identity = await fetchGrokIdentity(normalized.access, this.fetchFn);
     const authState = grokAuthState(identity);
-    return {
-      status: "complete",
-      result: this.toExchangeResult({
-        ...result,
-        ...(identity.label === undefined ? {} : { accountLabel: identity.label }),
-        // Omitted when the proxy reported nothing, which leaves any stored
-        // state alone rather than blanking it.
-        ...(authState === undefined ? {} : { auth_state: authState }),
-      }),
-    };
+    return this.toExchangeResult({
+      ...normalized,
+      ...(identity.label === undefined ? {} : { accountLabel: identity.label }),
+      // Omitted when the proxy reported nothing, which leaves any stored
+      // state alone rather than blanking it.
+      ...(authState === undefined ? {} : { auth_state: authState }),
+    });
   }
 
   override async refresh(refreshToken: string, signal?: AbortSignal): Promise<OAuthTokenRefreshResult> {

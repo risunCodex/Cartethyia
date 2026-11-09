@@ -17,6 +17,7 @@ import { eq } from "drizzle-orm";
 import type { CartethyiaDatabase } from "../persistence/db-handle";
 import { networkPools, healthEvents } from "../persistence/schema";
 import { log } from "../observability/logger";
+import { metrics } from "../observability/metrics";
 import { providerRateLimitIsIpScoped } from "../providers/provider-metadata";
 import { resolvePoolProviderRateLimitCooldownMs } from "../config/cooldowns";
 import { PROVIDER_BLOCK_MS, type ProxyCooldownEntry } from "./pool/selector";
@@ -152,6 +153,88 @@ export async function pruneExpiredProviderCooldownMarkers(
   }
 }
 
+/** Max simultaneously tracked (pool, provider) coalescing keys. */
+const MAX_TRACKED_PAIRS = 5_000;
+
+/** Last coalesced row timestamp per (pool, provider), for the cooldown window only. */
+const lastRecordedByPoolProvider = new Map<string, number>();
+
+/**
+ * Appends one provider-scoped egress verdict row to `health_events` — the
+ * durable audit log the console's pool page reads.
+ *
+ * Shared by the three writers of this row shape: the dispatch-side 429
+ * recorder (`recordPoolCooldownEvent`), the egress-block recorder
+ * (`recordPoolBlockEvent`), and the probe verdict recorder
+ * (`recordProbeVerdict`). The row is always `entityKind: "pool"`,
+ * `fromStatus: null`, `toStatus: "cooldown"`, and the category is chosen by
+ * `blocked`; the only divergences are the optional code suffix (block path)
+ * and the optional coalescing window (cooldown path).
+ *
+ * Coalescing: `coalesceWindowMs` suppresses a duplicate row for the same
+ * (pool, provider) pair within the window — used by the cooldown path, where
+ * dispatch flags the same pair on every throttled request and the audit log
+ * needs one row per episode, not one per request. The default `undefined`
+ * means no coalescing, so block and probe rows are never deduped; it also
+ * means the pair never enters the tracking map, so the eviction sweep below
+ * only ever sees coalesced pairs. A failed insert does not stamp the pair, so
+ * the next attempt within the window is still tried.
+ *
+ * Swallow contract: this never throws to dispatch (observability writes are
+ * non-fatal); failures bump `pool_cooldown_record_failed` and are logged.
+ */
+export async function appendPoolProviderEgressAuditRow(
+  db: CartethyiaDatabase,
+  opts: {
+    poolId: string;
+    providerId: string;
+    reason: string;
+    blocked: boolean;
+    codeSuffix?: string;
+    coalesceWindowMs?: number;
+  },
+): Promise<void> {
+  const { poolId, providerId, reason, blocked, codeSuffix, coalesceWindowMs } = opts;
+  let key: string | undefined;
+  let now = 0;
+  if (coalesceWindowMs !== undefined) {
+    key = `${poolId}::${providerId.toLowerCase()}`;
+    now = Date.now();
+    const last = lastRecordedByPoolProvider.get(key);
+    if (last !== undefined && now - last < coalesceWindowMs) return;
+  }
+  try {
+    await db.insert(healthEvents).values({
+      id: randomUUID(),
+      entityKind: "pool",
+      networkPoolId: poolId,
+      fromStatus: null,
+      toStatus: "cooldown",
+      reason: `provider ${providerId}: ${reason}${codeSuffix ?? ""}`,
+      errorCategory: blocked ? "egress_blocked" : "rate_limit_transient",
+      createdAt: new Date(),
+    });
+  } catch (error) {
+    metrics.pool_cooldown_record_failed.inc(1);
+    log.warn("pool provider egress audit row failed", {
+      networkPoolId: poolId,
+      providerId,
+      error: String(error),
+    });
+    return;
+  }
+  if (key !== undefined && coalesceWindowMs !== undefined) {
+    lastRecordedByPoolProvider.set(key, now);
+    if (lastRecordedByPoolProvider.size > MAX_TRACKED_PAIRS) {
+      for (const [trackedKey, recordedAt] of lastRecordedByPoolProvider) {
+        if (now - recordedAt >= coalesceWindowMs) {
+          lastRecordedByPoolProvider.delete(trackedKey);
+        }
+      }
+    }
+  }
+}
+
 /**
  * Writes a probe-measured verdict the same way a dispatch-side event would be
  * recorded: one mirror marker and one audit row.
@@ -174,20 +257,12 @@ export async function recordProbeVerdict(
   marker: { until: number; reason: string; blocked?: boolean },
 ): Promise<void> {
   await upsertProviderCooldownMarker(db, poolId, providerId, marker);
-  try {
-    await db.insert(healthEvents).values({
-      id: randomUUID(),
-      entityKind: "pool",
-      networkPoolId: poolId,
-      fromStatus: null,
-      toStatus: "cooldown",
-      reason: `provider ${providerId}: ${marker.reason}`,
-      errorCategory: marker.blocked === true ? "egress_blocked" : "rate_limit_transient",
-      createdAt: new Date(),
-    });
-  } catch (error) {
-    log.warn("pool probe event failed", { networkPoolId: poolId, providerId, error: String(error) });
-  }
+  await appendPoolProviderEgressAuditRow(db, {
+    poolId,
+    providerId,
+    reason: marker.reason,
+    blocked: marker.blocked === true,
+  });
 }
 
 /**

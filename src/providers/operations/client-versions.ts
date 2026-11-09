@@ -16,15 +16,6 @@ import {
   buildGrokShellUserAgent,
 } from "./cli-platform";
 
-async function qoderVersion(response: Response): Promise<string | null> {
-  try {
-    const parsed = (await response.json()) as { version?: unknown };
-    return isSemverish(parsed.version) ? parsed.version.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Newest Trae IDE version from the official changelog.
  *
@@ -67,11 +58,6 @@ async function traeVersion(response: Response): Promise<string | null> {
   }
 }
 
-async function clineClientVersion(response: Response): Promise<string | null> {
-  const data = (await response.json()) as { version?: unknown };
-  return isSemverish(data.version) ? data.version.trim() : null;
-}
-
 /**
  * Newest Cursor build from the official download API, as the IDE's own header
  * spells it.
@@ -90,29 +76,6 @@ async function cursorVersion(response: Response): Promise<string | null> {
     const sha = typeof data.commitSha === "string" ? data.commitSha.trim() : "";
     const short = sha.length >= 7 ? sha.slice(0, 7) : "";
     return short.length > 0 ? `cli-${version.trim()}-${short}` : version.trim();
-  } catch {
-    return null;
-  }
-}
-
-async function clineSdkVersion(response: Response): Promise<string | null> {
-  const data = (await response.json()) as {
-    version?: unknown;
-    "dist-tags"?: { latest?: unknown };
-  };
-  const candidate = data.version ?? data["dist-tags"]?.latest;
-  return isSemverish(candidate) ? candidate.trim() : null;
-}
-
-async function kimiVersion(response: Response): Promise<string | null> {
-  const data = (await response.json()) as { info?: { version?: unknown } };
-  return isSemverish(data.info?.version) ? data.info.version.trim() : null;
-}
-
-async function kiroCaskVersion(response: Response): Promise<string | null> {
-  try {
-    const data = (await response.json()) as { version?: unknown };
-    return isSemverish(data.version) ? data.version.trim() : null;
   } catch {
     return null;
   }
@@ -236,12 +199,7 @@ export const VERSION_SOURCES = {
     // `@qoder-ai/qodercli/latest`) may report a newer CLI, but the CLI and
     // IDE are different products — the chat surface identity is the IDE's.
     fallback: "1.1.80",
-    sources: [
-      {
-        url: "https://registry.npmjs.org/@qoder-ai/qodercli/latest",
-        extract: qoderVersion,
-      },
-    ],
+    sources: [{ url: "https://registry.npmjs.org/@qoder-ai/qodercli/latest" }],
   },
   opencode: {
     key: "opencode",
@@ -274,21 +232,18 @@ export const VERSION_SOURCES = {
     fallback: "4.1.26",
     minVersion: "4.1.23",
     sources: [
-      {
-        url: "https://raw.githubusercontent.com/cline/cline/main/apps/vscode/package.json",
-        extract: clineClientVersion,
-      },
+      { url: "https://raw.githubusercontent.com/cline/cline/main/apps/vscode/package.json" },
     ],
   },
   clineSdk: {
     key: "cline-sdk",
     fallback: "0.2.0",
-    sources: [{ url: "https://registry.npmjs.org/@cline/sdk/latest", extract: clineSdkVersion }],
+    sources: [{ url: "https://registry.npmjs.org/@cline/sdk/latest" }],
   },
   clineCli: {
     key: "cline-cli",
     fallback: "3.0.74",
-    sources: [{ url: "https://registry.npmjs.org/cline/latest", extract: clineSdkVersion }],
+    sources: [{ url: "https://registry.npmjs.org/cline/latest" }],
   },
   codex: {
     key: "codex",
@@ -298,7 +253,7 @@ export const VERSION_SOURCES = {
   kimiCli: {
     key: "kimi-cli",
     fallback: "1.52.0",
-    sources: [{ url: "https://pypi.org/pypi/kimi-cli/json", extract: kimiVersion }],
+    sources: [{ url: "https://pypi.org/pypi/kimi-cli/json" }],
   },
   kiro: {
     key: "kiro",
@@ -309,7 +264,6 @@ export const VERSION_SOURCES = {
         // tracks the official installer URL and exposes its version as JSON;
         // keep the product page parser as a fallback.
         url: "https://formulae.brew.sh/api/cask/kiro.json",
-        extract: kiroCaskVersion,
       },
       { url: "https://kiro.dev/downloads/", extract: kiroVersion },
     ],

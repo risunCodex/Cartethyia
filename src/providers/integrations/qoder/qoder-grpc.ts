@@ -362,7 +362,6 @@ export function buildQoderGrpcRequest(
   modelId: string,
   request: CanonicalRequest,
   userId: string,
-  _contextWindow = 1_000_000,
   legacy?: {
     readonly messages: Array<Record<string, unknown>>;
     readonly tools?: Array<Record<string, unknown>>;

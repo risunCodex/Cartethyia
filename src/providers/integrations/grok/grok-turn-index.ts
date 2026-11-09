@@ -13,19 +13,25 @@
  */
 
 import type { CanonicalRequest } from "../../../protocol/canonical-model";
+import { TtlCache } from "../../../persistence/ttl-cache";
 
 /** Idle window after which a session's remembered index is discarded. */
 const SESSION_TTL_MS = 30 * 60_000;
 
-/** Bound on remembered sessions; oldest insertion is evicted past this. */
+/** Bound on remembered sessions; least-recently-used is evicted past this. */
 const MAX_SESSIONS = 5_000;
 
 interface TurnEntry {
   readonly turn: number;
-  lastUsedAt: number;
 }
 
-const turns = new Map<string, TurnEntry>();
+// Bounded, LRU-ordered: a session re-inserts on every use so the newest
+// session is the last evicted, exactly as the previous delete-then-set Map.
+const turns = new TtlCache<TurnEntry>({
+  ttlMs: SESSION_TTL_MS,
+  maxEntries: MAX_SESSIONS,
+  lru: true,
+});
 const requestTurns = new WeakMap<object, number>();
 
 /** User turns in the request, floored at 1 (a turn is never index 0). */
@@ -58,25 +64,14 @@ export function resolveGrokTurnIndex(
   }
   if (sessionId === undefined || sessionId.length === 0) return fromInput;
 
-  const now = Date.now();
-  const previous = turns.get(sessionId);
-  const remembered =
-    previous !== undefined && now - previous.lastUsedAt <= SESSION_TTL_MS
-      ? previous.turn
-      : undefined;
+  const remembered = turns.get(sessionId)?.turn;
 
   // A full-history client already reports the true index; a delta-style client
   // reports 1 every time, so the stored index is advanced by one for it.
   const turn = remembered === undefined ? fromInput : Math.max(fromInput, remembered + 1);
 
   // Re-insert so the entry is newest for eviction order.
-  turns.delete(sessionId);
-  if (turns.size >= MAX_SESSIONS) {
-    const oldest = turns.keys().next();
-    if (!oldest.done) turns.delete(oldest.value);
-  }
-  turns.set(sessionId, { turn, lastUsedAt: now });
+  turns.set(sessionId, { turn });
   if (requestKey !== undefined) requestTurns.set(requestKey, turn);
   return turn;
 }
-

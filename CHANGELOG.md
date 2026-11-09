@@ -149,6 +149,28 @@ receives one bounded extra dial; the fresh dial recovers the transient reset
 (verified live 2026-11-09, 7/7 on the first retry). The keepalive=false
 workaround for stalled pooled sockets is removed.
 Coverage: `test/transport/failure-policy.test.ts` and the transport suite.
+- **Copilot reasoning channel keeps source order when stripping double-wrapped
+`<think>` tags.** The chat decoder's reasoning path split each delta with
+`ThinkSplitter` and joined `${reasoning}${text}`, which reordered the stream:
+untagged thought that preceded a tag fell after the tagged span. The channel
+now strips paired tags statefully in source order (`ThinkingTagStripper`), so
+a reasoning stream like `thought A <think>inner</think> thought B` reads
+`thought A inner thought B` instead of `innerthought A thought B`. Coverage:
+`test/providers/strip-thinking-tags.test.ts`.
+- **Cursor wire aligned to the vendored `agent.proto`.** The Run-request
+schema dropped invented fields that have no wire meaning (`unknown_flag`,
+`field_12`, `run_id`, `conversation_group_id`, `selected_subagent_models`) and
+gained `model_details` (#3), `mcp_file_system_options` (#6), and `skill_options`
+(#7), matching the donor `oh-my-pi` proto. `CancelAction` is now sent empty per
+the proto (the oneof presence is the signal). Proto vendored at
+`vendor/proto/cursor/agent.proto`.
+- **Cursor mixed-run tool-result replays rebase instead of refusing.** A
+continuation whose results resolve to more than one live Run — the "mixes
+live Cursor tool results" 400 — now cancels the resolved Runs and rebases the
+complete transcript into a fresh Run, matching the donor's behavior instead of
+stalling the client loop. A partial tail (a result with no matching call) and
+a foreign-tenant call id remain hard refusals. Coverage:
+`test/providers/cursor-run-continuation.test.ts`.
 
 ### Removed
 
@@ -160,6 +182,83 @@ is now implemented; the audit was folded into its findings).
 `documentation/proposals/proactive-quota-routing.md`, and the four part files
 under `documentation/proposals/parts/` were removed — the campaigns they
 describe are landed, so the proposals no longer document anything in flight.
+- **Completed maintenance proposal removed:** `documentation/proposals/src-maintenance-deepscan.md`
+and the 15 part files under `documentation/proposals/parts/` were removed —
+the deepscan campaign is landed (see Maintenance above), so the proposal no
+longer documents anything in flight. Deferred items are tracked in the
+Maintenance entry, not in a stale proposal file.
+
+### Maintenance
+
+- **Source maintenance deepscan executed.** The composed audit
+(`documentation/proposals/src-maintenance-deepscan.md`) was implemented
+end-to-end across the campaign clusters: deduplication, dead-code removal, and
+canonical-owner consolidation across boot/config, transport
+(request/surface/dispatch/routing), providers (core, ops, integrations a–d),
+console (domains a/b), network/security, persistence/observability, and
+protocol. Highlights:
+  - Routing: soft-cooldown candidates now rank `COOLING` (ordered after every
+    healthy sibling); an all-soft pool answers 429 with the earliest reset
+    instead of routing into a cooling account.
+  - Routing: free-plan marker `FREE_PLAN_MARKERS` single-sourced; candidate
+    construction deduplicated via `buildCandidateBase`; dead
+    `EligibilityEvaluator.filter` removed.
+  - Provider core: bundled-metadata lookups hoisted to module-load time; a
+    canonical discovery-backed provider-id set replaces three re-spelled lists
+    and a drifted test copy; dead `ProviderRegistry.snapshot`/`#revision`
+    removed; JSON-credential token extraction single-sourced; provider-family
+    id sets now import canonical exports (`TRAE_PROVIDER_IDS` added).
+  - Provider ops: Claude module-local quota cache removed (shared two-tier
+    cache owns dedup; debit-ahead survives sweeps); quota-window parsers share
+    one field-resolution core; account+OAuth-state loading consolidated; five
+    client-version extractors removed in favor of `defaultExtract`.
+  - Integrations: Kiro conversation id resolved once per dispatch (single UUID
+    fallback); Kiro TokenType/effort mappings single-sourced; Perch envelope/
+    URL deduplicated; Trae region→host resolution centralized in
+    `trae-realm.ts`; Qoder roster-context/output resolvers single-sourced,
+    dead gRPC `_contextWindow` parameter dropped, empty-stream recovery net
+    removed (test-only), claim/check-in normalization helpers shared; provider
+    device-poll overrides and protobuf helpers deduplicated; Command Code and
+    OpenCode Go quota reuse shared coercion/date helpers.
+  - Console: loopback+drain-token gate (`requireLoopbackAdmin`), API-key
+    family cache-invalidation, account-status PATCH validation, pool-response
+    enrichment, live-cooldown SQL fragment, CSRF/mutation-limiter predicate,
+    and the IP-ban duration list all single-sourced; dead console code removed
+    (`summarizeUsagePerformance`, `injectorFor`, duplicate `numOrNull`).
+  - Network/security: provider-scoped egress-verdict audit writers
+    deduplicated; negative-auth-cache comment corrected.
+  - Persistence/observability: telemetry write/reconciliation row mapping
+    unified (backfill now fills `creditUsed`, `resolveMs`, `tokensPerSec`,
+    `firstContentDeltaAtMs`, `lastEventAtMs`, `payloadCaptureState`,
+    `degenerateStop`); dead file-based event-log reader removed; memory gauges
+    consolidated to one canonical series.
+  - Protocol: completion reasoning-effort parsing routes through shared
+    `parseReasoningIntent` (accepts `"instant"`); `reasoningTextForReplay`
+    single-sourced with summary-first precedence; the DSML/OMP/Qwen markup
+    parser scaffold unified behind `MarkupStreamParser<T>`.
+  - Validation: `tsc --noEmit` zero errors; full backend suite 4735 pass /
+    1 skip / 0 fail. 59 findings executed (56 CONFIRMED, including M-44/M-62
+    verified-promoted from PLAUSIBLE, plus the three protocol findings P-F1..3).
+  - **Deferred findings closed (follow-up pass).** The four remaining findings
+    were executed and verified against the same gates (typecheck zero errors,
+    full backend suite green):
+    - M-16: routing `plan()` now batch-reads quota evidence per lens
+      (`getCachedQuotaEntries` one MGET + `readQuotaSnapshots` one query)
+      instead of a serial read per candidate.
+    - M-57: `getSelectionFailure` reads cooldowns and inflight counters in one
+      `MGET` per key family, with a per-pool fallback on Redis error.
+    - M-23: probe adapter load now uses `resolve(providerId, { force: true })`
+      (single-flight, rebuilds against the current registration); the separate
+      `loadOne` method was deleted.
+    - M-59: the DNS cache uses `BoundedLruMap`; byte accounting uses the new
+      shared `evictOldestEntry` helper (insertion-order eviction preserved).
+      The API-key auth cache stays hand-rolled (deliberate exception).
+    - M-42 (PAT-exchange): the claim and auth PAT→job-token exchanges now
+      share `exchangeQoderPatForHost` — one v1 body + client-identity header
+      set, parameterized by each site's verified host (`center.qoder.sh` vs
+      the openapi host; both probed live, both accept the shared header set).
+      The auth path keeps its `mapUpstreamHttpError` behavior; the claim path
+      keeps its return-null behavior.
 
 ## [2.7.9] - 2026-11-08
 

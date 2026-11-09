@@ -5,7 +5,7 @@ import type { ApiKeyAdmissionService } from "../../security/admission/service";
 import type { VisionHandoffCall, VisionHandoffResult } from "../vision-handoff";
 import { isImageOrPlaceholderPart, lastImageCarryingUserTurnIndex } from "../vision-handoff";
 import type { CallerIdentity } from "../../security/access-control";
-import type { RouteCandidate as RouteCandidate, InMemoryRouteSnapshotService, RoutePlan } from "../routing/route-model";
+import type { RouteCandidate as RouteCandidate, InMemoryRouteSnapshotService, RoutePlan, RouteSnapshot } from "../routing/route-model";
 import type { RouteContinuationAffinity } from "../routing/route-model";
 import { resolveAliasTarget, type RoutingEngine } from "../routing/router";
 import { projectForRoute, routeCapabilitiesFor, deriveRequiredCapabilities } from "../../protocol/translation/capabilities";
@@ -360,6 +360,61 @@ export class ProxyRequestPreparer {
 
   constructor(private readonly deps: ProxyRequestPreparerDeps) {}
 
+  /**
+   * The key's model-admission gate, shared by the canonical and native
+   * preparation paths: CLI-mapping eligibility → alias resolution → the
+   * model allowlist → the model-prefix gate, in that exact order. Rejects
+   * with the same `model_not_allowed` 403s (same code, status, message, and
+   * detail fields) on both paths, so a policy change here cannot silently
+   * split admission between the chat and native surfaces. Returns the state
+   * the gate computed that the caller still needs for routing: the resolved
+   * alias target and whether CLI mappings were eligible.
+   */
+  #resolveAliasAndGateModel(
+    model: string,
+    authorization: ResolvedApiKey,
+    clientUserAgent: string | undefined,
+    snapshot: RouteSnapshot,
+  ): { readonly resolvedTarget: string; readonly allowCliMappings: boolean } {
+    // Scope opts the key into the mapping table; the User-Agent decides whether
+    // *this* request may consume it. Without the UA gate, a Claude→DeepSeek
+    // remap would also rewrite a non-Claude caller that named `opus`.
+    const allowCliMappings = allowsCliToolMappings(authorization.scopes, {
+      ...(clientUserAgent === undefined ? {} : { userAgent: clientUserAgent }),
+    });
+    // CLI source→target mappings are an explicit API-key capability. Ordinary
+    // tenant aliases remain available to every key; only selected keys may
+    // consume the CLI mapping table.
+    const resolvedTarget = resolveAliasTarget(
+      snapshot,
+      authorization.tenantId,
+      model,
+      allowCliMappings,
+      authorization.cliMappingOwnerId ?? authorization.id,
+    );
+    // Pass `model` as the requested name so an allowlisted alias / a CLI
+    // remapping can authorize the resolved target (see modelRejectionReason).
+    const allowedForKey = isModelAllowed(authorization.snapshot, resolvedTarget, undefined, model);
+    if (
+      authorization.modelPrefix &&
+      !model.startsWith(authorization.modelPrefix) &&
+      !resolvedTarget.startsWith(authorization.modelPrefix) &&
+      !allowedForKey
+    )
+      throw new GatewayError(
+        "model_not_allowed",
+        403,
+        `This key may only use models starting with '${authorization.modelPrefix}' (request {requestId}). Ask for one inside that prefix, or have an operator widen the key. The door's locked for this one — check the allowlist 🔒`,
+        { model, required_prefix: authorization.modelPrefix },
+      );
+    if (!allowedForKey) {
+      throw new GatewayError("model_not_allowed", 403, "model is not allowed for this API key (request {requestId}). The door's locked for this one — check the allowlist 🔒", {
+        model,
+      });
+    }
+    return { resolvedTarget, allowCliMappings };
+  }
+
   /** Injects the vision-handoff runner (called once from boot wiring). */
   bindVisionHandoff(
     runner: (input: VisionHandoffCall) => Promise<readonly VisionHandoffResult[]>,
@@ -401,47 +456,12 @@ export class ProxyRequestPreparer {
         ? initialRequest
         : withThinkingSuffixIntent({ ...initialRequest, model: bareModel }, thinkingIntent);
     const snapshot = await this.deps.snapshotService.getSnapshot();
-    // Scope opts the key into the mapping table; the User-Agent decides whether
-    // *this* request may consume it. Without the UA gate, a Claude→DeepSeek
-    // remap would also rewrite a non-Claude caller that named `opus`.
-    const allowCliMappings = allowsCliToolMappings(authorization.scopes, {
-      ...(input.clientUserAgent === undefined ? {} : { userAgent: input.clientUserAgent }),
-    });
-    // CLI source→target mappings are an explicit API-key capability. Ordinary
-    // tenant aliases remain available to every key; only selected keys may
-    // consume the CLI mapping table.
-    const resolvedTarget = resolveAliasTarget(
+    const { allowCliMappings } = this.#resolveAliasAndGateModel(
+      request.model,
+      authorization,
+      input.clientUserAgent,
       snapshot,
-      authorization.tenantId,
-      request.model,
-      allowCliMappings,
-      authorization.cliMappingOwnerId ?? authorization.id,
     );
-    // Pass `request.model` as the requested name so an allowlisted alias / a
-    // CLI remapping can authorize the resolved target (see modelRejectionReason).
-    const allowedForKey = isModelAllowed(
-      authorization.snapshot,
-      resolvedTarget,
-      undefined,
-      request.model,
-    );
-    if (
-      authorization.modelPrefix &&
-      !request.model.startsWith(authorization.modelPrefix) &&
-      !resolvedTarget.startsWith(authorization.modelPrefix) &&
-      !allowedForKey
-    )
-      throw new GatewayError(
-        "model_not_allowed",
-        403,
-        `This key may only use models starting with '${authorization.modelPrefix}' (request {requestId}). Ask for one inside that prefix, or have an operator widen the key. The door's locked for this one — check the allowlist 🔒`,
-        { model: request.model, required_prefix: authorization.modelPrefix },
-      );
-    if (!allowedForKey) {
-      throw new GatewayError("model_not_allowed", 403, "model is not allowed for this API key (request {requestId}). The door's locked for this one — check the allowlist 🔒", {
-        model: request.model,
-      });
-    }
     // An inline image that cannot survive the upstream is dropped here rather
     // than dispatched: a provider rejects the whole request for one corrupt
     // attachment, and the buddy family reports it with no field named, so the
@@ -743,38 +763,12 @@ export class ProxyRequestPreparer {
     if (input.signal?.aborted)
       throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
     const snapshot = await this.deps.snapshotService.getSnapshot();
-    const allowCliMappings = allowsCliToolMappings(input.authorization.scopes, {
-      ...(input.clientUserAgent === undefined ? {} : { userAgent: input.clientUserAgent }),
-    });
-    const resolvedTarget = resolveAliasTarget(
+    const { allowCliMappings } = this.#resolveAliasAndGateModel(
+      input.model,
+      input.authorization,
+      input.clientUserAgent,
       snapshot,
-      input.authorization.tenantId,
-      input.model,
-      allowCliMappings,
-      input.authorization.cliMappingOwnerId ?? input.authorization.id,
     );
-    const allowedForKey = isModelAllowed(
-      input.authorization.snapshot,
-      resolvedTarget,
-      undefined,
-      input.model,
-    );
-    if (
-      input.authorization.modelPrefix &&
-      !input.model.startsWith(input.authorization.modelPrefix) &&
-      !resolvedTarget.startsWith(input.authorization.modelPrefix) &&
-      !allowedForKey
-    )
-      throw new GatewayError(
-        "model_not_allowed",
-        403,
-        `This key may only use models starting with '${input.authorization.modelPrefix}' (request {requestId}). Ask for one inside that prefix, or have an operator widen the key. The door's locked for this one — check the allowlist 🔒`,
-        { model: input.model, required_prefix: input.authorization.modelPrefix },
-      );
-    if (!allowedForKey)
-      throw new GatewayError("model_not_allowed", 403, "model is not allowed for this API key (request {requestId}). The door's locked for this one — check the allowlist 🔒", {
-        model: input.model,
-      });
     const plan = await this.deps.routingEngine.plan(
       input.model,
       snapshot,

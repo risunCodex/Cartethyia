@@ -102,9 +102,13 @@ export async function fetchClaudeQuota(
   credential: string,
   fetcher: FetchLike,
 ): Promise<ProviderQuotaResult> {
+  // No module-local quota cache: the shared two-tier quota cache owns
+  // cross-call dedup, and a local tier keyed by credential only is never
+  // invalidated by `debitCachedQuota`, so a sweep within its TTL could
+  // resurrect a spent balance over the shared cache. Every call here is a
+  // fresh upstream read; the shared cache's in-flight dedup prevents
+  // duplicate traffic.
   const key = sha256Hex(credential);
-  const cached = quotaCache.get(key);
-  if (cached !== undefined) return cached;
   if (quotaCooldown.get(key) !== undefined) {
     throw new Error("Quota endpoint rejected request: rate limited (cooled down)");
   }
@@ -131,9 +135,7 @@ export async function fetchClaudeQuota(
       },
       observing,
     );
-    const result = parseClaudeQuota(body);
-    quotaCache.set(key, result);
-    return result;
+    return parseClaudeQuota(body);
   } catch (error: unknown) {
     // Hammering the usage endpoint on every call is its own rate-limit
     // risk: back off briefly after a 429 instead of retrying into it.
@@ -143,21 +145,16 @@ export async function fetchClaudeQuota(
 }
 
 /**
- * Bounded per-credential quota cache (5 min) plus a short 429 cooldown
- * (3 min). Keys are credential hashes, never raw secrets; both caches are
+ * Short 429 cooldown (3 min). Keys are credential hashes, never raw secrets;
  * capped so credential fan-out cannot pin memory.
+ *
+ * The cooldown is an absolute window (`until = now + QUOTA_COOLDOWN_MS`), not a
+ * TTL from read time, so it is a sentinel whose own TTL *is* that window: the
+ * entry lives for exactly the cooldown and is gone the moment it closes.
  */
-const QUOTA_CACHE_TTL_MS = 5 * 60_000;
 const QUOTA_COOLDOWN_MS = 3 * 60_000;
-const QUOTA_CACHE_MAX_ENTRIES = 256;
-const quotaCache = new TtlCache<ProviderQuotaResult>({
-  ttlMs: QUOTA_CACHE_TTL_MS,
-  maxEntries: QUOTA_CACHE_MAX_ENTRIES,
-});
-// The cooldown is an absolute window (`until = now + QUOTA_COOLDOWN_MS`), not a
-// TTL from read time, so it is a sentinel whose own TTL *is* that window: the
-// entry lives for exactly the cooldown and is gone the moment it closes.
+const QUOTA_COOLDOWN_MAX_ENTRIES = 256;
 const quotaCooldown = new TtlCache<true>({
   ttlMs: QUOTA_COOLDOWN_MS,
-  maxEntries: QUOTA_CACHE_MAX_ENTRIES,
+  maxEntries: QUOTA_COOLDOWN_MAX_ENTRIES,
 });

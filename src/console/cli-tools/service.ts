@@ -8,7 +8,6 @@ import type {
   CliMappingSettings,
   DownloadResult,
   ToolDef,
-  ToolInjector,
   ToolStatus,
 } from "./contracts";
 import { TOOL_IDS, TOOL_REGISTRY, type ToolId, type ToolRegistryEntry } from "./contracts";
@@ -45,11 +44,6 @@ function toToolRegistryEntry(def: ToolDef): ToolRegistryEntry {
     ...(def.docsUrl === undefined ? {} : { docsUrl: def.docsUrl }),
     ...(def.notes === undefined ? {} : { notes: def.notes }),
   };
-}
-
-function injectorFor(toolId: string): ToolInjector | null {
-  const injector = INJECTORS[toolId as ToolId];
-  return injector ?? null;
 }
 
 /** Operator-facing summary of what an apply actually did. */
@@ -139,8 +133,8 @@ export class CliToolService {
   }
 
   async getStatus(toolId: string): Promise<ToolStatus | null> {
-    const injector = injectorFor(toolId);
-    if (injector === null) return null;
+    const injector = INJECTORS[toolId as ToolId];
+    if (injector === undefined) return null;
     return injector.getStatus();
   }
 
@@ -249,8 +243,8 @@ export class CliToolService {
   }
 
   async downloadConfig(toolId: string, input: ApplyInput): Promise<DownloadResult | null> {
-    const injector = injectorFor(toolId);
-    if (injector === null) return null;
+    const injector = INJECTORS[toolId as ToolId];
+    if (injector === undefined) return null;
     if (!input.endpoint || !input.apiKey) return null;
     try {
       return await injector.download(input);
@@ -281,8 +275,8 @@ export class CliToolService {
     apiKeyId: string,
     input: ApplyInput & { mode?: "file" | "remote" | "both" },
   ): Promise<ApplyConfigResult | null> {
-    const injector = injectorFor(toolId);
-    if (injector === null) return null;
+    const injector = INJECTORS[toolId as ToolId];
+    if (injector === undefined) return null;
     const mode = input.mode ?? "both";
     const wantsFile = mode === "file" || mode === "both";
     const wantsRemote = mode === "remote" || mode === "both";

@@ -622,19 +622,20 @@ export function nativeCompletionBase(input: {
   | "tokensPerSec"
 > {
   return {
-    providerId: input.providerId,
-    modelId: input.modelId,
-    tenantId: input.tenantId,
-    ingressBody: input.ingressBody,
-    terminal: true,
-    ...(input.accountId === undefined ? {} : { accountId: input.accountId }),
-    ...(input.accountLabel === undefined ? {} : { accountLabel: input.accountLabel }),
-    ...(input.networkPoolId === undefined ? {} : { networkPoolId: input.networkPoolId }),
-    ...(input.lease === undefined ? {} : { lease: input.lease }),
-    db: input.db,
-    ...(input.telemetryBuffer === undefined ? {} : { telemetryBuffer: input.telemetryBuffer }),
-    ...(input.snapshotService === undefined ? {} : { snapshotService: input.snapshotService }),
-    ...(input.providerCapture === undefined ? {} : { providerCapture: input.providerCapture }),
+    ...completionContext({
+      providerId: input.providerId,
+      modelId: input.modelId,
+      tenantId: input.tenantId,
+      ingressBody: input.ingressBody,
+      ...(input.providerCapture === undefined ? {} : { providerCapture: input.providerCapture }),
+      db: input.db,
+      ...(input.accountId === undefined ? {} : { accountId: input.accountId }),
+      ...(input.accountLabel === undefined ? {} : { accountLabel: input.accountLabel }),
+      ...(input.networkPoolId === undefined ? {} : { networkPoolId: input.networkPoolId }),
+      ...(input.lease === undefined ? {} : { lease: input.lease }),
+      ...(input.telemetryBuffer === undefined ? {} : { telemetryBuffer: input.telemetryBuffer }),
+      ...(input.snapshotService === undefined ? {} : { snapshotService: input.snapshotService }),
+    }),
     ...(input.usage === undefined ? {} : { usage: input.usage }),
     ...(input.commitUsage === undefined ? {} : { commitUsage: input.commitUsage }),
   };

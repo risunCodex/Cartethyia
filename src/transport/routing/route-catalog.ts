@@ -662,6 +662,72 @@ class RouteCatalogRepository {
       return limit === undefined ? {} : { network_pool_provider_limit: limit };
     }
 
+    /**
+     * The field set shared by every `RoutedCandidate` literal in the fan-out
+     * below. The four sites used to re-declare the same ~15-field shape, so a
+     * field added to one had to be added to all four. `opts` carries only the
+     * deltas that genuinely differ per site; health stamping is deliberately
+     * NOT merged here — it happens at each site (inside the pool-account
+     * literal, never for configured-pool tenants, conditional for public,
+     * after construction for account rows), and collapsing those branches
+     * would change routing.
+     */
+    function buildCandidateBase(
+      model: MergedModelRow,
+      capabilityProfile: Record<string, boolean>,
+      opts: {
+        readonly tenantId: string | null;
+        /** `false` emits `requires_account: false` (credential-less route). */
+        readonly requiresAccount?: boolean;
+        readonly ownerTenantId?: string | null;
+        readonly userAgent?: string;
+        readonly accountId?: string;
+        readonly proOnly?: boolean;
+        readonly accountPlan?: string | null;
+        readonly maxInflight?: number;
+        readonly pools?: {
+          readonly ids: readonly string[];
+          readonly limits: Record<string, number>;
+          readonly weights: Record<string, number>;
+          /** `undefined` (from `resolveNetworkPools`) means no routing strategy. */
+          readonly routing?: (PoolRoutingSetting & { tenantId: string }) | undefined;
+        };
+      },
+    ): RoutedCandidate {
+      return {
+        provider_id: model.providerId,
+        model_id: model.modelId,
+        wire_family: model.wireFamily as WireFamily,
+        ...(model.dialect == null ? {} : { dialect: model.dialect }),
+        service_kind: model.serviceKind,
+        endpoint: model.endpointPath,
+        ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
+        capability_profile: capabilityProfile,
+        ...(opts.userAgent === undefined ? {} : { user_agent: opts.userAgent }),
+        tenant_id: opts.tenantId,
+        ...(model.freeTier === true ? { free_tier: true } : {}),
+        // Public credential-less candidates have no account to own them.
+        owner_tenant_id: opts.ownerTenantId ?? null,
+        ...(opts.accountId === undefined ? {} : { provider_account_id: opts.accountId }),
+        ...(opts.proOnly === true ? { pro_only: true } : {}),
+        ...(opts.accountPlan === null || opts.accountPlan === undefined
+          ? {}
+          : { account_plan: opts.accountPlan }),
+        ...(opts.maxInflight === undefined ? {} : { max_inflight: opts.maxInflight }),
+        ...(opts.requiresAccount === false ? { requires_account: false as const } : {}),
+        ...(opts.pools
+          ? {
+              network_pool_ids: opts.pools.ids,
+              network_pool_required: true,
+              network_pool_limits: opts.pools.limits,
+              network_pool_weights: opts.pools.weights,
+              ...(opts.pools.routing ? { network_pool_routing: opts.pools.routing } : {}),
+              ...providerLimitFor(model.providerId, opts.tenantId),
+            }
+          : {}),
+      };
+    }
+
     // Group usable accounts per provider (not per provider-tenant). Built-in
     // providers are `tenant_id IS NULL` but their accounts are per-tenant, so
     // grouping by `providerTenantId` would make every global model look
@@ -716,38 +782,30 @@ class RouteCatalogRepository {
               const tenantPools = resolveNetworkPools(model.providerId, tenantOwnerId);
               if (!tenantPools) continue;
               emittedPoolAccount = true;
-              const tenantCandidate: RoutedCandidate = {
-                provider_id: model.providerId,
-                model_id: model.modelId,
-                wire_family: model.wireFamily as WireFamily,
-                ...(model.dialect == null ? {} : { dialect: model.dialect }),
-                service_kind: model.serviceKind,
-                endpoint: model.endpointPath,
-                ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
-                capability_profile: capabilityProfile,
-                tenant_id: tenantOwnerId,
-                ...(model.freeTier === true ? { free_tier: true } : {}),
-                // Public credential-less candidates have no account to own them.
-                owner_tenant_id: null,
-                requires_account: false as const,
-                network_pool_ids: [poolId],
-                network_pool_required: true,
-                network_pool_limits: tenantPools.limits,
-                network_pool_weights: tenantPools.weights,
-                ...(tenantPools.routing ? { network_pool_routing: tenantPools.routing } : {}),
-                ...providerLimitFor(model.providerId, tenantOwnerId),
-                ...(first.status === "disabled"
-                  ? { health_status: "disabled" as const }
-                  : first.status === "cooldown"
-                    ? {
-                        health_status: "cooldown" as const,
-                        cooldown_kind: hardCooldownCategory(first.lastErrorCategory) ? "hard" : "soft",
-                        ...(first.cooldownUntil && first.cooldownUntil.getTime() > Date.now()
-                          ? { cooldown_until: first.cooldownUntil.getTime() }
-                          : {}),
-                      }
-                    : {}),
-              };
+              const tenantCandidate = buildCandidateBase(model, capabilityProfile, {
+                tenantId: tenantOwnerId,
+                requiresAccount: false,
+                pools: {
+                  ids: [poolId],
+                  limits: tenantPools.limits,
+                  weights: tenantPools.weights,
+                  routing: tenantPools.routing,
+                },
+              });
+              // Pool-account health from the row: a spent egress is excluded
+              // exactly like a cooling account, and the deadline rides along so
+              // `plan()` can quote the real reset on an all-cooling answer.
+              if (first.status === "disabled") {
+                tenantCandidate.health_status = "disabled";
+              } else if (first.status === "cooldown") {
+                tenantCandidate.health_status = "cooldown";
+                tenantCandidate.cooldown_kind = hardCooldownCategory(first.lastErrorCategory)
+                  ? "hard"
+                  : "soft";
+                if (first.cooldownUntil && first.cooldownUntil.getTime() > Date.now()) {
+                  tenantCandidate.cooldown_until = first.cooldownUntil.getTime();
+                }
+              }
               if (tenantId === undefined || tenantId === tenantOwnerId) {
                 candidates.push(tenantCandidate);
               }
@@ -757,27 +815,16 @@ class RouteCatalogRepository {
           for (const tId of configuredPoolTenants) {
             const tenantPools = resolveNetworkPools(model.providerId, tId);
             if (tenantPools) {
-              const tenantCandidate: RoutedCandidate = {
-                provider_id: model.providerId,
-                model_id: model.modelId,
-                wire_family: model.wireFamily as WireFamily,
-                ...(model.dialect == null ? {} : { dialect: model.dialect }),
-                service_kind: model.serviceKind,
-                endpoint: model.endpointPath,
-                ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
-                capability_profile: capabilityProfile,
-                tenant_id: tId,
-                ...(model.freeTier === true ? { free_tier: true } : {}),
-                // Public credential-less candidates have no account to own them.
-                owner_tenant_id: null,
-                requires_account: false as const,
-                network_pool_ids: tenantPools.ids,
-                network_pool_required: true,
-                network_pool_limits: tenantPools.limits,
-                network_pool_weights: tenantPools.weights,
-                ...(tenantPools.routing ? { network_pool_routing: tenantPools.routing } : {}),
-                ...providerLimitFor(model.providerId, tId),
-              };
+              const tenantCandidate = buildCandidateBase(model, capabilityProfile, {
+                tenantId: tId,
+                requiresAccount: false,
+                pools: {
+                  ids: tenantPools.ids,
+                  limits: tenantPools.limits,
+                  weights: tenantPools.weights,
+                  routing: tenantPools.routing,
+                },
+              });
               if (tenantId === undefined || tenantId === tId) {
                 candidates.push(tenantCandidate);
               }
@@ -787,33 +834,17 @@ class RouteCatalogRepository {
         const networkPools = providerRequiresAccount
           ? undefined
           : resolveNetworkPools(model.providerId, providerTenantId);
-        const candidate: RoutedCandidate = {
-          provider_id: model.providerId,
-          model_id: model.modelId,
-          wire_family: model.wireFamily as WireFamily,
-          ...(model.dialect == null ? {} : { dialect: model.dialect }),
-          service_kind: model.serviceKind,
-          endpoint: model.endpointPath,
-          ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
-          capability_profile: capabilityProfile,
-          tenant_id: providerTenantId,
-          ...(model.freeTier === true ? { free_tier: true } : {}),
-          // Public credential-less candidates have no account to own them.
-          owner_tenant_id: null,
-          ...(providerRequiresAccount
-            ? { health_status: "disabled" as const }
-            : { requires_account: false as const }),
-          ...(networkPools
-            ? {
-                network_pool_ids: networkPools.ids,
-                network_pool_required: true,
-                network_pool_limits: networkPools.limits,
-                network_pool_weights: networkPools.weights,
-                ...(networkPools.routing ? { network_pool_routing: networkPools.routing } : {}),
-                ...providerLimitFor(model.providerId, providerTenantId),
-              }
-            : {}),
-        };
+        const candidate = buildCandidateBase(model, capabilityProfile, {
+          tenantId: providerTenantId,
+          // A provider that requires an account but has none is unusable: the
+          // public candidate is stamped disabled below. A genuinely
+          // credential-less provider carries `requires_account: false` instead.
+          ...(providerRequiresAccount ? {} : { requiresAccount: false }),
+          ...(networkPools ? { pools: networkPools } : {}),
+        });
+        if (providerRequiresAccount) {
+          candidate.health_status = "disabled";
+        }
         if (tenantId === undefined || candidate.tenant_id === null || candidate.tenant_id === tenantId) {
           candidates.push(candidate);
         }
@@ -831,46 +862,28 @@ class RouteCatalogRepository {
         }
         const networkPools = resolveNetworkPools(model.providerId, rowTenantId);
         const routeUserAgent = resolveUserAgent(model.providerId, rowTenantId);
-        const candidate: RoutedCandidate = {
-          provider_id: model.providerId,
-          model_id: model.modelId,
-          wire_family: model.wireFamily as WireFamily,
-          ...(model.dialect == null ? {} : { dialect: model.dialect }),
-          service_kind: model.serviceKind,
-          endpoint: model.endpointPath,
-          ...(model.outputLimit == null ? {} : { output_limit: model.outputLimit }),
-          capability_profile: capabilityProfile,
-          ...(routeUserAgent === undefined ? {} : { user_agent: routeUserAgent }),
-          ...(model.freeTier === true ? { free_tier: true } : {}),
-          tenant_id: rowTenantId,
-          provider_account_id: account.id,
+        const candidate = buildCandidateBase(model, capabilityProfile, {
+          tenantId: rowTenantId,
+          accountId: account.id,
           // The account's owning tenant (null = shared pool-wide) — the bucket
           // key for admission, distinct from the requesting tenant.
-          owner_tenant_id: account.tenantId ?? null,
+          ownerTenantId: account.tenantId ?? null,
           // The plan gate is per (account, model): the model may be refused on
           // a free plan and the account may be on one. Both ride here because
           // `plan()` sees the candidate and nothing else.
-          ...(model.proOnly === true ? { pro_only: true } : {}),
+          ...(model.proOnly === true ? { proOnly: true } : {}),
           ...(account.quotaPlan === null || account.quotaPlan === undefined
             ? {}
-            : { account_plan: account.quotaPlan }),
+            : { accountPlan: account.quotaPlan }),
           // Provider-wide concurrency ceiling from Routing Strategy; legacy
           // account overrides are never read here.
           ...(() => {
             const resolved = resolveMaxInflight(model.providerId, rowTenantId);
-            return resolved === undefined ? {} : { max_inflight: resolved };
+            return resolved === undefined ? {} : { maxInflight: resolved };
           })(),
-          ...(networkPools
-            ? {
-                network_pool_required: true,
-                network_pool_ids: networkPools.ids,
-                network_pool_limits: networkPools.limits,
-                network_pool_weights: networkPools.weights,
-                ...(networkPools.routing ? { network_pool_routing: networkPools.routing } : {}),
-                ...providerLimitFor(model.providerId, rowTenantId),
-              }
-            : {}),
-        };
+          ...(routeUserAgent === undefined ? {} : { userAgent: routeUserAgent }),
+          ...(networkPools ? { pools: networkPools } : {}),
+        });
         if (account.status === "cooldown") {
           // A row that still says `cooldown` stays excluded until the sweeper
           // flips it back to `active`. An *expired* deadline used to read as

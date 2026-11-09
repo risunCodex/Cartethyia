@@ -72,9 +72,8 @@ import {
   toQuotaView,
 } from "./quota-view";
 import {
-  ACCOUNT_STATUSES,
+  resolveNextAccountStatus,
   type AccountQuotaRoutesDeps,
-  type AccountStatus,
 } from "./account-quota-shared";
 import {
   DAILY_GROWTH_LEG_TIMEOUT_MS,
@@ -745,23 +744,12 @@ export function registerAccountQuotaTenantRoutes(
       },
       async ({ request, params, body, set }) => {
         const access = requireTenantScope(accessResolver(request), "dashboard:write");
-        if (body.status !== undefined && !ACCOUNT_STATUSES.includes(body.status as AccountStatus)) {
-          set.status = 400;
-          return {
-            error: `status must be one of: ${ACCOUNT_STATUSES.join(", ")}`,
-            code: "invalid_status",
-          };
+        const resolved = resolveNextAccountStatus(body);
+        if (!resolved.ok) {
+          set.status = resolved.status;
+          return resolved.body;
         }
-        const nextStatus: AccountStatus | undefined =
-          body.active !== undefined
-            ? body.active
-              ? "active"
-              : "disabled"
-            : (body.status as AccountStatus | undefined);
-        if (!nextStatus) {
-          set.status = 400;
-          return { error: "active or status is required", code: "invalid_request" };
-        }
+        const nextStatus = resolved.nextStatus;
         const updated = await db
           .update(providerAccounts)
           .set({ status: nextStatus })

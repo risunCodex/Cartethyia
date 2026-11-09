@@ -197,59 +197,6 @@ const TOP_N = 50;
 const USAGE_READ_THROUGH_TTL_SECONDS = 30;
 
 /**
- * Nearest-rank percentile over a sorted array — kept for the JS-side
- * `summarizeUsagePerformance` (still used by callers that already hold a
- * bounded event list). The usage endpoints read percentiles from SQL via
- * `summarizeUsagePerformanceSql`, which is what the dashboard polls.
- */
-function percentile(sorted: readonly number[], fraction: number): number {
-  if (sorted.length === 0) return 0;
-  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(fraction * sorted.length) - 1));
-  return Math.round(sorted[index] ?? 0);
-}
-
-interface UsagePerformanceSummary {
-  avgResolveMs: number;
-  avgDurationMs: number;
-  latencyP50Ms: number;
-  latencyP95Ms: number;
-  latencyP99Ms: number;
-  /** Events each series was computed from; see `UsageSummaryTotals`. */
-  latencySampleCount: number;
-  resolveSampleCount: number;
-}
-
-/** Summarizes routing delay and request latency for an already-filtered period. */
-export function summarizeUsagePerformance(
-  events: readonly Pick<TelemetryEventRecord, "latencyMs" | "resolveMs">[],
-): UsagePerformanceSummary {
-  const latencies: number[] = [];
-  let latencySum = 0;
-  let resolveSum = 0;
-  let resolveCount = 0;
-  for (const event of events) {
-    if (event.latencyMs !== null) {
-      latencies.push(event.latencyMs);
-      latencySum += event.latencyMs;
-    }
-    if (event.resolveMs !== null) {
-      resolveSum += event.resolveMs;
-      resolveCount += 1;
-    }
-  }
-  latencies.sort((a, b) => a - b);
-  return {
-    avgResolveMs: resolveCount > 0 ? resolveSum / resolveCount : 0,
-    avgDurationMs: latencies.length > 0 ? latencySum / latencies.length : 0,
-    latencyP50Ms: percentile(latencies, 0.5),
-    latencyP95Ms: percentile(latencies, 0.95),
-    latencyP99Ms: percentile(latencies, 0.99),
-    latencySampleCount: latencies.length,
-    resolveSampleCount: resolveCount,
-  };
-}
-
-/**
  * The console dimension as the SQL reader's grouping key.
  *
  * `client` maps to `client_name` (stamped at ingestion) rather than

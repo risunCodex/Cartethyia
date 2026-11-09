@@ -11,7 +11,9 @@ const sandbox = await mkdtemp(join(tmpdir(), "carte-raw-events-"));
 const previousDataDir = process.env.CARTETHYIA_DATA_DIR;
 process.env.CARTETHYIA_DATA_DIR = sandbox;
 
-const { TELEMETRY_EVENT_DIR, queryTelemetryEvents } = await import("../../src/observability/event-log");
+const { TELEMETRY_EVENT_DIR } = await import("../../src/observability/event-log");
+const { queryTelemetryEvents } = await import("../../src/observability/event-query");
+const { reconcileTelemetry } = await import("../../src/observability/telemetry-reconciliation");
 const { DrizzleTelemetryStore } = await import("../../src/persistence/stores/telemetry-store");
 
 const sqlite = createSqliteDatabase(join(sandbox, "test.sqlite"));
@@ -80,21 +82,31 @@ test("the writer appends raw hourly JSONL and never writes a summary index", asy
   expect(files).toHaveLength(1);
   expect(files[0]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-[0-9a-f-]{36}\.jsonl$/);
   expect(files.some((file) => file.includes("index") || file.includes("compacted"))).toBe(false);
-  const rows = await queryTelemetryEvents({ tenantId });
-  expect(rows).toHaveLength(1);
-  expect(rows[0]?.requestedModel).toBe("test/model");
+  // The canonical read surface is the SQL table, not the raw mirror.
+  const page = await queryTelemetryEvents(db, { tenantId, since: new Date(0) });
+  expect(page.events).toHaveLength(1);
+  expect(page.events[0]?.requestedModel).toBe("test/model");
   const raw = await readFile(join(TELEMETRY_EVENT_DIR, files[0]!), "utf8");
   expect(raw.trim().split("\n")).toHaveLength(1);
 });
 
-test("legacy daily raw logs remain readable but summaries are not events", async () => {
-  const day = new Date().toISOString().slice(0, 10);
-  await writeFile(join(TELEMETRY_EVENT_DIR, `${day}.events.jsonl`), `${JSON.stringify(event())}\n`);
-  await writeFile(join(TELEMETRY_EVENT_DIR, `${day}.index.json`), JSON.stringify({ requests: 900 }));
+test("legacy daily raw logs stay readable to reconciliation; summaries are never events", async () => {
+  // A legacy day file (`.events.jsonl`) and a compacted summary both end in
+  // `.jsonl`; the reconciliation reader must skip the summary row (no
+  // tenantId/requestId) and still recover the real event. The day-file hour
+  // stamp (`YYYY-MM-DDT00`) sorts before the two-hour skip floor.
+  const day = new Date(Date.now() - 24 * 3_600_000).toISOString().slice(0, 10);
+  const requestId = crypto.randomUUID();
+  await writeFile(join(TELEMETRY_EVENT_DIR, `${day}.events.jsonl`), `${JSON.stringify(event({ requestId }))}\n`);
   await writeFile(join(TELEMETRY_EVENT_DIR, `${day}.compacted.jsonl`), `${JSON.stringify({ requests: 900 })}\n`);
-  const rows = await queryTelemetryEvents({ tenantId });
-  expect(rows).toHaveLength(1);
-  expect(rows[0]?.requestedModel).toBe("test/model");
+  const report = await reconcileTelemetry(db, { verify: false });
+  // The summary line carries no tenantId/requestId, so it is not an event —
+  // it is examined as a line but never inserted.
+  expect(report.eventsExamined).toBe(1);
+  expect(report.eventsInserted).toBe(1);
+  const page = await queryTelemetryEvents(db, { tenantId, requestId, since: new Date(0) });
+  expect(page.events).toHaveLength(1);
+  expect(page.events[0]?.requestedModel).toBe("test/model");
 });
 
 test("a retry after an append failure does not charge its aggregate twice", async () => {

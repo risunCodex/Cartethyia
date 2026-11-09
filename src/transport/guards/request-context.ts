@@ -12,7 +12,7 @@ import { resolveClientIdentity } from "../../security/ip-boundary";
 import { GATEWAY_SECURITY_HEADERS } from "../../security/outbound-headers";
 import { pushStructuredConsoleLog } from "../../observability/log-ring";
 import { log } from "../../observability/logger";
-import { isJsonProxyRoutePath, isProxyDispatchRoute } from "./body-policy";
+import { isProxyDispatchRoute } from "./body-policy";
 import { isOpaqueBodyRoute } from "../contracts";
 import { peerAddressUnavailableError } from "./guard-errors";
 
@@ -22,6 +22,24 @@ interface RequestApp {
   request(
     handler: (context: { request: Request; set?: { headers: Record<string, string> } }) => void,
   ): RequestApp;
+}
+
+/**
+ * Whether this request falls outside the canonical JSON-proxy pipeline the
+ * canonical-parse and route-preparation stages serve.
+ *
+ * Shared gate, applied in the exact order both middlewares historically
+ * checked: non-`/v1/` paths, GET/HEAD (which carry no body to parse), then
+ * the JSON route table with opaque-body routes excluded — `/v1/completions`
+ * needs no separate arm because it is already in the JSON routes table, and
+ * native routes (compact, System One, token count) read a body but are never
+ * parsed into a canonical request, their bodies being opaque by contract.
+ */
+function skipNonCanonicalProxyRequest(request: Request): boolean {
+  const path = fastPathname(request.url);
+  if (!path.startsWith("/v1/")) return true;
+  if (request.method === "GET" || request.method === "HEAD") return true;
+  return !isProxyDispatchRoute(path) || isOpaqueBodyRoute(path);
 }
 
 interface RequestContextDeps {
@@ -141,15 +159,9 @@ export function createCanonicalRequestMiddleware(deps: {
 }): Elysia {
   return new Elysia()
     .beforeHandle(async ({ request }) => {
-      const path = fastPathname(request.url);
-      if (!path.startsWith("/v1/")) return;
-      if (request.method === "GET" || request.method === "HEAD") return;
-      // `/v1/completions` needs no separate arm: it is already in
-      // the JSON routes table, so the body-policy predicate covers it.
-      // Native routes (compact, System One) read a body but are never parsed
-      // into a canonical request — their bodies are opaque by contract.
-      if (!isJsonProxyRoutePath(path) || isOpaqueBodyRoute(path)) return;
       // Model discovery and other GET/multimodal routes must not go through canonical parsing.
+      if (skipNonCanonicalProxyRequest(request)) return;
+      const path = fastPathname(request.url);
       const state = deps.stateStore.require(request);
       // Single-read invariant: the ingress policy middleware already decoded the
       // body once into `state.ingressBody`. Never re-read `request.body` here —
@@ -216,11 +228,7 @@ export function createProxyRoutePreparationMiddleware(deps: {
 }): Elysia {
   return new Elysia()
     .beforeHandle(async ({ request }) => {
-      const path = fastPathname(request.url);
-      if (!path.startsWith("/v1/")) return;
-      if (request.method === "GET" || request.method === "HEAD") return;
-      const isJsonRoute = isJsonProxyRoutePath(path);
-      if (!isJsonRoute || isOpaqueBodyRoute(path)) return;
+      if (skipNonCanonicalProxyRequest(request)) return;
       const state = deps.stateStore.require(request);
       if (!state.authorization || !state.canonicalRequest)
         throw new GatewayError("route_unavailable", 503, "The request was not authenticated and parsed, so this route cannot be served (request {requestId}). Resend the request. The bouncer stepped out — resend shortly 🚪");

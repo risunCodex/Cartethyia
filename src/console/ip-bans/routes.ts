@@ -10,6 +10,7 @@ import { Elysia, t, type AnyElysia } from "elysia";
 import { errorResponse, requireGlobalAdmin } from "../shared/errors";
 import type { IpAbuseStore } from "../../security/abuse";
 import type { ConsoleAccessResolver } from "../auth/access";
+import { BAN_DURATION_CHOICES } from "../api-keys/ban-constants";
 
 /** One active IP ban, as the console returns it. */
 export interface IpBanResponse {
@@ -26,17 +27,8 @@ export interface IpBanRoutesConfig {
   readonly store: IpAbuseStore;
 }
 
-const BAN_DURATION_CHOICES: readonly { readonly minutes: number | null; readonly label: string }[] = [
-  { minutes: 60, label: "1 hour" },
-  { minutes: 6 * 60, label: "6 hours" },
-  { minutes: 12 * 60, label: "12 hours" },
-  { minutes: 24 * 60, label: "1 day" },
-  { minutes: 7 * 24 * 60, label: "7 days" },
-  { minutes: null, label: "Permanent" },
-] as const;
-
-/** Parses a duration choice into minutes; null = permanent. */
-export function parseBanDuration(value: unknown): number | null | undefined {
+/** Parses a duration choice into minutes; null = permanent; undefined = invalid. */
+function parseBanDuration(value: unknown): number | null | undefined {
   if (value === null || value === undefined) return value === null ? null : undefined;
   const minutes = Number(value);
   if (!Number.isFinite(minutes) || minutes <= 0) return undefined;
@@ -68,8 +60,10 @@ export function createIpBanRoutes(config: IpBanRoutesConfig): AnyElysia {
           const ip = body.ip.trim();
           if (ip.length === 0)
             return errorResponse(new Error("ip is required"), set, "Invalid IP ban request");
-          const minutes = body.minutes === undefined || body.minutes === null ? null : Math.round(body.minutes);
-          if (minutes !== null && (!Number.isFinite(minutes) || minutes <= 0))
+          // Absent is permanent (the default), exactly like an explicit null;
+          // parseBanDuration maps those to null and rejects anything else.
+          const minutes = body.minutes === undefined ? null : parseBanDuration(body.minutes);
+          if (minutes === undefined)
             return errorResponse(new Error("minutes must be a positive integer or null"), set, "Invalid IP ban request");
           await store.ban(ip, minutes === null ? 0 : minutes * 60_000);
           return {

@@ -15,6 +15,7 @@ import {
   type RewriteWalk,
 } from "../codecs";
 import { geminiThinkingOutputFloor } from "../../protocol/reasoning";
+import { reasoningTextForReplay } from "../reasoning-text";
 import { base64DecodedByteLength, clampImage } from "../image-clamp";
 
 export function geminiModelUrl(base: string, model: string, action: string): string {
@@ -156,7 +157,7 @@ function toGeminiPart(
     // Field required`. Drop unsigned reasoning blocks (missing *or* empty
     // signature) so the conversation replays cleanly.
     if (typeof part.signature !== "string" || part.signature.length === 0) return [];
-    const summary = part.summary ?? (typeof part.payload === "string" ? part.payload : "");
+    const summary = reasoningTextForReplay(part) ?? "";
     return [{ text: summary, thought: true, thoughtSignature: part.signature }];
   }
   if (part.kind === "image") {

@@ -16,10 +16,14 @@
  */
 import type { CartethyiaDatabase } from "../../../persistence/db-handle";
 import type { ValidatedFetch } from "../../../network/outbound-fetch";
-import { getQoderVersion } from "../../operations/client-versions";
 import { qoderRealmForProvider, QODER_REALMS } from "./qoder-realm";
+import { exchangeQoderPatForHost } from "./qoder-auth";
 import {
+  asNumber,
+  asRecord,
   buildCampaignHeaders,
+  normalizeCampaign,
+  safeParse,
 } from "./qoder-checkin";
 import { qoderMachineHeaders } from "./qoder-umid";
 import {
@@ -38,31 +42,6 @@ export const QODER_CREDIT_PROVIDER_IDS = ["qoder", "qodercn"] as const;
 
 const PAT_PREFIX = "pt-";
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null) return null;
-  return value as Record<string, unknown>;
-}
-
-function asNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function normalizeCampaign(raw: Record<string, unknown>): Record<string, unknown> {
-  const benefit = asRecord(raw["benefit"]);
-  return {
-    campaign_id: String(raw["campaignId"] ?? raw["campaign_id"] ?? ""),
-    campaign_key: String(raw["campaignKey"] ?? raw["campaign_key"] ?? ""),
-    action_type: String(raw["actionType"] ?? raw["action_type"] ?? ""),
-    claim_status: String(raw["claimStatus"] ?? raw["claim_status"] ?? ""),
-    ...(benefit !== null ? { benefit } : {}),
-  };
-}
-
 /**
  * Exchanges a PAT (`pt-…`) for a job token (`jt-…`) on the realm's openapi
  * host. Returns the job token, or `null` when the exchange fails.
@@ -70,7 +49,8 @@ function normalizeCampaign(raw: Record<string, unknown>): Record<string, unknown
  * The real client binds the machine identity at exchange time
  * (`getMachineIdentityRequestFields`), so `machine_id` + `machine_token` are
  * sent when available — the job token is then bound to that machine. The
- * User-Agent and Cosy version mirror the real client (`qoder/<version>`).
+ * request is the shared `exchangeQoderPatForHost` (same v1 body and client
+ * identity headers as the auth path), parameterized by this site's own host.
  */
 async function exchangePatToJobToken(
   base: string,
@@ -78,30 +58,17 @@ async function exchangePatToJobToken(
   fetcher: ValidatedFetch,
   machine?: { readonly id?: string; readonly token?: string },
 ): Promise<string | null> {
-  try {
-    const body: Record<string, unknown> = { personal_token: pat };
-    if (machine?.id) body.machine_id = machine.id;
-    if (machine?.token) body.machine_token = machine.token;
-    const version = getQoderVersion();
-    const res = await fetcher(`${base}/api/v1/jobToken/exchange`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": `qoder/${version}`,
-        "Cosy-ClientType": "5",
-        "Cosy-Version": version,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(25_000),
-    });
-    if (!res.ok) return null;
-    const payload: unknown = await res.json().catch(() => null);
-    const rec = asRecord(payload);
-    const token = String(rec?.["token"] ?? rec?.["device_token"] ?? rec?.["access_token"] ?? "");
-    return token.length > 0 ? token : null;
-  } catch {
-    return null;
-  }
+  const exchanged = await exchangeQoderPatForHost({
+    pat,
+    url: `${base}/api/v1/jobToken/exchange`,
+    ...(machine === undefined ? {} : { machine }),
+    fetcher,
+    signal: AbortSignal.timeout(25_000),
+    tokenKeys: ["token", "device_token", "access_token"],
+  });
+  if (exchanged === null) return null;
+  if (!exchanged.response.ok) return null;
+  return exchanged.result?.token ?? null;
 }
 
 /**
@@ -246,13 +213,5 @@ export async function claimQoderCredits(args: {
     return { state: "error", amount: 0, detail: `Claim failed (${res.status})` };
   } catch {
     return { state: "error", amount: 0, detail: "Claim request failed." };
-  }
-}
-
-function safeParse(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
   }
 }

@@ -59,6 +59,7 @@ import {
   kiroContextWindow,
   KIRO_GENERATE_PATH,
   KIRO_RUNTIME_HOST_TEMPLATE,
+  kiroTokenTypeHeader,
 } from "./kiro-catalog";
 import { resolveInboundSessionId } from "../../operations/session-resolution";
 import { KiroStreamDecoder, isKiroTruncationReason, type KiroUsage } from "./kiro-stream";
@@ -181,19 +182,6 @@ export function kiroEndpoint(authState: KiroAuthState | undefined): string {
 export const KIRO_RUNTIME_AWS_JSON_TARGET = "KiroRuntimeService.GenerateAssistantResponse" as const;
 
 /**
- * Maps an auth method onto the `TokenType` header the 1.4.62 client sends.
- *
- * Observed map (`qje`): `api_key → API_KEY`, `external_idp → EXTERNAL_IDP`,
- * `idc → SSO_OIDC`, `machine_token → KIRO_MACHINE_TOKEN`. Google/GitHub/
- * Builder-ID sessions send no `TokenType` header.
- */
-const KIRO_TOKEN_TYPE: Readonly<Record<string, string>> = {
-  api_key: "API_KEY",
-  external_idp: "EXTERNAL_IDP",
-  idc: "SSO_OIDC",
-};
-
-/**
  * Builds the request headers.
  *
  * Every field is load-bearing on the observed client's wire:
@@ -230,7 +218,7 @@ export function kiroHeaders(
     "x-amz-user-agent": buildKiroAmzUserAgent(version, machineId),
     authorization: `Bearer ${secret}`,
   };
-  const tokenType = authMethod === undefined ? undefined : KIRO_TOKEN_TYPE[authMethod];
+  const tokenType = kiroTokenTypeHeader(authMethod);
   if (tokenType !== undefined) {
     headers["TokenType"] = tokenType;
   }
@@ -377,9 +365,17 @@ class KiroAdapter implements ProviderAdapter {
       effortPath !== undefined
         ? undefined
         : (request.reasoning?.budget_tokens ?? kiroThinkingBudgetForEffort(requestedEffort));
+    // One resolution per dispatch: the resolver mints a fresh UUID only when
+    // the request carries no session, conversation id, or derivable opening
+    // turn, so resolving twice here would give `conversationId` and
+    // `rootConversationId` two different UUIDs — contradicting the client rule
+    // (`rootConversationId ?? conversationId`). The same id feeds the session
+    // cache estimator at stream end, so its key matches what the request
+    // presented upstream.
+    const conversationId = resolveKiroConversationId(request, context);
     const built = buildKiroWireRequest(request, {
-      conversationId: resolveKiroConversationId(request, context),
-      rootConversationId: resolveKiroConversationId(request, context),
+      conversationId,
+      rootConversationId: conversationId,
       modelId,
       profileArn: resolveProfileArn(context),
       ...(effortPath === undefined || effort === undefined ? {} : { effortPath, effort }),
@@ -414,7 +410,7 @@ class KiroAdapter implements ProviderAdapter {
       }, "upstream");
     }
 
-    yield* this.#stream(response.body, built.value, request, context);
+    yield* this.#stream(response.body, built.value, request, conversationId);
   }
 
   /**
@@ -471,7 +467,7 @@ class KiroAdapter implements ProviderAdapter {
     stream: ReadableStream<Uint8Array>,
     built: KiroWireRequest,
     request: CanonicalRequest,
-    context: ProviderDispatchContext,
+    conversationId: string,
   ): AsyncIterable<CanonicalEvent> {
     const decoder = new KiroStreamDecoder();
     const reader = stream.getReader();
@@ -605,7 +601,7 @@ class KiroAdapter implements ProviderAdapter {
       reader.releaseLock();
     }
 
-    const finalUsage = kiroUsage(usage, request.model, outputText, request.messages, resolveKiroConversationId(request, context));
+    const finalUsage = kiroUsage(usage, request.model, outputText, request.messages, conversationId);
     yield {
       type: "usage",
       sequence_number: sequence++,

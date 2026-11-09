@@ -26,7 +26,7 @@ import type { CartethyiaDatabase } from "../../persistence/db-handle";
 import { sleep } from "../../shared/sleep";
 import { providerAccounts, providerOauthStates } from "../../persistence/schema";
 import { decryptCredentialToString, encryptCredential } from "../../security/crypto";
-import { invalidateCredentialCache } from "../operations/provider-credential-service";
+import { invalidateCredentialCache, loadAccountWithOauthState } from "../operations/provider-credential-service";
 import { applyAccountVerdict } from "../operations/account-health-service";
 import { resolveAccountDisabledRecoveryMs } from "../../config/cooldowns";
 import { asJsonbRecord } from "../../shared/coerce";
@@ -734,10 +734,6 @@ export class OAuthRefreshService {
 
 /** Reads one account's status (used only for logging/observability, D26). */
 async function readAccountStatus(db: CartethyiaDatabase, accountId: string): Promise<string | undefined> {
-  const rows = await db
-    .select({ status: providerAccounts.status })
-    .from(providerAccounts)
-    .where(eq(providerAccounts.id, accountId))
-    .limit(1);
-  return rows[0]?.status;
+  const loaded = await loadAccountWithOauthState(db, accountId, { includeStatus: true });
+  return loaded?.status;
 }

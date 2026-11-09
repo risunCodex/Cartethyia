@@ -1,7 +1,7 @@
 import { t } from "elysia";
 import type { Elysia } from "elysia";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { isSqliteDatabase } from "../../persistence/dialect";
+import { liveModelCooldownExistsSql } from "../../persistence/dialect";
 import { adminAuditLog, providerAccounts } from "../../persistence/schema";
 import { requireGlobalAdmin } from "../shared/errors";
 import {
@@ -23,9 +23,8 @@ import {
 } from "../../providers/quota/refresh";
 import { sanitizeGlobalAccount } from "./quota-view";
 import {
-  ACCOUNT_STATUSES,
+  resolveNextAccountStatus,
   type AccountQuotaRoutesDeps,
-  type AccountStatus,
 } from "./account-quota-shared";
 import type { ProviderAccountBulkActionResult } from "../providers/catalog/contracts";
 
@@ -33,16 +32,14 @@ import type { ProviderAccountBulkActionResult } from "../providers/catalog/contr
  * The same live-cooldown predicate as the tenant-scoped store, evaluated in
  * SQL so one statement covers the whole shared-account set. `status='cooldown'`
  * counts even when its deadline elapsed; a live `model_cooldowns` entry counts
- * even while `status` is still `active` (D07).
+ * even while `status` is still `active` (D07). Scoped strictly to shared rows
+ * (`tenant_id IS NULL`); the shared JSON subquery lives in the dialect module.
  */
 function globalLiveCooldownPredicate(database: unknown): ReturnType<typeof and> {
   const nowIso = new Date().toISOString();
-  const liveModelCooldown = isSqliteDatabase(database)
-    ? sql`EXISTS (SELECT 1 FROM json_each(${providerAccounts.modelCooldowns}) AS entry WHERE json_valid(${providerAccounts.modelCooldowns}) AND json_type(${providerAccounts.modelCooldowns}) = 'object' AND entry.value > ${nowIso})`
-    : sql`EXISTS (SELECT 1 FROM jsonb_each_text(${providerAccounts.modelCooldowns}) AS entry WHERE jsonb_typeof(${providerAccounts.modelCooldowns}) = 'object' AND entry.value > ${nowIso})`;
   return and(
     isNull(providerAccounts.tenantId),
-    sql`${providerAccounts.status} = 'cooldown' OR ${providerAccounts.cooldownUntil} > ${nowIso} OR ${liveModelCooldown}`,
+    sql`${providerAccounts.status} = 'cooldown' OR ${providerAccounts.cooldownUntil} > ${nowIso} OR ${liveModelCooldownExistsSql(database, nowIso)}`,
   )!;
 }
 
@@ -117,23 +114,12 @@ export function registerAccountQuotaGlobalRoutes(
       },
       async ({ request, params, body, set }) => {
         const access = requireGlobalAdmin(accessResolver(request));
-        if (body.status !== undefined && !ACCOUNT_STATUSES.includes(body.status as AccountStatus)) {
-          set.status = 400;
-          return {
-            error: `status must be one of: ${ACCOUNT_STATUSES.join(", ")}`,
-            code: "invalid_status",
-          };
+        const resolved = resolveNextAccountStatus(body);
+        if (!resolved.ok) {
+          set.status = resolved.status;
+          return resolved.body;
         }
-        const nextStatus: AccountStatus | undefined =
-          body.active !== undefined
-            ? body.active
-              ? "active"
-              : "disabled"
-            : (body.status as AccountStatus | undefined);
-        if (!nextStatus) {
-          set.status = 400;
-          return { error: "active or status is required", code: "invalid_request" };
-        }
+        const nextStatus = resolved.nextStatus;
         const updated = await db
           .update(providerAccounts)
           .set({ status: nextStatus })

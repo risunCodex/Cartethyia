@@ -31,7 +31,10 @@ import {
   type TelemetryEventInput,
 } from "../../src/observability/telemetry-buffer";
 import { metrics } from "../../src/observability/metrics";
-import { queryTelemetryEvents, type TelemetryEventRecord } from "../../src/observability/event-log";
+import { queryTelemetryEvents } from "../../src/observability/event-query";
+import type { TelemetryEventRecord } from "../../src/observability/event-log";
+import { telemetryEvents } from "../../src/persistence/schema";
+import { eq } from "drizzle-orm";
 import { getDb } from "../../src/persistence/boot";
 import { type CartethyiaDatabase } from "../../src/persistence/db-handle";
 import { createRunId, dbDescribe, getTestPool, requireDatabase } from "../helpers/database";
@@ -93,18 +96,17 @@ async function tenantScope(
 }
 
 /**
- * The rows the buffer wrote for one tenant, read back off the file log.
+ * The rows the buffer wrote for one tenant, read back through the canonical SQL
+ * reader (`event-query.ts`).
  *
- * This goes through `queryTelemetryEvents` rather than re-reading the directory
- * itself. The directory is shared by every worker in a `--parallel` run, so a
- * hand-rolled scan races two things it does not handle: a file another worker
- * is appending to (read mid-write, so the last line is torn) and a file another
- * worker's retention pass deleted between `readdir` and `readFile`. Both are
- * handled inside the production reader — a torn or vanished file is skipped —
- * which is exactly why this calls it instead of copying its loop.
+ * The raw file mirror is a write-ahead log for crash recovery (replayed by
+ * `reconcileTelemetry`), not the read surface — the console aggregates read the
+ * `telemetry_events` table. Reading the table asserts what the console sees,
+ * which is the contract the row mapping exists for.
  */
 async function rowsFor(tenantId: string): Promise<readonly TelemetryEventRecord[]> {
-  return queryTelemetryEvents({ tenantId });
+  const page = await queryTelemetryEvents(getDb(), { tenantId, since: new Date(0) });
+  return page.events;
 }
 
 function makeEvent(
@@ -463,16 +465,29 @@ dbDescribe("telemetry row mapping, read back from Postgres", () => {
       expect(row?.ttfbMs).toBe(0);
       expect(row?.httpStatus).toBe(200);
       expect(row?.resolveMs).toBe(0);
-      expect(row?.tokensPerSec).toBe(0);
       expect(row?.firstContentDeltaAtMs).toBe(0);
       expect(row?.lastEventAtMs).toBe(0);
+      // The canonical SQL reader intentionally treats non-positive measured
+      // values as absent (`numericNullable`), so the numeric columns are
+      // asserted against the stored row directly — the persistence contract,
+      // not the console-presentation shape.
+      const stored = await db()
+        .select({
+          tokensPerSec: telemetryEvents.tokensPerSec,
+          creditUsed: telemetryEvents.creditUsed,
+          estimatedCostUsd: telemetryEvents.estimatedCostUsd,
+        })
+        .from(telemetryEvents)
+        .where(eq(telemetryEvents.tenantId, scope.tenantId));
+      expect(stored).toHaveLength(1);
       // Zero credit is a reported measurement, not a missing field. These are
       // plain JSON numbers now: the file log has no `numeric` scale to pad, so
       // a zero round-trips as `0` rather than Postgres' `"0.0000"`.
-      expect(row?.creditUsed).toBe(0);
+      expect(Number(stored[0]?.creditUsed)).toBe(0);
       // Zero cost is a real answer (a free tier); it must not become NULL,
       // which is reserved for "the catalog had no rate to apply".
-      expect(row?.estimatedCostUsd).toBe(0);
+      expect(Number(stored[0]?.estimatedCostUsd)).toBe(0);
+      expect(Number(stored[0]?.tokensPerSec)).toBe(0);
     } finally {
       await scope.cleanup();
     }

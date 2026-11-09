@@ -39,6 +39,29 @@ function configuredProvider(
 }
 
 /**
+ * Extracts a bearer token from a JSON credential object when the stored secret
+ * is a JSON account export, falling back to the raw secret otherwise. Several
+ * discovery paths accept both a bare token and a JSON export, and each used to
+ * re-implement this same parse + key-pick; this keeps the reading in one place.
+ *
+ * Preserves the exact fallback semantics: an unparseable secret, or a JSON
+ * object with none of the recognized token keys, yields the raw secret.
+ */
+function extractJsonCredentialToken(secret: string): string {
+  if (!secret.startsWith("{")) return secret;
+  try {
+    const parsed = JSON.parse(secret) as Record<string, unknown>;
+    const found = ["accessToken", "access_token", "token"].find(
+      (key) => typeof parsed[key] === "string" && (parsed[key] as string).length > 0,
+    );
+    if (found !== undefined) return parsed[found] as string;
+  } catch {
+    // Use the raw secret as the token.
+  }
+  return secret;
+}
+
+/**
  * Qoder's live model list for one realm.
  *
  * The request has to be signed with the account's COSY identity and has to
@@ -67,18 +90,7 @@ function traeDiscovery(
     if (secret.length === 0 || fetcher === undefined) {
       return realm === "cn" ? TRAE_CN_MODELS : TRAE_INTL_MODELS;
     }
-    let token = secret;
-    if (secret.startsWith("{")) {
-      try {
-        const parsed = JSON.parse(secret) as Record<string, unknown>;
-        const found = ["accessToken", "access_token", "token"].find(
-          (key) => typeof parsed[key] === "string" && (parsed[key] as string).length > 0,
-        );
-        if (found !== undefined) token = parsed[found] as string;
-      } catch {
-        // Use the raw secret as the token.
-      }
-    }
+    const token = extractJsonCredentialToken(secret);
     const region = request.authState?.["region"];
     const rows = await discoverTraeModels({
       realm,
@@ -552,18 +564,7 @@ export const PROVIDER_CAPABILITIES = {
       const secret = request.credential.trim();
       const fetcher = request.fetcher as unknown as typeof fetch | undefined;
       if (secret.length === 0 || fetcher === undefined) return FREEPI_MODELS;
-      let token = secret;
-      if (secret.startsWith("{")) {
-        try {
-          const parsed = JSON.parse(secret) as Record<string, unknown>;
-          const found = ["accessToken", "access_token", "token"].find(
-            (key) => typeof parsed[key] === "string" && (parsed[key] as string).length > 0,
-          );
-          if (found !== undefined) token = parsed[found] as string;
-        } catch {
-          // Use the raw secret as the token.
-        }
-      }
+      const token = extractJsonCredentialToken(secret);
       const rows = await discoverFreepiModels({ token, fetcher });
       if (rows.length === 0) return FREEPI_MODELS;
       return rows;

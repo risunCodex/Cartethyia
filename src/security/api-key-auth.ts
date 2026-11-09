@@ -21,8 +21,12 @@ import type { ApiKeyModelAccessMode } from "../persistence/schema";
  * snapshot's consumed value is a reference point, so a brief stale window
  * cannot meaningfully over-consume a budget.
  *
- * Negative results (unknown/revoked tokens) are deliberately NOT cached, so
- * a newly minted key is usable immediately.
+ * Unknown or revoked tokens are negative-cached for
+ * `AUTH_NEGATIVE_CACHE_TTL_MS` (1.5s): a token rejected within that window
+ * stays refused even if its key is minted or un-revoked in between. A newly
+ * minted key is usable immediately only because `invalidateApiKeyCache`
+ * clears the negative entries when a mutation lands — not because negatives
+ * are absent.
  */
 const authorizationCache = createApiKeyAuthorizationCache<ResolvedApiKey>();
 

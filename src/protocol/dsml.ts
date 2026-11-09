@@ -8,6 +8,7 @@
  * - CodeBuddy emits strict blocks (`<｜DSML｜ calls>…</｜DSML｜ calls>`)
  *   that must be parsed exactly, with declared-tool allowlisting.
  */
+import { MarkupStreamParser } from "./markup-stream-parser";
 export interface DsmlToolCall {
   readonly id: string;
   readonly name: string;
@@ -74,102 +75,49 @@ interface DsmlParseResult {
  * With no allowlist the generic name rule applies; with one, undeclared names
  * reject the whole block. The caller feeds chunks with `push` and drains the
  * tail with `flush`.
+ *
+ * The stateful prefix-buffer loop is the shared {@link MarkupStreamParser}
+ * scaffold; this class supplies the DSML grammar as a thin configuration.
  */
 export class DsmlStreamParser {
-  readonly #separators: readonly string[];
-  readonly #blockNames: readonly string[];
-  readonly #openers: readonly string[];
-  readonly #allowedNames: ReadonlySet<string>;
-  readonly #params: "json" | "string";
-  readonly #sortKeys: boolean;
-  readonly #maxBlockBytes: number;
-  readonly #id: (call: { readonly name: string }, index: number, seq: number) => string;
-  #pending = "";
-  #callSequence = 0;
+  readonly #parser: MarkupStreamParser<DsmlToolCall>;
 
   constructor(options: DsmlParseOptions = {}) {
-    this.#separators = options.separators ?? DEFAULT_SEPARATORS;
-    this.#blockNames = options.blockNames ?? DEFAULT_BLOCK_NAMES;
-    this.#openers = openers(this.#separators, this.#blockNames);
-    this.#allowedNames = options.allowedNames ?? new Set();
-    this.#params = options.params ?? "json";
-    this.#sortKeys = options.sortKeys ?? true;
-    this.#maxBlockBytes = options.maxBlockBytes ?? DEFAULT_MAX_BLOCK_BYTES;
-    this.#id = options.id ?? sequentialId;
+    const separators = options.separators ?? DEFAULT_SEPARATORS;
+    const blockNames = options.blockNames ?? DEFAULT_BLOCK_NAMES;
+    const allowedNames = options.allowedNames ?? new Set();
+    const params = options.params ?? "json";
+    const sortKeys = options.sortKeys ?? true;
+    const maxBlockBytes = options.maxBlockBytes ?? DEFAULT_MAX_BLOCK_BYTES;
+    const id = options.id ?? sequentialId;
+    this.#parser = new MarkupStreamParser<DsmlToolCall>({
+      openers: openers(separators, blockNames),
+      classifyOpener: (_pending, _index, opener) => {
+        const separator = separators.find((value) => opener.startsWith(`<${value}DSML`));
+        const blockName = blockNames.find((value) => opener.endsWith(` ${value}>`));
+        if (separator === undefined || blockName === undefined) return { kind: "literal" };
+        const close = `</${separator}DSML${separator} ${blockName}>`;
+        return {
+          kind: "found",
+          closer: close,
+          parse: (block) =>
+            parseStrictBlock(block, opener, close, separator, allowedNames, params, sortKeys),
+          callId: (call, index, seq) => ({ ...call, id: id(call, index, seq) }),
+        };
+      },
+      onUnclosed: (pending, openIndex) =>
+        pending.length - openIndex > maxBlockBytes
+          ? { kind: "passThrough" }
+          : "hold",
+    });
   }
 
   push(chunk: string): DsmlParseResult {
-    this.#pending += chunk;
-    let cursor = 0;
-    let visible = "";
-    const calls: DsmlToolCall[] = [];
-    for (;;) {
-      let openIndex = -1;
-      let opener = "";
-      for (const candidate of this.#openers) {
-        const index = this.#pending.indexOf(candidate, cursor);
-        if (index >= 0 && (openIndex < 0 || index < openIndex)) {
-          openIndex = index;
-          opener = candidate;
-        }
-      }
-      if (openIndex < 0) {
-        const safeEnd = this.#settledEnd(cursor);
-        visible += this.#pending.slice(cursor, safeEnd);
-        cursor = safeEnd;
-        break;
-      }
-      visible += this.#pending.slice(cursor, openIndex);
-      const separator = this.#separators.find((value) => opener.startsWith(`<${value}DSML`));
-      const blockName = this.#blockNames.find((value) => opener.endsWith(` ${value}>`));
-      if (separator === undefined || blockName === undefined) {
-        visible += "<";
-        cursor = openIndex + 1;
-        continue;
-      }
-      const close = `</${separator}DSML${separator} ${blockName}>`;
-      const closeIndex = this.#pending.indexOf(close, openIndex + opener.length);
-      if (closeIndex < 0) {
-        // An unclosed block past the cap is not markup — pass it through as
-        // text instead of buffering it indefinitely. Same fail-open as
-        // `feed()` in the reference bridge's `MAX_BLOCK_BYTES` guard.
-        if (this.#pending.length - openIndex > this.#maxBlockBytes) {
-          visible += this.#pending.slice(openIndex);
-          cursor = this.#pending.length;
-          break;
-        }
-        cursor = openIndex;
-        break;
-      }
-      const end = closeIndex + close.length;
-      const block = this.#pending.slice(openIndex, end);
-      const parsed = parseStrictBlock(block, opener, close, separator, this.#allowedNames, this.#params, this.#sortKeys);
-      if (parsed === undefined) visible += block;
-      else {
-        parsed.forEach((call, index) => {
-          calls.push({ ...call, id: this.#id(call, index, this.#callSequence++) });
-        });
-      }
-      cursor = end;
-    }
-    this.#pending = this.#pending.slice(cursor);
-    return { text: visible, calls };
+    return this.#parser.push(chunk);
   }
 
   flush(): DsmlParseResult {
-    const text = this.#pending;
-    this.#pending = "";
-    return { text, calls: [] };
-  }
-
-  #settledEnd(start: number): number {
-    const remaining = this.#pending.slice(start);
-    const maxOpener = this.#openers.reduce((max, opener) => Math.max(max, opener.length - 1), 0);
-    for (let length = Math.min(maxOpener, remaining.length); length > 0; length -= 1) {
-      const suffix = remaining.slice(-length);
-      if (this.#openers.some((opener) => opener.startsWith(suffix))) return this.#pending.length - length;
-    }
-    return this.#pending.length;
+    return this.#parser.flush();
   }
 }
 

@@ -9,10 +9,10 @@
  * report `"active"` just because a refresh succeeded.
  */
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
-import { healthEvents, providerAccounts, providerOauthStates } from "../../persistence/schema";
+import { healthEvents } from "../../persistence/schema";
 import { pushStructuredConsoleLog } from "../../observability/log-ring";
+import { loadAccountWithOauthState } from "./provider-credential-service";
 import type { OAuthRefreshService, OAuthTokenRefresher } from "../authentication/oauth-refresh-service";
 
 export type RefreshAccountStatusCode =
@@ -62,47 +62,32 @@ async function loadAccount(
   db: CartethyiaDatabase,
   accountId: string,
 ): Promise<LoadedAccount | undefined> {
-  const selectBuilder = db
-    .select({
-      id: providerAccounts.id,
-      providerId: providerAccounts.providerId,
-      credentialKind: providerAccounts.credentialKind,
-      status: providerAccounts.status,
-      staticToken: providerAccounts.staticToken,
-      refreshCiphertext: providerOauthStates.refreshCiphertext,
-      expiresAt: providerOauthStates.expiresAt,
-    })
-    .from(providerAccounts);
-  const query =
-    "leftJoin" in selectBuilder
-      ? selectBuilder.leftJoin(
-          providerOauthStates,
-          eq(providerOauthStates.providerAccountId, providerAccounts.id),
-        )
-      : selectBuilder;
-  const rows = await query.where(eq(providerAccounts.id, accountId)).limit(1);
-  return rows[0];
+  const loaded = await loadAccountWithOauthState(db, accountId, {
+    includeStatus: true,
+    includeExpiry: true,
+  });
+  if (!loaded || loaded.status === undefined || loaded.expiresAt === undefined) return undefined;
+  return {
+    id: loaded.id,
+    providerId: loaded.providerId,
+    credentialKind: loaded.credentialKind,
+    status: loaded.status,
+    staticToken: loaded.staticToken,
+    refreshCiphertext: loaded.refreshCiphertext,
+    expiresAt: loaded.expiresAt,
+  };
 }
 
 async function readStatusAfter(
   db: CartethyiaDatabase,
   accountId: string,
 ): Promise<{ status: string; expiresAt: Date | null } | undefined> {
-  const selectBuilder = db
-    .select({
-      status: providerAccounts.status,
-      expiresAt: providerOauthStates.expiresAt,
-    })
-    .from(providerAccounts);
-  const query =
-    "leftJoin" in selectBuilder
-      ? selectBuilder.leftJoin(
-          providerOauthStates,
-          eq(providerOauthStates.providerAccountId, providerAccounts.id),
-        )
-      : selectBuilder;
-  const rows = await query.where(eq(providerAccounts.id, accountId)).limit(1);
-  return rows[0];
+  const loaded = await loadAccountWithOauthState(db, accountId, {
+    includeStatus: true,
+    includeExpiry: true,
+  });
+  if (!loaded || loaded.status === undefined || loaded.expiresAt === undefined) return undefined;
+  return { status: loaded.status, expiresAt: loaded.expiresAt };
 }
 
 /** Non-mutating health event: records the attempt, never changes status. */

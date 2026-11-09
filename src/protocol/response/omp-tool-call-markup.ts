@@ -7,6 +7,7 @@
  * interpreted. Calls are returned only when their names were declared on the
  * request; an undeclared name is never promoted into executable tool input.
  */
+import { MarkupStreamParser } from "../markup-stream-parser";
 export interface OmpTextToolCall {
   readonly id: string;
   readonly name: string;
@@ -29,77 +30,49 @@ const TOOL_NAME_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,63}$/;
  * The parser holds a possible envelope across SSE deltas, so a split opening
  * tag, argument tag, or closing tag is never emitted as visible prose. At
  * end-of-stream an unterminated envelope is dropped, not executed or leaked.
+ *
+ * The stateful prefix-buffer loop is the shared {@link MarkupStreamParser}
+ * scaffold; this class supplies the OMP grammar as a thin configuration.
  */
 export class OmpToolCallMarkupParser {
-  readonly #allowedNames: ReadonlySet<string>;
-  #pending = "";
-  #callSequence = 0;
+  readonly #parser: MarkupStreamParser<OmpTextToolCall>;
 
   constructor(allowedNames: ReadonlySet<string>) {
-    this.#allowedNames = allowedNames;
+    this.#parser = new MarkupStreamParser<OmpTextToolCall>({
+      openers: [OPEN_PREFIX],
+      classifyOpener: (pending, openIndex) => {
+        const remainder = pending.slice(openIndex);
+        const opening = OPEN_PATTERN.exec(remainder);
+        if (opening === null || opening[1] === undefined) {
+          if (couldBeOpening(remainder)) return { kind: "hold" };
+          return { kind: "literal" };
+        }
+        const marker = opening[1];
+        const closeTag = `</tool_calls:${marker}>`;
+        return {
+          kind: "found",
+          closer: closeTag,
+          parse: (block) => {
+            const parsed = parseEnvelope(block, marker);
+            if (parsed === undefined) return undefined;
+            if (parsed.some((call) => !allowedNames.has(call.name))) {
+              // A syntactically valid call to an undeclared tool is model
+              // text, not authority to invoke a tool the client did not offer.
+              return undefined;
+            }
+            return parsed;
+          },
+          callId: (call, _index, seq) => ({ ...call, id: `call_omp_${marker}_${seq}` }),
+        };
+      },
+      flush: (pending) =>
+        couldBeOpening(pending) || OPEN_PATTERN.test(pending) ? "" : pending,
+    });
   }
 
   /** Feeds one content or reasoning delta and returns only settled text. */
   push(chunk: string): OmpTextToolCallResult {
-    this.#pending += chunk;
-    let cursor = 0;
-    let text = "";
-    const calls: OmpTextToolCall[] = [];
-
-    for (;;) {
-      const openIndex = this.#pending.indexOf(OPEN_PREFIX, cursor);
-      if (openIndex < 0) {
-        const safeEnd = this.#settledEnd(cursor);
-        text += this.#pending.slice(cursor, safeEnd);
-        cursor = safeEnd;
-        break;
-      }
-
-      text += this.#pending.slice(cursor, openIndex);
-      const remainder = this.#pending.slice(openIndex);
-      const opening = OPEN_PATTERN.exec(remainder);
-      if (opening === null || opening[1] === undefined) {
-        if (this.#couldBeOpening(remainder)) {
-          cursor = openIndex;
-          break;
-        }
-        text += "<";
-        cursor = openIndex + 1;
-        continue;
-      }
-
-      const marker = opening[1];
-      const openTag = opening[0];
-      const closeTag = `</tool_calls:${marker}>`;
-      const closeIndex = this.#pending.indexOf(closeTag, openIndex + openTag.length);
-      if (closeIndex < 0) {
-        cursor = openIndex;
-        break;
-      }
-
-      const envelopeEnd = closeIndex + closeTag.length;
-      const block = this.#pending.slice(openIndex, envelopeEnd);
-      const parsed = parseEnvelope(block, marker);
-      if (parsed === undefined) {
-        text += block;
-      } else if (parsed.some((call) => !this.#allowedNames.has(call.name))) {
-        // A syntactically valid call to an undeclared tool is model text, not
-        // authority to invoke a tool the client did not offer.
-        text += block;
-      } else {
-        for (const call of parsed) {
-          calls.push({
-            id: `call_omp_${marker}_${this.#callSequence++}`,
-            name: call.name,
-            arguments: call.arguments,
-          });
-        }
-      }
-      cursor = envelopeEnd;
-    }
-
-    this.#pending = this.#pending.slice(cursor);
-    return { text, calls };
+    return this.#parser.push(chunk);
   }
 
   /**
@@ -107,31 +80,15 @@ export class OmpToolCallMarkupParser {
    * an unfinished envelope is deliberately discarded rather than leaked.
    */
   flush(): OmpTextToolCallResult {
-    const pending = this.#pending;
-    this.#pending = "";
-    if (this.#couldBeOpening(pending) || OPEN_PATTERN.test(pending)) {
-      return { text: "", calls: [] };
-    }
-    return { text: pending, calls: [] };
+    return this.#parser.flush();
   }
+}
 
-  #settledEnd(start: number): number {
-    const remaining = this.#pending.slice(start);
-    const maxPrefixLength = Math.min(OPEN_PREFIX.length - 1, remaining.length);
-    for (let length = maxPrefixLength; length > 0; length -= 1) {
-      if (OPEN_PREFIX.startsWith(remaining.slice(-length))) {
-        return this.#pending.length - length;
-      }
-    }
-    return this.#pending.length;
-  }
-
-  #couldBeOpening(value: string): boolean {
-    if (value.length < OPEN_PREFIX.length) return OPEN_PREFIX.startsWith(value);
-    if (!value.startsWith(OPEN_PREFIX)) return false;
-    const suffix = value.slice(OPEN_PREFIX.length);
-    return /^[0-9a-f]{0,8}$/.test(suffix) || /^[0-9a-f]{8}$/.test(suffix) && !value.endsWith(">");
-  }
+function couldBeOpening(value: string): boolean {
+  if (value.length < OPEN_PREFIX.length) return OPEN_PREFIX.startsWith(value);
+  if (!value.startsWith(OPEN_PREFIX)) return false;
+  const suffix = value.slice(OPEN_PREFIX.length);
+  return /^[0-9a-f]{0,8}$/.test(suffix) || /^[0-9a-f]{8}$/.test(suffix) && !value.endsWith(">");
 }
 
 /**

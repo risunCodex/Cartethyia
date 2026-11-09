@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import os from "node:os";
 import { metrics } from "./metrics";
-import { trackMemoryUsage } from "./performance-metrics";
+import { memoryUsageBytes, trackMemoryUsage } from "./performance-metrics";
 import { log } from "./logger";
 import { resolveMemoryLimitOverrideBytes } from "../config/timeouts";
 import { CONFIG_SPEC, readFlag } from "../config/spec";
@@ -190,19 +190,24 @@ export class RuntimeMetricsSampler {
 
   sample(): void {
     const memory = process.memoryUsage();
-    metrics.cartethyia_memory_rss_bytes.set(memory.rss);
-    metrics.cartethyia_memory_heap_used_bytes.set(memory.heapUsed);
-    metrics.cartethyia_memory_heap_total_bytes.set(memory.heapTotal);
-    metrics.cartethyia_memory_limit_bytes.set(this.limitBytes ?? 0);
-    this.snapshot = {
-      rssBytes: memory.rss,
-      limitBytes: this.limitBytes,
-      sampledAtMs: Date.now(),
-    };
+    // The performance-metrics memory series is the single memory view: record
+    // the four figures once, then derive the Prometheus gauges from that same
+    // series. `external` has no gauge equivalent, so it lives only in the
+    // series (and in the `/system/performance` snapshot).
     trackMemoryUsage("rss", memory.rss);
     trackMemoryUsage("heap_used", memory.heapUsed);
     trackMemoryUsage("heap_total", memory.heapTotal);
     trackMemoryUsage("external", memory.external);
+    const recordedMemory = memoryUsageBytes();
+    metrics.cartethyia_memory_rss_bytes.set(recordedMemory["rss"] ?? 0);
+    metrics.cartethyia_memory_heap_used_bytes.set(recordedMemory["heap_used"] ?? 0);
+    metrics.cartethyia_memory_heap_total_bytes.set(recordedMemory["heap_total"] ?? 0);
+    metrics.cartethyia_memory_limit_bytes.set(this.limitBytes ?? 0);
+    this.snapshot = {
+      rssBytes: recordedMemory["rss"] ?? 0,
+      limitBytes: this.limitBytes,
+      sampledAtMs: Date.now(),
+    };
 
     const roundRobin = this.sources.routingRoundRobinEntries();
     metrics.cartethyia_routing_roundrobin_entries.set(roundRobin.combo, { scope: "combo" });

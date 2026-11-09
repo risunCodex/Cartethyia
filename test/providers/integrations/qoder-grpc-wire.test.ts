@@ -150,7 +150,7 @@ test("buildQoderGrpcRequest wraps tool fields in proto shapes", () => {
     ],
     parameters: { tool_choice: "auto" },
   };
-  const built = buildQoderGrpcRequest("qfmodel", request, "u", 1_000_000, legacy);
+  const built = buildQoderGrpcRequest("qfmodel", request, "u", legacy);
 
   expect(built["stream"]).toBe(true);
   // Donor mirror: `parallel_tool_calls` and `max_tokens` are sent only when
@@ -199,7 +199,7 @@ test("buildQoderGrpcRequest omits undefined tool optionals", () => {
       },
     ],
   };
-  const built = buildQoderGrpcRequest("qfmodel", request, "u", 1_000_000, legacy);
+  const built = buildQoderGrpcRequest("qfmodel", request, "u", legacy);
   const tools = built["tools"] as Array<Record<string, unknown>>;
   const fn = (tools[0]!["function"] as Record<string, unknown>)!;
   expect(fn["description"]).toBeUndefined();
@@ -218,11 +218,11 @@ test("buildQoderGrpcRequest mirrors the caller's parallel_tool_calls", () => {
     tools: [],
     parameters: { parallel_tool_calls: true },
   };
-  const built = buildQoderGrpcRequest("qfmodel", request, "u", 1_000_000, legacy);
+  const built = buildQoderGrpcRequest("qfmodel", request, "u", legacy);
   expect(built["parallel_tool_calls"]).toEqual({ value: true });
 
   const legacyFalse = { ...legacy, parameters: { parallel_tool_calls: false } };
-  const builtFalse = buildQoderGrpcRequest("qfmodel", request, "u", 1_000_000, legacyFalse);
+  const builtFalse = buildQoderGrpcRequest("qfmodel", request, "u", legacyFalse);
   expect(builtFalse["parallel_tool_calls"]).toEqual({ value: false });
 });
 
@@ -240,12 +240,12 @@ test("buildQoderGrpcRequest omits tool_choice=required (upstream rejects it)", (
     tools: [],
     parameters: { tool_choice: "required" },
   };
-  const built = buildQoderGrpcRequest("qfmodel", request, "u", 1_000_000, legacy);
+  const built = buildQoderGrpcRequest("qfmodel", request, "u", legacy);
   expect(built["tool_choice"]).toBeUndefined();
 
   // `auto` and named choices are still sent.
   const autoLegacy = { ...legacy, parameters: { tool_choice: "auto" } };
-  expect(buildQoderGrpcRequest("qfmodel", request, "u", 1_000_000, autoLegacy)["tool_choice"]).toEqual({ stringValue: "auto" });
+  expect(buildQoderGrpcRequest("qfmodel", request, "u", autoLegacy)["tool_choice"]).toEqual({ stringValue: "auto" });
 });
 
 test("buildQoderGrpcRequest sends max_tokens only when the caller set it", () => {
@@ -257,17 +257,17 @@ test("buildQoderGrpcRequest sends max_tokens only when the caller set it", () =>
     messages: [{ role: "user", content: "hi" }],
     tools: [],
   };
-  const built = buildQoderGrpcRequest("qfmodel", request, "u", 1_000_000, base);
+  const built = buildQoderGrpcRequest("qfmodel", request, "u", base);
   expect(built["max_tokens"]).toBeUndefined();
 
   const withMax = { ...base, parameters: { max_tokens: 4096 } };
-  const builtMax = buildQoderGrpcRequest("qfmodel", request, "u", 1_000_000, withMax);
+  const builtMax = buildQoderGrpcRequest("qfmodel", request, "u", withMax);
   expect(builtMax["max_tokens"]).toEqual({ value: 4096 });
   const ctx = (builtMax["metadata"] as Record<string, unknown>)["context"] as Record<string, unknown>;
   expect(ctx["context_length"]).toBeUndefined();
 
   const withCtx = { ...base, parameters: { context_length: 200000 } };
-  const builtCtx = buildQoderGrpcRequest("qfmodel", request, "u", 1_000_000, withCtx);
+  const builtCtx = buildQoderGrpcRequest("qfmodel", request, "u", withCtx);
   const ctx2 = (builtCtx["metadata"] as Record<string, unknown>)["context"] as Record<string, unknown>;
   expect(ctx2["context_length"]).toBe("200000");
 });

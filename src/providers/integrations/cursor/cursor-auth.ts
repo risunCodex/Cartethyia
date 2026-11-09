@@ -41,7 +41,6 @@ import {
   CURSOR_WEBSITE_URL,
   SESSION_REFRESH_TIMEOUT_MS,
   SIGN_IN_POLICY_VIOLATION,
-  TOKEN_EXPIRY_THRESHOLD_S,
   isExchangeableApiKey,
 } from "./cursor-shared";
 
@@ -90,13 +89,6 @@ export function decodeJwtExpiryMs(token: string): number | undefined {
   const exp = payload?.["exp"];
   if (typeof exp !== "number" || !Number.isFinite(exp)) return undefined;
   return exp * 1000;
-}
-
-/** True when a JWT expires within the refresh threshold. */
-export function isExpiringSoon(token: string, thresholdSeconds = TOKEN_EXPIRY_THRESHOLD_S): boolean {
-  const expiry = decodeJwtExpiryMs(token);
-  if (expiry === undefined) return false;
-  return expiry - Date.now() < thresholdSeconds * 1000;
 }
 
 /**

@@ -108,6 +108,13 @@ type PoolSelectionFailureReason =
   | "coordination_unavailable"
   | "no_active_pool";
 
+interface PoolCooldownState {
+  readonly inCooldown: boolean;
+  readonly resetsAt: Date | null;
+  readonly reason: string | null;
+  readonly blocked: boolean;
+}
+
 interface PoolCapacitySnapshot {
   readonly poolId: string;
   readonly maxInflight: number;
@@ -399,12 +406,7 @@ export class NetworkPoolSelector {
   async isProviderCooldown(
     poolId: string,
     providerId: string,
-  ): Promise<{
-    inCooldown: boolean;
-    resetsAt: Date | null;
-    reason: string | null;
-    blocked: boolean;
-  }> {
+  ): Promise<PoolCooldownState> {
     const k = this.cooldownKey(poolId, providerId);
     const local = this.state.cooldowns.get(k);
     if (local) {
@@ -880,6 +882,171 @@ export class NetworkPoolSelector {
     }
     return undefined;
   }
+
+  /**
+   * Infight counter from a Redis `MGET` row. `null` (unset counter) is zero;
+   * a malformed counter is the same hard error the per-key read raises, so a
+   * corrupt key is never silently treated as 0.
+   */
+  private parseInflightCounter(raw: string | null, what: string): number {
+    if (raw === null) return 0;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error(`invalid pool inflight counter: ${what}`);
+    }
+    return value;
+  }
+
+  /**
+   * Per-pool cooldown resolution with the same semantics as
+   * `isProviderCooldown`: the local cooldown map wins when it has a live
+   * entry; otherwise a non-expired Redis row is admitted (bounded) and an
+   * expired Redis row is cleared. Used by the batched failure path, which
+   * reads all cooldown keys in one `MGET` and resolves each row here.
+   */
+  private cooldownFromBatchState(
+    poolId: string,
+    providerId: string,
+    raw: string | null,
+  ): PoolCooldownState {
+    const k = this.cooldownKey(poolId, providerId);
+    const local = this.state.cooldowns.get(k);
+    if (local) {
+      if (Date.now() < local.until) {
+        return {
+          inCooldown: true,
+          resetsAt: new Date(local.until),
+          reason: local.reason,
+          blocked: local.blocked === true,
+        };
+      }
+      this.state.cooldowns.delete(k);
+    }
+    const parsed = raw ? parseCooldownEntry(raw) : undefined;
+    if (parsed && Date.now() < parsed.until) {
+      enforceCooldownLimit(this.state.cooldowns);
+      this.state.cooldowns.set(k, parsed);
+      return {
+        inCooldown: true,
+        resetsAt: new Date(parsed.until),
+        reason: parsed.reason,
+        blocked: parsed.blocked === true,
+      };
+    }
+    if (raw) {
+      void this.clearRedisCooldown(poolId, providerId);
+    }
+    return { inCooldown: false, resetsAt: null, reason: null, blocked: false };
+  }
+
+  /**
+   * The original per-pool failure check: one Redis read per pool for each of
+   * cooldown, pool inflight, and provider inflight. Retained as the fallback
+   * for the non-Redis path and for a Redis outage during the batched read.
+   */
+  private async perPoolSelectionChecks(
+    eligiblePoolIds: readonly string[],
+    providerId: string,
+    limitsByPool?: Record<string, number>,
+    weightsByPool?: Record<string, number>,
+    providerCapacity?: number,
+  ): Promise<Array<{ cooldown: PoolCooldownState; pool: PoolCapacitySnapshot }>> {
+    return Promise.all(
+      eligiblePoolIds.map(async (poolId) => {
+        const cooldown = await this.isProviderCooldown(poolId, providerId);
+        const maxInflight = effectiveConcurrency(
+          limitsByPool?.[poolId] ?? DEFAULT_PROXY_CONCURRENCY,
+        );
+        const weight = normalizedWeight(weightsByPool?.[poolId]);
+        const currentInflight = await this.getInflightAuthoritative(poolId);
+        const providerInflight =
+          providerCapacity === undefined
+            ? undefined
+            : await this.getProviderInflightAuthoritative(poolId, providerId);
+        return {
+          cooldown,
+          pool: {
+            poolId,
+            maxInflight,
+            currentInflight,
+            available: Math.max(0, maxInflight - currentInflight),
+            weight,
+            ...(cooldown.resetsAt ? { retryAt: cooldown.resetsAt.getTime() } : {}),
+            ...(cooldown.blocked ? { blocked: true } : {}),
+            ...(providerCapacity === undefined
+              ? {}
+              : { providerMaxInflight: providerCapacity, providerInflight: providerInflight ?? 0 }),
+          } satisfies PoolCapacitySnapshot,
+        };
+      }),
+    );
+  }
+
+  /**
+   * Batched failure check: one `MGET` per key family (cooldowns, pool
+   * inflight, provider inflight) instead of three serial GETs per pool. On a
+   * Redis error the whole read falls back to per-pool reads so the failure
+   * report keeps the "cooldown store unavailable" per-pool detail.
+   */
+  private async batchSelectionChecks(
+    eligiblePoolIds: readonly string[],
+    providerId: string,
+    limitsByPool?: Record<string, number>,
+    weightsByPool?: Record<string, number>,
+    providerCapacity?: number,
+  ): Promise<Array<{ cooldown: PoolCooldownState; pool: PoolCapacitySnapshot }>> {
+    const cooldownKeys = eligiblePoolIds.map((poolId) => proxyCooldownKey(poolId, providerId));
+    const inflightKeys = eligiblePoolIds.map((poolId) => proxyInflightKey(poolId));
+    const providerInflightKeys =
+      providerCapacity === undefined
+        ? []
+        : eligiblePoolIds.map((poolId) => proxyProviderInflightKey(poolId, providerId));
+    try {
+      const [cooldownRaws, inflightRaws, providerRaws] = await Promise.all([
+        this.redis!.mget(...cooldownKeys),
+        this.redis!.mget(...inflightKeys),
+        providerInflightKeys.length === 0
+          ? Promise.resolve([] as Array<string | null>)
+          : this.redis!.mget(...providerInflightKeys),
+      ]);
+      return eligiblePoolIds.map((poolId, index) => {
+        const cooldown = this.cooldownFromBatchState(poolId, providerId, cooldownRaws[index] ?? null);
+        const maxInflight = effectiveConcurrency(
+          limitsByPool?.[poolId] ?? DEFAULT_PROXY_CONCURRENCY,
+        );
+        const weight = normalizedWeight(weightsByPool?.[poolId]);
+        const currentInflight = this.parseInflightCounter(inflightRaws[index] ?? null, poolId);
+        const providerInflight =
+          providerCapacity === undefined
+            ? undefined
+            : this.parseInflightCounter(providerRaws[index] ?? null, `${poolId}/${providerId}`);
+        return {
+          cooldown,
+          pool: {
+            poolId,
+            maxInflight,
+            currentInflight,
+            available: Math.max(0, maxInflight - currentInflight),
+            weight,
+            ...(cooldown.resetsAt ? { retryAt: cooldown.resetsAt.getTime() } : {}),
+            ...(cooldown.blocked ? { blocked: true } : {}),
+            ...(providerCapacity === undefined
+              ? {}
+              : { providerMaxInflight: providerCapacity, providerInflight: providerInflight ?? 0 }),
+          } satisfies PoolCapacitySnapshot,
+        };
+      });
+    } catch {
+      return this.perPoolSelectionChecks(
+        eligiblePoolIds,
+        providerId,
+        limitsByPool,
+        weightsByPool,
+        providerCapacity,
+      );
+    }
+  }
+
   async getSelectionFailure(
     eligiblePoolIds: readonly string[],
     providerId: string,
@@ -891,39 +1058,15 @@ export class NetworkPoolSelector {
     const providerCapacity =
       providerMaxInflight === undefined ? undefined : effectiveConcurrency(providerMaxInflight);
     try {
-      // One pass, not two: the cooldown lookup is a Redis read per pool, and
-      // the first version read it once for the capacity snapshot and again for
-      // the rejection decision, doubling the round trips on exactly the path
-      // that runs when selection fails.
-      const checks = await Promise.all(
-        eligiblePoolIds.map(async (poolId) => {
-          const cooldown = await this.isProviderCooldown(poolId, providerId);
-          const maxInflight = effectiveConcurrency(
-            limitsByPool?.[poolId] ?? DEFAULT_PROXY_CONCURRENCY,
-          );
-          const weight = normalizedWeight(weightsByPool?.[poolId]);
-          const currentInflight = await this.getInflightAuthoritative(poolId);
-          const providerInflight =
-            providerCapacity === undefined
-              ? undefined
-              : await this.getProviderInflightAuthoritative(poolId, providerId);
-          return {
-            cooldown,
-            pool: {
-              poolId,
-              maxInflight,
-              currentInflight,
-              available: Math.max(0, maxInflight - currentInflight),
-              weight,
-              ...(cooldown.resetsAt ? { retryAt: cooldown.resetsAt.getTime() } : {}),
-              ...(cooldown.blocked ? { blocked: true } : {}),
-              ...(providerCapacity === undefined
-                ? {}
-                : { providerMaxInflight: providerCapacity, providerInflight: providerInflight ?? 0 }),
-            } satisfies PoolCapacitySnapshot,
-          };
-        }),
-      );
+      // One batch pass instead of per-pool Redis reads: cooldowns and inflight
+      // counters are read in one `MGET` per key family (three total), not
+      // three serial GETs per pool. The per-pool resolution below consumes the
+      // raw rows with the same semantics `isProviderCooldown` /
+      // `getInflightAuthoritative` / `getProviderInflightAuthoritative` apply.
+      const checks =
+        this.redis === undefined
+          ? await this.perPoolSelectionChecks(eligiblePoolIds, providerId, limitsByPool, weightsByPool, providerCapacity)
+          : await this.batchSelectionChecks(eligiblePoolIds, providerId, limitsByPool, weightsByPool, providerCapacity);
       const pools = checks.map((check) => check.pool);
       const cooldowns = checks.map((check) => check.cooldown);
       if (cooldowns.some((entry) => entry.reason === "cooldown store unavailable")) {

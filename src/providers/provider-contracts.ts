@@ -8,7 +8,9 @@ import { BUNDLED_PROVIDER_METADATA, type BundledProviderId } from "./provider-me
 import type { ValidatedOutboundHttp2Bidi } from "../network/http2-bidi";
 
 /** Closed union of every shipped provider ID. */
-export const BUNDLED_PROVIDER_IDS = BUNDLED_PROVIDER_METADATA.map((definition) => definition.id) as readonly BundledProviderId[];
+export const BUNDLED_PROVIDER_IDS: ReadonlySet<BundledProviderId> = new Set(
+  BUNDLED_PROVIDER_METADATA.map((definition) => definition.id),
+);
 
 /** Normalized builtin or validated custom provider identifier. */
 declare const customProviderIdBrand: unique symbol;
@@ -451,7 +453,7 @@ function normalizeProviderSlug(id: string): string {
 /** Returns true for one of Cartethyia's reserved builtin IDs, case-insensitively. */
 export function isBundledProviderId(value: string): value is BundledProviderId {
   const normalized = value.trim().toLowerCase();
-  return (BUNDLED_PROVIDER_IDS as readonly string[]).includes(normalized);
+  return BUNDLED_PROVIDER_IDS.has(normalized as BundledProviderId);
 }
 
 /** Normalizes a provider identifier before persistence or registry lookup. */

@@ -42,8 +42,9 @@ import {
   type ProviderQuotaResult,
   type ProviderQuotaWindow,
 } from "../../providers/quota/quota-contracts";
-import { getCachedQuotaEntry, quotaLens } from "../../providers/quota/cache";
-import { readQuotaSnapshot } from "../../providers/quota/snapshot";
+import { getCachedQuotaEntries, quotaLens, type CachedQuotaEntry } from "../../providers/quota/cache";
+import { readQuotaSnapshots } from "../../providers/quota/snapshot";
+import type { ProviderQuotaResultSnapshot } from "../../persistence/schema";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 import type { RedisClient } from "../../persistence/redis";
 import { sharedClaudeSlowLanes } from "../../providers/integrations/claude/claude-slow-lane";
@@ -497,13 +498,6 @@ export class EligibilityEvaluator {
       return { eligible: true, reason: "cooldown", candidate, ...spreadDeadline(candidate.cooldown_until) };
     return { eligible: true, reason: "healthy", candidate };
   }
-
-  filter(candidates: readonly RouteCandidate[]): readonly RouteCandidate[] {
-    return candidates
-      .map((c) => this.evaluate(c))
-      .filter((d) => d.eligible)
-      .map((d) => d.candidate);
-  }
 }
 
 export class RoutingEngine {
@@ -639,6 +633,8 @@ export class RoutingEngine {
     candidate: RouteCandidate,
     snapshot: RouteSnapshot,
     tenantId: string | null,
+    quotaCache: ReadonlyMap<string, CachedQuotaEntry>,
+    snapshotMap: ReadonlyMap<string, ProviderQuotaResultSnapshot>,
   ): Promise<RouteCandidate> {
     const accountId = candidate.provider_account_id;
     if (accountId === undefined) return candidate;
@@ -647,11 +643,7 @@ export class RoutingEngine {
       candidate.provider_id,
       candidate.tenant_id ?? tenantId,
     );
-    const cached = await getCachedQuotaEntry(
-      quotaLens(candidate.tenant_id ?? tenantId),
-      accountId,
-      this.redis,
-    ).catch(() => undefined);
+    const cached = quotaCache.get(accountId);
     // The live cache is authoritative when warm; when it is cold (e.g. right
     // after a restart, before the sweep re-reads accounts), fall back to the
     // persisted quota snapshot — the durable source of truth — so routing
@@ -660,9 +652,12 @@ export class RoutingEngine {
     // one for ordering, and the sweep refreshes it on schedule.
     let quota = cached?.quota;
     let stored: { readonly fetchedAt: string; readonly quota: ProviderQuotaResult } | null = null;
-    if (quota === undefined && this.db !== undefined) {
-      stored = await readQuotaSnapshot(this.db, accountId).catch(() => null);
-      quota = stored?.quota;
+    if (quota === undefined) {
+      const snap = snapshotMap.get(accountId);
+      if (snap !== undefined) {
+        stored = { fetchedAt: snap.fetchedAt, quota: snap.quota };
+        quota = snap.quota;
+      }
     }
     const rawWindows = quota?.windows;
     // The cache is authoritative when it has a reading; when it does not,
@@ -787,6 +782,28 @@ export class RoutingEngine {
           },
         };
       }
+    }
+    // A soft cooldown is a deprioritization, not an exclusion: the evaluator
+    // returned it eligible (so a single-account deployment still routes), but
+    // it must still behind every fresh/slow sibling. Without this branch the
+    // candidate falls through to the quota classification below, which labels
+    // it FRESH_KNOWN/FRESH_UNKNOWN and lets it sort ahead of healthy accounts —
+    // the "still hit a cooled-down account, never failed over" report. The raw
+    // `reason` stays `"cooldown"` so `ELIGIBILITY_REASON_LABELS` and the
+    // envelope `reasons` stream are untouched, and the reset deadline rides
+    // along for the all-cooling 429 answer.
+    if (eligibility.reason === "cooldown") {
+      return {
+        candidate,
+        decision: {
+          eligible: true,
+          rank: ROUTING_RANK.COOLING,
+          reason: "cooldown",
+          ...(eligibility.cooldown_until !== undefined
+            ? { cooldown_until: eligibility.cooldown_until }
+            : {}),
+        },
+      };
     }
     // Unified engine: unknown quota is eligible but lower-rank than known-available.
     if (fact !== undefined) {
@@ -1009,9 +1026,49 @@ export class RoutingEngine {
     // single per-candidate decision. `plan()` then sorts once by rank and
     // hands the full `decisions` map downstream, so no later layer re-derives
     // a competing ordering.
+    //
+    // Quota evidence is read in batch before the per-candidate pass: one
+    // in-memory/Redis `MGET` per lens and one DB query for the accounts the
+    // cache did not answer, instead of a serial round trip per candidate. The
+    // per-candidate stamping below then consumes the shared maps, keeping the
+    // live-cache-authoritative / snapshot-fallback semantics identical.
+    const quotaCacheByAccount = new Map<string, CachedQuotaEntry>();
+    const lensToAccounts = new Map<string, string[]>();
+    for (const candidate of matching) {
+      const accountId = candidate.provider_account_id;
+      if (accountId === undefined) continue;
+      const lens = quotaLens(candidate.tenant_id ?? tid);
+      const accounts = lensToAccounts.get(lens);
+      if (accounts === undefined) lensToAccounts.set(lens, [accountId]);
+      else accounts.push(accountId);
+    }
+    for (const [lens, accountIds] of lensToAccounts) {
+      const entries = await getCachedQuotaEntries(lens, accountIds, this.redis).catch(
+        () => new Map<string, CachedQuotaEntry>(),
+      );
+      for (const [accountId, entry] of entries) quotaCacheByAccount.set(accountId, entry);
+    }
+    const snapshotByAccount = new Map<string, ProviderQuotaResultSnapshot>();
+    if (this.db !== undefined) {
+      const needingSnapshot = matching
+        .map((candidate) => candidate.provider_account_id)
+        .filter((accountId): accountId is string => accountId !== undefined && !quotaCacheByAccount.has(accountId));
+      if (needingSnapshot.length > 0) {
+        const snaps = await readQuotaSnapshots(this.db, needingSnapshot).catch(
+          () => new Map<string, ProviderQuotaResultSnapshot>(),
+        );
+        for (const [accountId, snap] of snaps) snapshotByAccount.set(accountId, snap);
+      }
+    }
     const evaluations = await Promise.all(
       matching.map(async (candidate) => {
-        const stamped = await this.applyUsageFloorToCandidate(candidate, snapshot, tid);
+        const stamped = await this.applyUsageFloorToCandidate(
+          candidate,
+          snapshot,
+          tid,
+          quotaCacheByAccount,
+          snapshotByAccount,
+        );
         return this.evaluateCandidate(stamped, snapshot, tid, requiredCapabilities);
       }),
     );

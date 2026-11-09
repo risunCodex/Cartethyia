@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { stripThinkingTags } from "../../src/protocol/think-split";
+import { stripThinkingTags, ThinkingTagStripper } from "../../src/protocol/think-split";
 
 /**
  * The reasoning path on `chat.ts` forwards `reasoning_content` through to the
@@ -56,5 +56,43 @@ describe("stripThinkingTags — the reasoning path's defence against upstream do
 
   test("handles multiple wrapped segments in one string", () => {
     expect(stripThinkingTags("<think>a</think>mid<think>b</think>")).toBe("amidb");
+  });
+});
+
+describe("ThinkingTagStripper — order-preserving reasoning-channel strip", () => {
+  test("preserves source order across tagged and untagged content", () => {
+    const s = new ThinkingTagStripper();
+    expect(s.push("thought A <think>inner</think> thought B")).toBe("thought A inner thought B");
+    expect(s.flush()).toBe("");
+  });
+
+  test("recognizes an opening tag split across two deltas", () => {
+    const s = new ThinkingTagStripper();
+    expect(s.push("thought A <thi")).toBe("thought A ");
+    expect(s.push("nk>inner</think> thought B")).toBe("inner thought B");
+    expect(s.flush()).toBe("");
+  });
+
+  test("recognizes a closing tag split across two deltas", () => {
+    const s = new ThinkingTagStripper();
+    expect(s.push("thought A <think>inner</thi")).toBe("thought A ");
+    expect(s.push("nk> thought B")).toBe("inner thought B");
+    expect(s.flush()).toBe("");
+  });
+
+  test("keeps multiple interleaved spans in order", () => {
+    const s = new ThinkingTagStripper();
+    expect(s.push("a <think>1</think> b <think>2</think> c")).toBe("a 1 b 2 c");
+  });
+
+  test("fail-opens an unclosed span verbatim, restoring its opening tag", () => {
+    const s = new ThinkingTagStripper();
+    expect(s.push("thought A <think>never closed")).toBe("thought A ");
+    expect(s.flush()).toBe("<think>never closed");
+  });
+
+  test("leaves code spans alone", () => {
+    const s = new ThinkingTagStripper();
+    expect(s.push("see <think> literal `code` </think> after")).toBe("see  literal `code`  after");
   });
 });
