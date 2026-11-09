@@ -800,6 +800,9 @@ const FREE_LIMITED_IDS = new Set([
   // Perch Starter is free with a Google/GitHub sign-in: Roost Standard and
   // Standard 1M tiers, a $20/month included-usage allowance.
   "perch",
+  // Zro serves open models with a small per-key allowance; a key only sees
+  // the models it may call, and the free allowance is metered per use.
+  "zro",
 ]);
 /**
  * The providers an operator reaches for first: household names with a

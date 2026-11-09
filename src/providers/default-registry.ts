@@ -806,6 +806,13 @@ export const PROVIDER_CAPABILITIES = {
     loadModelDiscovery: async () =>
       (await import("./integrations/freebuff/freebuff-discovery")).freebuffModelDiscovery(),
   },
+  zro: {
+    endpointPathsByWireFamily: { messages: "/v1/messages" },
+    loadAdapter: async () => (await import("./integrations/zro/zro")).createZroAdapter(),
+    loadModels: async () => (await import("./integrations/zro/zro")).ZRO_MODELS,
+    loadQuotaCollector: quotaCapability(() => import("./integrations/zro/zro"), "fetchZroQuota"),
+    loadModelDiscovery: async () => (await import("./integrations/zro/zro")).zroModelDiscovery()(),
+  },
 
   ...createDiscoveryBackedProviderCapabilities(openAIModelDiscovery),
 

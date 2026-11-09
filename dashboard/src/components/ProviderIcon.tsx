@@ -98,6 +98,9 @@ const iconAssets: Record<string, { file: string; ext: "svg" | "webp" }> = {
   // `traecn` falls through to the generic placeholder while `trae` renders the
   // real logo, so the two realms look unrelated in the provider list.
   traecn: { file: "trae", ext: "webp" },
+  // Zro's official mark is a black-on-transparent SVG (from the Zro docs
+  // site); without this entry the fallback would look for `zro.webp`.
+  zro: { file: "zro", ext: "svg" },
 };
 
 function assetFor(icon: string): { file: string; ext: "svg" | "webp" } {

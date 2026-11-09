@@ -503,6 +503,18 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
     credentialUrl: "https://www.codebuff.com/login",
     credentialHint: "Sign in with your Freebuff account (Desktop/CLI code flow).",
   },
+  {
+    // Zro (moonmath). Fast, private, multi-region inference for open models.
+    // Claude Code connects via the Messages wire with a plain bearer key; the
+    // provider's own Claude Code docs configure `ANTHROPIC_BASE_URL` +
+    // `ANTHROPIC_AUTH_TOKEN`. No quota endpoint exists — entitlement is the
+    // `/v1/models` list itself (a key only sees the models it may call).
+    id: "zro",
+    displayName: "Zro",
+    baseUrl: "https://zro.moonmath.ai",
+    credentialUrl: "https://zro.moonmath.ai/docs/key-controls",
+    credentialHint: "Create or copy an API key (sk-...) from the Zro key controls page (docs/key-controls).",
+  },
 ] as const;
 
 /**
