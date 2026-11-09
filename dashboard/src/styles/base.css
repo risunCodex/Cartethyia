@@ -76,6 +76,13 @@ html::-webkit-scrollbar {
    * must keep scrolling the page, not stop dead against the edge. */
 }
 
+/* Select menus may grow past their trigger to fit the longest option, while
+   remaining inside the viewport on narrow screens. */
+.radix-select-content-fit {
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 2rem));
+}
+
 html {
   font-size: 14px;
   background: var(--page-bg);

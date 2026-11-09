@@ -1,5 +1,5 @@
 import { Cable, ChevronDown, Fingerprint, Gauge, Info, Layers, Minus, Plus, Repeat, Settings2, Shuffle, Waypoints } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Card, CardBody, CardHeader } from "../../../components/ui/card";
 import { Dialog } from "../../../components/ui/dialog";
 import { Button } from "../../../components/ui/button";
@@ -51,10 +51,13 @@ export function RoutingStrategyCard({
   const updatePoolStrategy = useUpdatePoolStrategy();
   const [limitsHelpOpen, setLimitsHelpOpen] = useState(false);
   const [poolHelpOpen, setPoolHelpOpen] = useState(false);
-  // Advanced section (max inflight / proxy) is collapsed by default. While it
-  // is open it "takes over" the routing surface: the Client identity box above
-  // greys out until Advanced is collapsed again.
+  // Advanced section (max inflight / proxy) is collapsed by default. Client
+  // identity has its own box and stays editable while Advanced is expanded —
+  // the two controls address different settings and never compete for the
+  // same space.
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [customIdentityDraft, setCustomIdentityDraft] = useState<string | null>(null);
+  useEffect(() => setCustomIdentityDraft(null), [providerId]);
   const showUnsupportedHint = PROXY_SKIP_HINT_PROVIDERS.has(providerId);
 
   if (routing.isLoading) return <LoadingState label="Loading routing..." />;
@@ -97,6 +100,27 @@ export function RoutingStrategyCard({
   // stored value is kept, not cleared: turning Always direct back off restores
   // the operator's limit instead of silently resetting it to unlimited.
   const proxyLimitInactive = routing.skipProxy;
+  const identityChoice =
+    routing.customUserAgent !== null || customIdentityDraft !== null ? "custom" : "default";
+  const handleClientIdentityChange = (next: string) => {
+    if (next === "default") {
+      setCustomIdentityDraft(null);
+      routing.setCustomUserAgent(null);
+      return;
+    }
+    setCustomIdentityDraft(routing.customUserAgent ?? "");
+  };
+  const handleCustomIdentitySave = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      setCustomIdentityDraft(null);
+      routing.setCustomUserAgent(null);
+      return;
+    }
+    setCustomIdentityDraft(value);
+    routing.setCustomUserAgent(trimmed);
+  };
+
   const adjustRotateCount = (delta: number) => {
     routing.setRotateCount(Math.min(1000, Math.max(1, routing.rotateCount + delta)));
   };
@@ -318,9 +342,7 @@ export function RoutingStrategyCard({
           {/* Keep these paired controls balanced, filling the row on wide cards
               and stacking when the card cannot fit two readable tracks. */}
           <div className="routing-controls-grid grid gap-5 min-w-0 w-full">
-            <div
-              className={`px-6 py-5 rounded-control border border-inner-border bg-surface-2 min-w-0${advancedOpen ? " opacity-60" : ""}`}
-            >
+            <div className="px-6 py-5 rounded-control border border-inner-border bg-surface-2 min-w-0">
               <Inline gap="6px" className="text-body font-semibold mb-3">
                 <Fingerprint
                   size={15}
@@ -330,54 +352,37 @@ export function RoutingStrategyCard({
                 Client identity
               </Inline>
               <div className="flex flex-col gap-2">
-                {userAgentEditable ? (
-                  <>
-                    <Input
-                      id="routing-user-agent-custom"
-                      aria-label="Custom User-Agent override"
-                      disabled={advancedOpen}
-                      value={routing.customUserAgent ?? ""}
-                      placeholder={fixedIdentity}
-                      spellCheck={false}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        routing.setCustomUserAgent(value.trim() === "" ? null : value);
-                      }}
-                    />
-                    <div className="flex items-center gap-2">
-                      <span className="text-micro text-text-tertiary">
-                        Custom User-Agent — leave empty to use the native identity below
-                      </span>
-                      {routing.customUserAgent !== null ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => routing.setCustomUserAgent(null)}
-                          title="Reset to the provider's native identity"
-                        >
-                          Reset
-                        </Button>
-                      ) : null}
-                    </div>
-                    <div className="text-micro text-text-tertiary">
-                      Native identity: <code className="font-mono">{fixedIdentity}</code>,{" "}
-                      {routing.customUserAgent !== null ? "overridden by the custom value above" : "used as-is"}
-                    </div>
-                  </>
-                ) : (
+                <Select
+                  id="routing-client-identity"
+                  aria-label="Client identity"
+                  value={identityChoice}
+                  disabled={!userAgentEditable}
+                  options={[
+                    { value: "default", label: "Provider default (unchanged)" },
+                    { value: "custom", label: "Custom", disabled: !userAgentEditable },
+                  ]}
+                  onValueChange={handleClientIdentityChange}
+                />
+                {identityChoice === "custom" && userAgentEditable ? (
                   <Input
-                    id="routing-user-agent-fixed"
-                    aria-label="Client identity"
-                    disabled
-                    value={fixedIdentity}
+                    id="routing-user-agent-custom"
+                    aria-label="Custom User-Agent override"
+                    value={customIdentityDraft ?? routing.customUserAgent ?? ""}
+                    placeholder="User-Agent for a compatible client"
+                    spellCheck={false}
+                    onChange={(event) => handleCustomIdentitySave(event.target.value)}
                   />
+                ) : (
+                  <div className="text-micro text-text-tertiary">
+                    Provider identity is left unchanged: <code className="font-mono">{fixedIdentity}</code>
+                  </div>
                 )}
                 <div className="text-badge text-text-tertiary mt-1">
-                  {advancedOpen
-                    ? "Locked while Advanced is open — collapse Advanced to edit."
-                    : userAgentEditable
-                      ? "Type a custom User-Agent to override the provider's identity (saved automatically); Reset clears it back to native."
-                      : "Set by the provider. It cannot be changed."}
+                  {userAgentEditable
+                    ? identityChoice === "custom"
+                      ? "Enter a User-Agent manually for a compatible client. Clear the field to restore the provider default."
+                      : "Uses the provider's native identity without modification."
+                    : "This provider manages its own client identity; custom overrides are unavailable."}
                 </div>
               </div>
             </div>
