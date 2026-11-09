@@ -56,6 +56,14 @@ chat → FINISH → session release) with the desktop identity-group headers and
 the locked official 7918-char worker system prompt + 37-tool set. Wire facts
 live-verified 2026-11-09 (see `documentation/research/freebuff/`). Coverage:
 `test/providers/freebuff-{adapter,signature,discovery}.test.ts`.
+- **Freebuff: session-active pill per account (provider detail).** The quota
+collector now does a live `GET /api/v1/freebuff/session` (device-signed) and
+emits one `session_active` window per active purchase (model + `expiresAt`).
+The provider-detail account row renders a countdown pill — `Session · <model> ·
+Expires in Nh Nm` — that re-renders every 30s from the absolute expiry, without
+polling. Quota summary treats `session_active` windows as display-only. Coverage:
+`test/providers/freebuff-discovery.test.ts` (session windows, expired skip,
+no-device fallback).
 
 ### Changed
 

@@ -5,6 +5,16 @@ import { describe, expect, test } from "bun:test";
 import { FREEBUFF_MODELS } from "../../src/providers/integrations/freebuff/freebuff-catalog";
 import { freebuffModelDiscovery } from "../../src/providers/integrations/freebuff/freebuff-discovery";
 import { fetchFreebuffQuota } from "../../src/providers/integrations/freebuff/freebuff-quota";
+import { freebuffMintDeviceKey } from "../../src/providers/integrations/freebuff/freebuff";
+
+async function testDevice() {
+  const fetchFn = (async () =>
+    new Response(JSON.stringify({ keyId: "k_test" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as unknown as typeof fetch;
+  return freebuffMintDeviceKey("token-1", { fetchFn, accountId: "acc_1" });
+}
 
 describe("Freebuff static catalog", () => {
   test("seeds the live 13-row surface with chat wire", () => {
@@ -129,5 +139,86 @@ describe("Freebuff quota collector", () => {
     const fetcher = (async () => new Response(JSON.stringify({ error: "waiting_room_required" }), { status: 428 })) as unknown as typeof fetch;
     const quota = await fetchFreebuffQuota("token-1", fetcher);
     expect(quota.error).not.toBeNull();
+  });
+
+  test("emits session_active windows from a live GET /session with device identity", async () => {
+    const future = new Date(Date.now() + 4 * 3_600_000 + 29 * 60_000).toISOString(); // 4h29m from now
+    const admissionBody = { status: "active", accessTier: "limited", freebucks: { balance: 15, daily: { limit: 25, spent: 10, remaining: 15, resetAt: "2026-11-10T08:00:00.000Z" } } };
+    const device = await testDevice();
+    const fetcher = (async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/session/admission")) {
+        return new Response(JSON.stringify(admissionBody), { status: 200 });
+      }
+      if (url.endsWith("/session")) {
+        return new Response(
+          JSON.stringify({
+            status: "active",
+            desktopPurchases: [{ model: "m-096e75164d", expiresAt: future, holderInstanceId: "inst-1" }],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ status: "ended" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const quota = await fetchFreebuffQuota("token-1", fetcher, {
+      auth_state: { accountId: "acc_1", device },
+      credential_kind: "oauth",
+      accountId: "acc_1",
+    });
+    expect(quota.error).toBeNull();
+    const session = quota.windows.find((w) => w.kind === "session_active");
+    expect(session).toBeDefined();
+    expect(session!.modelIds).toEqual(["m-096e75164d"]);
+    expect(session!.resetsAt).toBe(future);
+    expect(session!.recurring).toBe(false);
+    expect(session!.remaining).toBeGreaterThanOrEqual(269); // ~4h29m in minutes
+    expect(session!.remaining).toBeLessThanOrEqual(270);
+  });
+
+  test("skips session windows for expired purchases", async () => {
+    const past = new Date(Date.now() - 5_000).toISOString();
+    const admissionBody = { status: "active", accessTier: "limited", freebucks: { balance: 15, daily: { limit: 25, spent: 10, remaining: 15, resetAt: "2026-11-10T08:00:00.000Z" } } };
+    const device = await testDevice();
+    const fetcher = (async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/session/admission")) {
+        return new Response(JSON.stringify(admissionBody), { status: 200 });
+      }
+      if (url.endsWith("/session")) {
+        return new Response(
+          JSON.stringify({
+            status: "active",
+            desktopPurchases: [{ model: "m-096e75164d", expiresAt: past, holderInstanceId: "inst-1" }],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ status: "ended" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const quota = await fetchFreebuffQuota("token-1", fetcher, {
+      auth_state: { accountId: "acc_1", device },
+      credential_kind: "oauth",
+      accountId: "acc_1",
+    });
+    expect(quota.windows.some((w) => w.kind === "session_active")).toBe(false);
+  });
+
+  test("without device identity, quota still works and emits no session windows", async () => {
+    const admissionBody = { status: "active", accessTier: "limited", freebucks: { balance: 15, daily: { limit: 25, spent: 10, remaining: 15, resetAt: "2026-11-10T08:00:00.000Z" } } };
+    const fetcher = (async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/session/admission")) {
+        return new Response(JSON.stringify(admissionBody), { status: 200 });
+      }
+      return new Response(JSON.stringify({ status: "ended" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const quota = await fetchFreebuffQuota("token-1", fetcher, {
+      auth_state: { accountId: "acc_1" },
+      credential_kind: "oauth",
+      accountId: "acc_1",
+    });
+    expect(quota.error).toBeNull();
+    expect(quota.windows.some((w) => w.kind === "session_active")).toBe(false);
   });
 });
