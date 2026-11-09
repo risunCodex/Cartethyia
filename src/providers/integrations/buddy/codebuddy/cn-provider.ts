@@ -168,6 +168,9 @@ export function createCodeBuddyCnAdapter(fetchImpl?: typeof fetch): ProviderAdap
       baseUrl: CODEBUDDY_CN_BASE_URL,
       variant: "CLI",
       prePayload: codeBuddyCnPrePayload,
+      // The CN CLI profile gzips the chat body (donor behavior). The console
+      // channel fallback is an intl-only recovery; CN has no second endpoint.
+      requestCompression: "gzip",
       ...(fetchImpl ? { fetchImpl } : {}),
     }),
     {

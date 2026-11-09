@@ -21,6 +21,7 @@ import { createHash } from "node:crypto";
 import { completeRequiredSchema } from "../../../protocol/codecs";
 import type { CanonicalRequest } from "../../../protocol/canonical-model";
 import { isRecord } from "../../../protocol/codecs";
+import { GatewayError } from "../../../protocol/gateway-error";
 import { applyDeepSeekReasoning, applyOpenAIReasoning, backfillDeepSeekReasoningContent, clampedEffortOutputFloor, ensureChatReasoningReplayPresence } from "../../../protocol/reasoning";
 import { BUDDY_CN_EFFORTS, BUDDY_INTL_EFFORTS, BUDDY_SHARED_RAW } from "./buddy-catalog-shared";
 // Imported for the CN roster only: a CN-only id has no row in the shared
@@ -53,6 +54,123 @@ function normalizedToolName(value: string, index: number, used: Set<string>): st
       ? value
       : value.replace(INVALID_BUDDY_TOOL_NAME_CHARS, "");
   return uniqueToolName(base || `tool_${index + 1}`, used);
+}
+
+/**
+ * Schema keywords whose values are schemas (recursed as schema objects).
+ * Mirrors the donor gateway's `upstream_compat._SCHEMA_MAPS/_ARRAYS/CHILDREN`.
+ */
+const RE2_SCHEMA_MAPS: ReadonlySet<string> = new Set([
+  "properties",
+  "patternProperties",
+  "$defs",
+  "definitions",
+  "dependentSchemas",
+  "dependencies",
+]);
+const RE2_SCHEMA_ARRAYS: ReadonlySet<string> = new Set([
+  "allOf",
+  "anyOf",
+  "oneOf",
+  "prefixItems",
+  "items",
+]);
+const RE2_SCHEMA_CHILDREN: ReadonlySet<string> = new Set([
+  "items",
+  "additionalItems",
+  "contains",
+  "unevaluatedItems",
+  "additionalProperties",
+  "unevaluatedProperties",
+  "propertyNames",
+  "not",
+  "if",
+  "then",
+  "else",
+  "contentSchema",
+]);
+
+/**
+ * Removes unescaped backslashes before underscores in one regex pattern. The
+ * CodeBuddy upstream validates tool schemas with RE2, which does not support
+ * `\_` escapes — a client schema that serializes `\_` (a common JSON
+ * representation of a literal underscore) is rejected with a 400. The donor
+ * gateway normalizes this before dispatch; a backslash that escapes a
+ * backslash is preserved.
+ */
+function normalizeRe2Pattern(value: string): string {
+  let out = "";
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i];
+    if (char === "\\" && value[i + 1] === "\\") {
+      // Escaped backslash: keep the pair so a following `_` stays escaped.
+      out += "\\\\";
+      i += 1;
+      continue;
+    }
+    if (char === "\\" && value[i + 1] === "_") {
+      // `\_` — the upstream's RE2 rejects it; drop the backslash.
+      out += "_";
+      i += 1;
+      continue;
+    }
+    out += char;
+  }
+  return out;
+}
+
+/** Normalizes RE2-incompatible underscore escapes in schema pattern positions. */
+function normalizeRe2SchemaPatterns(schema: unknown): void {
+  if (!isRecord(schema)) return;
+  const pattern = schema["pattern"];
+  if (typeof pattern === "string") schema["pattern"] = normalizeRe2Pattern(pattern);
+  const patternProperties = schema["patternProperties"];
+  if (isRecord(patternProperties)) {
+    const normalized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(patternProperties)) {
+      const key2 = normalizeRe2Pattern(key);
+      if (key2 in normalized) {
+        normalized[key2] = { allOf: [normalized[key2], value] };
+      } else {
+        normalized[key2] = value;
+      }
+    }
+    schema["patternProperties"] = normalized;
+  }
+  for (const key of RE2_SCHEMA_MAPS) {
+    const map = schema[key];
+    if (!isRecord(map)) continue;
+    for (const child of Object.values(map)) normalizeRe2SchemaPatterns(child);
+  }
+  for (const key of RE2_SCHEMA_ARRAYS) {
+    const list = schema[key];
+    if (!Array.isArray(list)) continue;
+    for (const child of list) normalizeRe2SchemaPatterns(child);
+  }
+  for (const key of RE2_SCHEMA_CHILDREN) {
+    normalizeRe2SchemaPatterns(schema[key]);
+  }
+}
+
+/** JSON-serializes a value to cheaply detect a backslash-before-underscore. */
+function hasUnderscoreEscape(value: unknown): boolean {
+  try {
+    return JSON.stringify(value).includes("\\_");
+  } catch {
+    return true;
+  }
+}
+
+/** Returns the declaration with RE2-safe schema patterns, or the same object. */
+function normalizeRe2Declaration(declaration: Record<string, unknown>): Record<string, unknown> {
+  const parameters = declaration["parameters"];
+  if (!hasUnderscoreEscape(parameters)) return declaration;
+  // Deep-copy only when a rewrite is needed; the shared object must not be
+  // mutated for every dispatch.
+  const out: Record<string, unknown> = { ...declaration };
+  out["parameters"] = structuredClone(parameters);
+  normalizeRe2SchemaPatterns(out["parameters"]);
+  return out;
 }
 
 /**
@@ -102,29 +220,28 @@ export function normalizeBuddyToolNames(payload: Record<string, unknown>): void 
     const name = normalizedToolName(sourceName, index, used);
     used.add(name);
     if (!replacements.has(sourceName)) replacements.set(sourceName, name);
-    if (fn !== undefined)
-      return {
-        ...rawTool,
-        function: {
-          ...fn,
-          name,
-          ...(fn["parameters"] === undefined ? {} : { parameters: completeRequiredSchema(fn["parameters"]) }),
-        },
+    if (fn !== undefined) {
+      const fnOut = {
+        ...fn,
+        name,
+        ...(fn["parameters"] === undefined ? {} : { parameters: completeRequiredSchema(fn["parameters"]) }),
       };
-    if (custom !== undefined)
-      return {
-        ...rawTool,
-        custom: {
-          ...custom,
-          name,
-          ...(custom["format"] === undefined ? {} : { format: completeRequiredSchema(custom["format"]) }),
-        },
+      return normalizeRe2Declaration(fnOut);
+    }
+    if (custom !== undefined) {
+      const customOut = {
+        ...custom,
+        name,
+        ...(custom["format"] === undefined ? {} : { format: completeRequiredSchema(custom["format"]) }),
       };
-    return {
+      return { ...rawTool, custom: normalizeRe2Declaration(customOut) };
+    }
+    const bareOut = {
       ...rawTool,
       name,
       ...(rawTool["parameters"] === undefined ? {} : { parameters: completeRequiredSchema(rawTool["parameters"]) }),
     };
+    return normalizeRe2Declaration(bareOut);
   });
   const messages = payload["messages"];
   if (Array.isArray(messages)) {
@@ -137,6 +254,13 @@ export function normalizeBuddyToolNames(payload: Record<string, unknown>): void 
         if (replacement !== undefined) call["function"]["name"] = replacement;
       }
     }
+  }
+  const responseFormat = payload["response_format"];
+  if (isRecord(responseFormat) && hasUnderscoreEscape(responseFormat)) {
+    const copied = structuredClone(responseFormat) as Record<string, unknown>;
+    const jsonSchema = copied["json_schema"];
+    if (isRecord(jsonSchema)) normalizeRe2SchemaPatterns(jsonSchema["schema"]);
+    payload["response_format"] = copied;
   }
   const choice = payload["tool_choice"];
   if (!isRecord(choice)) return;
@@ -477,6 +601,10 @@ export function buddyPrePayloadCommon(
   normalizeBuddyImageUrl(payload);
   // developer role → system (buddy whitelist rejects developer, 11128)
   normalizeBuddyRoles(payload);
+  // Validate the *caller's* thinking controls before the DeepSeek contract may
+  // inject its own `thinking` (an injected `{type:"enabled"}` has no budget and
+  // must not be rejected as a malformed client shape).
+  validateBuddyThinking(payload);
   applyOpenAIReasoning(payload, request);
   applyDeepSeekReasoning(payload);
   // sol family defaults to high reasoning like reference thinking.go defaultDeepSeekEffort — sol without effort gets 500/invoke error otherwise
@@ -514,6 +642,34 @@ export function buddyPrePayloadCommon(
   delete payload["agent"];
   delete payload["agent_mode"];
   delete payload["agent_prompt"];
+}
+
+/**
+ * Validates the reasoning controls the CodeBuddy Chat wire accepts, mirroring
+ * the donor gateway's `map_reasoning_controls`. The upstream rejects the whole
+ * request for shapes it does not model, so a client that sends an unsupported
+ * `thinking` shape is failed here with a 400 that names the field — instead of
+ * an opaque upstream error.
+ */
+function validateBuddyThinking(payload: Record<string, unknown>): void {
+  const thinking = isRecord(payload["thinking"]) ? payload["thinking"] : undefined;
+  if (thinking === undefined) return;
+  const mode = typeof thinking["type"] === "string" ? (thinking["type"] as string) : "";
+  if (mode !== "enabled" && mode !== "adaptive" && mode !== "disabled") {
+    throw new GatewayError("invalid_request", 400, `CodeBuddy thinking.type must be enabled, adaptive or disabled (got ${JSON.stringify(mode)}) (request {requestId}). Check the shape of what you sent — then resend 🪞`);
+  }
+  if (mode === "enabled") {
+    const budget = thinking["budget_tokens"];
+    if (typeof budget !== "number" || !Number.isInteger(budget) || budget < 1024) {
+      throw new GatewayError("invalid_request", 400, "CodeBuddy thinking.budget_tokens must be an integer >= 1024 (request {requestId}). Check the shape of what you sent — then resend 🪞");
+    }
+  } else if (thinking["budget_tokens"] !== undefined) {
+    throw new GatewayError("invalid_request", 400, "CodeBuddy thinking.budget_tokens requires thinking.type=enabled (request {requestId}). Check the shape of what you sent — then resend 🪞");
+  }
+  const display = thinking["display"];
+  if (display !== undefined && display !== null && display !== "summarized") {
+    throw new GatewayError("invalid_request", 400, "CodeBuddy thinking.display supports only summarized (request {requestId}). Check the shape of what you sent — then resend 🪞");
+  }
 }
 
 function injectSolReasoningDefault(payload: Record<string, unknown>): void {

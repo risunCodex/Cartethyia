@@ -160,6 +160,10 @@ export function createCodeBuddyAdapter(fetchImpl?: typeof fetch): ProviderAdapte
       variant: "IDE",
       cliIdentity: true,
       prePayload: codeBuddyIntlPrePayload,
+      // The intl CLI profile gzips the chat body and recovers a channel-check
+      // 400 by retrying once on the console chat endpoint (donor behavior).
+      requestCompression: "gzip",
+      channelFallbackPath: "/console/chat/completions",
       ...(fetchImpl ? { fetchImpl } : {}),
     }),
     {

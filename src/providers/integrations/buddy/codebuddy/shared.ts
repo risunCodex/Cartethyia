@@ -110,7 +110,11 @@ export async function codebuddyHeaders(
     // Per-account device binding (qimei36) — distinct device per account.
     ...(() => {
       const binding = resolveBuddyDeviceBinding(context);
-      return binding === undefined ? {} : { "X-Device-Id-List": JSON.stringify({ qimei36: binding }) };
+      if (binding === undefined) return {};
+      // `JSON.stringify` returns `string` in the current lib, but the type is
+      // widened to `string | undefined` on some TS lib revisions — coerce so
+      // the header map stays `Record<string, string>` regardless.
+      return { "X-Device-Id-List": JSON.stringify({ qimei36: binding }) ?? "" };
     })(),
     // The desktop client sends the device-token pair on both realms. Captured
     // token (auth_state / device-token file) when present, otherwise the
@@ -140,6 +144,14 @@ export function codebuddyAdapterConfig(args: {
   ) => void;
   fetchImpl?: typeof fetch;
   cliIdentity?: boolean;
+  /**
+   * Body compression for chat dispatches. The CodeBuddy CLI contract (donor
+   * `codebuddy2api`) gzips the JSON body for the CLI profiles and sends
+   * `Accept-Encoding: identity`. `"json"` (default) keeps plain JSON.
+   */
+  requestCompression?: "json" | "gzip";
+  /** When set, retry a channel-check 400 against this path (console fallback). */
+  channelFallbackPath?: string;
 }): OpenAICompatibleAdapterConfig {
   return withBearerAuthentication({
     provider_id: args.providerId,
@@ -147,6 +159,12 @@ export function codebuddyAdapterConfig(args: {
     buildExtraHeaders: (context, request) =>
       codebuddyHeaders(args.variant, context, request, args.cliIdentity),
     prePayload: args.prePayload,
+    ...(args.requestCompression === undefined
+      ? {}
+      : { request_compression: args.requestCompression }),
+    ...(args.channelFallbackPath === undefined
+      ? {}
+      : { channel_fallback_path: args.channelFallbackPath }),
     ...(args.fetchImpl ? { fetchImpl: args.fetchImpl } : {}),
   });
 }

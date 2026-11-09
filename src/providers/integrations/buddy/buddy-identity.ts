@@ -167,6 +167,14 @@ export function materializeBuddyDeviceBinding(
  * the operator pinned them in `auth_state` (there is no reliable source to
  * invent them from). An opaque API key carries no uid and yields nothing.
  */
+/** A short printable identity claim from a JWT payload, or `undefined`. */
+function identityClaim(claims: Record<string, unknown> | undefined, name: string): string | undefined {
+  if (claims === undefined) return undefined;
+  const value = claims[name];
+  if (typeof value === "string" && value.trim().length > 0 && value.trim().length <= 128) return value.trim();
+  return undefined;
+}
+
 export function buddyOAuthIdentityHeaders(
   context?: ProviderDispatchContext,
 ): Record<string, string> {
@@ -175,15 +183,20 @@ export function buddyOAuthIdentityHeaders(
   const uid = buddyAccountUid(token) ?? context?.credential.account_id ?? "";
   if (uid.length === 0) return {};
   const enterpriseId = buddyEnterprise(context);
+  // The reference gateway reads `id_source` / `token_source` from the JWT
+  // payload and the account record, not from stored auth state — an account
+  // authorized before either was persisted still carries them on the wire.
+  // Precedence matches the donor (`client_profiles._identity_claim_headers`):
+  // account fields first, then JWT claims, then legacy `auth_state`.
+  const claims = token.length > 0 ? decodeJwtPayload(token) : undefined;
   const state = context?.credential.auth_state;
   const idSource =
-    typeof state?.["idSource"] === "string" && (state["idSource"] as string).trim().length > 0
-      ? (state["idSource"] as string).trim()
-      : undefined;
+    identityClaim(claims, "id_source") ??
+    identityClaim(claims, "idSource") ??
+    identityClaim(state as Record<string, unknown> | undefined, "idSource");
   const method =
-    typeof state?.["authMethod"] === "string" && (state["authMethod"] as string).trim().length > 0
-      ? (state["authMethod"] as string).trim()
-      : undefined;
+    identityClaim(claims, "token_source") ??
+    identityClaim(state as Record<string, unknown> | undefined, "authMethod");
   const headers: Record<string, string> = { "X-User-Id": uid };
   if (method !== undefined) headers["X-Auth-Method"] = method;
   if (idSource !== undefined) headers["X-Id-Source"] = idSource;

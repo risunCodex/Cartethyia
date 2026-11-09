@@ -66,6 +66,32 @@ is a retryable/eligible category, not an error pill.
 
 ### Fixed
 
+- **CodeBuddy: JWT-derived identity headers.** `X-Id-Source` / `X-Auth-Method`
+and the `X-Userinfo` envelope now fall back to the access token's JWT claims
+(`id_source`, `token_source`) when `auth_state` has no pinned values — the
+donor gateway (`codebuddy2api`) reads them from the JWT payload, so accounts
+authorized before the fields existed still carry the identity markers. Coverage:
+`test/providers/buddy-donor-gaps.test.ts`.
+- **CodeBuddy: channel-check console retry.** A 400 carrying the `11128` /
+`11-128` channel-check code plus the explanatory text now retries once against
+the intl `/console/chat/completions` endpoint before surfacing the error —
+matching the donor's recovery for the international profile. The detector is
+ported from `codebuddy2api/upstream_compat`. Coverage:
+`test/providers/buddy-donor-gaps.test.ts`.
+- **CodeBuddy: gzip request body.** The CLI profiles (`cb`, `cbcn`) now gzip
+the chat JSON body with `Content-Encoding: gzip` and request `Accept-Encoding:
+identity`, matching the donor's `_json_request_kwargs` contract.
+- **CodeBuddy: RE2 tool-schema normalization.** Escaped underscores (`\_`) in
+tool parameter patterns are normalized to plain underscores before dispatch;
+the upstream's RE2 validator rejects `\_` with a 400. Ported from
+`codebuddy2api/upstream_compat`. Coverage:
+`test/providers/buddy-donor-gaps.test.ts`.
+- **CodeBuddy: reasoning-control validation.** `thinking.type` must be enabled,
+adaptive, or disabled; `budget_tokens` (when present with enabled) must be an
+integer >= 1024; `display` accepts only summarized. A malformed shape fails with
+a named 400 instead of an opaque upstream error. The solver effort ladder is
+unchanged — an unsupported effort still clamps to the nearest served level.
+Coverage: `test/providers/buddy-donor-gaps.test.ts`.
 - **Cursor: complete multi-round tool-result replays rebase instead of being
 refused.** A continuation request whose `call_cursor_*` results all have a
 matching tool call in the sent conversation (a full-transcript resend after

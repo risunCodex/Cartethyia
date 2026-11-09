@@ -17,6 +17,7 @@ import { resolveDialect } from "../../protocol/translation/dialect/resolver";
 import { resolveThinkingForModel } from "../../protocol/translation/dialect/thinking-ladder";
 import type { DialectPolicy } from "../../protocol/translation/dialect/types";
 import { postUpstreamJson } from "../../protocol/upstream/post-json";
+import { gzipSync } from "node:zlib";
 import { GATEWAY_USER_AGENT } from "../operations/gateway-user-agent";
 import { resolvePromptCacheKey } from "../operations/session-resolution";
 import {
@@ -27,6 +28,24 @@ import {
   type AuthHeaderShape,
 } from "../../protocol/codecs";
 const TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
+
+/**
+ * Whether an upstream error body is the channel-check rejection the CodeBuddy
+ * console fallback recovers from. Ported from the donor gateway
+ * (`codebuddy2api/upstream_compat.is_channel_check_error`): it requires both
+ * a channel-check business code (`11128` / `11-128`) and one of the
+ * explanatory texts. A bare code match swept unrelated failures into a retry.
+ */
+export function isBuddyChannelCheckError(raw: string): boolean {
+  if (!/code["']?\s*:\s*["']?(?:11128|11-128)/i.test(raw)) return false;
+  const lower = raw.toLowerCase();
+  return (
+    lower.includes("渠道校验") || // 渠道校验
+    lower.includes("channel verification") ||
+    lower.includes("official client") ||
+    lower.includes("illegal api invocation from an unapproved channel")
+  );
+}
 
 /**
  * Provider ids that understand the OpenAI-style `service_tier` control. Only
@@ -111,8 +130,21 @@ export interface OpenAICompatibleAdapterConfig {
    * stamps `Content-Encoding: zstd` — the Grok Build CLI does this via its
    * sampler (`request_compression.rs`), and the proxy accepts it (verified
    * live 2026-11-02). Falls back to plain JSON if the runtime lacks zstd.
+   * `"gzip"` compresses with `gzipSync` and stamps `Content-Encoding: gzip`
+   * — the CodeBuddy CLI contract (donor `codebuddy2api`): the CLI profiles
+   * always compress; the CN desktop profile compresses requests >= 1024 B.
+   * The caller must also send `Accept-Encoding: identity` (the compressed
+   * body and the uncompressed response are independent choices).
    */
-  readonly request_compression?: "json" | "zstd";
+  readonly request_compression?: "json" | "zstd" | "gzip";
+  /**
+   * One retry against this path when the primary chat endpoint answers a
+   * channel-check 400 (`11128` / `11-128`). Matches the donor gateway's
+   * `/console/chat/completions` fallback for the international profile: the
+   * primary `v2` endpoint rejects requests that do not carry the channel
+   * marker, and a single console retry is the reference's recovery.
+   */
+  readonly channel_fallback_path?: string;
   /**
    * Stamps `user-agent: Cartethyia/<version>` on every dispatch. Explicit
    * opt-in per provider spec — never a default — so first-party cloaking
@@ -216,6 +248,13 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
     // here — alongside the other request headers — so auth/proxy layers see the
     // final shape before the transport runs.
     if (this.config.request_compression === "zstd") headers["content-encoding"] = "zstd";
+    else if (this.config.request_compression === "gzip") {
+      headers["content-encoding"] = "gzip";
+      // The compressed request and the response encoding are independent; the
+      // reference requests the identity response encoding so the stream arrives
+      // uncompressed (matching `Accept-Encoding: identity` in the donor).
+      headers["accept-encoding"] = "identity";
+    }
     Object.assign(headers, filterProviderCustomHeaders(context.credential.custom_headers));
     applyRouteUserAgent(headers, context.credential, context.user_agent);
     return headers;
@@ -330,18 +369,38 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
       return u.toString();
     })();
     const outboundFetch = context.outbound_fetch ?? this.config.fetch ?? globalThis.fetch;
-    const upstream = await postUpstreamJson(
-      fetchUrl,
-      headers,
-      payload as Record<string, unknown>,
-      context,
-      outboundFetch,
-      // zstd body encoding: matches the Grok Build CLI's
-      // `request_compression` (zstd with a JSON fallback when unavailable).
+    const bodyEncoder =
       this.config.request_compression === "zstd" && typeof Bun?.zstdCompressSync === "function"
-        ? (p) => Bun.zstdCompressSync(Buffer.from(JSON.stringify(p))) as Uint8Array<ArrayBuffer>
-        : undefined,
-    );
+        ? (p: Record<string, unknown>) => Bun.zstdCompressSync(Buffer.from(JSON.stringify(p))) as Uint8Array<ArrayBuffer>
+        : this.config.request_compression === "gzip"
+          ? (p: Record<string, unknown>) => gzipSync(Buffer.from(JSON.stringify(p)), { level: 6 })
+          : undefined;
+    const channelFallback =
+      this.config.channel_fallback_path !== undefined &&
+      endpointPath !== this.config.channel_fallback_path
+        ? joinUrl(this.config.resolveBaseUrl?.(context) ?? this.config.base_url, this.config.channel_fallback_path)
+        : undefined;
+    const upstream = await postUpstreamJson(fetchUrl, headers, payload as Record<string, unknown>, context, outboundFetch, bodyEncoder);
+    if (channelFallback !== undefined && upstream.res.status === 400) {
+      // Read the body only for a 400 that could still be retried. The channel
+      // check is the one refusal the console endpoint recovers from; a rejected
+      // body is consumed here so the fallback attempt carries a fresh stream.
+      const raw = await upstream.res.text().catch(() => "");
+      upstream.release();
+      if (isBuddyChannelCheckError(raw)) {
+        const retry = await postUpstreamJson(channelFallback, headers, payload as Record<string, unknown>, context, outboundFetch, bodyEncoder);
+        retry.release();
+        return retry.res;
+      }
+      // Not a channel check — reconstruct the 400 response so downstream error
+      // classification still sees the upstream's body. A `Response` body can be
+      // consumed once, so rebuild it from the captured text.
+      return new Response(raw, {
+        status: 400,
+        statusText: upstream.res.statusText,
+        headers: { "content-type": "application/json" },
+      });
+    }
     upstream.release();
     return upstream.res;
   }
