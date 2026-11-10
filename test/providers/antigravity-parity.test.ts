@@ -12,6 +12,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   antigravityClaudeThinkingBeta,
   ANTIGRAVITY_CLAUDE_THINKING_BETA,
+  antigravityWireModelId,
+  collapseAntigravityVariant,
   getAntigravityUserAgent,
   flattenAntigravitySchema,
   normalizeAntigravityToolSchema,
@@ -556,5 +558,23 @@ describe("7. tool schemas survive the envelope", () => {
       type: "object",
       properties: { path: { type: "string" } },
     });
+  });
+});
+
+describe("Antigravity wire model mapping & variant collapse", () => {
+  test("resolves logical model ids to upstream wire deployments", () => {
+    expect(antigravityWireModelId("gemini-4-argon")).toBe("gemini-4-argon-low");
+    expect(antigravityWireModelId("gemini-3.8-flash")).toBe("gemini-3.8-flash-low");
+    expect(antigravityWireModelId("claude-opus-4-6")).toBe("claude-opus-4-6-thinking");
+    expect(antigravityWireModelId("gemini-3.1-pro")).toBe("gemini-pro-agent");
+    expect(antigravityWireModelId("gemini-2.5-flash")).toBe("gemini-2.5-flash");
+  });
+
+  test("collapses effort variants back to logical catalog model ids", () => {
+    expect(collapseAntigravityVariant("gemini-4-argon-low")).toBe("gemini-4-argon");
+    expect(collapseAntigravityVariant("gemini-4-argon-medium")).toBe("gemini-4-argon");
+    expect(collapseAntigravityVariant("gemini-4-argon-high")).toBe("gemini-4-argon");
+    expect(collapseAntigravityVariant("gemini-3.8-flash-low")).toBe("gemini-3.8-flash");
+    expect(collapseAntigravityVariant("gemini-pro-agent")).toBe("gemini-3.1-pro");
   });
 });
