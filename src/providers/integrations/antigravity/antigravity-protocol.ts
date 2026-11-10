@@ -166,6 +166,16 @@ const ANTIGRAVITY_MODEL_WIRE_PROFILES: Readonly<
     modelEnum: "MODEL_PLACEHOLDER_M322",
     maxOutputTokens: 65536,
   },
+  // Gemini 4 Argon effort tiers (real deployment names).
+  "gemini-4-argon-low": {
+    maxOutputTokens: 65536,
+  },
+  "gemini-4-argon-medium": {
+    maxOutputTokens: 65536,
+  },
+  "gemini-4-argon-high": {
+    maxOutputTokens: 65536,
+  },
   // GPT-OSS via Antigravity (verified live).
   "gpt-oss-120b-medium": {
     modelEnum: "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
@@ -199,6 +209,7 @@ export function antigravityWireModelId(modelId: string): string {
   if (modelId === "gemini-3.6-flash") return "gemini-3.6-flash-low";
   if (modelId === "gemini-3.7-flash") return "gemini-3.7-flash-low";
   if (modelId === "gemini-3.8-flash") return "gemini-3.8-flash-low";
+  if (modelId === "gemini-4-argon") return "gemini-4-argon-low";
   if (modelId === "gpt-oss-120b") return "gpt-oss-120b-medium";
   return modelId;
 }
