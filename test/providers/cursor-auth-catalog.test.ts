@@ -393,7 +393,7 @@ describe("Cursor catalog mapping", () => {
     await fetchCursorModels({ credential: "jwt", fetcher });
     expect(seenHeaders?.get("authorization")).toBe("Bearer jwt");
     expect(seenHeaders?.get("x-cursor-client-type")).toBe("cli");
-    expect(seenHeaders?.get("x-cursor-client-version")).toBe("cli-3.29.9-306d153");
+    expect(seenHeaders?.get("x-cursor-client-version")).toBe("cli-3.29.15-86776fc");
     expect(seenHeaders?.get("x-ghost-mode")).toBe("true");
     expect(seenHeaders?.get("x-request-id")).toBeTruthy();
     // The CLI sends its resolved timezone on every request (IANA name; the

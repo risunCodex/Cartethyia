@@ -28,6 +28,7 @@ import { encodeWireRequest, decodeWireStream } from "../../../protocol/registry"
 import { resolveDialect } from "../../../protocol/translation/dialect/resolver";
 import { postUpstreamJson } from "../../../protocol/upstream/post-json";
 import { mapUpstreamHttpError, throwIfHtmlResponse } from "../../../transport/failure-policy";
+import { getFreebuffVersion } from "../../operations/client-versions";
 import type {
   ProviderAdapter,
   ProviderDispatchContext,
@@ -79,7 +80,6 @@ export const FREEBUFF_CHAT_USER_AGENT =
 export const FREEBUFF_ADMISSION_USER_AGENT = "Bun/1.4.2";
 
 export const FREEBUFF_DESKTOP_THREAD_LOCAL_AGENT_ID = "freebuff-desktop-thread-local-v3";
-export const FREEBUFF_DESKTOP_AGENT_VERSION = "0.0.201";
 
 export const FREEBUFF_AGENT_RUN_AGENT_ID = FREEBUFF_DESKTOP_THREAD_LOCAL_AGENT_ID;
 
@@ -625,7 +625,7 @@ export function createFreebuffAdapter(): ProviderAdapter {
           Authorization: `Bearer ${secret}`,
           "user-agent": FREEBUFF_CHAT_USER_AGENT,
           [FREEBUFF_CLIENT_HEADER]: FREEBUFF_CLIENT_HEADER_VALUE,
-          [FREEBUFF_CLIENT_VERSION_HEADER]: FREEBUFF_DESKTOP_AGENT_VERSION,
+          [FREEBUFF_CLIENT_VERSION_HEADER]: getFreebuffVersion(),
           [FREEBUFF_INSTALL_ID_HEADER]: authState.device.installId,
           [FREEBUFF_ACTING_USER_HEADER]: resolveAccountId(authState, secret),
           [FREEBUFF_CATALOG_FETCH_HEADER]: fetchId,

@@ -4,7 +4,7 @@
 // CLI version) on the chat wire, and uses `application/json`. There is no
 // device fingerprint — the JWT is the whole identity.
 
-import { FREEPI_CLI_VERSION } from "./freepi-realm";
+import { getFreepiVersion } from "../../operations/client-versions";
 
 /** Builds the header set for one free-pi request. */
 export function buildFreepiHeaders(jwt: string, stream = false, sessionId?: string): Record<string, string> {
@@ -12,7 +12,7 @@ export function buildFreepiHeaders(jwt: string, stream = false, sessionId?: stri
     authorization: `Bearer ${jwt}`,
     "content-type": "application/json",
     accept: stream ? "text/event-stream" : "application/json",
-    "x-client-version": FREEPI_CLI_VERSION,
+    "x-client-version": getFreepiVersion(),
   };
   if (sessionId !== undefined && sessionId.length > 0) {
     headers["x-session-id"] = sessionId;

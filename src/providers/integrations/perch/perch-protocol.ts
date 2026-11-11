@@ -27,9 +27,6 @@ import { PERCH_STARTER_PINS } from "./perch-realm";
 /** Default hosted model id when the account endpoint is unreachable. */
 export const PERCH_DEFAULT_CHAT_MODEL = "wandb-kimi-k2-6";
 
-/** The CLI user-agent the upstream recognizes as a CLI surface. */
-export const PERCH_CLI_USER_AGENT = "perchai-cli/unknown";
-
 export interface PerchTurnContext {
   readonly userId: string | null;
   readonly workspaceId: string | null;

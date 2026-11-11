@@ -16,9 +16,6 @@ export const FREEPI_CHAT_PATH = "/v1/chat/completions";
 export const FREEPI_AD_NEXT_PATH = "/ads/next";
 export const FREEPI_AD_IMPRESSION_PATH = "/ads/impression";
 
-/** Client version the gateway reports via `x-client-version`. */
-export const FREEPI_CLI_VERSION = "0.6.14";
-
 /** Consent version shipped in 0.6.14. */
 export const FREEPI_CONSENT_VERSION = "4";
 

@@ -27,8 +27,8 @@ import {
   type ProviderId,
 } from "../../provider-contracts";
 import { usageFromProvider } from "../../provider-usage";
+import { getPerchVersion } from "../../operations/client-versions";
 import {
-  PERCH_CLI_USER_AGENT,
   PERCH_SAFFRON_SYSTEM_PROMPT,
   buildPerchModelCallBody,
   parsePerchSse,
@@ -96,7 +96,7 @@ export class PerchAdapter implements ProviderAdapter {
       headers: {
         authorization: `Bearer ${access}`,
         "content-type": "application/json",
-        "user-agent": PERCH_CLI_USER_AGENT,
+        "user-agent": `perchai-cli/${getPerchVersion()}`,
         "x-perch-locale": "en",
       },
       body: JSON.stringify({ surface: "cli", profile: "standard" }),
@@ -164,7 +164,7 @@ export class PerchAdapter implements ProviderAdapter {
           authorization: `Bearer ${access}`,
           "content-type": "application/json",
           accept: "text/event-stream",
-          "user-agent": PERCH_CLI_USER_AGENT,
+          "user-agent": `perchai-cli/${getPerchVersion()}`,
           "x-perch-locale": "en",
           "x-perch-call-delta": "1",
           "x-perch-turn-ticket": ticket.ticket,

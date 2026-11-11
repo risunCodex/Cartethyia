@@ -9,6 +9,7 @@ import type { CanonicalRequest } from "../../src/protocol/canonical-model";
 import type { ProviderDispatchContext, ProviderDispatchTarget } from "../../src/providers/provider-contracts";
 import { createPerchAdapter } from "../../src/providers/integrations/perch/perch";
 import { PERCH_SAFFRON_SYSTEM_PROMPT } from "../../src/providers/integrations/perch/perch-protocol";
+import { VERSION_SOURCES } from "../../src/providers/operations/client-versions";
 
 const SECRET = new TextEncoder().encode(
   JSON.stringify({
@@ -133,7 +134,7 @@ describe("PerchAdapter (HTTP)", () => {
     // then account, then model-call). The stub increments its sequence per
     // request: ticket=1, account=2, model-call=3 → ticket tk-1.
     expect(headers.get("x-perch-turn-ticket")).toBe("tk-1");
-    expect(headers.get("user-agent")).toBe("perchai-cli/unknown");
+    expect(headers.get("user-agent")).toBe(`perchai-cli/${VERSION_SOURCES.perch.fallback}`);
     expect(headers.get("accept")).toBe("text/event-stream");
 
     const body = JSON.parse(String(call!.init?.body)) as Record<string, unknown>;

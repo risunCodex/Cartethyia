@@ -11,6 +11,8 @@ import {
   buildKiroUserAgent,
   getCodeBuddyCnVersion,
   getCodeBuddyVersion,
+  getFreebuffVersion,
+  getProviderClientVersion,
   pinnedClientVersions,
   VERSION_SOURCES,
 } from "../../src/providers/operations/client-versions";
@@ -121,7 +123,7 @@ describe("opencode client version fallback", () => {
   test("the fallback is the current latest release", () => {
     // A cold process sends this before discovery resolves; if it lags the
     // upstream release the UA advertises a client build that no longer ships.
-    expect(VERSION_SOURCES.opencode.fallback).toBe("2.2.6");
+    expect(VERSION_SOURCES.opencode.fallback).toBe("2.2.7");
   });
 });
 
@@ -167,13 +169,13 @@ describe("client version monitor snapshot", () => {
   });
 
   test("uses current client feeds for Claude Code and Kiro", async () => {
-    expect(VERSION_SOURCES.claudeCli.fallback).toBe("2.1.319");
+    expect(VERSION_SOURCES.claudeCli.fallback).toBe("2.1.322");
     expect(VERSION_SOURCES.claudeCli.sources[0]?.url).toBe(
       "https://registry.npmjs.org/@anthropic-ai/claude-code/latest",
     );
     expect(VERSION_SOURCES.claudeSdk.fallback).toBe("0.128.0");
     expect(VERSION_SOURCES.claudeSdk.sources).toEqual([]);
-    expect(VERSION_SOURCES.kiro.fallback).toBe("1.4.121");
+    expect(VERSION_SOURCES.kiro.fallback).toBe("1.4.154");
     expect(VERSION_SOURCES.kiro.sources[0]?.url).toBe(
       "https://formulae.brew.sh/api/cask/kiro.json",
     );
@@ -182,7 +184,7 @@ describe("client version monitor snapshot", () => {
     const resolver = createClientVersionResolver({
       key: `test-kiro-cask-${crypto.randomUUID()}`,
       client: "kiro",
-      fallback: "1.4.121",
+      fallback: "1.4.154",
       sources: [VERSION_SOURCES.kiro.sources[0]!],
     });
     await resolver.ensure(
@@ -253,6 +255,20 @@ describe("default extractor covers the consolidated sources", () => {
       body: { info: { version: "1.52.1" } },
       expected: "1.52.1",
     },
+    {
+      name: "freepi npm",
+      key: "test-freepi",
+      source: VERSION_SOURCES.freepi.sources[0]!,
+      body: { version: "0.6.19", "dist-tags": { latest: "0.6.19" } },
+      expected: "0.6.19",
+    },
+    {
+      name: "perch npm",
+      key: "test-perch",
+      source: VERSION_SOURCES.perch.sources[0]!,
+      body: { version: "2.4.129", "dist-tags": { latest: "2.4.129" } },
+      expected: "2.4.129",
+    },
   ];
 
   for (const { name, key, source, body, expected } of cases) {
@@ -312,5 +328,46 @@ describe("pinnedClientVersions", () => {
     const entry = pinnedClientVersions().find((p) => p.client === "cline-cli");
     expect(entry?.version).toBe(VERSION_SOURCES.clineCli.fallback);
     expect(entry?.minVersion).toBeUndefined();
+  });
+});
+
+describe("freepi and perch ride the client-version refresh cycle", () => {
+  test("both providers are wired into PROVIDER_VERSION_RESOLVERS", () => {
+    // `refreshProviderClientVersions()` only refreshes resolvers reachable from
+    // `PROVIDER_VERSION_RESOLVERS`; a provider missing from that map silently
+    // keeps its pin forever. Both freepi and perch publish their CLI on npm,
+    // so both must be wired.
+    expect(getProviderClientVersion("freepi")?.client).toBe("freepi");
+    expect(getProviderClientVersion("perch")?.client).toBe("perch");
+  });
+
+  test("the feeds are the official npm packages", () => {
+    expect(VERSION_SOURCES.freepi.sources[0]?.url).toBe(
+      "https://registry.npmjs.org/free-pi-cli/latest",
+    );
+    expect(VERSION_SOURCES.perch.sources[0]?.url).toBe(
+      "https://registry.npmjs.org/perchai-cli/latest",
+    );
+    expect(VERSION_SOURCES.freepi.fallback).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(VERSION_SOURCES.perch.fallback).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+describe("freebuff client version stays pinned", () => {
+  test("no discovery source exists, and the fallback is the audited desktop bundle", () => {
+    // Freebuff Desktop publishes no machine-readable version feed (GitHub
+    // releases are Codecane staging builds; npm `freebuff` is the CLI, a
+    // different product; the site's downloads are client-rendered). The pin
+    // is the version unpacked from the official Windows installer during the
+    // wire audit — raise it when the next bundle is audited.
+    expect(VERSION_SOURCES.freebuff.fallback).toBe("0.0.201");
+    expect(VERSION_SOURCES.freebuff.sources).toEqual([]);
+    expect(getFreebuffVersion()).toBe("0.0.201");
+  });
+
+  test("it is deliberately not wired into the refresh cycle", () => {
+    // Pinned-only by design, like `claudeSdk`: wiring it would make
+    // `pinnedClientVersions()` report it as a discovery failure forever.
+    expect(getProviderClientVersion("freebuff")).toBeUndefined();
   });
 });

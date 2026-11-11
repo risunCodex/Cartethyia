@@ -19,12 +19,12 @@
 import { defineModel, type ModelDefinition } from "../../provider-model-definition";
 import {
   FREEPI_CHAT_PATH,
-  FREEPI_CLI_VERSION,
   FREEPI_CONTEXT_WINDOW,
   FREEPI_DEFAULT_MODEL,
   FREEPI_MAX_OUTPUT_TOKENS,
   FREEPI_PROVIDER_ID,
 } from "./freepi-realm";
+import { getFreepiVersion } from "../../operations/client-versions";
 
 /** Catalog id → canonical roster id for one model. */
 const CATALOG_ID_REMAP: Readonly<Record<string, string>> = {
@@ -44,7 +44,7 @@ export async function discoverFreepiModels(input: {
     headers: {
       authorization: `Bearer ${input.token}`,
       accept: "application/json",
-      "x-client-version": FREEPI_CLI_VERSION,
+      "x-client-version": getFreepiVersion(),
     },
     ...(input.signal ? { signal: input.signal } : {}),
   });

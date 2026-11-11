@@ -46,8 +46,8 @@ describe("Kiro generation headers (runtime service)", () => {
     const machineId = "ab".repeat(32);
     const headers = kiroHeaders("tok", undefined, machineId, "vibe");
     expect(headers["x-kiro-machineid"]).toBe(machineId);
-    expect(headers["user-agent"]).toContain(`KiroIDE-1.4.121-${machineId}`);
-    expect(headers["x-amz-user-agent"]).toContain(`KiroIDE-1.4.121-${machineId}`);
+    expect(headers["user-agent"]).toContain(`KiroIDE-1.4.154-${machineId}`);
+    expect(headers["x-amz-user-agent"]).toContain(`KiroIDE-1.4.154-${machineId}`);
   });
 
   test("labels API-key and enterprise credentials with TokenType", () => {

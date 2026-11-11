@@ -12,6 +12,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Vercel AI Gateway provider added.** OpenAI-compatible bearer provider on
+  `https://ai-gateway.vercel.sh/v1`, registered in the bundled catalog with
+  three default rows (2026-11-11): the free-plan-serving
+  `nvidia/nemotron-3.5-lightning-free` (1M ctx) plus the operator's billed picks
+  `meituan/longcat-2.5` (vision, 1M ctx) and `inception/mercury-3` (1M ctx),
+  with capabilities from the upstream's own listing. Other zero-priced listing
+  rows (`reflection/beam*`, `humansand/ampersand-v0.1`,
+  `stealth/glyph-cluster`) are refused on a free plan (verified live: 403
+  `no_providers_available`), so they are intentionally not seeded. Live model
+  discovery (`GET /v1/models`) adds everything else, keeping roster rows whole.
+  Quota collector reads `GET /v1/credits` (USD balance + total spend) as a
+  pooled credit window. No OAuth flow exists — keys are created via the
+  Vercel CLI (`vercel ai-gateway api-keys create`) and pasted.
+
+- **Free-pi and Perch client versions now ride the background version monitor.**
+  `refreshProviderClientVersions()` previously skipped both because they were
+  missing from `PROVIDER_VERSION_RESOLVERS` — their wire identities stayed on
+  the launch-time pin forever. Both are now wired: free-pi sends the discovered
+  `free-pi-cli` npm version (fallback raised to 0.6.18) in `x-client-version`,
+  and Perch sends the discovered `perchai-cli` npm version (fallback raised to
+  2.4.128) in its CLI user-agent. Freebuff Desktop stays intentionally pinned
+  to the audited bundle build 0.0.201: no machine-readable public feed exists
+  for the desktop line (GitHub releases are Codecane staging builds; npm
+  `freebuff` is the CLI, a different product), so discovery would fake an
+  identity the upstream gate could reject.
+
 - **Qoder: dead chat surfaces removed, live COSY remains the one carrier.**
   The gRPC `ChatService` and IDE `/model/v1` surfaces (both dead upstream —
   UNIMPLEMENTED/404) are deleted along with the vendored proto, probe scripts,
@@ -32,6 +58,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   and ALPN). Streams keep flowing during profile dials (no full-body buffer).
 
 ### Fixed
+
+- **Provider client-version pins refreshed to current upstream releases.**
+  Re-fetched every `VERSION_SOURCES` feed live (2026-11-11) and raised the
+  cold-process fallbacks that had drifted: antigravity 2.29.0 → 2.31.0,
+  opencode 2.2.6 → 2.2.7 (plus the `OPENCODE_CLIENT_VERSION` parity mirror),
+  codex 0.167.0 → 0.167.1, kiro 1.4.121 → 1.4.154, codebuddy 2.181.0 →
+  2.183.0, codebuddyCn 4.12.3.42658816 → 4.12.4.43368774, claude
+  2.1.319 → 2.1.322, kilo 7.8.27 → 7.8.28, muse 1.4.14-R7309.1 →
+  1.4.15-R8339.1, hermes 0.23.0 → 0.23.1, cursor cli-3.29.9-306d153 →
+  cli-3.29.15-86776fc (plus the adapter's `FALLBACK_CLIENT_VERSION`). Trae's
+  fallback is raised to 3.6.13 (the current desktop build per the official
+  winget manifest): the docs changelog renders as an SPA now, so its parser
+  yields nothing and the pin carries the wire identity until a machine-readable
+  feed exists again. Qoder, grok, cline, kimi, zcode, commandcode, and the
+  freepi/perch/freebuff entries are unchanged: their pins already matched the
+  fetched feeds, or (qoder) deliberately track the IDE build, not the npm CLI.
 
 - **Qoder: legacy COSY response body streams while profiled.** The Node
   GET/HEAD-with-body dial path now bridges the response into a web stream, so
