@@ -229,8 +229,10 @@ function nodeDial(url: URL, init: RequestInit, agent?: HttpsAgent): Promise<Resp
       payload = body;
     } else if (body instanceof Uint8Array) {
       payload = Buffer.from(body);
+    } else if (body instanceof ArrayBuffer) {
+      payload = Buffer.from(new Uint8Array(body));
     } else if (body !== null && body !== undefined) {
-      reject(new TypeError("nodeDial only supports string/Buffer/Uint8Array bodies"));
+      reject(new TypeError("nodeDial only supports string/Buffer/Uint8Array/ArrayBuffer bodies"));
       return;
     }
     if (payload !== undefined) headers["content-length"] = String(payload.byteLength);

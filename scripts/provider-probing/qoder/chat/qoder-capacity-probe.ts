@@ -1,19 +1,20 @@
 /**
- * Qoder IDE-surface capacity probe (absorbed `qoder-context-probe.ts` and
+ * Qoder legacy COSY capacity probe (absorbed `qoder-context-probe.ts` and
  * `qoder-session-retention-probe.ts` into one script with two modes).
  *
  * Modes:
- *   - context (default): for each size in `--sizes`, sends an IDE chat with a
- *     padded user message sized to N tokens (4.2 chars/token) plus a short
- *     follow-up, and reports status + first response bytes. Exercises
+ *   - context (default): for each size in `--sizes`, sends a legacy COSY chat
+ *     with a padded user message sized to N tokens (4.2 chars/token) plus a
+ *     short follow-up, and reports status + first response bytes. Exercises
  *     `model_config.max_input_tokens` at the given `--cfg` ceiling.
  *   - retention: marker-retention design — one fixed `session_id`, turn 0
  *     sends ~perTurn tokens + a hidden marker, turn 1 asks for the marker, and
  *     turns 2..N each send perTurn more tokens then ask for the marker again.
  *     Prints per-turn whether the marker survives.
  *
- * All requests are raw JSON POSTs to the modern IDE surface
- * (`QODER_IDE_CHAT_URL`, plain bearer, no legacy COSY signing).
+ * All requests are signed legacy COSY POSTs to `agent_chat_generation` on
+ * `api2.qoder.sh`, dialed through the validated egress with the `qoder-app`
+ * TLS ClientHello profile (the same fingerprint the desktop app presents).
  *
  *   bun run scripts/provider-probing/qoder/chat/qoder-capacity-probe.ts \
  *     --creds <accounts.json> [--label "Akun Ytprem"] \
@@ -24,13 +25,15 @@
 import { parseArgs } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
 import {
-  buildIdeChatBody,
-  ideChatHeaders,
+  buildLegacyChatBody,
   loadProbeAccount,
-  QODER_IDE_CHAT_URL,
+  QODER_LEGACY_CHAT_URL,
   QODER_VERSION,
   readSse,
 } from "../lib/shared";
+import { buildCosyHeaders, transformQoderBody } from "../cosy-signer";
+import { createValidatedFetch } from "../../../../src/network/egress/fetch";
+import { isQoderPat, resolveQoderAuth } from "../../../../src/providers/integrations/qoder/qoder-auth";
 
 const args = parseArgs({
   options: {
@@ -38,6 +41,7 @@ const args = parseArgs({
     label: { type: "string" },
     model: { type: "string", default: "dmodel" },
     mode: { type: "string", default: "context" },
+    profile: { type: "string", default: "qoder-app" },
     cfg: { type: "string", default: "1000000" },
     sizes: {
       type: "string",
@@ -57,14 +61,31 @@ if (mode !== "context" && mode !== "retention") {
 const TIMEOUT_MS = Number(args.values["timeout-ms"]);
 const creds = args.values.creds;
 if (creds === undefined) throw new Error("--creds <path> is required");
-const { account, token, userId, machineId } = loadProbeAccount({
+const loaded = loadProbeAccount({
   creds,
   ...(args.values.label !== undefined ? { label: args.values.label } : {}),
 });
+const { account, userId } = loaded;
+
+// PAT accounts must be exchanged for a job token before COSY signing — the
+// same exchange the gateway performs (`resolveQoderAuth`).
+let auth = loaded.auth;
+if (isQoderPat(loaded.token)) {
+  const resolved = await resolveQoderAuth({
+    secret: loaded.token,
+    authState: { userId, machineId: loaded.machineId, realm: "intl" },
+    signal: AbortSignal.timeout(15_000),
+    fetcher: fetch,
+    realm: "intl",
+  });
+  auth = { ...loaded.auth, securityOauthToken: resolved.securityOauthToken };
+}
+
 const model = args.values.model;
 const cfg = Number(args.values.cfg);
 const turns = Number(args.values.turns);
 const perTurn = Number(args.values["per-turn"]);
+const profileFetch = createValidatedFetch({ tlsProfile: args.values.profile ?? "qoder-app" });
 
 const MARKER = "SECRET_MARKER_7Q9Z";
 
@@ -77,38 +98,41 @@ function parseSizes(csv: string): number[] {
   return sizes;
 }
 
-async function postChat(body: Record<string, unknown>, headers: Record<string, string>): Promise<Response> {
-  return fetch(QODER_IDE_CHAT_URL, {
+async function postChat(text: string, lite: boolean): Promise<Response> {
+  const built = buildLegacyChatBody({
+    model,
+    userId,
+    text,
+    isReasoning: !lite,
+    ...(lite
+      ? { displayName: "Lite-Qwen-3.7-Plus", maxInputTokens: 1_000_000, maxOutputTokens: 65536 }
+      : {}),
+  });
+  const raw = JSON.stringify(built.body);
+  const encoded = Buffer.from(transformQoderBody(raw)).buffer as ArrayBuffer;
+  const headers = buildCosyHeaders(QODER_LEGACY_CHAT_URL, raw, auth, QODER_VERSION, {
+    id: loaded.machineId,
+    token: loaded.machineId,
+    type: "5",
+  }, { key: model, source: "system" });
+  return profileFetch(QODER_LEGACY_CHAT_URL, {
     method: "POST",
     headers,
-    body: JSON.stringify(body),
+    body: encoded,
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
 }
 
 async function runContext(): Promise<void> {
-  const headers = ideChatHeaders({ token, machineId });
   const sizes = parseSizes(args.values.sizes);
 
-  console.log("=== Qoder context acceptance probe ===");
-  console.log(`model=${model} account=${account.label ?? "(no label)"} model_config.max_input_tokens=${cfg}`);
+  console.log("=== Qoder context acceptance probe (legacy COSY) ===");
+  console.log(`model=${model} account=${account.label ?? "(no label)"} model_config.max_input_tokens=${cfg} profile=${args.values.profile}`);
 
   for (const tokens of sizes) {
     const content = `[context probe ${tokens} tokens] ${"x".repeat(Math.floor(tokens * 4.2))}`;
-    const built = buildIdeChatBody({
-      model,
-      message: content,
-      maxTokens: 16,
-      contextTokens: cfg,
-      outputTokens: 65_536,
-    });
-    built.body.messages = [
-      { role: "user", content },
-      { role: "user", content: "Reply with the single word ok." },
-    ];
-
     const start = Date.now();
-    const res = await postChat(built.body, headers);
+    const res = await postChat(`${content}\n\nReply with the single word ok.`, false);
     const text = await res.text().catch(() => "");
     const head = text.replace(/\s+/g, " ").slice(0, 160);
     console.log(`\n[tokens=${tokens.toLocaleString()}] ${res.status} (${Date.now() - start}ms)`);
@@ -118,49 +142,17 @@ async function runContext(): Promise<void> {
 
 async function runRetention(): Promise<void> {
   const sessionId = createHash("sha256").update(`qoder-session:${userId}:${model}`).digest("hex").slice(0, 32);
-  const headers = ideChatHeaders({ token, machineId, sessionId });
-
-  /** Builds one IDE chat body pinned to the fixed session_id. */
-  function buildMsg(content: string): Record<string, unknown> {
-    const built = buildIdeChatBody({
-      model,
-      message: content,
-      maxTokens: 64,
-      contextTokens: 1_000_000,
-      outputTokens: 65_536,
-    });
-    built.body.messages = [{ role: "user", content }];
-    built.body.metadata = {
-      context: {
-        request_id: built.rid,
-        request_set_id: randomUUID(),
-        session_id: sessionId,
-        source_session_id: "",
-        task_id: "common",
-        client_type: "5",
-      },
-      business: {
-        business_product: "cli",
-        business_type: "agent",
-        business_version: QODER_VERSION,
-        scene: "assistant",
-      },
-    };
-    return built.body;
-  }
 
   async function sendTurn(content: string): Promise<number> {
-    const res = await postChat(buildMsg(content), headers);
+    const res = await postChat(content, false);
     await readSse(res, {}); // drain/cancel the body so the connection closes
     return res.status;
   }
 
   async function askMarker(): Promise<{ readonly status: number; readonly reply: string }> {
     const res = await postChat(
-      buildMsg(
-        "What is the exact secret marker from the first message of this session? Reply with only the marker string.",
-      ),
-      headers,
+      "What is the exact secret marker from the first message of this session? Reply with only the marker string.",
+      false,
     );
     let reply = "";
     await readSse(res, {
@@ -171,7 +163,7 @@ async function runRetention(): Promise<void> {
     return { status: res.status, reply };
   }
 
-  console.log("=== Qoder session retention probe ===");
+  console.log("=== Qoder session retention probe (legacy COSY) ===");
   console.log(`model=${model} session=${sessionId.slice(0, 8)}… turns=${turns} perTurn=${perTurn}`);
   console.log(`marker=${MARKER}`);
 

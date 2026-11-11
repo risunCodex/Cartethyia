@@ -1,14 +1,16 @@
 /**
  * Live Qoder chat wire probe — the single canonical probe for the Qoder chat
- * surfaces: legacy COSY signed `/algo` (agent_chat_generation), modern IDE
- * `/model/v1`, and a plain-bearer legacy variant for comparison.
+ * surface: legacy COSY signed `/algo` (`agent_chat_generation`).
  *
- * This file supersedes the six scripts merged into it: qoder-transport-probe,
- * qoder-response-shape, qoder-cross-model, qoder-business-probe,
- * qoder-legacy-reply, and qoder-lite-cosy-1m. It never prints tokens, never
- * writes credentials, and shows status + first bytes unless `--reply` /
- * `--model-echo` ask for a streamed read. The gRPC surface is NOT part of this
- * probe (it lives in grpc/).
+ * The modern IDE `/model/v1` and gRPC `ChatService` surfaces are dead upstream
+ * (404 / UNIMPLEMENTED since 2026-11-07) and are not probed anymore.
+ *
+ * This probe verifies the gateway's outbound fingerprint work end-to-end:
+ * every request is dialed through the validated egress with a TLS ClientHello
+ * profile (`--profile qoder-app`, default), so the wire identity matches the
+ * Qoder desktop app's captured ClientHello. When the fingerprint is right the
+ * upstream answers right away — `ttfb_ms` is the measured time from dial to
+ * response headers.
  *
  * Usage:
  *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
@@ -17,91 +19,92 @@
  * Flags:
  *   --creds <path>        required; exported-account JSON file
  *   --model <id>          model id (default "auto")
- *   --all                 probe every model in the default roster list
+ *   --all                 probe every model in the intl roster (config keys)
  *   --models              list models from the roster endpoint (signed GET)
- *   --ide-only            skip the legacy surface; only the IDE surface
- *   --surface <s>         ide|legacy|both|plain-bearer (default "both")
- *   --reply               stream the full SSE reply instead of just the head
- *   --model-echo          collect + print the `model` fields seen per surface
- *   --cross               probe several models on the IDE surface (comma list
- *                         via --model; default "qfmodel,qmodel,dmodel")
- *   --headers <h>         IDE header variant: minimal|machine (default machine)
- *   --lite                legacy COSY lite config (free tier, 1M input)
+ *   --prompt <text>       the prompt sent to every model (default: a short
+ *                         Indonesian self-introduction)
+ *   --profile <id>        TLS ClientHello profile id (default "qoder-app";
+ *                         "default" uses the runtime TLS stack)
+ *   --host <host>         upstream host for COSY chat (default "api2";
+ *                         "api1"|"api2"|"api3" or a full https URL)
+ *   --reply               print the streamed answer text
+ *   --model-echo          print every `model` field seen in the stream
+ *   --lite                free-tier lite config (1M input, 64k output)
  *   --chars <n>           with --lite: payload size in chars (default 4200000)
- *   --sizes <csv>         accepted for compatibility with the capacity probe
- *                         (unused here)
- *   --ctx <n>             max_input_tokens for the IDE body (unset by default)
  *   --timeout-ms <n>      request timeout ms (default 60000)
- *   --json                with --models: print the full model array as JSON
- *   --out <path>          with --models: write the JSON array to a file
  *   --label <name>        select account by label
  *   --index <n>           select account by zero-based index
  *
  * Examples:
- *   # Head probe on both surfaces (default), auto model
- *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts --creds a.json
+ *   # All models, one prompt each, qoder-app TLS profile (default), head probe
+ *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
+ *     --creds a.json --all
  *
- *   # Stream full replies on both surfaces for qfmodel
+ *   # Stream full replies on every roster model
  *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
- *     --creds a.json --model qfmodel --reply
- *
- *   # Model fields seen per surface (response-shape behavior)
- *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
- *     --creds a.json --model-echo --surface both
- *
- *   # Legacy only: signed vs plain-bearer comparison (transport-probe behavior)
- *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
- *     --creds a.json --surface legacy
- *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
- *     --creds a.json --surface plain-bearer
- *
- *   # Free-tier lite via legacy COSY at a big payload (lite-1m behavior)
- *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
- *     --creds a.json --lite --chars 4200000
- *
- *   # Cross-model IDE probe (per-account vs per-model check)
- *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
- *     --creds a.json --cross --model qfmodel,qmodel,dmodel
- *
- *   # Roster listing, pretty JSON to stdout or a file
- *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
- *     --creds a.json --models --json
- *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
- *     --creds a.json --models --out roster.json
+ *     --creds a.json --all --reply
  */
 import { parseArgs } from "node:util";
 import { writeFileSync } from "node:fs";
 import { maskSecret, maskUuid } from "../../lib/accounts";
-import { formatProbe, probeGet, probePost, probePostText } from "../../lib/http";
+import { formatProbe, probeGet, probePost } from "../../lib/http";
 import { buildCosyHeaders, transformQoderBody } from "../cosy-signer";
 import {
   QODER_VERSION,
-  QODER_IDE_CHAT_URL,
   QODER_LEGACY_CHAT_URL,
   QODER_MODEL_LIST_URL,
-  buildIdeChatBody,
   buildLegacyChatBody,
-  ideChatHeaders,
   loadProbeAccount,
-  readSse,
   summarizeRedacted,
   type LoadedProbeAccount,
-  type SseHandlers,
 } from "../lib/shared";
 import type { QoderProbeAuth } from "../cosy-signer";
+import { createValidatedFetch } from "../../../../src/network/egress/fetch";
+import { decodeQoderSseEvents, qoderEnvelopeToFrames } from "../../../../src/providers/integrations/qoder/qoder-sse";
+import { isQoderPat, resolveQoderAuth } from "../../../../src/providers/integrations/qoder/qoder-auth";
+import { QODER_INTL_MODEL_CONFIGS } from "../../../../src/providers/integrations/qoder/qoder-catalog";
 
-type Surface = "ide" | "legacy" | "plain-bearer";
-type HeadersVariant = "minimal" | "machine";
+const DEFAULT_PROMPT = "Halo, perkenalkan dirimu singkat.";
 
-const DEFAULT_MODELS = ["auto", "qmodel", "dmodel", "qwen3.8-max"] as const;
-const CROSS_DEFAULT_MODELS = "qfmodel,qmodel,dmodel";
+/** Resolves the COSY chat URL for a `--host` value (alias or full URL). */
+function chatUrl(host: string): string {
+  const path = "/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1";
+  if (host.startsWith("http://") || host.startsWith("https://")) return `${host.replace(/\/+$/, "")}${path}`;
+  if (host === "api1" || host === "api2" || host === "api3") return `https://${host}.qoder.sh${path}`;
+  throw new Error(`--host must be api1|api2|api3 or a full https URL (got "${host}")`);
+}
+
+interface LegacyRequest {
+  readonly body: Record<string, unknown>;
+  readonly rid: string;
+  readonly raw: string;
+  readonly encoded: Uint8Array;
+}
+
+/** Builds a legacy `agent_chat_generation` request (signed COSY). */
+function buildLegacyRequest(model: string, userId: string, text: string, lite: boolean): LegacyRequest {
+  const built = lite
+    ? buildLegacyChatBody({
+        model,
+        userId,
+        text,
+        isReasoning: false,
+        displayName: "Lite-Qwen-3.7-Plus",
+        maxInputTokens: 1_000_000,
+        maxOutputTokens: 65536,
+      })
+    : buildLegacyChatBody({ model, userId, text });
+  const raw = JSON.stringify(built.body);
+  const encoded = new Uint8Array(transformQoderBody(raw));
+  return { body: built.body, rid: built.rid, raw, encoded };
+}
 
 /**
  * Lists models from the shared gateway surface (`/algo/api/v2/model/list`).
  *
  * The request is a GET that carries the signed `{}` body — the COSY signature
  * covers the body, so a bare or plain-bearer GET fails with `101 Signature
- * invalid`. The same signed probe serves both the plugin and the IDE worker.
+ * invalid`.
  */
 async function listModels(
   auth: QoderProbeAuth,
@@ -109,8 +112,6 @@ async function listModels(
 ): Promise<void> {
   const rawBody = "{}";
   const encoded = transformQoderBody(rawBody);
-  // Live capture (v1.1.83): the model-list GET carries the signed `{}` body
-  // plus `X-Model-Key`/`X-Model-Source` headers.
   const headers = {
     ...buildCosyHeaders(QODER_MODEL_LIST_URL, rawBody, auth, QODER_VERSION, undefined, { key: "auto", source: "system" }),
   };
@@ -152,97 +153,35 @@ async function listModels(
   }
 }
 
-interface LegacyRequest {
-  readonly body: Record<string, unknown>;
-  readonly rid: string;
-  readonly raw: string;
-  readonly encoded: ArrayBuffer;
-}
-
-/**
- * Copies an encoded Buffer into a fresh, sized ArrayBuffer. Bun's Buffer type
- * is generic over ArrayBufferLike, which is not assignable to the DOM BodyInit
- * union; a real ArrayBuffer is. One copy per request is negligible for probe
- * payloads (largest: the lite 4.2M-char body).
- */
-function toArrayBuffer(view: Buffer): ArrayBuffer {
-  const copy = new ArrayBuffer(view.byteLength);
-  new Uint8Array(copy).set(view);
-  return copy;
-}
-
-/** Builds a legacy `agent_chat_generation` request (signed or plain bearer). */
-function buildLegacyRequest(model: string, userId: string, text: string, lite: boolean): LegacyRequest {
-  const built = lite
-    ? buildLegacyChatBody({
-        model,
-        userId,
-        text,
-        isReasoning: false,
-        displayName: "Lite-Qwen-3.7-Plus",
-        maxInputTokens: 1_000_000,
-        maxOutputTokens: 65536,
-      })
-    : buildLegacyChatBody({ model, userId, text });
-  const raw = JSON.stringify(built.body);
-  const encoded = toArrayBuffer(transformQoderBody(raw));
-  return { body: built.body, rid: built.rid, raw, encoded };
-}
-
-interface InnerChatFrame {
-  readonly model?: string;
-  readonly choices?: Array<{ readonly delta?: { readonly content?: string; readonly reasoning_content?: string } }>;
-}
-
-/**
- * Unwraps the legacy SSE envelope `{ headers?, body: "<json>" }` and absorbs
- * the nested `model` / `choices[].delta` fields. Frames that are already
- * OpenAI-shaped are handled by `readSse` itself (`onModel`/`onDelta`).
- */
-function absorbLegacyFrame(
-  frame: Record<string, unknown>,
-  textParts: string[],
-  reasoningParts: string[],
-  models: Set<string>,
-): void {
-  const bodyStr = frame.body;
-  if (typeof bodyStr !== "string") return;
-  let inner: InnerChatFrame | null = null;
-  try {
-    inner = JSON.parse(bodyStr) as InnerChatFrame | null;
-  } catch {
-    return;
-  }
-  if (inner === null) return;
-  if (typeof inner.model === "string") models.add(inner.model);
-  const delta = inner.choices?.[0]?.delta;
-  if (delta === undefined) return;
-  if (typeof delta.content === "string") textParts.push(delta.content);
-  if (typeof delta.reasoning_content === "string") reasoningParts.push(delta.reasoning_content);
-}
-
 interface StreamProbeOptions {
   readonly label: string;
   readonly url: string;
   readonly headers: Record<string, string>;
-  readonly body: BodyInit;
+  readonly body: Uint8Array;
   readonly timeoutMs: number;
   readonly showText: boolean;
   readonly showModels: boolean;
 }
 
-/** Streams one SSE reply via the shared `readSse` reader. */
+/**
+ * Streams one SSE reply using the gateway's own Qoder parser, reporting the
+ * time-to-first-byte (`ttfb_ms`) — the fingerprint check: a matching
+ * ClientHello gets headers back immediately.
+ */
 async function streamProbe(opts: StreamProbeOptions): Promise<void> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), opts.timeoutMs);
+  const fetchFn = createValidatedFetch({ tlsProfile: currentProfile });
+  const startedAt = performance.now();
   try {
-    const response = await fetch(opts.url, {
+    const response = await fetchFn(opts.url, {
       method: "POST",
       headers: opts.headers,
-      body: opts.body,
+      body: opts.body.buffer as ArrayBuffer,
       signal: ac.signal,
     });
-    console.log(`[${opts.label}] status=${response.status}`);
+    const ttfbMs = Math.round(performance.now() - startedAt);
+    console.log(`[${opts.label}] status=${response.status} ttfb_ms=${ttfbMs}`);
     if (!response.body) {
       console.log("  (empty body)");
       return;
@@ -250,21 +189,58 @@ async function streamProbe(opts: StreamProbeOptions): Promise<void> {
     const textParts: string[] = [];
     const reasoningParts: string[] = [];
     const models = new Set<string>();
-    const handlers: SseHandlers = {
-      onDelta: (part) => textParts.push(part),
-      onReasoning: (part) => reasoningParts.push(part),
-      onModel: (model) => models.add(model),
-      onFrame: (frame) => absorbLegacyFrame(frame, textParts, reasoningParts, models),
-      onError: (error) => console.log(`  error: ${summarizeRedacted(error)}`),
-    };
-    const { frames, stopped } = await readSse(response, handlers);
+    let frames = 0;
+    let terminal = false;
+    for await (const sse of decodeQoderSseEvents(response.body, ac.signal)) {
+      let framesArray: Array<{ event: string | null; data: string }>;
+      try {
+        framesArray = qoderEnvelopeToFrames(sse.data);
+      } catch (error) {
+        console.log(`  error: ${summarizeRedacted(error)}`);
+        terminal = true;
+        break;
+      }
+      for (const frame of framesArray) {
+        const payload = frame.data.trim();
+        if (payload.length === 0) continue;
+        if (payload === "[DONE]") {
+          terminal = true;
+          continue;
+        }
+        frames += 1;
+        let json: Record<string, unknown>;
+        try {
+          json = JSON.parse(payload) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+        if (typeof json["model"] === "string") models.add(json["model"] as string);
+        const bodyRec = json["body"];
+        const inner =
+          typeof bodyRec === "string"
+            ? (JSON.parse(bodyRec) as Record<string, unknown>)
+            : bodyRec && typeof bodyRec === "object"
+              ? (bodyRec as Record<string, unknown>)
+              : json;
+        const choices = (inner?.["choices"] as Array<Record<string, unknown>> | undefined) ?? [];
+        for (const choice of choices) {
+          const delta = choice?.["delta"] as Record<string, unknown> | undefined;
+          if (!delta) continue;
+          if (typeof delta["content"] === "string") textParts.push(delta["content"] as string);
+          if (typeof delta["reasoning_content"] === "string") reasoningParts.push(delta["reasoning_content"] as string);
+        }
+        const fr = inner?.["finish_reason"];
+        if (fr !== undefined && fr !== null && fr !== "") terminal = true;
+      }
+      if (terminal) break;
+    }
     if (opts.showText) {
       const reasoning = reasoningParts.join("");
       const text = textParts.join("");
       if (reasoning.length > 0) console.log(`  reasoning: ${reasoning.slice(0, 800)}`);
       console.log(`  text: ${text.slice(0, 1500) || "(no text content yet)"}`);
     }
-    console.log(`  frames: ${frames} stopped=${stopped}`);
+    console.log(`  frames: ${frames} terminal=${terminal}`);
     if (opts.showModels) {
       console.log(`  model fields seen: ${models.size > 0 ? [...models].join(", ") : "(none)"}`);
     }
@@ -275,117 +251,47 @@ async function streamProbe(opts: StreamProbeOptions): Promise<void> {
   }
 }
 
-/** Probes the modern IDE `/model/v1` surface. */
-async function probeIde(
-  model: string,
-  loaded: LoadedProbeAccount,
-  opts: {
-    readonly reply: boolean;
-    readonly echo: boolean;
-    readonly headers: HeadersVariant;
-    readonly ctx?: number;
-    readonly timeoutMs: number;
-  },
-): Promise<void> {
-  const { body, rid, sid } = buildIdeChatBody({
-    model,
-    version: QODER_VERSION,
-    ...(opts.ctx !== undefined ? { contextTokens: opts.ctx } : {}),
-  });
-  const headers = ideChatHeaders({
-    token: loaded.token,
-    requestId: rid,
-    sessionId: sid,
-    ...(opts.headers === "machine" ? { machineId: loaded.machineId } : {}),
-  });
-  const label = `ide/model-v1 (${model})`;
-  if (opts.reply || opts.echo) {
-    await streamProbe({
-      label,
-      url: QODER_IDE_CHAT_URL,
-      headers,
-      body: JSON.stringify(body),
-      timeoutMs: opts.timeoutMs,
-      showText: opts.reply,
-      showModels: opts.echo,
-    });
-    return;
-  }
-  const res = await probePost(QODER_IDE_CHAT_URL, headers, JSON.stringify(body), { timeoutMs: opts.timeoutMs });
-  console.log(formatProbe(label, res));
-}
-
-/** Probes the legacy `/algo` surface (signed COSY or plain bearer). */
+/** Probes the legacy `/algo` surface (signed COSY). */
 async function probeLegacy(
   model: string,
   loaded: LoadedProbeAccount,
+  auth: QoderProbeAuth,
   opts: {
     readonly reply: boolean;
     readonly echo: boolean;
-    readonly surface: "legacy" | "plain-bearer";
+    readonly prompt: string;
+    readonly host: string;
     readonly timeoutMs: number;
   },
 ): Promise<void> {
-  const req = buildLegacyRequest(model, loaded.userId, "ping", false);
-  const label =
-    opts.surface === "plain-bearer"
-      ? `legacy/plain-bearer (${model})`
-      : `legacy/cosy (${model})`;
-  const headers =
-    opts.surface === "plain-bearer"
-      ? ideChatHeaders({ token: loaded.token, requestId: req.rid, sessionId: req.rid })
-      : buildCosyHeaders(QODER_LEGACY_CHAT_URL, req.raw, loaded.auth, QODER_VERSION, {
-          id: loaded.machineId,
-          token: loaded.machineId,
-          type: "5",
-        }, { key: model, source: "system" });
-  if (opts.reply || opts.echo) {
-    await streamProbe({
-      label,
-      url: QODER_LEGACY_CHAT_URL,
-      headers,
-      body: req.encoded,
-      timeoutMs: opts.timeoutMs,
-      showText: opts.reply,
-      showModels: opts.echo,
-    });
-    return;
-  }
-  const res = await probePost(QODER_LEGACY_CHAT_URL, headers, req.encoded, { timeoutMs: opts.timeoutMs });
-  console.log(formatProbe(label, res));
-}
-
-/** Cross-model probe: several models on the IDE surface (plain bearer). */
-async function probeCross(
-  models: readonly string[],
-  loaded: LoadedProbeAccount,
-  opts: { readonly timeoutMs: number },
-): Promise<void> {
-  for (const model of models) {
-    const { body, rid, sid } = buildIdeChatBody({ model, version: QODER_VERSION });
-    const headers = ideChatHeaders({ token: loaded.token, requestId: rid, sessionId: sid });
-    try {
-      const res = await probePostText(QODER_IDE_CHAT_URL, headers, JSON.stringify(body), {
-        timeoutMs: opts.timeoutMs,
-        bodyCap: 300,
-      });
-      console.log(`\n=== ${model} ===`);
-      console.log(`status=${res.status}`);
-      console.log(`body: ${res.body}`);
-    } catch (error) {
-      console.log(`\n=== ${model} === ERROR: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
+  const url = chatUrl(opts.host);
+  const req = buildLegacyRequest(model, loaded.userId, opts.prompt, false);
+  const label = `legacy/cosy (${model} @ ${opts.host})`;
+  const headers = buildCosyHeaders(url, req.raw, auth, QODER_VERSION, {
+    id: loaded.machineId,
+    token: loaded.machineId,
+    type: "5",
+  }, { key: model, source: "system" });
+  await streamProbe({
+    label,
+    url,
+    headers,
+    body: req.encoded,
+    timeoutMs: opts.timeoutMs,
+    showText: opts.reply,
+    showModels: opts.echo,
+  });
 }
 
 /** Free-tier lite probe: legacy COSY signed, big payload size acceptance. */
 async function probeLite(
   loaded: LoadedProbeAccount,
+  auth: QoderProbeAuth,
   opts: { readonly model: string; readonly chars: number; readonly timeoutMs: number },
 ): Promise<void> {
   const payload = "x".repeat(opts.chars);
   const req = buildLegacyRequest(opts.model, loaded.userId, payload, true);
-  const headers = buildCosyHeaders(QODER_LEGACY_CHAT_URL, req.raw, loaded.auth, QODER_VERSION, {
+  const headers = buildCosyHeaders(QODER_LEGACY_CHAT_URL, req.raw, auth, QODER_VERSION, {
     id: loaded.machineId,
     token: loaded.machineId,
     type: "5",
@@ -395,7 +301,7 @@ async function probeLite(
   console.log(`rawBytes=${req.raw.length.toLocaleString()} encodedBytes=${req.encoded.byteLength.toLocaleString()}`);
   const start = Date.now();
   try {
-    const res = await probePost(QODER_LEGACY_CHAT_URL, headers, req.encoded, { timeoutMs: opts.timeoutMs });
+    const res = await probePost(QODER_LEGACY_CHAT_URL, headers, req.encoded.buffer as ArrayBuffer, { timeoutMs: opts.timeoutMs });
     console.log(formatProbe("legacy/lite-cosy (signed)", res));
     console.log(`elapsed=${Math.round((Date.now() - start) / 1000)}s`);
     if (res.ok) {
@@ -408,38 +314,19 @@ async function probeLite(
   }
 }
 
-function selectedSurfaces(value: string, ideOnly: boolean): Surface[] {
-  if (ideOnly) return ["ide"];
-  switch (value) {
-    case "ide":
-      return ["ide"];
-    case "legacy":
-      return ["legacy"];
-    case "plain-bearer":
-      return ["plain-bearer"];
-    case "both":
-      return ["legacy", "ide"];
-    default:
-      throw new Error(`--surface must be one of ide|legacy|both|plain-bearer (got ${value})`);
-  }
-}
-
 const { values } = parseArgs({
   options: {
     creds: { type: "string" },
     model: { type: "string", default: "auto" },
     all: { type: "boolean", default: false },
     models: { type: "boolean", default: false },
-    "ide-only": { type: "boolean", default: false },
-    surface: { type: "string", default: "both" },
+    prompt: { type: "string", default: DEFAULT_PROMPT },
+    profile: { type: "string", default: "qoder-app" },
+    host: { type: "string", default: "api2" },
     reply: { type: "boolean", default: false },
     "model-echo": { type: "boolean", default: false },
-    cross: { type: "boolean", default: false },
-    headers: { type: "string", default: "machine" },
     lite: { type: "boolean", default: false },
     chars: { type: "string", default: "4200000" },
-    sizes: { type: "string" },
-    ctx: { type: "string" },
     "timeout-ms": { type: "string", default: "60000" },
     json: { type: "boolean", default: false },
     out: { type: "string" },
@@ -452,23 +339,11 @@ const timeoutMs = Number(values["timeout-ms"]);
 if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
   throw new Error(`--timeout-ms must be a positive number (got ${values["timeout-ms"]})`);
 }
-
-if (values.headers !== "minimal" && values.headers !== "machine") {
-  throw new Error(`--headers must be "minimal" or "machine" (got ${values.headers})`);
-}
-const headersMode: HeadersVariant = values.headers === "minimal" ? "minimal" : "machine";
-
-let ctx: number | undefined;
-if (values.ctx !== undefined) {
-  const n = Number(values.ctx);
-  if (!Number.isFinite(n) || n <= 0) throw new Error(`--ctx must be a positive number (got ${values.ctx})`);
-  ctx = n;
-}
-
 const chars = Number(values.chars);
 if (!Number.isFinite(chars) || chars < 0) {
   throw new Error(`--chars must be a non-negative number (got ${values.chars})`);
 }
+const currentProfile = values.profile;
 
 const loaded = loadProbeAccount({
   providerId: "qoder",
@@ -480,12 +355,26 @@ const account = loaded.account;
 
 console.log(
   `account=${account.label ?? "?"} (${account.providerId ?? "?"}/${account.credentialKind ?? "?"}) ` +
-    `token=${maskSecret(loaded.token)} machineId=${maskUuid(loaded.machineId)}`,
+    `token=${maskSecret(loaded.token)} machineId=${maskUuid(loaded.machineId)} profile=${currentProfile}`,
 );
+
+// PAT accounts must be exchanged for a job token before COSY signing — the
+// same exchange the gateway performs (`resolveQoderAuth`).
+let auth = loaded.auth;
+if (isQoderPat(loaded.token)) {
+  const resolved = await resolveQoderAuth({
+    secret: loaded.token,
+    authState: { userId: loaded.userId, machineId: loaded.machineId, realm: "intl" },
+    signal: AbortSignal.timeout(15_000),
+    fetcher: fetch,
+    realm: "intl",
+  });
+  auth = { ...loaded.auth, securityOauthToken: resolved.securityOauthToken };
+}
 
 if (values.models) {
   try {
-    await listModels(loaded.auth, {
+    await listModels(auth, {
       json: values.json,
       ...(values.out !== undefined ? { out: values.out } : {}),
     });
@@ -496,44 +385,22 @@ if (values.models) {
 }
 
 if (values.lite) {
-  await probeLite(loaded, { model: values.model, chars, timeoutMs });
+  await probeLite(loaded, auth, { model: values.model, chars, timeoutMs });
   process.exit(0);
 }
 
-if (values.cross) {
-  const modelProvided = process.argv.some((arg) => arg === "--model" || arg.startsWith("--model="));
-  const models = (modelProvided ? values.model : CROSS_DEFAULT_MODELS)
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  await probeCross(models, loaded, { timeoutMs });
-  process.exit(0);
-}
-
-const surfaces = selectedSurfaces(values.surface, values["ide-only"]);
-const models = values.all ? [...DEFAULT_MODELS] : [values.model];
+const models = values.all ? Object.keys(QODER_INTL_MODEL_CONFIGS) : [values.model];
 
 for (const model of models) {
-  for (const surface of surfaces) {
-    try {
-      if (surface === "ide") {
-        await probeIde(model, loaded, {
-          reply: values.reply,
-          echo: values["model-echo"],
-          headers: headersMode,
-          ...(ctx !== undefined ? { ctx } : {}),
-          timeoutMs,
-        });
-      } else {
-        await probeLegacy(model, loaded, {
-          reply: values.reply,
-          echo: values["model-echo"],
-          surface,
-          timeoutMs,
-        });
-      }
-    } catch (error) {
-      console.log(`[model ${model}/${surface}] ERROR ${error instanceof Error ? error.message : String(error)}`);
-    }
+  try {
+    await probeLegacy(model, loaded, auth, {
+      reply: values.reply,
+      echo: values["model-echo"],
+      prompt: values.prompt,
+      host: values.host,
+      timeoutMs,
+    });
+  } catch (error) {
+    console.log(`[model ${model}] ERROR ${error instanceof Error ? error.message : String(error)}`);
   }
 }

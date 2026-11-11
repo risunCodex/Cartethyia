@@ -349,6 +349,19 @@ The `target` string is the upstream routing profile behind the roster key — th
    evening capture).
 4. `qfmodel` has a `target` (`bailian-qwen3.8-flash-20260826`) but it can be
    absent on a run.
+5. **The Azure-hosted GPT slots are multi-supplier (operator-confirmed,
+   2026-11-11).** `performance` also supplies **Claude Sonnet 5.5**
+   (visible in its `supply_model=claude-sonnet-5,gpt-5.5,gpt-5.6-terra`);
+   `ultimate` also supplies **Claude Opus 5.5** alongside GPT-6.1 Sol, and
+   the 6.1 Sol slot has a GPT-5.6 Sol variant in rotation. The measured
+   self-claims for these slots ("ChatGPT") reflect whichever GPT profile
+   served that turn; the Claude suppliers answer as Claude on the wire.
+6. **GLM slots fall back to Qwen 3 Max (operator-confirmed, 2026-11-11).**
+   When the GLM backend is unavailable, `gmodel`/`gfmodel` route to Qwen
+   3 Max (`qwen3.7-max`/`qwen3.8-max` class) instead of failing — the slot
+   keeps answering, but the identity changes to Qwen. Treat an absent GLM
+   self-claim (or a Qwen claim on a GLM key) as a fallback signal, not a
+   slot misconfiguration.
 
 ### 7.5 The 406 trap: cmodel + identity prompt
 

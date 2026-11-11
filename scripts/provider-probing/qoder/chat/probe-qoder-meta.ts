@@ -9,6 +9,11 @@
  *     `provider_model`, `from_model`, `supply_model`, `model_level`,
  *     `router_strategy_name`, `target`, and the final usage totals
  *
+ * All requests dial through the validated egress with the `qoder-app` TLS
+ * ClientHello profile (`--profile`), so the wire fingerprint matches the
+ * Qoder desktop app — the TTFB figure is the quick check that the fingerprint
+ * is accepted.
+ *
  * Tokens are never printed. Account credentials come from an exported accounts
  * file (see `qoder-export-accounts.ts`).
  *
@@ -34,13 +39,16 @@ import {
 } from "../../../../src/providers/integrations/qoder/qoder-catalog";
 import { QODER_CHAT_PATH } from "../../../../src/providers/integrations/qoder/qoder-realm";
 import { decodeQoderSseEvents } from "../../../../src/providers/integrations/qoder/qoder-sse";
+import { createValidatedFetch } from "../../../../src/network/egress/fetch";
 
 const args = parseArgs({
   options: {
     creds: { type: "string", required: true },
     model: { type: "string", multiple: true, default: ["auto"] },
+    all: { type: "boolean", default: false },
     prompt: { type: "string", default: "Halo, perkenalkan dirimu singkat." },
     maxTokens: { type: "string", default: "512" },
+    profile: { type: "string", default: "qoder-app" },
     realm: { type: "string", default: "intl" },
   },
 });
@@ -112,16 +120,19 @@ async function probeModel(modelKey: string): Promise<void> {
   } as Record<string, unknown>;
 
   const legacyBody = buildQoderRequest(modelKey, request as never, cfg, auth, realm);
+  const profileFetch = createValidatedFetch({ tlsProfile: args.values.profile ?? "qoder-app" });
+  const startedAt = performance.now();
   const res = await callQoder(
     `https://api2.qoder.sh${QODER_CHAT_PATH}`,
     legacyBody,
     modelKey,
     auth,
     new AbortController().signal,
-    fetch,
+    profileFetch,
   );
+  const ttfbMs = Math.round(performance.now() - startedAt);
 
-  console.log(`\n=== ${modelKey} | HTTP ${res.status} ===`);
+  console.log(`\n=== ${modelKey} | HTTP ${res.status} | ttfb_ms=${ttfbMs} ===`);
   if (!res.ok) {
     const errorBody = await res.text();
     console.log(errorBody.slice(0, 300));
@@ -181,6 +192,7 @@ async function probeModel(modelKey: string): Promise<void> {
   }
 }
 
-for (const model of args.values.model ?? ["auto"]) {
+const models = args.values.all ? Object.keys(QODER_INTL_MODEL_CONFIGS) : (args.values.model ?? ["auto"]);
+for (const model of models) {
   await probeModel(model);
 }
