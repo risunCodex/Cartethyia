@@ -10,7 +10,7 @@ import { isAddressAllowed } from "../../../network/ssrf";
 import { TRANSPORT_KINDS, type TransportKind } from "../../../network/pool/agent";
 import type { SsrfPolicy } from "../../../config/network";
 import type { NetworkPoolSelector } from "../../../network/pool/selector";
-import type { PoolHealthEvent } from "../../../network/pool-health-machine";
+import type { PoolHealthEvent } from "../../../network/pool/health";
 
 export interface CreateNetworkPoolRequest {
   kind: TransportKind;

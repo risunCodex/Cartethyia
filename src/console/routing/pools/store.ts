@@ -16,7 +16,7 @@ import {
 } from "./contracts";
 import { classifyPoolConnectError, classifyPoolProbeResponse, parseEgressIp } from "./probe-result";
 import { encryptCredential } from "../../../security/crypto";
-import { createValidatedFetch } from "../../../network/outbound-fetch";
+import { createValidatedFetch } from "../../../network/egress/fetch";
 import { classifyProviderProbeAnswer } from "./probe-verdict";
 import { buildProviderProbeRequest } from "../../../providers/provider-probe";
 import type { StoredProviderProbe } from "./contracts";
@@ -34,9 +34,9 @@ import {
   disablePoolForProxyHttpStatus,
   listNetworkPoolHealthEvents,
   recoverNetworkPool,
-} from "../../../network/pool-health-machine";
-import { drainPoolByteDelta, recordPoolBytes } from "../../../network/pool/byte-accounting";
-import * as poolCooldownStore from "../../../network/pool-cooldown-store";
+} from "../../../network/pool/health";
+import { drainPoolByteDelta, recordPoolBytes } from "../../../network/pool/accounting";
+import * as poolCooldownStore from "../../../network/pool/cooldown-store";
 // Cloudflare's trace endpoint answers with plain `key=value` lines including
 // `ip=`, the address the request egressed from. Dialing it THROUGH the pool
 // therefore reports the pool's public address — which is what an operator

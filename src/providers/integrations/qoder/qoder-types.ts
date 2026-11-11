@@ -26,6 +26,15 @@ export interface QoderAuth {
   machineType?: string;
   /** Native UMID machine code (18-hex), when known. */
   machineCode?: string;
+  /**
+   * The resolved egress IP for the HTTPDNS-managed route, when known. The
+   * desktop client stamps this on requests (`X-Qoder-HTTPDNS-IP`, worker
+   * `networkMode=httpdns`) once it has resolved the host through the Aliyun
+   * HTTPDNS SDK. Mirroring it makes the outbound fingerprint identical to the
+   * app's; absent (e.g. direct DNS) the header is omitted — the upstream then
+   * sees the same shape as a client that did not use HTTPDNS.
+   */
+  httpDnsIp?: string;
 }
 
 export interface QoderModelConfig {

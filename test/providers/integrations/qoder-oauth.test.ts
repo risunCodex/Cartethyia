@@ -172,6 +172,22 @@ describe("Qoder dispatch credential branches", () => {
     });
   });
 
+  test("OAuth auth forwards the HTTPDNS-route IP for the X-Qoder-HTTPDNS-IP mirror", () => {
+    const auth = qoderOAuthAuth(
+      "dt-test-token",
+      { userId: "user-123", machineId: "machine-value", httpDnsIp: "103.130.222.58" },
+      "account-1",
+    );
+    expect(auth.httpDnsIp).toBe("103.130.222.58");
+    // Without the IP stored, the field stays absent (no header emitted).
+    const plain = qoderOAuthAuth(
+      "dt-test-token",
+      { userId: "user-123", machineId: "machine-value" },
+      "account-1",
+    );
+    expect(plain.httpDnsIp).toBeUndefined();
+  });
+
   test("OAuth auth without an identity fails closed", () => {
     expect(() => qoderOAuthAuth("dt-test-token", {}, "account-1")).toThrow(
       /sign in again/,

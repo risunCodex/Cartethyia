@@ -29,7 +29,7 @@ import {
   type QuotaRefreshFailureCode,
 } from "../../providers/quota/refresh";
 import { selectAccountTestEgress } from "./account-test-egress";
-import type { ValidatedFetch } from "../../network/outbound-fetch";
+import type { ValidatedFetch } from "../../network/egress/fetch";
 import type { ProviderId } from "../../providers/provider-contracts";
 import {
   DAILY_CHECKIN_PROVIDER_IDS,

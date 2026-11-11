@@ -5,7 +5,7 @@
  * Cartethyia already knows how to *use* a hosted relay: a pool whose endpoint
  * host is `*.workers.dev` / `*.vercel.app` / `*.deno.dev` is classified as an
  * application relay and dialed with `x-relay-target` / `x-relay-path` headers
- * (see `network/pool/agent.ts` and `network/outbound-fetch.ts`). This module
+ * (see `network/pool/agent.ts` and `network/egress/fetch.ts`). This module
  * supplies the other half — the operator does not have to write and deploy the
  * worker by hand.
  *

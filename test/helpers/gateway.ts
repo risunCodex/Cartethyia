@@ -42,7 +42,7 @@ import { InMemoryRouteSnapshotService } from "../../src/transport/routing/route-
 import type { RouteCandidate, RouteSnapshot } from "../../src/transport/routing/route-model";
 import { TelemetryBatchBuffer } from "../../src/observability/telemetry-buffer";
 import { IpAbuseProtectionService, InMemoryIpAbuseStore } from "../../src/security/abuse";
-import { ValidatedNetworkBindingFactory } from "../../src/network/pool/resolver";
+import { ValidatedNetworkBindingFactory } from "../../src/network/egress/factory";
 import { NetworkPoolSelector } from "../../src/network/pool/selector";
 import { ShutdownCoordinator } from "../../src/boot/lifecycle";
 import type { TrustedProxyBoundary } from "../../src/config/network";

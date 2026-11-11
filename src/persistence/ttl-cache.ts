@@ -1,4 +1,4 @@
-import { dedupeRequest } from "../network/deduplication";
+import { dedupeRequest } from "../network/util/dedupe";
 /**
  * Bounded TTL cache with automatic eviction.
  *

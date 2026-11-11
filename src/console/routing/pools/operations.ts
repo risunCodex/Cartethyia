@@ -4,7 +4,7 @@
 import { ConsoleDomainError, requireTenantScope } from "../../shared/errors";
 import { providerRateLimitIsIpScoped } from "../../../providers/provider-metadata";
 import { resolvePoolProviderRateLimitCooldownMs } from "../../../config/cooldowns";
-import type { PoolHealthEvent } from "../../../network/pool-health-machine";
+import type { PoolHealthEvent } from "../../../network/pool/health";
 import type { AccessDecision } from "../../../security/access-control";
 import {
   deployRelay as deployRelayWorker,

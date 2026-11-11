@@ -1,7 +1,7 @@
 /**
  * Qoder per-model probe with strategy metadata.
  *
- * Sends a real IDE-surface chat request for each model key (or virtual id) and
+ * Sends a real legacy COSY chat request for each model key (or virtual id) and
  * reports:
  *   - HTTP status and the upstream's model echo (first chunk `model`)
  *   - visible answer text and reasoning length
@@ -23,20 +23,16 @@ import {
   requireAccountToken,
 } from "../../lib/accounts";
 import {
-  buildQoderIdeRequest,
+  buildQoderRequest,
+  callQoder,
   isQoderPat,
   resolveQoderAuth,
   qoderEnvelopeToFrames,
 } from "../../../../src/providers/integrations/qoder/qoder";
 import {
-  QODER_VERSION,
-  machineOs,
-  machineHostname,
-} from "../lib/shared";
-import {
   QODER_INTL_MODEL_CONFIGS,
 } from "../../../../src/providers/integrations/qoder/qoder-catalog";
-import { qoderIdeChatUrl } from "../../../../src/providers/integrations/qoder/qoder-realm";
+import { QODER_CHAT_PATH } from "../../../../src/providers/integrations/qoder/qoder-realm";
 import { decodeQoderSseEvents } from "../../../../src/providers/integrations/qoder/qoder-sse";
 
 const args = parseArgs({
@@ -115,22 +111,15 @@ async function probeModel(modelKey: string): Promise<void> {
     tool_choice: undefined,
   } as Record<string, unknown>;
 
-  const body = buildQoderIdeRequest(modelKey, request as never, cfg, auth, realm);
-  const res = await fetch(qoderIdeChatUrl(realm), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${bearer}`,
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-      "X-Request-ID": crypto.randomUUID(),
-      "X-Session-ID": crypto.randomUUID(),
-      "Cosy-Version": QODER_VERSION,
-      "Cosy-ClientType": "5",
-      "Cosy-MachineOS": machineOs(),
-      "Cosy-MachineHostname": machineHostname(),
-    },
-    body: JSON.stringify(body),
-  });
+  const legacyBody = buildQoderRequest(modelKey, request as never, cfg, auth, realm);
+  const res = await callQoder(
+    `https://api2.qoder.sh${QODER_CHAT_PATH}`,
+    legacyBody,
+    modelKey,
+    auth,
+    new AbortController().signal,
+    fetch,
+  );
 
   console.log(`\n=== ${modelKey} | HTTP ${res.status} ===`);
   if (!res.ok) {

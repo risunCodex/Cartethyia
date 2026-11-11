@@ -34,7 +34,7 @@ import { createServer } from "node:net";
  */
 import { readFileSync } from "node:fs";
 import { createSecureServer, type Http2SecureServer, type ServerHttp2Stream } from "node:http2";
-import { ValidatedNetworkBindingFactory } from "../../src/network/pool/resolver";
+import { ValidatedNetworkBindingFactory } from "../../src/network/egress/factory";
 import { encodeFrame, FLAG_END_STREAM } from "../../src/providers/integrations/cursor/protocol/framing";
 import { encodeMessage } from "../../src/providers/integrations/cursor/protocol/messages";
 

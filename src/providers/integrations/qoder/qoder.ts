@@ -37,26 +37,6 @@ export { buildQoderRequest, callQoder } from "./qoder-chat";
 export type { QoderModeProfile } from "./qoder-chat";
 export { MODERN_PROFILE } from "./qoder-chat";
 
-// IDE surface (probe/testing only)
-export {
-  buildQoderIdeRequest,
-  qoderBodyToCanonicalEvents,
-  qoderEnvelopeToFrames,
-} from "./qoder-ide";
-
-// gRPC transport
-export {
-  buildQoderGrpcRequest,
-  qoderGrpcMetadata,
-  qoderGrpcToCanonicalEvents,
-  qoderGrpcClient,
-  qoderGrpcChannelOptions,
-  fromProtoStruct,
-  QoderToolCallBuffer,
-  resolveQoderToolFragmentId,
-} from "./qoder-grpc";
-export type { QoderProtoToolFragment, QoderDrainedToolCall, QoderToolFragmentState } from "./qoder-grpc";
-
 // Adapter + transport selection
 export { createQoderAdapter, createQoderCnAdapter, resolveQoderTransport } from "./qoder-adapter";
 
@@ -64,11 +44,8 @@ export { createQoderAdapter, createQoderCnAdapter, resolveQoderTransport } from 
 export {
   QODER_CHAT_PATH,
   QODER_MODELS_PATH,
-  QODER_IDE_CHAT_PATH,
   QODER_REALMS,
   QODER_PROVIDER_ID,
-  qoderIdeChatUrl,
-  qoderGrpcHost,
   qoderRealmForProvider,
   qoderGatewayCandidates,
   qoderInferenceCandidates,
@@ -141,6 +118,6 @@ export {
 export { claimQoderCredits } from "./claim-qoder-credits";
 export type { QoderCreditClaimResult } from "./claim-qoder-credits";
 
-// SSE decode
-export { decodeQoderSseEvents } from "./qoder-sse";
+// SSE decode + enveloped stream → canonical events (legacy COSY surface)
+export { decodeQoderSseEvents, qoderBodyToCanonicalEvents, qoderEnvelopeToFrames } from "./qoder-sse";
 export type { QoderSseEvent } from "./qoder-sse";

@@ -5,7 +5,7 @@ import type { ApiKeyAuthorizationSnapshot } from "../../security/api-key-auth";
 import type { ByokUpstreamHost } from "../../providers/operations/provider-catalog-service";
 import type { PoolRotation, PoolSelectionFailure } from "../../network/pool/selector";
 import type { NetworkPoolSelector } from "../../network/pool/selector";
-import type { ValidatedNetworkBindingFactory } from "../../network/pool/resolver";
+import type { ValidatedNetworkBindingFactory } from "../../network/egress/factory";
 import type { RouteCandidate as RouteCandidate, Reservation, RoutePlan } from "../routing/route-model";
 import type { RoutingEngine } from "../routing/router";
 

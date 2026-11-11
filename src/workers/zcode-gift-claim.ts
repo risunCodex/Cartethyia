@@ -5,7 +5,7 @@ import type { CartethyiaDatabase } from "../persistence/db-handle";
 import type { RedisClient } from "../persistence/redis";
 import { providerAccounts } from "../persistence/schema";
 import type { ProviderId } from "../providers/provider-contracts";
-import type { ValidatedFetch } from "../network/outbound-fetch";
+import type { ValidatedFetch } from "../network/egress/fetch";
 import { invalidateQuotaCacheForAccount } from "../providers/quota/cache";
 import { claimZcodeGifts } from "../providers/integrations/zcode-start-plan/gifts";
 import { ZCODE_START_PLAN_PROVIDER_ID } from "../providers/integrations/zcode-start-plan/provider";

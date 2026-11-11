@@ -71,6 +71,7 @@ export function qoderOAuthAuth(
     securityOauthToken: secret,
     refreshToken: "",
     machineId: state.machineId || (accountId ? qoderMachineIdForAccount(accountId) : randomUUID()),
+    ...(state.httpDnsIp !== undefined ? { httpDnsIp: state.httpDnsIp } : {}),
   };
 }
 
@@ -263,7 +264,13 @@ export async function resolveQoderAuth(input: {
 }): Promise<QoderAuth> {
   const realm = input.realm ?? "intl";
   if (isQoderPat(input.secret)) {
-    return await exchangeQoderPat(input.secret, input.signal, input.fetcher, getQoderVersion(), realm);
+    const auth = await exchangeQoderPat(input.secret, input.signal, input.fetcher, getQoderVersion(), realm);
+    // A PAT exchange never returns the account's identity; when the persisted
+    // auth_state also carries the HTTPDNS-route IP, carry it over so the COSY
+    // request mirrors the desktop client's `X-Qoder-HTTPDNS-IP` header.
+    const state = parseQoderOAuthState(input.authState);
+    if (state?.httpDnsIp !== undefined) auth.httpDnsIp = state.httpDnsIp;
+    return auth;
   }
   // Discovery is handed only the secret and the persisted state, so the
   // account id is read from that state — the same place `qoderOAuthAuth` reads

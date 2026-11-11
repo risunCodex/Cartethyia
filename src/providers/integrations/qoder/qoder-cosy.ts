@@ -123,6 +123,9 @@ export function qoderBuildCosyHeaders(
     "cosy-organization-id": "",
     "cosy-organization-tags": "",
     "x-request-id": randomUUID(),
+    ...(auth.httpDnsIp !== undefined && auth.httpDnsIp.length > 0
+      ? { "X-Qoder-HTTPDNS-IP": auth.httpDnsIp }
+      : {}),
     "cosy-business-product": "cli",
     "cosy-business-type": "agent",
     "cosy-business-version": version,

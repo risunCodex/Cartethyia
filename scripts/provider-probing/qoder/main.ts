@@ -32,9 +32,6 @@ const PROBES: Record<string, string> = {
   meta: "chat/probe-qoder-meta.ts",
   capacity: "chat/qoder-capacity-probe.ts",
   retention: "chat/qoder-capacity-probe.ts",
-  // grpc
-  "grpc-meta": "grpc/qoder-grpc-meta.ts",
-  "grpc-echo": "grpc/qoder-grpc-meta.ts",
   // quota / entitlement / roster / credits
   entitlement: "quota/qoder-entitlement-probe.ts",
   roster: "quota/qoder-entitlement-probe.ts",

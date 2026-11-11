@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildQoderRequest, buildQoderIdeRequest } from "../../../src/providers/integrations/qoder/qoder";
+import { buildQoderRequest } from "../../../src/providers/integrations/qoder/qoder";
 import type { CanonicalRequest, ToolDefinition } from "../../../src/protocol/canonical-model";
 
 /**
@@ -135,17 +135,17 @@ test("parallel calls are stated explicitly", () => {
   expect(body["parallel_tool_calls"]).toBe(true);
 });
 
-// ── IDE surface (`model/v1/chat/completions`) ───────────────────────────────
-// The unpacked desktop client (worker `PFn`) injects `tools` into the modern
+// ── Legacy COSY surface (`agent_chat_generation`) ────────────────────────────
+// The unpacked desktop client (worker `FTn`) injects `tools` into the legacy
 // surface; without it the upstream sees no toolset and answers with a DSML
-// text block instead of a structured `tool_calls`. These pin that the IDE
-// request carries the same declarations as the legacy one.
+// text block instead of a structured `tool_calls`. These pin that the COSY
+// request carries the same declarations.
 
 function ideBodyOf(req: CanonicalRequest): Record<string, unknown> {
-  return buildQoderIdeRequest("m", req, CONFIG, AUTH);
+  return buildQoderRequest("m", req, CONFIG, AUTH) as unknown as Record<string, unknown>;
 }
 
-test("the IDE request carries the declared tools", () => {
+test("the COSY request carries the declared tools", () => {
   const body = ideBodyOf(request({ tools: [READ] }));
   const tools = body["tools"] as Array<Record<string, unknown>>;
   expect(tools).toHaveLength(1);
@@ -158,19 +158,16 @@ test("the IDE request carries the declared tools", () => {
   expect(fn["strict"]).toBeUndefined();
 });
 
-test("the IDE request omits tools when none are declared", () => {
-  // Unlike the legacy surface — which sends `tools: []` to suppress the
-  // desktop agent's own toolset — the modern surface only injects `tools`
-  // when there is something to declare (worker `PFn`: `n.length>0 &&`).
+test("the COSY request sends an empty tools array when none are declared", () => {
+  // The legacy COSY surface always sends `tools: []` to suppress the desktop
+  // agent's own toolset (worker `FTn`). It is never omitted.
   const body = ideBodyOf(request());
-  expect(body["tools"]).toBeUndefined();
+  expect(body["tools"]).toEqual([]);
 });
 
-test("the IDE request preserves tool_choice via the parameters passthrough", () => {
-  // The modern surface reads `tool_choice` through `parameters` (worker
-  // `vyl`), not at the top level like the legacy builder.
+test("the COSY request preserves tool_choice at the top level", () => {
+  // The legacy COSY builder places `tool_choice` at the top level (it is not
+  // read through `parameters` like the dead IDE surface did).
   const body = ideBodyOf(request({ tools: [READ], tool_choice: "required" }));
-  const parameters = body["parameters"] as Record<string, unknown> | undefined;
-  expect(parameters?.["tool_choice"]).toBe("required");
-  expect(body["tool_choice"]).toBeUndefined();
+  expect(body["tool_choice"]).toBe("required");
 });

@@ -29,7 +29,7 @@ import { resolveImageSource, splitDataUrl } from "../../../protocol/codecs";
 import { IMAGE_CLAMP_MAX_BYTES } from "../../../protocol/image-clamp";
 import type { ProviderAdapter, ProviderDispatchContext, ProviderDispatchTarget } from "../../provider-contracts";
 import { readCredentialSecret } from "../../provider-contracts";
-import type { Http2BidiEndReason, ValidatedHttp2BidiStream } from "../../../network/http2-bidi";
+import type { Http2BidiEndReason, ValidatedHttp2BidiStream } from "../../../network/bidi";
 import type { ProviderContinuationScope } from "../../provider-contracts";
 import { CURSOR_PROVIDER_ID, RUN_IDLE_TTL_MS, isAllowedAgentHost } from "./cursor-shared";
 import {

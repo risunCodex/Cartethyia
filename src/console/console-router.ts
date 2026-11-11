@@ -33,7 +33,7 @@ import { DrizzleCliToolSecretSource } from "./cli-tools/secret-source";
 import type { ShareLinkStore } from "../persistence/stores/share-store";
 import type { ProviderRegistry } from "../providers/provider-registry";
 import type { BundledProviderCatalog } from "../providers/operations/provider-catalog-service";
-import type { ValidatedNetworkBindingFactory } from "../network/pool/resolver";
+import type { ValidatedNetworkBindingFactory } from "../network/egress/factory";
 import type { TrustedProxyBoundary } from "../config/network";
 import type { IpAbuseStore } from "../security/abuse";
 import { gzipResponse } from "./response-compression";

@@ -29,8 +29,8 @@ import type { NetworkPoolSelector } from "../../network/pool/selector";
 import { eq } from "drizzle-orm";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 import { networkPools } from "../../persistence/schema";
-import { subscribePoolHealth } from "../../network/pool-health-machine";
-import { poolByteSnapshot } from "../../network/pool/byte-accounting";
+import { subscribePoolHealth } from "../../network/pool/health";
+import { poolByteSnapshot } from "../../network/pool/accounting";
 import { consoleSseResponse, createConsoleSseStream } from "./sse";
 import { subscribeRequestCompleted } from "../../observability/request-notify";
 

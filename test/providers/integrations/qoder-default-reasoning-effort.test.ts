@@ -1,12 +1,13 @@
 /**
- * The IDE surface follows `reasoningEffort`: some reasoning models (Sonus,
- * Cantus) stream no thinking unless an effort is sent. The roster carries a
- * default effort for those models; the request builder must apply it when the
- * caller did not ask for one, and must not override an explicit caller intent.
- * The modern IDE body (`buildQoderIdeRequest`) must carry the same field.
+ * The legacy COSY request follows `reasoningEffort`: some reasoning models
+ * (Sonus, Cantus) stream no thinking unless an effort is sent. The roster
+ * carries a default effort for those models; the request builder must apply it
+ * when the caller did not ask for one, and must not override an explicit
+ * caller intent. The legacy COSY body (`buildQoderRequest`) must carry the
+ * same field.
  */
 import { describe, expect, test } from "bun:test";
-import { buildQoderIdeRequest, buildQoderRequest } from "../../../src/providers/integrations/qoder/qoder";
+import { buildQoderRequest } from "../../../src/providers/integrations/qoder/qoder";
 import type { QoderAuth } from "../../../src/providers/integrations/qoder/qoder";
 import type { CanonicalRequest } from "../../../src/protocol/canonical-model";
 
@@ -67,24 +68,8 @@ describe("Qoder default reasoning effort", () => {
     expect(req.reasoningEffort).toBe("high");
   });
 
-  test("smodel IDE body carries the default effort", () => {
-    const req = buildQoderIdeRequest("smodel", requestFor(), SMODEL_CONFIG, AUTH, "intl");
-    expect(req.reasoningEffort).toBe("high");
-  });
-
   test("smodel honors an explicit caller intent over the default", () => {
     const req = buildQoderRequest(
-      "smodel",
-      requestFor({ reasoning: { effort: "low" } }),
-      SMODEL_CONFIG,
-      AUTH,
-      "intl",
-    );
-    expect(req.reasoningEffort).toBe("low");
-  });
-
-  test("smodel IDE body honors an explicit caller intent", () => {
-    const req = buildQoderIdeRequest(
       "smodel",
       requestFor({ reasoning: { effort: "low" } }),
       SMODEL_CONFIG,
@@ -109,8 +94,6 @@ describe("Qoder default reasoning effort", () => {
   test("a model without a default effort stays as before", () => {
     const req = buildQoderRequest("dfmodel", requestFor(), DEEPMODEL_CONFIG, AUTH, "intl");
     expect(req.reasoningEffort).toBeUndefined();
-    const ide = buildQoderIdeRequest("dfmodel", requestFor(), DEEPMODEL_CONFIG, AUTH, "intl");
-    expect(ide.reasoningEffort).toBeUndefined();
   });
 
   test("a non-reasoning model never carries an effort, even when asked", () => {
@@ -126,15 +109,5 @@ describe("Qoder default reasoning effort", () => {
     );
     expect(req.reasoningEffort).toBeUndefined();
     expect((req.model_config as Record<string, unknown>).is_reasoning).toBe(false);
-
-    const ide = buildQoderIdeRequest(
-      "lite",
-      requestFor({ reasoning: { effort: "low" } }),
-      LITE_CONFIG,
-      AUTH,
-      "intl",
-    );
-    expect(ide.reasoningEffort).toBeUndefined();
-    expect((ide.model_config as Record<string, unknown>).is_reasoning).toBe(false);
   });
 });

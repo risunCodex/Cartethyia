@@ -13,7 +13,7 @@ import { GatewayError } from "../../src/protocol/gateway-error";
 import { selectAccountTestEgress } from "../../src/console/quota/account-test-egress";
 import type { CartethyiaDatabase } from "../../src/persistence/db-handle";
 import type { NetworkPoolSelector } from "../../src/network/pool/selector";
-import type { ValidatedNetworkBindingFactory } from "../../src/network/pool/resolver";
+import type { ValidatedNetworkBindingFactory } from "../../src/network/egress/factory";
 
 interface RoutingRow {
   readonly tenantId: string | null;

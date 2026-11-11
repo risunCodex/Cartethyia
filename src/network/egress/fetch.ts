@@ -1,14 +1,15 @@
 // Validated fetch: SSRF-guarded outbound fetch with optional pool-agent support.
-import { GatewayError } from "../protocol/gateway-error";
+import { GatewayError } from "../../protocol/gateway-error";
 import { request as httpRequest, Agent as HttpAgent } from "node:http";
 import { request as httpsRequest, Agent as HttpsAgent } from "node:https";
 import { Agent as UndiciAgent, fetch as undiciFetch, type UndiciRequestInit } from "undici";
 import { SocksProxyAgent } from "socks-proxy-agent";
-import { resolveAllAddresses, validateResolvedAddresses } from "./ssrf";
-import type { SsrfPolicy } from "../config/network";
-import { isProxyAgentPair, type ProxyAgentPair } from "./pool/agent";
-import { metrics } from "../observability/metrics";
-import { trackNetworkCall } from "../observability/performance-metrics";
+import { resolveAllAddresses, validateResolvedAddresses } from "../ssrf";
+import type { SsrfPolicy } from "../../config/network";
+import { isProxyAgentPair, type ProxyAgentPair } from "../pool/agent";
+import { metrics } from "../../observability/metrics";
+import { trackNetworkCall } from "../../observability/performance-metrics";
+import { nodeTlsOptions, tlsProfileOf, type TlsProfile, type TlsProfileConfig } from "./tls-profile";
 // Validated fetch — single egress with ProxyAgent support
 interface ValidatedFetchOptions {
   readonly fetchFn?: typeof fetch;
@@ -27,6 +28,18 @@ interface ValidatedFetchOptions {
    * Defaults to undici's fetch; injectable for offline tests.
    */
   readonly socksFetch?: (input: RequestInfo | URL, init?: UndiciRequestInit) => Promise<Response>;
+  /**
+   * TLS ClientHello profile for direct https dials. `"default"` (or absent)
+   * keeps the runtime's own TLS stack; a named profile (see `tls-profile.ts`)
+   * dials through a Node https agent configured with that profile's OpenSSL
+   * options, so the wire fingerprint matches the impersonated client.
+   */
+  readonly tlsProfile?: TlsProfile;
+  /**
+   * CA bundle for profile dials (`https.Agent({ ca })`). Defaults to the
+   * system store; set it to trust a private/custom CA.
+   */
+  readonly ca?: string | Buffer | Array<string | Buffer>;
 }
 export type ValidatedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -115,7 +128,28 @@ function socksDispatcherFor(agent: SocksProxyAgent): UndiciAgent {
 }
 
 /**
- * One dial, always through `fetch`.
+ * A Node `https` agent whose connections are dialed with a chosen TLS profile.
+ *
+ * The agent's `createConnection` is the only knob that reaches the ClientHello
+ * through OpenSSL: it lets `tls.connect` run with the profile's cipher list,
+ * TLS 1.3 suite order, ALPN, and version bounds. Used only when a profile is
+ * requested; the runtime-native fetch stays the default for everything else.
+ */
+export function createProfileAgent(profile: TlsProfileConfig, ca?: string | Buffer | Array<string | Buffer>): HttpsAgent {
+  // Straight option passthrough — no custom `createConnection`. Bun's
+  // Node-compat layer ignores a user-supplied `createConnection` on the agent
+  // (verified live 2026-11-11: the dial failed with ERR_SOCKET_CLOSED and no
+  // ClientHello reached the sniffer), but it honors the standard TLS options
+  // on the agent itself — `ALPNProtocols` switched the ALPN extension and
+  // `ciphers` narrowed the offered suite list in capture. The request path
+  // stays the plain https client with the profile's fingerprint.
+  return new HttpsAgent({
+    ...nodeTlsOptions(profile),
+    ...(ca === undefined ? {} : { ca }),
+  } as unknown as HttpsAgent);
+}
+
+/** One dial, always through `fetch`.
  *
  * The runtime's own fetch (Bun/Undici) is the transport the clients this
  * gateway impersonates actually use, and several upstreams meter per client
@@ -177,7 +211,7 @@ async function dial(
  * after the SSRF resolve/validate pass and only when no pool/relay agent owns
  * the dial, so the security boundary is unchanged.
  */
-function nodeDial(url: URL, init: RequestInit): Promise<Response> {
+function nodeDial(url: URL, init: RequestInit, agent?: HttpsAgent): Promise<Response> {
   return new Promise((resolve, reject) => {
     const mod = url.protocol === "http:" ? httpRequest : httpsRequest;
     const headers: Record<string, string> = {};
@@ -205,20 +239,30 @@ function nodeDial(url: URL, init: RequestInit): Promise<Response> {
       {
         method: (init.method ?? "GET").toUpperCase(),
         headers,
+        ...(agent === undefined ? {} : { agent }),
         ...(init.signal === undefined ? {} : { signal: init.signal as AbortSignal }),
       },
       (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (c: Buffer) => chunks.push(c));
-        res.on("end", () => {
-          resolve(
-            new Response(Buffer.concat(chunks), {
-              status: res.statusCode ?? 200,
-              ...(res.statusMessage === undefined ? {} : { statusText: res.statusMessage }),
-              headers: res.headers as unknown as HeadersInit,
-            }),
-          );
+        // The response body is bridged into a web stream so callers can
+        // consume it incrementally (SSE chat streams) instead of buffering
+        // the entire payload before resolving.
+        const bodyStream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            res.on("data", (c: Buffer) => controller.enqueue(new Uint8Array(c)));
+            res.on("end", () => controller.close());
+            res.on("error", (err: Error) => controller.error(err));
+          },
+          cancel() {
+            res.destroy();
+          },
         });
+        resolve(
+          new Response(bodyStream, {
+            status: res.statusCode ?? 200,
+            ...(res.statusMessage === undefined ? {} : { statusText: res.statusMessage }),
+            headers: res.headers as unknown as HeadersInit,
+          }),
+        );
       },
     );
     req.on("error", reject);
@@ -304,12 +348,21 @@ export function createValidatedFetch(options: ValidatedFetchOptions = {}): Valid
       } else {
         const method = (requestInit.method ?? "GET").toUpperCase();
         const hasBody = requestInit.body !== undefined && requestInit.body !== null;
-        // The runtime fetch cannot carry a body on GET/HEAD, but Qoder's
-        // model-list endpoint requires a signed GET body. When no pool/relay
-        // owns the dial and no injected test fetch is present, dial through the
-        // Node http(s) client (post SSRF validation). Every other case keeps
-        // the existing fetch path.
-        if ((method === "GET" || method === "HEAD") && hasBody && !socksAgent && options.fetchFn === undefined) {
+        const profile = tlsProfileOf(options.tlsProfile ?? "default");
+        // A TLS profile request is a *custom ClientHello* dial: it goes
+        // through a Node https agent configured with the profile's OpenSSL
+        // options, so the wire fingerprint matches the impersonated client.
+        // This path is direct-only (never a pool/relay dial) and rejects
+        // bodies on GET/HEAD like the runtime fetch does — that shape is
+        // still handled by `nodeDial` below.
+        if (profile !== undefined && !socksAgent && configuredAgent === undefined) {
+          response = await nodeDial(url, requestInit, createProfileAgent(profile, options.ca));
+        } else if ((method === "GET" || method === "HEAD") && hasBody && !socksAgent && options.fetchFn === undefined) {
+          // The runtime fetch cannot carry a body on GET/HEAD, but Qoder's
+          // model-list endpoint requires a signed GET body. When no pool/relay
+          // owns the dial and no injected test fetch is present, dial through the
+          // Node http(s) client (post SSRF validation). Every other case keeps
+          // the existing fetch path.
           response = await nodeDial(url, requestInit);
         } else {
           response = await dial(url, requestInit, fetchFn, proxyUrl, socksAgent ? socksDispatcherFor(socksAgent) : undefined, socksFetch);

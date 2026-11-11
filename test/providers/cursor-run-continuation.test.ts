@@ -46,7 +46,7 @@ import type {
   ProviderDispatchContext,
   ProviderDispatchTarget,
 } from "../../src/providers/provider-contracts";
-import type { Http2BidiEndReason, ValidatedHttp2BidiStream } from "../../src/network/http2-bidi";
+import type { Http2BidiEndReason, ValidatedHttp2BidiStream } from "../../src/network/bidi";
 import { withFakeTimers } from "../helpers/clock";
 
 /** The MCP namespace the adapter advertises client tools under. */

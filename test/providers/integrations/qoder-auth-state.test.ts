@@ -62,3 +62,14 @@ test("machineId may be absent from a legacy state only if the parser allowed it"
   // (parser is strict), so the export must always carry both fields.
   expect(parseQoderOAuthState({ userId: "u" })).toBeUndefined();
 });
+
+test("auth_state may carry the HTTPDNS-route IP (X-Qoder-HTTPDNS-IP mirror)", () => {
+  const state = { userId: "u", machineId: "m", httpDnsIp: "103.130.222.58" };
+  expect(parseQoderOAuthState(state)).toEqual(state);
+  expect(parseQoderOAuthState(JSON.stringify(state))).toEqual(state);
+  // Empty/whitespace IPs are dropped, not stored.
+  expect(parseQoderOAuthState({ userId: "u", machineId: "m", httpDnsIp: "" })).toEqual({
+    userId: "u",
+    machineId: "m",
+  });
+});

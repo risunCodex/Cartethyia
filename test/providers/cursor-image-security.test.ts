@@ -38,7 +38,7 @@ import type {
   ProviderDispatchContext,
   ProviderDispatchTarget,
 } from "../../src/providers/provider-contracts";
-import type { ValidatedHttp2BidiStream } from "../../src/network/http2-bidi";
+import type { ValidatedHttp2BidiStream } from "../../src/network/bidi";
 
 /** One fake bidi stream: opening one is the thing a rejection must not do. */
 class RecordingStream implements ValidatedHttp2BidiStream {

@@ -20,8 +20,8 @@
 //
 
 import { and, eq, inArray } from "drizzle-orm";
-import type { ValidatedFetch } from "../network/outbound-fetch";
-import type { ValidatedNetworkBindingFactory } from "../network/pool/resolver";
+import type { ValidatedFetch } from "../network/egress/fetch";
+import type { ValidatedNetworkBindingFactory } from "../network/egress/factory";
 import type { RedisClient } from "../persistence/redis";
 import type { CartethyiaDatabase } from "../persistence/db-handle";
 import { dailyCheckinLedger, networkPools } from "../persistence/schema";

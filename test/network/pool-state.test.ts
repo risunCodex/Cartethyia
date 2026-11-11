@@ -31,7 +31,7 @@ import {
   poolByteTotals,
   recordPoolBytes,
   resetPoolByteAccounting,
-} from "../../src/network/pool/byte-accounting";
+} from "../../src/network/pool/accounting";
 import {
   advanceRotation,
   createPoolLocalState,
@@ -43,7 +43,7 @@ import {
   parseCooldownEntry,
   rotationStart,
   type ProxyCooldownEntry,
-} from "../../src/network/pool/pool-state";
+} from "../../src/network/pool/state";
 
 beforeEach(() => {
   resetPoolByteAccounting();

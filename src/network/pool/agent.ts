@@ -4,7 +4,7 @@
  * caches instances of these; the selector owns admission.
  */
 import { isIP } from "node:net";
-import { accountSocketBytes, accountSocketWrites, recordPoolBytes } from "./byte-accounting";
+import { accountSocketBytes, accountSocketWrites, recordPoolBytes } from "./accounting";
 import {
   Agent as HttpAgent,
   request as httpRequest,
@@ -19,7 +19,7 @@ import { SocksProxyAgent } from "socks-proxy-agent";
 import { resolveAllAddresses, validateResolvedAddresses } from "../ssrf";
 import type { SsrfPolicy } from "../../config/network";
 import { resolveProxyMaxFreeSockets, resolveProxyMaxSockets } from "../../config/network";
-import type { AgentConfig } from "../types";
+import type { AgentConfig } from "./agent-config";
 
 /**
  * Idle keep-alive socket timeout for every pool agent. Matches the 60s DB pool

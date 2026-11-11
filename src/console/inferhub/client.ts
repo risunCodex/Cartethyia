@@ -13,7 +13,7 @@
  *   and a failure returns `undefined` — never a half-parsed object that a route
  *   would render as if it were good.
  */
-import { createValidatedFetch, type ValidatedFetch } from "../../network/outbound-fetch";
+import { createValidatedFetch, type ValidatedFetch } from "../../network/egress/fetch";
 
 export const INFERHUB_API_BASE = "https://inferhub.dev/api";
 

@@ -15,7 +15,7 @@
  *   401; verified live 2026-11-04).
  */
 import type { CartethyiaDatabase } from "../../../persistence/db-handle";
-import type { ValidatedFetch } from "../../../network/outbound-fetch";
+import type { ValidatedFetch } from "../../../network/egress/fetch";
 import { qoderRealmForProvider, QODER_REALMS } from "./qoder-realm";
 import { exchangeQoderPatForHost } from "./qoder-auth";
 import {

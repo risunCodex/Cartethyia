@@ -10,7 +10,7 @@
  * rotation only to be refused again.
  */
 import { describe, expect, test } from "bun:test";
-import { flagPoolBlocked, flagPoolCooldown } from "../../src/network/pool-health";
+import { flagPoolBlocked, flagPoolCooldown } from "../../src/network/pool/health";
 import { GatewayError } from "../../src/protocol/gateway-error";
 
 /** One row the recorder is expected to insert into `health_events`. */

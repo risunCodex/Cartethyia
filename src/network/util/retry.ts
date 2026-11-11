@@ -7,7 +7,7 @@
  */
 
 import { exponentialBackoff, type BackoffOptions } from "./backoff";
-import { sleep as defaultSleep } from "../shared/sleep";
+import { sleep as defaultSleep } from "../../shared/sleep";
 
 interface RetryOptions {
   readonly maxRetries?: number;

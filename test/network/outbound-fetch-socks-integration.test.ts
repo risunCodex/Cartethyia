@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer, type Server as TcpServer, Socket } from "node:net";
-import { createValidatedFetch } from "../../src/network/outbound-fetch";
+import { createValidatedFetch } from "../../src/network/egress/fetch";
 import { createSocks5Agent } from "../../src/network/pool/agent";
 
 const ORIGIN_PORT = 59431;

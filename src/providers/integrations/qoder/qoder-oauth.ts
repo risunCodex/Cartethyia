@@ -146,6 +146,12 @@ const EXPIRY_FALLBACK_MS = 30 * 24 * 60 * 60 * 1000;
 export interface QoderOAuthState {
   readonly userId: string;
   readonly machineId: string;
+  /**
+   * Resolved egress IP for the HTTPDNS-managed route, when the login stored
+   * it. Mirrors the worker's `networkMode=httpdns` state; the request then
+   * carries `X-Qoder-HTTPDNS-IP`.
+   */
+  readonly httpDnsIp?: string;
 }
 
 /** Reads the persisted Qoder identity; `undefined` when the account predates it. */
@@ -166,7 +172,8 @@ export function parseQoderOAuthState(value: unknown): QoderOAuthState | undefine
   const userId = nonEmptyTrimmedString(root.userId);
   const machineId = nonEmptyTrimmedString(root.machineId);
   if (userId === undefined || machineId === undefined) return undefined;
-  return { userId, machineId };
+  const httpDnsIp = nonEmptyTrimmedString(root.httpDnsIp);
+  return httpDnsIp === undefined ? { userId, machineId } : { userId, machineId, httpDnsIp };
 }
 
 

@@ -77,7 +77,7 @@ async function collect(
 
 describe("Qoder transport selection", () => {
   test("defaults to legacy COSY for a billed model (gRPC host is dead)", () => {
-    expect(resolveQoderTransport(undefined, { id: "dmodel", display_name: "DeepSeek", max_input_tokens: 1_000_000, is_vl: true, is_reasoning: true })).toBe("cosy");
+    expect(resolveQoderTransport()).toBe("cosy");
   });
 
   test("dispatch defaults to legacy COSY for a billed model (no surface override)", async () => {
@@ -95,15 +95,11 @@ describe("Qoder transport selection", () => {
   });
 
   test("free-tier row (`lite`) uses legacy COSY", () => {
-    expect(resolveQoderTransport(undefined, { id: "lite", display_name: "Lite-Qwen-3.7-Plus", max_input_tokens: 1_000_000, is_vl: true, is_reasoning: false, is_free: true })).toBe("cosy");
+    expect(resolveQoderTransport()).toBe("cosy");
   });
 
   test("explicit `cosy` override forces legacy for any model", () => {
-    expect(resolveQoderTransport("cosy", { id: "dmodel", display_name: "DeepSeek", max_input_tokens: 1_000_000, is_vl: true, is_reasoning: true })).toBe("cosy");
-  });
-
-  test("explicit `grpc` override is honored for a billed model", () => {
-    expect(resolveQoderTransport("grpc", { id: "dmodel", display_name: "DeepSeek", max_input_tokens: 1_000_000, is_vl: true, is_reasoning: true })).toBe("grpc");
+    expect(resolveQoderTransport()).toBe("cosy");
   });
 });
 
@@ -151,55 +147,5 @@ describe("Qoder dispatch surface (COSY)", () => {
     await expect(collect(adapter, fetcher, "smodel")).rejects.toThrow();
     expect(calls).toBe(1);
     expect(urls[0]).toContain("/algo/api/v2/service/pro/sse/agent_chat_generation");
-  });
-
-  test("probe-forced `ide` surface uses the modern /model/v1 endpoint and surfaces provider metadata", async () => {
-    const urls: string[] = [];
-    let calls = 0;
-    const rawUsage = {
-      data: {
-        completion_tokens: 37,
-        provider_model: "qwen3.7-plus",
-        supply_model: "qwen3.7-plus",
-        supply_region: "global",
-        model_level: "lite",
-        target: "bailian-qwen3.7-plus-free-260401",
-      },
-    };
-    const ideStream = new Response(
-      "data: " +
-        JSON.stringify({
-          choices: [],
-          model: "lite",
-          raw_usage: rawUsage,
-        }) +
-        "\n\n",
-      { status: 200, headers: { "content-type": "text/event-stream" } },
-    );
-    const fetcher = (async (input: unknown, _init?: RequestInit): Promise<Response> => {
-      calls++;
-      urls.push(String(input));
-      return ideStream;
-    }) as typeof fetch;
-    const adapter = createQoderAdapter();
-    const target: ProviderDispatchTarget = {
-      ...TARGET,
-      model_id: "lite",
-      probe_surface: "ide",
-    };
-    const events: Array<Record<string, unknown>> = [];
-    for await (const event of adapter.dispatch(request(), target, context(fetcher))) {
-      events.push(event as unknown as Record<string, unknown>);
-    }
-    expect(calls).toBe(1);
-    expect(urls[0]).toContain("/model/v1/chat/completions");
-    const terminal = events.find((e) => e["type"] === "terminal");
-    expect(terminal?.["provider_metadata"]).toEqual({
-      provider_model: "qwen3.7-plus",
-      supply_model: "qwen3.7-plus",
-      supply_region: "global",
-      model_level: "lite",
-      target: "bailian-qwen3.7-plus-free-260401",
-    });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { claimZcodeGifts } from "../../src/providers/integrations/zcode-start-plan/gifts";
-import type { ValidatedFetch } from "../../src/network/outbound-fetch";
+import type { ValidatedFetch } from "../../src/network/egress/fetch";
 
 const emptyFeed = { code: 0, data: { deliveries: [] } };
 const emptyPreview = { code: 0, msg: "" };

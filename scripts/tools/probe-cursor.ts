@@ -18,8 +18,8 @@
  */
 import { parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
-import { createValidatedFetch } from "../../src/network/outbound-fetch";
-import { ValidatedNetworkBindingFactory } from "../../src/network/pool/resolver";
+import { createValidatedFetch } from "../../src/network/egress/fetch";
+import { ValidatedNetworkBindingFactory } from "../../src/network/egress/factory";
 import { resolveSsrfPolicy } from "../../src/config/network";
 import { cursorAdapter } from "../../src/providers/integrations/cursor/cursor";
 import {

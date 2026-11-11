@@ -11,7 +11,7 @@ import type { CartethyiaDatabase } from "../../persistence/db-handle";
 import type { ProviderAdapter } from "../../providers/provider-contracts";
 import type { OAuthRefreshService, OAuthTokenRefresher } from "../../providers/authentication/oauth-refresh-service";
 import type { NetworkPoolSelector } from "../../network/pool/selector";
-import type { ValidatedNetworkBindingFactory } from "../../network/pool/resolver";
+import type { ValidatedNetworkBindingFactory } from "../../network/egress/factory";
 import type { TelemetryBatchBuffer } from "../../observability/telemetry-buffer";
 import type { ProxyRequestPreparer } from "../request/preparer";
 import type { ProxyRequestStateStore } from "../request/state";

@@ -5,7 +5,7 @@
 import type { CanonicalEvent, CanonicalRequest, WireFamily } from "../protocol/canonical-model";
 import { GatewayError } from "../protocol/gateway-error";
 import { BUNDLED_PROVIDER_METADATA, type BundledProviderId } from "./provider-metadata";
-import type { ValidatedOutboundHttp2Bidi } from "../network/http2-bidi";
+import type { ValidatedOutboundHttp2Bidi } from "../network/bidi";
 
 /** Closed union of every shipped provider ID. */
 export const BUNDLED_PROVIDER_IDS: ReadonlySet<BundledProviderId> = new Set(
@@ -134,7 +134,7 @@ export type ValidatedOutboundWebSocket = (
 /**
  * The dialer contract handed to a provider adapter.
  *
- * Declared in `network/http2-bidi.ts` — the transport owns the contract — and
+ * Declared in `network/bidi.ts` — the transport owns the contract — and
  * re-exported here so provider code keeps one import site.
  */
 export type { ValidatedOutboundHttp2Bidi };
@@ -189,6 +189,13 @@ export interface ProviderDispatchContext {
   readonly outbound_attachment_fetch?: ValidatedOutboundFetch | undefined;
   /** Validated bidirectional HTTP/2 egress bound to the same selected network pool. */
   readonly outbound_http2?: ValidatedOutboundHttp2Bidi | undefined;
+  /**
+   * Validated HTTP fetch with a chosen TLS ClientHello profile (see
+   * `network/egress/tls-profile.ts` for the profile ids). A provider that needs to
+   * mirror a target client's transport fingerprint — e.g. Qoder's desktop
+   * COSY chat — dials through this instead of `outbound_fetch`.
+   */
+  readonly outbound_profile_fetch?: ((profile: string, input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) | undefined;
   /**
    * Capture sink for one attempt's provider exchange, filled by HTTP fetch
    * wrapping. Adapters whose real upstream transport is not a `fetch`

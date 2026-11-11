@@ -10,7 +10,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { GatewayError } from "../../src/protocol/gateway-error";
-import { classifyEgressFailure } from "../../src/network/rate-limit-verdict";
+import { classifyEgressFailure } from "../../src/network/verdict";
 import { PROVIDER_BLOCK_MS } from "../../src/network/pool/selector";
 import { providerRateLimitIsIpScoped } from "../../src/providers/provider-metadata";
 

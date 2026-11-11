@@ -31,7 +31,7 @@ import { randomUUID } from "node:crypto";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 import type { RedisClient } from "../../persistence/redis";
 import { checkinAttemptedToday } from "../../workers/daily-checkin";
-import type { ValidatedFetch } from "../../network/outbound-fetch";
+import type { ValidatedFetch } from "../../network/egress/fetch";
 
 /** Lifecycle states of a daily-growth job. */
 export type DailyGrowthJobState = "queued" | "running" | "done" | "failed";

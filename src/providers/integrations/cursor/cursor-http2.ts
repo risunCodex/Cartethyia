@@ -6,7 +6,7 @@
 // It never calls `node:http2.connect` itself — the binding owns the socket, the
 // DNS pinning, the SSRF policy, and the pool tunnel.
 import { GatewayError } from "../../../protocol/gateway-error";
-import type { ValidatedHttp2BidiStream, Http2BidiEndReason } from "../../../network/http2-bidi";
+import type { ValidatedHttp2BidiStream, Http2BidiEndReason } from "../../../network/bidi";
 import type { ValidatedOutboundHttp2Bidi } from "../../provider-contracts";
 import { decodeFramePayload, encodeFrame, streamFrames, FLAG_END_STREAM } from "./protocol/framing";
 import { decodeMessage } from "./protocol/messages";

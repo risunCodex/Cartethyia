@@ -7,7 +7,7 @@ import { trackModelCatalogLoad } from "../../observability/performance-metrics";
 import { resolveRedisClient } from "../../persistence/redis";
 import { cachedRead } from "../../console/shared/read-through-cache";
 import { TtlCacheFamily } from "../../persistence/ttl-cache";
-import { retryWithBackoff } from "../../network/retry";
+import { retryWithBackoff } from "../../network/util/retry";
 
 /* -------------------------------------------------------------------------- */
 /* 1. Model Catalog Cache                                                     */

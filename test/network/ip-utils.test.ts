@@ -1,4 +1,4 @@
-// Parity test for the consolidated `src/network/ip-utils.ts`.
+// Parity test for the consolidated `src/network/util/ip.ts`.
 //
 // Golden values were captured from the two implementations the module
 // replaced: ssrf.ts (`ipv4Number` throws / `ipv6Bytes` accepts dotted quads /
@@ -16,7 +16,7 @@ import {
   isLoopbackAddress,
   normalizeIpv6Groups,
   unwrapMappedIpv4,
-} from "../../src/network/ip-utils";
+} from "../../src/network/util/ip";
 
 /** ssrf.ts's former spelling: bytes, dotted quads allowed, throws. */
 function legacySsrfIpv6Bytes(address: string): Uint8Array {

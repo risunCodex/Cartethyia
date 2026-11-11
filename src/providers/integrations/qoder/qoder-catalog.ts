@@ -390,7 +390,7 @@ export type QoderSigner = (url: string, body: string) => Promise<Record<string, 
  * `fetcher` is optional in the type but required at runtime, and there is
  * deliberately no global-`fetch` default: a test cannot reach the network by
  * accident, and production is forced through the SSRF-validated egress
- * (`network/outbound-fetch.ts`). That egress is a `node:http` path, which is
+ * (`network/egress/fetch.ts`). That egress is a `node:http` path, which is
  * also the only way a body reaches the wire on a GET — `fetch` itself rejects
  * `GET` + `body` with "request with GET/HEAD method cannot have body".
  */

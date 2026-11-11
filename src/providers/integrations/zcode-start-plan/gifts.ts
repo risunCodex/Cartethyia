@@ -22,7 +22,7 @@
 import { createHash } from "node:crypto";
 import { sleep } from "../../../shared/sleep";
 import { asRecord, asTrimmedString } from "../../../shared/coerce";
-import type { ValidatedFetch } from "../../../network/outbound-fetch";
+import type { ValidatedFetch } from "../../../network/egress/fetch";
 
 const ZCODE = "https://zcode.z.ai";
 const BILLING = `${ZCODE}/api/v1/zcode-plan/billing`;

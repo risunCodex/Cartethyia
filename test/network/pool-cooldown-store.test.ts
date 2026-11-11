@@ -25,9 +25,9 @@ import {
   restorePoolProbeVerdicts,
   restoreProviderCooldownMarkers,
   upsertProviderCooldownMarker,
-} from "../../src/network/pool-cooldown-store";
-import { flagPoolCooldown } from "../../src/network/pool-health";
-import { recordPoolDispatchOutcome } from "../../src/network/pool-health-machine";
+} from "../../src/network/pool/cooldown-store";
+import { flagPoolCooldown } from "../../src/network/pool/health";
+import { recordPoolDispatchOutcome } from "../../src/network/pool/health";
 import { GatewayError } from "../../src/protocol/gateway-error";
 import { resetCooldownCacheForTests } from "../../src/config/cooldowns";
 

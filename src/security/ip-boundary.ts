@@ -9,7 +9,7 @@ import {
   ipv6ToBigInt,
   isLoopbackAddress,
   unwrapMappedIpv4,
-} from "../network/ip-utils";
+} from "../network/util/ip";
 
 export { isLoopbackAddress };
 

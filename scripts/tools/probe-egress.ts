@@ -43,7 +43,7 @@
  *                rate that is spent.
  */
 import { createHttpProxyAgent } from "../../src/network/pool/agent";
-import { createValidatedFetch } from "../../src/network/outbound-fetch";
+import { createValidatedFetch } from "../../src/network/egress/fetch";
 import { buildProviderProbeRequest, isProbeableProvider } from "../../src/providers/provider-probe";
 import {
   classifyProviderProbeAnswer,

@@ -65,7 +65,7 @@ import {
 } from "../persistence/stores/share-store";
 import { createShareUsagePort } from "./share/share-usage";
 import { resolveSsrfPolicy } from "../config/network";
-import { createValidatedFetch } from "../network/outbound-fetch";
+import { createValidatedFetch } from "../network/egress/fetch";
 import type { AuditRecorder } from "./auth/audit-recorder";
 import type { CliToolService } from "./cli-tools/service";
 import type { NetworkPoolSelector } from "../network/pool/selector";
@@ -77,7 +77,7 @@ import { resolveRedisBackend } from "../persistence/redis";
 import type { RedisClient } from "../persistence/redis";
 import type { ProviderRegistry } from "../providers/provider-registry";
 import type { BundledProviderCatalog } from "../providers/operations/provider-catalog-service";
-import type { ValidatedNetworkBindingFactory } from "../network/pool/resolver";
+import type { ValidatedNetworkBindingFactory } from "../network/egress/factory";
 import type { CartethyiaDatabase } from "../persistence/db-handle";
 import type { ConsoleAccessResolver } from "./auth/access";
 

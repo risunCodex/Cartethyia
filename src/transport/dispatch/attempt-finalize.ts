@@ -20,7 +20,7 @@ import { modelsDevCatalog } from "../../providers/discovery/models-dev-catalog";
 import {
   disablePoolForProxyHttpStatus,
   recordPoolDispatchOutcome,
-} from "../../network/pool-health-machine";
+} from "../../network/pool/health";
 import { ProxyConnectRefusalError } from "../../network/pool/agent";
 import { captureDepthMaxBytes, providerCaptureMaxBytes } from "./capture-policy";
 

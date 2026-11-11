@@ -331,7 +331,7 @@ describe("isAddressAllowed — the policy overrides", () => {
    * Blank/exotic CIDR prefixes are refused — this defect is closed.
    *
    * `cidrContains` (`src/network/ssrf.ts`) now delegates to `cidrContainsAddress`
-   * with `requirePrefix: true` (`src/network/ip-utils.ts`), which reads the
+   * with `requirePrefix: true` (`src/network/util/ip.ts`), which reads the
    * prefix as a trimmed run of digits. A blank or exotic zero spelling
    * (`""`, `" "`, `"-0"`, `"+0"`, `"0x0"`, `"0b0"`, `"0o0"`, `"0.0"`) is
    * refused outright, so a truncated or mistyped entry fails closed — it can no

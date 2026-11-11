@@ -11,8 +11,8 @@ import { networkPools, poolRoutingSettings, providerRoutingSettings } from "../.
 import { resolveTenantOverride } from "../../persistence/tenant-scope";
 import { GatewayError } from "../../protocol/gateway-error";
 import type { NetworkPoolSelector, PoolRotation } from "../../network/pool/selector";
-import type { ValidatedFetch } from "../../network/outbound-fetch";
-import type { ValidatedNetworkBindingFactory } from "../../network/pool/resolver";
+import type { ValidatedFetch } from "../../network/egress/fetch";
+import type { ValidatedNetworkBindingFactory } from "../../network/egress/factory";
 import { DEFAULT_PROXY_SKIP_PROVIDER_IDS } from "../../providers/provider-metadata";
 import type { FetchLike } from "../../providers/quota/quota-contracts";
 

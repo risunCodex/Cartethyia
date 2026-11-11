@@ -58,7 +58,7 @@ import type { ReadinessCheckResult } from "../persistence/readiness";
 import type { RouteSnapshotService } from "../transport/routing/route-model";
 import type { TrustedProxyBoundary } from "../config/network";
 import { resolveClientIdentity } from "../security/ip-boundary";
-import type { ValidatedNetworkBindingFactory } from "../network/pool/resolver";
+import type { ValidatedNetworkBindingFactory } from "../network/egress/factory";
 import { metrics } from "../observability/metrics";
 import type { RuntimeMetricsSampler } from "../observability/runtime-metrics";
 import { API_CONTENT_SECURITY_POLICY, X_FRAME_OPTIONS } from "../security/outbound-headers";

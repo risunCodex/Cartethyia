@@ -17,13 +17,13 @@
  * pool for good.
  *
  * The 403-free-tier and 429 verdicts are the probe's reading of the same facts
- * `classifyEgressFailure` (in `network/rate-limit-verdict`) reads on the
+ * `classifyEgressFailure` (in `network/verdict`) reads on the
  * dispatch path — for the probe they arrive as an HTTP status + body instead of
  * a `GatewayError`, so the shared free-tier regex is borrowed from there to
  * keep the two classifiers' boundaries honest.
  */
 
-import { FREE_TIER_REFUSAL } from "../../../network/rate-limit-verdict";
+import { FREE_TIER_REFUSAL } from "../../../network/verdict";
 
 export type ProbeVerdict = "allowed" | "blocked" | "throttled" | "unreachable";
 

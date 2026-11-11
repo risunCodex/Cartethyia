@@ -43,12 +43,10 @@ import { InMemoryIpAbuseStore, IpAbuseProtectionService, RedisIpAbuseStore, type
 import { checkReadiness } from "../persistence/readiness";
 import { ProxyRequestPreparer } from "../transport/request/preparer";
 import { DrizzleNetworkPoolLoader } from "../network/pool/loader";
-import {
-  PoolAgentResolver,
-  ValidatedNetworkBindingFactory,
-} from "../network/pool/resolver";
+import { PoolAgentResolver } from "../network/pool/resolver";
+import { ValidatedNetworkBindingFactory } from "../network/egress/factory";
 import { NetworkPoolSelector } from "../network/pool/selector";
-import { restorePoolProbeVerdicts, restoreProviderCooldownMarkers } from "../network/pool-cooldown-store";
+import { restorePoolProbeVerdicts, restoreProviderCooldownMarkers } from "../network/pool/cooldown-store";
 import { ScheduledTaskRegistry } from "../workers/scheduler";
 import { quotaRefreshSweep } from "../workers/quota-refresh-sweep";
 import { registerZcodeGiftClaimTask } from "../workers/zcode-gift-claim";
@@ -67,7 +65,7 @@ import { preferencesReaderFor } from "../persistence/tenant-preferences";
 import { sweepExpiredCooldowns } from "../providers/operations/account-health-service";
 import { DrizzleTelemetryStore } from "../persistence/stores/telemetry-store";
 import { TelemetryPayloadCapture } from "../observability/payload-capture";
-import { sweepExpiredPoolCooldowns } from "../network/pool-health-machine";
+import { sweepExpiredPoolCooldowns } from "../network/pool/health";
 import { TelemetryBatchBuffer } from "../observability/telemetry-buffer";
 import { RuntimeMetricsSampler } from "../observability/runtime-metrics";
 import {

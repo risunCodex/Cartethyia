@@ -9,7 +9,7 @@ import {
   ipv4ToNumberStrict,
   ipv6GroupsToBytes,
   normalizeIpv6Groups,
-} from "./ip-utils";
+} from "./util/ip";
 
 const DNS_CACHE_TTL_MS = 60_000;
 const DNS_CACHE_MAX = 64;

@@ -12,6 +12,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Qoder: dead chat surfaces removed, live COSY remains the one carrier.**
+  The gRPC `ChatService` and IDE `/model/v1` surfaces (both dead upstream —
+  UNIMPLEMENTED/404) are deleted along with the vendored proto, probe scripts,
+  and wire tests. The parser (`qoderBodyToCanonicalEvents`, envelope frames)
+  moved into `qoder-sse.ts` and now serves the sole live surface. The adapter
+  dispatches COSY only.
+- **Qoder: desktop-app outbound fingerprint mirrored.** `X-Qoder-HTTPDNS-IP`
+  is emitted when the account's `auth_state` carries the HTTPDNS-route IP
+  (parsed via `parseQoderOAuthState`, forwarded through `resolveQoderAuth` and
+  `qoderOAuthAuth`); without it the header is omitted, matching a non-HTTPDNS
+  client.
+- **Network egress: unified client and TLS ClientHello profiles.**
+  `src/network/` is restructured into `egress/`, `pool/`, `util/`, plus root
+  shared modules (`client.ts`, `bidi.ts`, `ssrf.ts`, `verdict.ts`).
+  `createNetworkClient()` is the single entry; `fetchWithTls(profile)` dials
+  direct https with a chosen TLS fingerprint via a Node agent (verified: the
+  `qoder-app` profile reproduces the captured desktop ClientHello suite order
+  and ALPN). Streams keep flowing during profile dials (no full-body buffer).
+
+### Fixed
+
+- **Qoder: legacy COSY response body streams while profiled.** The Node
+  GET/HEAD-with-body dial path now bridges the response into a web stream, so
+  SSE chat streams are consumed incrementally instead of buffering the whole
+  payload before resolving.
+
 - **GitHub Copilot: complete profile selection.** `CARTETHYIA_GITHUB_COPILOT_MODE`
   now selects the OAuth app, token mint/refresh behavior, inference headers,
   model discovery, and quota identity together. `opencode-copilot` remains the

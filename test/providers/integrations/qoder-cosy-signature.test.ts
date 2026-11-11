@@ -43,3 +43,16 @@ test("COSY sigpath strips the /algo prefix exactly like upstream", () => {
   const headers = qoderSignerFor(AUTH)(url, "body");
   expect(headers["cosy-sigpath"]).toBe("/api/v2/service/pro/sse/agent_chat_generation");
 });
+
+test("COSY headers emit X-Qoder-HTTPDNS-IP only when the auth carries one", () => {
+  const url = "https://api1.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result";
+
+  // No IP on the auth → header absent (same shape as a non-HTTPDNS client).
+  const plain = qoderSignerFor(AUTH)(url, "body");
+  expect(plain["X-Qoder-HTTPDNS-IP"]).toBeUndefined();
+
+  // With the HTTPDNS-route IP stored → header emitted, mirroring the desktop
+  // client's `networkMode=httpdns` worker state.
+  const withIp = qoderSignerFor({ ...AUTH, httpDnsIp: "103.130.222.58" })(url, "body");
+  expect(withIp["X-Qoder-HTTPDNS-IP"]).toBe("103.130.222.58");
+});

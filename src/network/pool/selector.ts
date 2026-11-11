@@ -22,7 +22,7 @@ import {
   proxyCooldownProvidersKey,
   proxyInflightKey,
   proxyProviderInflightKey,
-} from "./pool-scripts";
+} from "./scripts";
 import {
   advanceRotation,
   createPoolLocalState,
@@ -34,7 +34,7 @@ import {
   type PoolRotation,
   type PoolUsageSnapshot,
   type ProxyCooldownEntry,
-} from "./pool-state";
+} from "./state";
 
 export type { PoolRotation, ProxyCooldownEntry };
 

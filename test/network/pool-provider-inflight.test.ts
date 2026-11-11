@@ -28,7 +28,7 @@ import {
   POOL_PROVIDER_RELEASE_SCRIPT,
   proxyInflightKey,
   proxyProviderInflightKey,
-} from "../../src/network/pool/pool-scripts";
+} from "../../src/network/pool/scripts";
 
 const POOL_A = "pool-a";
 const POOL_B = "pool-b";

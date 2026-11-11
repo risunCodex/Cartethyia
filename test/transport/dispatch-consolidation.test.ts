@@ -16,14 +16,14 @@
  */
 import { describe, expect, test } from "bun:test";
 import { GatewayError } from "../../src/protocol/gateway-error";
-import { flagPoolOnEgressFailure } from "../../src/network/pool-health";
-import { classifyEgressFailure } from "../../src/network/rate-limit-verdict";
+import { flagPoolOnEgressFailure } from "../../src/network/pool/health";
+import { classifyEgressFailure } from "../../src/network/verdict";
 import {
   buildDispatchNetworkBindings,
   type DispatchNetworkBindings,
 } from "../../src/transport/dispatch/upstream";
 import type { CartethyiaDatabase } from "../../src/persistence/db-handle";
-import type { ValidatedNetworkBindingFactory } from "../../src/network/pool/resolver";
+import type { ValidatedNetworkBindingFactory } from "../../src/network/egress/factory";
 import type { ProviderExchangeCapture } from "../../src/transport/dispatch/attempt-finalize";
 import type { CapturePreferenceState } from "../../src/transport/dispatch/capture-policy";
 
@@ -278,7 +278,12 @@ function bindingFactory(): {
     bidiCache.set(key, fn);
     return fn;
   };
-  return { factory: { fetch, http2Bidi } as unknown as ValidatedNetworkBindingFactory, fetches, bidiCalls };
+  const fetchWithTls = (profile: string, poolId?: string, tenantId?: string): FakeFetch => {
+    // Simple pass-through: profile dials reuse the fetch builder.
+    void profile;
+    return fetch(poolId, tenantId);
+  };
+  return { factory: { fetch, http2Bidi, fetchWithTls } as unknown as ValidatedNetworkBindingFactory, fetches, bidiCalls };
 }
 
 function captureSink(): ProviderExchangeCapture {
@@ -309,6 +314,7 @@ describe("buildDispatchNetworkBindings", () => {
       "outboundAttachmentFetch",
       "outboundFetch",
       "outboundHttp2",
+      "outboundProfileFetch",
     ]);
     // The attachment and HTTP/2 bindings are the raw factory closures — the
     // same objects the two call sites handed the dispatch context before.

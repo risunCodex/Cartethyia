@@ -132,7 +132,7 @@ describe("isTrustedProxyPeer", () => {
    * Blank/exotic CIDR prefixes are refused — this defect is closed.
    *
    * `matchesCidr` (`src/security/ip-boundary.ts`) now delegates to
-   * `cidrContainsAddress` with `requirePrefix: false` (`src/network/ip-utils.ts`):
+   * `cidrContainsAddress` with `requirePrefix: false` (`src/network/util/ip.ts`):
    * a bare address still means "this exact host", while any prefix that is
    * present must be a trimmed run of digits. A blank or exotic zero spelling
    * (`""`, `" "`, `"-0"`, `"+0"`, `"0x0"`, `"0b0"`, `"0o0"`, `"0.0"`) is

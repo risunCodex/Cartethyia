@@ -11,7 +11,7 @@
  * chokepoint rather than a path that only ran without an injected dialer.
  */
 import { describe, expect, test } from "bun:test";
-import { createValidatedFetch } from "../../src/network/outbound-fetch";
+import { createValidatedFetch } from "../../src/network/egress/fetch";
 import { createHttpProxyAgent, createSocks5Agent } from "../../src/network/pool/agent";
 
 /** Resolver that answers every hostname with one fixed address. */

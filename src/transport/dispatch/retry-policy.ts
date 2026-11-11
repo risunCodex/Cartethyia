@@ -10,7 +10,7 @@
  * cooldown eligibility (here).
  *
  * The egress-scoped half of the rate-limit decision lives in
- * `../../network/rate-limit-verdict`; this module keeps only the credential-
+ * `../../network/verdict`; this module keeps only the credential-
  * scoped predicates.
  */
 import { GatewayError } from "../../protocol/gateway-error";
