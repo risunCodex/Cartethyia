@@ -653,6 +653,19 @@ export const PROVIDER_CAPABILITIES = {
     // why the same adapter serves the pasted-key and signed-in cases.
     loadAuthentication: oauthCapability(() => import("./integrations/openrouter/oauth"), "openrouterOAuthClient"),
   },
+  vercel: {
+    loadAdapter: async () => createApiKeyAdapter((await import("./integrations/vercel/provider")).VERCEL_SPEC),
+    loadModels: async () => (await import("./integrations/vercel/provider")).VERCEL_DEFAULT_MODELS,
+    loadModelDiscovery: async () => async (input) =>
+      (await import("./integrations/vercel/provider")).discoverVercelModels({
+        baseUrl: input.baseUrl,
+        ...(typeof input.credential === "string" && input.credential.trim().length > 0
+          ? { credential: input.credential }
+          : {}),
+        ...(input.fetcher === undefined ? {} : { fetcher: input.fetcher }),
+      }),
+    loadQuotaCollector: quotaCapability(() => import("./integrations/vercel/vercel-quota"), "fetchVercelQuota"),
+  },
   xiaomipg: {
     loadAdapter: async () => createApiKeyAdapter((await import("./integrations/xiaomi-mimo/xiaomi")).XIAOMIPG_SPEC),
     loadModels: async () => (await import("./integrations/xiaomi-mimo/xiaomi")).XIAOMI_MODELS,
