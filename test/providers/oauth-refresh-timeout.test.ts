@@ -1,21 +1,18 @@
 /**
- * A client request must not be blocked by an OAuth token refresh.
+ * A client request must never be blocked by an OAuth token refresh.
  *
- * `resolveCredentialForAccount` runs on the request path, and for an account
- * whose access token is due it awaits `ensureFreshAccessToken`. That call
- * passes `AbortSignal.timeout(REFRESH_HTTP_TIMEOUT_MS)` — 30 s — to the
- * provider's token endpoint. A token endpoint that *hangs* rather than
- * refusing therefore holds the client request for exactly 30 seconds.
+ * The request path (`resolveCredentialForAccount`) deliberately performs no
+ * inline refresh: OAuth tokens are kept fresh by the scheduled refresh sweep,
+ * and a token that still expires before its sweep turn is answered by the
+ * upstream's own 401, which the dispatch attempt-loop turns into a forced
+ * refresh. Removing the inline refresh removed the shape this suite used to
+ * pin — a hung token endpoint holding a client request for the full 30 s
+ * refresh timeout (the p90/p95/p99 cliff the production dashboard showed).
  *
- * That is the shape the production dashboard showed: a normal p50, and
- * p90/p95/p99 all pinned at exactly 30 s. A timeout produces a cliff, not a
- * distribution, and 30 s is this constant.
- *
- * The suite pins the constant (read from source, since it is module-private)
- * and the mechanism that turns it into a client-visible wait: the refresher is
- * handed a deadline, the deadline fires, and a caller awaiting the refresh is
- * released only then. The control case — a fast endpoint — is here so the
- * deadline test is not merely measuring "awaiting is slow".
+ * This suite now pins the two mechanisms that replaced it:
+ *   - the refresh timeout constant still bounds a hung endpoint for the
+ *     *scheduled* sweep (the only refresher left), and
+ *   - a fast endpoint is not delayed by the deadline.
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -62,7 +59,7 @@ function fastRefresher(): OAuthTokenRefresher {
 }
 
 describe("the refresh timeout constant", () => {
-  test("is 30s, which is the cliff the dashboard showed", () => {
+  test("is 30s, which bounds a hung endpoint for the scheduled sweep", () => {
     // Read from the source rather than imported, because the constant is
     // module-private. This is the assertion that pins the production value: if
     // it changes, the 30 s figure in the incident notes is stale.
@@ -76,7 +73,7 @@ describe("the refresh timeout constant", () => {
   });
 
   test("is passed to the refresher as a deadline, not left to the endpoint", () => {
-    // The mechanism that bounds a hung endpoint — and that creates the cliff.
+    // The mechanism that bounds a hung endpoint — and that created the cliff.
     const source = readFileSync(
       "src/providers/authentication/oauth-refresh-service.ts",
       "utf8",
@@ -94,8 +91,7 @@ describe("a hung token endpoint is bounded by the deadline", () => {
   });
 
   test("a caller awaiting the refresh is released only when the deadline passes", async () => {
-    // The client-visible cost. This is the mechanism behind the 30 s
-    // p90/p95/p99: the wait is the timeout, not the provider's latency.
+    // The cost of a hung endpoint is bounded by the deadline, never longer.
     const observed: { signal?: AbortSignal | undefined } = {};
     const refresher = hangingRefresher(observed);
     const startedAt = performance.now();
@@ -117,5 +113,24 @@ describe("a hung token endpoint is bounded by the deadline", () => {
     const elapsed = performance.now() - startedAt;
     expect(result.access).toBe("fresh-token");
     expect(elapsed).toBeLessThan(50);
+  });
+});
+
+describe("the request path performs no inline refresh", () => {
+  test("credentials resolution no longer awaits a refresher", () => {
+    const source = readFileSync(
+      "src/providers/operations/provider-credential-service.ts",
+      "utf8",
+    );
+    // The dispatch credential resolver must not call `ensureFreshAccessToken`:
+    // that call is what blocked client requests on the token endpoint. The
+    // export/UI paths (which keep their refresh) live elsewhere.
+    const dispatchSection = source.slice(
+      source.indexOf("export async function resolveCredentialForAccount"),
+      source.indexOf("async function resolveAccountCredentialsForExport"),
+    );
+    // The interface type name still mentions the method; what must be gone is
+    // any actual call site inside the dispatch resolver.
+    expect(dispatchSection).not.toContain("ensureFreshAccessToken(");
   });
 });
