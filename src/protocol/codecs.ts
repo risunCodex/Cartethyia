@@ -91,6 +91,63 @@ export function hash32(input: string): number {
 
 const CLAUDE_TOOL_PREFIX = "_";
 
+/**
+ * Per-request tool-name rename map, mirroring the two-way alias pattern the
+ * OpenCode free-tier fingerprint uses: a caller tool whose name collides with
+ * an upstream-reserved name (or with the built-in prefix) travels under an
+ * alias, and the response side restores the caller's original name.
+ *
+ * The map is a bag of `{ sent, original }` pairs so a provider can rename at
+ * build time and restore at decode time without guessing from a fixed prefix
+ * (a fixed prefix collides when a caller already uses it — `_bash` from a
+ * caller named `bash` vs a caller already named `_bash`).
+ */
+export interface ToolNameAlias {
+  /** Name sent to the upstream wire. */
+  readonly sent: string;
+  /** Caller's original name; restore to this on the way back. */
+  readonly original: string;
+}
+
+/** Restore a sent name to the caller's original, when it was renamed. */
+export function restoreAliasedToolName(
+  sent: string,
+  aliases: ReadonlyArray<ToolNameAlias>,
+): string {
+  for (const alias of aliases) {
+    if (alias.sent === sent) return alias.original;
+  }
+  return sent;
+}
+
+/**
+ * Registry of per-request tool renames, keyed by the canonical request object
+ * (the same object the builder saw and the decoder receives). This is the
+ * transport-agnostic way to pair `encodeWireRequest` with `decodeWireResponse`
+ * without threading a new parameter through every adapter: a request records
+ * its aliases at build time, and any decoder that still has the request can
+ * restore the caller's original tool names exactly.
+ *
+ * The WeakMap keeps no lifetime: entries die with the request object.
+ */
+const toolAliasesByRequest = new WeakMap<object, readonly ToolNameAlias[]>();
+
+/** Record the rename map a request produced. Idempotent per request. */
+export function recordToolAliases(request: object, aliases: readonly ToolNameAlias[]): void {
+  if (aliases.length === 0) return;
+  toolAliasesByRequest.set(request, aliases);
+}
+
+/** Read the rename map a request recorded, if any. */
+export function toolAliasesFor(request: object): readonly ToolNameAlias[] {
+  return toolAliasesByRequest.get(request) ?? [];
+}
+
+/** Restore a tool name exactly from the request's recorded renames. */
+export function restoreToolNameFor(request: object, sent: string): string {
+  return restoreAliasedToolName(sent, toolAliasesFor(request));
+}
+
 export type ClaudeWireObject = Record<string, unknown>;
 
 /**
@@ -366,7 +423,7 @@ function sanitizeSchemaWalk(value: unknown, walk: RewriteWalk): unknown {
 
 // OAuth tool-name prefixing
 
-const ANTHROPIC_BUILTIN_TOOL_NAMES = new Set([
+export const ANTHROPIC_BUILTIN_TOOL_NAMES = new Set([
   "web_search",
   "web_fetch",
   "code_execution",

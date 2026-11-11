@@ -6,6 +6,7 @@ import { canonicalToResponsesPayload } from "../../../src/protocol/request/respo
 import type { ProviderDispatchContext } from "../../../src/providers/provider-contracts";
 import { lookupKimiPromptCacheKey } from "../../../src/providers/integrations/kimi/kimi";
 import {
+  normalizeInboundSessionId,
   resolveInboundSessionId,
   resolvePromptCacheKey,
 } from "../../../src/providers/operations/session-resolution";
@@ -151,6 +152,28 @@ describe("inbound session ID precedence", () => {
         }),
       ),
     ).toBe("first");
+  });
+
+  test("normalizeInboundSessionId trims and rejects empty or oversized values", () => {
+    expect(normalizeInboundSessionId("  session-a  ")).toBe("session-a");
+    expect(normalizeInboundSessionId("")).toBeUndefined();
+    expect(normalizeInboundSessionId("   ")).toBeUndefined();
+    expect(normalizeInboundSessionId(undefined)).toBeUndefined();
+    const oversized = "s".repeat(257);
+    expect(normalizeInboundSessionId(oversized)).toBeUndefined();
+    const atLimit = "s".repeat(256);
+    expect(normalizeInboundSessionId(atLimit)).toBe(atLimit);
+  });
+
+  test("skips an oversized header and falls through to the next one", () => {
+    expect(
+      resolveInboundSessionId(
+        context({
+          "x-conversation-id": "s".repeat(257),
+          "x-session-id": "second",
+        }),
+      ),
+    ).toBe("second");
   });
 
   test("does not include client IP or credentials in forwarded cache headers", () => {

@@ -9,7 +9,7 @@ import { GatewayError } from '../gateway-error';
 import { applyRouteUserAgent, type ProviderDispatchContext } from "../../providers/provider-contracts";
 import { abortGatewayError, createUpstreamDeadlineLifecycle } from '../../providers/operations/upstream-deadline';
 import { mapClaudeHttpError } from '../messages-errors';
-import { isRecord } from '../codecs';
+import { isRecord, toolAliasesFor } from '../codecs';
 import { upstreamMessageAsIs, MAX_UPSTREAM_ERROR_BYTES } from '../../transport/failure-policy';
 import { parseClaudeSseStream, claudeResponseToEvents } from '../response/messages';
 
@@ -60,7 +60,7 @@ export async function* sendClaudeMessagesRequest(
         {},
         "upstream",
       );
-    yield* parseClaudeSseStream(response.body, context.abort_signal, isOAuth);
+    yield* parseClaudeSseStream(response.body, context.abort_signal, isOAuth, toolAliasesFor(request));
     return;
   }
   const body = await response.text().catch(() => "");

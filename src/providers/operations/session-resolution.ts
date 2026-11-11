@@ -13,13 +13,29 @@ const SESSION_HEADERS = [
   "session-id",
 ] as const;
 
+/** Ceiling for a session id, mirroring the OpenCode free tier's 256-char cap. */
+const MAX_INBOUND_SESSION_LENGTH = 256;
+
+/**
+ * Normalize an inbound session id the same way the OpenCode CLI does: trim,
+ * reject empty strings, and cap pathological lengths so a defective header can
+ * never become a cache key or a sticky-routing key hundreds of bytes long.
+ * Returns undefined when the value is unusable.
+ */
+export function normalizeInboundSessionId(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_INBOUND_SESSION_LENGTH) return undefined;
+  return trimmed;
+}
+
 export function resolveInboundSessionId(
   context?: ProviderDispatchContext,
   request?: CanonicalRequest,
 ): string | undefined {
   const headers = context?.request_headers;
   for (const name of SESSION_HEADERS) {
-    const value = headers?.[name]?.trim();
+    const value = normalizeInboundSessionId(headers?.[name]);
     if (value) return value;
   }
   const conversationId = request?.conversation?.conversation_id;

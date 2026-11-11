@@ -12,11 +12,32 @@ import { usageFromProvider } from '../../providers/provider-usage';
 import { mapClaudeStreamError } from '../messages-errors';
 import {
   finiteNumber,
+  restoreAliasedToolName,
   stringValue,
+  toolAliasesFor,
   unprefixClaudeToolName,
   type ClaudeWireObject,
+  type ToolNameAlias,
   isRecord,
 } from '../codecs';
+
+/**
+ * Restore a tool name from the wire to the caller's original, exactly.
+ *
+ * A name the builder renamed (recorded in `aliases`) is restored verbatim; any
+ * other name falls back to the OAuth underscore-unprefixing rule. This is the
+ * single restoration point for the Claude wire, so the two rules can never
+ * disagree between the stream and non-stream decoders.
+ */
+function restoreClaudeToolName(
+  sent: string,
+  isOAuth: boolean,
+  aliases: ReadonlyArray<ToolNameAlias>,
+): string {
+  const restored = restoreAliasedToolName(sent, aliases);
+  if (restored !== sent) return restored;
+  return unprefixClaudeToolName(sent, isOAuth);
+}
 
 export function mapClaudeStopReason(raw: string): CanonicalStopReason {
   switch (raw) {
@@ -38,7 +59,7 @@ export function mapClaudeStopReason(raw: string): CanonicalStopReason {
   }
 }
 
-export function parseClaudeContent(value: unknown, isOAuth = false): ContentPart {
+export function parseClaudeContent(value: unknown, isOAuth = false, aliases: ReadonlyArray<ToolNameAlias> = []): ContentPart {
   if (stringValue(value)) return { kind: "text", text: value };
   if (!isRecord(value))
     return { kind: "extension", name: "messages:unknown", payload: value };
@@ -59,7 +80,7 @@ export function parseClaudeContent(value: unknown, isOAuth = false): ContentPart
     return {
       kind: "toolCall",
       call_id: value.id,
-      name: unprefixClaudeToolName(value.name, isOAuth),
+      name: restoreClaudeToolName(value.name, isOAuth, aliases),
       arguments: value.input ?? {},
       ...(finiteNumber(value.index) ? { index: value.index } : {}),
     };
@@ -77,7 +98,7 @@ export function parseClaudeContent(value: unknown, isOAuth = false): ContentPart
     const content = stringValue(value.content)
       ? value.content
       : Array.isArray(value.content)
-        ? value.content.map((content) => parseClaudeContent(content, isOAuth))
+        ? value.content.map((content) => parseClaudeContent(content, isOAuth, aliases))
         : value.content == null
           ? ""
           : [{ kind: "text" as const, text: String(value.content) }];
@@ -239,8 +260,9 @@ export function claudeResponseToEvents(
       model,
     },
   ];
+  const aliases = toolAliasesFor(request);
   const blocks = Array.isArray(json.content)
-    ? json.content.map((content) => parseClaudeContent(content, isOAuth))
+    ? json.content.map((content) => parseClaudeContent(content, isOAuth, aliases))
     : [];
   let sequence = 2;
   for (const block of blocks) {
@@ -292,6 +314,8 @@ interface ClaudeStreamState {
   rawUsage: Record<string, unknown> | undefined;
   sawMessageStop: boolean;
   isOAuth: boolean;
+  /** Tool renames recorded for this request, for exact restore. */
+  aliases: ReadonlyArray<ToolNameAlias>;
 }
 
 function streamEventToCanonical(
@@ -321,7 +345,7 @@ function streamEventToCanonical(
       state.calls.set(index, {
         call_id: block.id,
         ...(stringValue(block.name)
-          ? { name: unprefixClaudeToolName(block.name, state.isOAuth) }
+          ? { name: restoreClaudeToolName(block.name, state.isOAuth, state.aliases) }
           : {}),
       });
       // Anthropic sends `input: {}` as a *placeholder* on content_block_start,
@@ -332,13 +356,14 @@ function streamEventToCanonical(
       // send complete arguments here still gets them through.
       if (
         isRecord(block.input) &&
-        Object.keys(block.input).length > 0
+        Object.keys(block.input).length > 0 &&
+        stringValue(block.name)
       ) {
         events.push({
           type: "tool_call_delta",
           sequence_number: next++,
           call_id: block.id,
-          ...(stringValue(block.name) ? { name: unprefixClaudeToolName(block.name, state.isOAuth) } : {}),
+          name: restoreClaudeToolName(block.name, state.isOAuth, state.aliases),
           arguments_delta: JSON.stringify(block.input),
         });
       }
@@ -446,6 +471,7 @@ export async function* parseClaudeSseStream(
   body: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
   isOAuth = false,
+  aliases: ReadonlyArray<ToolNameAlias> = [],
 ): AsyncIterable<CanonicalEvent> {
   const state: ClaudeStreamState = {
     calls: new Map(),
@@ -455,6 +481,7 @@ export async function* parseClaudeSseStream(
     rawUsage: undefined,
     sawMessageStop: false,
     isOAuth,
+    aliases,
   };
   let sequence = 1;
   for await (const sse of decodeSseEvents(body, { signal })) {

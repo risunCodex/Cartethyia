@@ -17,11 +17,13 @@ import {
   normalizeAnthropicToolCallId,
   parseArguments,
   prefixClaudeToolName,
+  recordToolAliases,
   sanitizeSchemaForAnthropic,
   stringValue,
   toWellFormedDeep,
   toWellFormedString,
   type ClaudeWireObject,
+  type ToolNameAlias,
   isRecord,
   resolveImageSource,
   splitDataUrl,
@@ -287,6 +289,7 @@ function partToClaudeBlock(
     idMap: Map<string, string>;
     isOAuth: boolean;
     imageCount: number;
+    toolAliases: ToolNameAlias[];
     maxBytesOverride?: number;
   },
 ): ClaudeWireObject | undefined {
@@ -336,10 +339,12 @@ function partToClaudeBlock(
       // stamp every call with its array position, so copying it here leaked a
       // stream-only field into a request. The position is not lost: the block
       // order in `content[]` already expresses it.
+      const sentName = prefixClaudeToolName(part.name, ctx?.isOAuth ?? false);
+      if (sentName !== part.name) ctx?.toolAliases.push({ sent: sentName, original: part.name });
       return {
         type: "tool_use",
         id: normalized,
-        name: prefixClaudeToolName(part.name, ctx?.isOAuth ?? false),
+        name: sentName,
         input: toWellFormedDeep(parseArguments(part.arguments)),
         ...(part.namespace === undefined ? {} : { namespace: part.namespace }),
       };
@@ -577,6 +582,7 @@ export function canonicalToClaudeMessagesPayload(
     idMap,
     isOAuth: options.isOAuth ?? false,
     imageCount,
+    toolAliases: [] as ToolNameAlias[],
     ...(options.maxBytesOverride === undefined
       ? {}
       : { maxBytesOverride: options.maxBytesOverride }),
@@ -755,27 +761,34 @@ export function canonicalToClaudeMessagesPayload(
       });
   }
   if (request.tools?.length) {
-    payload.tools = request.tools.map((tool) => ({
-      name: prefixClaudeToolName(tool.name, isOAuth),
-      ...(tool.description === undefined
-        ? {}
-        : { description: toWellFormedDeep(tool.description) }),
-      input_schema: sanitizeSchemaForAnthropic(tool.jsonSchema),
-      ...(tool.strict === true ? { strict: true } : {}),
-      ...(tool.eager_input_streaming === undefined
-        ? {}
-        : { eager_input_streaming: tool.eager_input_streaming }),
-      ...(tool.defer_loading === undefined
-        ? {}
-        : { defer_loading: tool.defer_loading }),
-      ...(tool.input_examples === undefined ? {} : { input_examples: tool.input_examples }),
-      ...(tool.allowed_callers === undefined ? {} : { allowed_callers: tool.allowed_callers }),
-    }));
+    payload.tools = request.tools.map((tool) => {
+      const sentName = prefixClaudeToolName(tool.name, isOAuth);
+      if (sentName !== tool.name) ctx.toolAliases.push({ sent: sentName, original: tool.name });
+      return {
+        name: sentName,
+        ...(tool.description === undefined
+          ? {}
+          : { description: toWellFormedDeep(tool.description) }),
+        input_schema: sanitizeSchemaForAnthropic(tool.jsonSchema),
+        ...(tool.strict === true ? { strict: true } : {}),
+        ...(tool.eager_input_streaming === undefined
+          ? {}
+          : { eager_input_streaming: tool.eager_input_streaming }),
+        ...(tool.defer_loading === undefined
+          ? {}
+          : { defer_loading: tool.defer_loading }),
+        ...(tool.input_examples === undefined ? {} : { input_examples: tool.input_examples }),
+        ...(tool.allowed_callers === undefined ? {} : { allowed_callers: tool.allowed_callers }),
+      };
+    });
   }
   const rawToolChoice = canonicalToolChoice(request.tool_choice);
   if (isRecord(rawToolChoice) && rawToolChoice.type === "tool" && stringValue(rawToolChoice.name)) {
-    rawToolChoice.name = prefixClaudeToolName(rawToolChoice.name, isOAuth);
+    const sentName = prefixClaudeToolName(rawToolChoice.name, isOAuth);
+    if (sentName !== rawToolChoice.name) ctx.toolAliases.push({ sent: sentName, original: rawToolChoice.name });
+    rawToolChoice.name = sentName;
   }
+  recordToolAliases(request, ctx.toolAliases);
   const parallelToolCallsDisabled =
     request.generation_controls.parallel_tool_calls === false;
   const supportsToolChoice = options.dialectPolicy?.supportsToolChoice ?? true;
