@@ -30,6 +30,7 @@ or foundational notes stay at this root.
 | `grok/`     | Grok Build CLI 1.0.70 binary unpack — endpoint, headers, payload, quota                                                                                    | 1 file     |
 | `trae/`     | Trae IDE 3.6.13 unpack — endpoint inventory (chat/agent/commercial), auth headers, wire verification vs adapter                                            | 2 files   |
 | `freebuff/` | Freebuff Desktop 0.0.201 unpack — OAuth code flow, session admission/catalog, cloud runs (chat) + device gate, ads surface, device-signature spoofing, live probe (ID region, 8/12 sweep) | 1 file    |
+| `deepai/`  | DeepAI Code 0.3.35 desktop unpack + wire audit — DeepAI sign-in (loopback exchange → api_key), API headers (Theos/machine/check-in), T3 Connect Clerk OAuth (PKCE/device grant), relay `/v1` control plane | 2 files   |
 
 
 ## Root notes
@@ -43,6 +44,7 @@ or foundational notes stay at this root.
 | 2026-10-30 | Database | [Share-child row optimization](2026-10-30-database-share-child-row-optimization.md) |
 | 2026-11-06 | Trae     | [3.6.13 unpack + wire audit](trae/2026-11-06-trae-3.6.13-unpack-wire-audit.md)     |
 | 2026-11-06 | Cursor   | [agent CLI wire audit](cursor/2026-11-06-cursor-agent-cli-wire-audit.md) — hosts, endpoint inventory, header gap audit vs adapter (x-cursor-checksum gap, timezone/team-id), payloads |
+| 2026-11-11 | DeepAI   | [Live wire verification](deepai/2026-11-11-deepai-code-live-wire-verification.md) — sign-in exchange, models (22), quota (Theos 50/hari), chat hit non-stream + SSE |
 
 
 ## Qoder findings (`qoder/`)

@@ -127,6 +127,10 @@ provider-probing/
     probe-antigravity-oauth.ts # Google OAuth PKCE browser flow + refresh probe
   clixad/
     probe-clixad.ts            # Clixad gateway wire probe (chat/wallet/ads/auth)
+  deepai/
+    deepai-oauth-capture.mjs # DeepAI desktop sign-in capture (loopback exchange → api_key)
+    probe-deepai.mjs         # DeepAI wire probe (models / quota / chat hit)
+    _lib.mjs                 # DeepAI shared helpers (machine id, lane headers, accounts)
 ```
 
 The Qoder probe covers two surfaces:
@@ -429,3 +433,35 @@ The account export's `accessToken` is used as the bearer token; tokens are
 masked on output. `login-dev` hits `/dev/users`, which creates a real account
 on the live service — use only with a throwaway email and only when intended.
 Evidence ledger: `documentation/research/clixad/2026-11-11-clixad-wire.md`.
+
+## DeepAI
+
+DeepAI Code's model API (`https://api.deepai.org/deepai_code`) is driven by a
+desktop sign-in flow returning an `api_key` (not an OAuth bearer). The capture
+probe walks that flow; the wire probe reads an exported account
+(`accessToken` = the `api_key`) and exercises models/quota/chat.
+
+```sh
+# Sign-in capture — prints the hosted URL, waits for the loopback callback,
+# exchanges the code, writes the account JSON (ExportedAccount shape).
+bun scripts/provider-probing/deepai/deepai-oauth-capture.mjs \
+  --out "D:\tmp\scratch\deepai-probe\accounts.json"
+
+# Model listing (unauthenticated — live roster, 22 models as of 2026-11-11)
+bun scripts/provider-probing/deepai/probe-deepai.mjs --models
+bun scripts/provider-probing/deepai/probe-deepai.mjs --models --out models.json
+
+# Quota: /theos (check-in/allowance) + /get_usage_summary (entitlement)
+bun scripts/provider-probing/deepai/probe-deepai.mjs --quota --creds <accounts.json>
+
+# Model hit (OpenAI-compatible chat; --stream for SSE)
+bun scripts/provider-probing/deepai/probe-deepai.mjs --chat "hello" \
+  --creds <accounts.json> [--model glm-5.3-flash] [--stream]
+```
+
+Wire facts (from the 0.3.35 bundle): every model call carries
+`X-DeepAI-Code-Theos: 4`, `X-DeepAI-Code-Instance` (16-byte hex), and
+`X-DeepAI-Code-Machine` (sha256 of the machine id — SMBIOS UUID / MachineGuid /
+`/etc/machine-id`). `/theos` adds `X-DeepAI-Code-Check-In` and
+`X-DeepAI-Code-Beacon`; `/get_usage_summary` lives at the origin root, not
+under `/deepai_code`. Credential = `Api-Key: <api_key>` header (not Bearer).

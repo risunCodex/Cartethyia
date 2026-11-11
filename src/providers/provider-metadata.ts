@@ -196,6 +196,14 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
     credentialUrl: "https://clixad.io",
     credentialHint: "Sign in with GitHub (device flow) or paste a Clixad token (adg_...). Model calls draw from the account balance and a daily free tier (120k credits/day).",
   },
+  {
+    id: "deepai",
+    displayName: "DeepAI",
+    baseUrl: "https://api.deepai.org",
+    requiresAccount: true,
+    credentialUrl: "https://deepai.org",
+    credentialHint: "Sign in via the DeepAI desktop flow (loopback exchange → api_key) or paste a DeepAI api_key. Model calls are authenticated with the Api-Key header; the daily free allowance is 50 Theos and 11 models draw nothing from it.",
+  },
 
   // OpenAI-compatible bearer aggregators. Each is a bare host already rooted at
   // its own version prefix, so the `/v1`-prefixed wire paths stay pinned by the

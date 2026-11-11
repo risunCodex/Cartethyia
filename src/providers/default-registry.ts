@@ -602,6 +602,25 @@ export const PROVIDER_CAPABILITIES = {
       return rows;
     },
   },
+  deepai: {
+    loadAdapter: async () => createApiKeyAdapter((await import("./integrations/deepai/provider")).DEEPAI_SPEC),
+    loadModels: async () => (await import("./integrations/deepai/deepai-catalog")).DEEPAI_DEFAULT_MODELS,
+    // DeepAI login is a browser loopback flow; the exchange returns an opaque
+    // api_key (the credential). Pasting an api_key is supported via
+    // importCredential.
+    loadAuthentication: oauthCapability(() => import("./integrations/deepai/deepai-oauth"), "DeepAIOAuthClient"),
+    loadQuotaCollector: quotaCapability(() => import("./integrations/deepai/deepai-quota"), "fetchDeepAIQuota"),
+    // `/deepai_code/models` is unauthenticated; the static roster carries the
+    // live-verified free tier and discovery keeps the list current.
+    loadModelDiscovery: async () => async (request: Parameters<ProviderModelDiscovery>[0]) => {
+      const { discoverDeepAIModels, DEEPAI_DEFAULT_MODELS } = await import("./integrations/deepai/deepai-catalog");
+      const fetcher = request.fetcher as unknown as typeof fetch | undefined;
+      if (fetcher === undefined) return DEEPAI_DEFAULT_MODELS;
+      const rows = await discoverDeepAIModels({ baseUrl: request.baseUrl, fetcher });
+      if (rows === null || rows.length === 0) return DEEPAI_DEFAULT_MODELS;
+      return rows;
+    },
+  },
   inferhub: {
     loadAdapter: async () => (await import("./integrations/inferhub")).createInferhubAdapter(),
     // Live `/v1/models` is the primary source: the marketplace republishes its
