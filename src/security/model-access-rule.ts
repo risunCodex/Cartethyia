@@ -81,6 +81,14 @@ export function modelRejectionReason(
 ): ModelRejectionReason | null {
   const qualified = targetProvider ? `${targetProvider}/${bareModelId(targetModel)}` : undefined;
   const names = [targetModel, bareModelId(targetModel), ...(qualified ? [qualified] : [])];
+  // A provider model id may itself contain slashes (`UNCENCORED/ALT/GLM-5.3`).
+  // Its full qualified route (`aether/UNCENCORED/ALT/GLM-5.3`) is exactly what an
+  // allowlist stores, so it must be a candidate name too — the last-segment form
+  // above (`aether/GLM-5.3`) never matches such an entry.
+  if (targetProvider && !targetModel.startsWith(`${targetProvider}/`)) {
+    const fullyQualified = `${targetProvider}/${targetModel}`;
+    if (!names.includes(fullyQualified)) names.push(fullyQualified);
+  }
   if (requestedModel && requestedModel !== targetModel) names.push(requestedModel);
   const list = policy.model_list;
   if (policy.model_access_mode === "blacklist") {
