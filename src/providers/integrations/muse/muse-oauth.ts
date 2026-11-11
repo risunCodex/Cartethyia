@@ -131,25 +131,25 @@ export class MuseCodeOAuthClient extends OAuthDeviceFlow {
   protected override readonly tokenUrl = MUSE_CODE_DEVICE_TOKEN_URL;
   protected override readonly scopes = "";
 
-  override async startDeviceAuth(_context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
+  override async startDeviceAuth(context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
     return this.startGenericDeviceAuth({
       tokenUrl: MUSE_CODE_DEVICE_TOKEN_URL,
       deviceAuthUrl: MUSE_CODE_DEVICE_AUTHORIZE_URL,
       clientId: MUSE_CODE_CLIENT_ID,
       formHeaders: metaHeaders,
-    });
+    }, context);
   }
 
   override async pollDeviceAuth(
     deviceAuthId: string,
-    _context?: OAuthDeviceFlowContext,
+    context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDevicePollResult> {
     const result = await this.pollGenericDeviceAuth(deviceAuthId, {
       tokenUrl: MUSE_CODE_DEVICE_TOKEN_URL,
       deviceAuthUrl: MUSE_CODE_DEVICE_AUTHORIZE_URL,
       clientId: MUSE_CODE_CLIENT_ID,
       formHeaders: metaHeaders,
-    });
+    }, context);
     if (result.status !== "complete") return result;
     const accessToken = result.result.access;
     // The key mint runs after approval: a 429, a payment gate, or a transient
@@ -157,7 +157,7 @@ export class MuseCodeOAuthClient extends OAuthDeviceFlow {
     // exception that escapes the dashboard's poll request.
     let keyPayload;
     try {
-      keyPayload = await requestMuseCodeKey(accessToken, this.fetchFn);
+      keyPayload = await requestMuseCodeKey(accessToken, this.fetchFor(context));
     } catch (error) {
       return { status: "failed", reason: error instanceof Error ? error.message : "Muse Code key exchange failed" };
     }

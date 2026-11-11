@@ -389,7 +389,7 @@ export class QoderOAuthClient extends OAuthDeviceFlow {
       `&verifier=${encodeURIComponent(state.verifier)}&challenge_method=S256`;
     let response: Response;
     try {
-      response = await this.fetchFn(url, {
+      response = await this.fetchFor(context)(url, {
         method: "GET",
         headers: { accept: "application/json", "user-agent": QODER_UA_CLI },
         signal: AbortSignal.timeout(POLL_TIMEOUT_MS),

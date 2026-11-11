@@ -3,6 +3,8 @@ import {
   postFormTokenRequest,
   InMemoryOAuthFlowStore,
   OAuthFlowStore,
+  type OAuthCodeExchangeContext,
+  type OAuthDeviceFlowContext,
   type OAuthDevicePollResult,
   type OAuthDeviceStartResult,
   type OAuthExchangeResult,
@@ -200,12 +202,13 @@ export class CodexOAuthClient extends OAuthDeviceFlow {
     codeVerifier: string,
     redirectUri: string,
     _state?: string,
+    _context?: OAuthCodeExchangeContext,
   ): Promise<OAuthExchangeResult> {
     return exchangeCodeForToken(code, codeVerifier, redirectUri, this.fetchFn);
   }
 
-  override async startDeviceAuth(): Promise<OAuthDeviceStartResult> {
-    const started = await startCodexDeviceAuth(CODEX_CLIENT_ID, this.fetchFn);
+  override async startDeviceAuth(context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
+    const started = await startCodexDeviceAuth(CODEX_CLIENT_ID, this.fetchFor(context));
     await this.#requireStore().saveDeviceState(started.deviceAuthId, { ...started });
     return {
       verificationUri: "https://auth.openai.com/codex/device",
@@ -216,7 +219,7 @@ export class CodexOAuthClient extends OAuthDeviceFlow {
     };
   }
 
-  override async pollDeviceAuth(deviceAuthId: string): Promise<OAuthDevicePollResult> {
+  override async pollDeviceAuth(deviceAuthId: string, context?: OAuthDeviceFlowContext): Promise<OAuthDevicePollResult> {
     const store = this.#requireStore();
     const stored = await store.getDeviceState(deviceAuthId);
     const device = stored === undefined ? undefined : parseCodexDeviceStart(stored);
@@ -227,7 +230,7 @@ export class CodexOAuthClient extends OAuthDeviceFlow {
     // never an exception that escapes the dashboard's poll request.
     let authorization;
     try {
-      authorization = await pollCodexDeviceAuth(device, this.fetchFn);
+      authorization = await pollCodexDeviceAuth(device, this.fetchFor(context));
     } catch (error) {
       return { status: "failed", reason: error instanceof Error ? error.message : "Codex device polling failed" };
     }
@@ -238,7 +241,7 @@ export class CodexOAuthClient extends OAuthDeviceFlow {
         authorization.authorizationCode,
         authorization.codeVerifier,
         CODEX_DEVICE_REDIRECT_URI,
-        this.fetchFn,
+        this.fetchFor(context),
       );
     } catch (error) {
       return { status: "failed", reason: error instanceof Error ? error.message : "Codex token exchange failed" };

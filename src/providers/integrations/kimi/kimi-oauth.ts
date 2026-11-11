@@ -123,13 +123,13 @@ export class KimiCodeOAuthClient extends OAuthDeviceFlow {
     super(fetchFn);
   }
 
-  override async startDeviceAuth(_context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult & { providerState: string }> {
+  override async startDeviceAuth(context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult & { providerState: string }> {
     const deviceId = createKimiDeviceId();
     // The Kimi device-authorization endpoint only parses
     // `application/x-www-form-urlencoded` bodies — JSON `client_id` is
     // rejected with `client_id is required`.
     const body = new URLSearchParams({ client_id: KIMI_CODE_CLIENT_ID });
-    const response = await this.fetchFn(KIMI_CODE_DEVICE_AUTHORIZE_URL, {
+    const response = await this.fetchFor(context)(KIMI_CODE_DEVICE_AUTHORIZE_URL, {
       method: "POST",
       headers: { ...jsonHeaders(deviceId), "content-type": "application/x-www-form-urlencoded" },
       body,
@@ -158,7 +158,7 @@ export class KimiCodeOAuthClient extends OAuthDeviceFlow {
       device_code: deviceAuthId,
       grant_type: "urn:ietf:params:oauth:grant-type:device_code",
     });
-    const response = await this.fetchFn(KIMI_CODE_TOKEN_URL, {
+    const response = await this.fetchFor(context)(KIMI_CODE_TOKEN_URL, {
       method: "POST",
       headers: { ...jsonHeaders(deviceId), "content-type": "application/x-www-form-urlencoded" },
       body,

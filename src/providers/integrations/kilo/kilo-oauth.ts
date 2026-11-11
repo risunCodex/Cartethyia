@@ -109,8 +109,8 @@ export class KiloOAuthClient extends OAuthDeviceFlow {
     super(fetchFn);
   }
 
-  override async startDeviceAuth(_context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
-    const response = await this.fetchFn(KILO_DEVICE_CODES_URL, {
+  override async startDeviceAuth(context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
+    const response = await this.fetchFor(context)(KILO_DEVICE_CODES_URL, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
     });
@@ -141,7 +141,7 @@ export class KiloOAuthClient extends OAuthDeviceFlow {
     context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDevicePollResult> {
     const pollKey = context?.providerState ?? deviceAuthId;
-    const response = await this.fetchFn(`${KILO_DEVICE_CODES_URL}/${encodeURIComponent(pollKey)}`, {
+    const response = await this.fetchFor(context)(`${KILO_DEVICE_CODES_URL}/${encodeURIComponent(pollKey)}`, {
       headers: { accept: "application/json" },
     });
     if (response.status === 202) return { status: "pending" };
@@ -165,7 +165,7 @@ export class KiloOAuthClient extends OAuthDeviceFlow {
     if (nonEmptyTrimmedString(payload.status) !== "approved" || accessToken === undefined) {
       return { status: "pending" };
     }
-    const orgId = await fetchOrganizationId(this.fetchFn, accessToken, AbortSignal.timeout(10_000));
+    const orgId = await fetchOrganizationId(this.fetchFor(context), accessToken, AbortSignal.timeout(10_000));
     const label = accountLabelFrom(payload);
     const result: OAuthExchangeResult = {
       access: encodeKiloCredential(accessToken, orgId),

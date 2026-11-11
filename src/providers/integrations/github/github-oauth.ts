@@ -490,9 +490,9 @@ export class GithubOAuthClient extends OAuthDeviceFlow implements OAuthTokenRefr
     this.clientId = clientId;
   }
 
-  override async startDeviceAuth(_context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
+  override async startDeviceAuth(context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
     const domain = copilotGitHubDomain();
-    const response = await this.fetchFn(`https://${domain}/login/device/code`, {
+    const response = await this.fetchFor(context)(`https://${domain}/login/device/code`, {
       method: "POST",
       headers: {
         accept: "application/json",
@@ -552,7 +552,7 @@ export class GithubOAuthClient extends OAuthDeviceFlow implements OAuthTokenRefr
     const domain = providerState?.domain ?? copilotGitHubDomain();
     const clientId = providerState?.clientId ?? this.clientId;
     const profile = providerState?.profile ?? githubCopilotProfileForClientId(clientId);
-    const response = await this.fetchFn(`https://${domain}/login/oauth/access_token`, {
+    const response = await this.fetchFor(context)(`https://${domain}/login/oauth/access_token`, {
       method: "POST",
       headers: {
         accept: "application/json",

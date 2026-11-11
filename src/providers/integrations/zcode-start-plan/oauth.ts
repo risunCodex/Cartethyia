@@ -62,10 +62,10 @@ export class ZcodeStartPlanOAuthClient extends OAuthDeviceFlow {
   }
 
   override async startDeviceAuth(
-    _context?: OAuthDeviceFlowContext,
+    context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDeviceStartResult & { providerState: string }> {
     const pollToken = crypto.randomBytes(32).toString("hex");
-    const response = await this.fetchFn(INIT_URL, {
+    const response = await this.fetchFor(context)(INIT_URL, {
       method: "POST",
       headers: { ...JSON_HEADERS, authorization: `Bearer ${pollToken}` },
       body: JSON.stringify({ provider: "zai" }),
@@ -95,7 +95,7 @@ export class ZcodeStartPlanOAuthClient extends OAuthDeviceFlow {
     if (!pollToken) {
       return { status: "failed", reason: "sign-in session lost its poll token" };
     }
-    const response = await this.fetchFn(`${POLL_BASE}/${encodeURIComponent(deviceAuthId)}`, {
+    const response = await this.fetchFor(context)(`${POLL_BASE}/${encodeURIComponent(deviceAuthId)}`, {
       headers: { ...JSON_HEADERS, authorization: `Bearer ${pollToken}` },
     });
     if (response.status === 404) {

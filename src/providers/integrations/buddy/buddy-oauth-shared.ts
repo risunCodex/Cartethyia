@@ -210,9 +210,9 @@ export class BuddyOAuthClient extends OAuthDeviceFlow {
     this.providerLabel = variant.providerLabel;
   }
 
-  override async startDeviceAuth(_context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
+  override async startDeviceAuth(context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
     const url = `${this.#variant.deviceStartUrl}?platform=${encodeURIComponent(this.#variant.platform)}`;
-    const response = await this.fetchFn(url, {
+    const response = await this.fetchFor(context)(url, {
       method: "POST",
       headers: await deviceStartHeaders(this.#variant),
       body: "{}",
@@ -240,10 +240,10 @@ export class BuddyOAuthClient extends OAuthDeviceFlow {
 
   override async pollDeviceAuth(
     deviceAuthId: string,
-    _context?: OAuthDeviceFlowContext,
+    context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDevicePollResult> {
     const url = `${this.#variant.devicePollUrl}?state=${encodeURIComponent(deviceAuthId)}`;
-    const response = await this.fetchFn(url, {
+    const response = await this.fetchFor(context)(url, {
       method: "GET",
       headers: await devicePollHeaders(this.#variant),
     });

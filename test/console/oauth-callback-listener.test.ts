@@ -119,4 +119,31 @@ describe("OAuth callback listener", () => {
     // The code falls back to the raw query so the provider can decide.
     expect(completions[0]?.code).toContain("login_option=builderid");
   });
+
+  test("releasing the last flow defers the serve stop so the callback response flushes", async () => {
+    // Regression: `#forget` used to call `server.stop(true)` synchronously from
+    // inside the request handler, closing the active connection before the
+    // success/denial Response was delivered. Live result: the callback tab saw
+    // HTTP 000 (connection reset) — unreliable locally and consistently broken
+    // on deployed/docker hosts. The release must defer the stop one tick so
+    // the response flushes first.
+    let stopped = 0;
+    let handler: ((request: Request) => Response | Promise<Response>) | undefined;
+    const listener = new OAuthCallbackListener({
+      completer: { async complete() { return { ok: true, message: "done" }; } },
+      serve: (options) => {
+        handler = options.fetch;
+        return { stop() { stopped += 1; } };
+      },
+    });
+    listener.register("http://127.0.0.1:1455/callback", "devin", "state-d1");
+    const response = await handler!(new Request("http://127.0.0.1:1455/callback?code=abc&state=state-d1"));
+    expect(response.status).toBe(200);
+    // Synchronous stop would already have run by now.
+    expect(stopped).toBe(0);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    // Two servers are bound per port (IPv4 + IPv6), so the deferred release
+    // stops both — the point is that both stops happen *after* the response.
+    expect(stopped).toBe(2);
+  });
 });

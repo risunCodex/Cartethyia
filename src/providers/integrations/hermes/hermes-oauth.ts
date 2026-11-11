@@ -46,13 +46,13 @@ export class HermesOAuthClient extends OAuthDeviceFlow {
       scope: NOUS_SCOPE,
       formHeaders: FORM_HEADERS,
       startParams: context?.parameters ?? {},
-    });
+    }, context);
     return { ...started, providerState: JSON.stringify({ device_code: started.deviceAuthId }) };
   }
 
   override async pollDeviceAuth(
     deviceAuthId: string,
-    _context?: OAuthDeviceFlowContext,
+    context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDevicePollResult> {
     // The generic poll posts the device code and parses RFC 8628 error codes
     // (`authorization_pending`/`slow_down` → pending). Its `complete` result
@@ -63,7 +63,7 @@ export class HermesOAuthClient extends OAuthDeviceFlow {
       clientId: NOUS_CLIENT_ID,
       scope: NOUS_SCOPE,
       formHeaders: FORM_HEADERS,
-    });
+    }, context);
   }
 
   override async refresh(refreshToken: string, signal?: AbortSignal): Promise<OAuthTokenRefreshResult> {

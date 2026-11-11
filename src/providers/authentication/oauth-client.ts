@@ -91,6 +91,17 @@ export abstract class OAuthClient implements OAuthLoginClient, OAuthTokenRefresh
     this.fetchFn = fetchFn;
   }
 
+  /**
+   * Resolves the transport a flow should use. When the console injects a
+   * `fetchFn` in the flow context (device-code OAuth routed through a network
+   * pool, see `device_flow_proxy`), that override wins; otherwise the
+   * client's own fetch is used. Every start/poll/exchange request that talks
+   * to the provider MUST route through this so the override is honored.
+   */
+  protected fetchFor(context?: { readonly fetchFn?: FetchLike | undefined }): FetchLike {
+    return context?.fetchFn ?? this.fetchFn;
+  }
+
   // ---------------------------------------------------------------------------
   // Public OAuthLoginClient surface
   // ---------------------------------------------------------------------------

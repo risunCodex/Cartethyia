@@ -112,8 +112,8 @@ export class ClineOAuthClient extends OAuthDeviceFlow {
     }
   }
 
-  override async startDeviceAuth(_context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
-    const response = await this.fetchFn(WORKOS_DEVICE_AUTHORIZATION_URL, {
+  override async startDeviceAuth(context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
+    const response = await this.fetchFor(context)(WORKOS_DEVICE_AUTHORIZATION_URL, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
       body: new URLSearchParams({ client_id: CLINE_WORKOS_CLIENT_ID }),
@@ -150,7 +150,7 @@ export class ClineOAuthClient extends OAuthDeviceFlow {
       this.#sessions.delete(deviceAuthId);
       return { status: "failed", reason: "Cline device authorization expired" };
     }
-    const response = await this.fetchFn(WORKOS_AUTHENTICATE_URL, {
+    const response = await this.fetchFor(context)(WORKOS_AUTHENTICATE_URL, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
       body: new URLSearchParams({
@@ -190,7 +190,7 @@ export class ClineOAuthClient extends OAuthDeviceFlow {
     // exception that escapes the poll.
     let registered: Record<string, unknown>;
     try {
-      const registerResponse = await this.fetchFn(CLINE_REGISTER_URL, {
+      const registerResponse = await this.fetchFor(context)(CLINE_REGISTER_URL, {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({ accessToken, refreshToken }),

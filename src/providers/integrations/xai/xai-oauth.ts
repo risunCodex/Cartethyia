@@ -135,8 +135,8 @@ export class XaiOAuthClient extends OAuthDeviceFlow {
   protected override readonly tokenUrl = XAI_TOKEN_URL;
   protected override readonly scopes = XAI_SCOPE;
 
-  override async startDeviceAuth(_context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
-    const response = await this.fetchFn(XAI_DEVICE_URL, {
+  override async startDeviceAuth(context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
+    const response = await this.fetchFor(context)(XAI_DEVICE_URL, {
       method: "POST",
       headers: formHeaders(),
       body: new URLSearchParams({ client_id: XAI_CLIENT_ID, scope: XAI_SCOPE }),
@@ -157,9 +157,9 @@ export class XaiOAuthClient extends OAuthDeviceFlow {
 
   override async pollDeviceAuth(
     deviceAuthId: string,
-    _context?: OAuthDeviceFlowContext,
+    context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDevicePollResult> {
-    const response = await this.fetchFn(XAI_TOKEN_URL, {
+    const response = await this.fetchFor(context)(XAI_TOKEN_URL, {
       method: "POST",
       headers: formHeaders(),
       body: new URLSearchParams({
@@ -203,7 +203,7 @@ export class XaiOAuthClient extends OAuthDeviceFlow {
       };
     }
     const result = this.parseTokenResponse(payload);
-    const identity = await fetchXaiIdentity(result.access, this.fetchFn);
+    const identity = await fetchXaiIdentity(result.access, this.fetchFor(context));
     const authState = xaiAuthState(identity);
     return {
       status: "complete",

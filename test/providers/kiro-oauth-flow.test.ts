@@ -274,6 +274,13 @@ describe("Kiro portal social flow", () => {
       },
       accessResolver: (() => undefined) as never,
       callbackListener: listener as never,
+      deviceEgress: {
+        db: {} as never,
+        poolSelector: {} as never,
+        networkBindingFactory: {
+          fetch: () => (async () => new Response("{}", { status: 200 })) as never,
+        } as never,
+      },
     };
 
     // Phase 1: portal callback for builder-id carries no code.

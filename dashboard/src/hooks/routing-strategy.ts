@@ -37,6 +37,10 @@ export interface RoutingStrategyState {
   readonly usageFloorUnit: "credit" | "percent";
   readonly setUsageFloor: (floor: number | null, unit: "credit" | "percent") => void;
   readonly skipProxy: boolean;
+  readonly setSkipProxy: (next: boolean) => void;
+  /** Device-code OAuth egress: `random` (default) or `direct`. */
+  readonly deviceFlowProxy: "random" | "direct";
+  readonly setDeviceFlowProxy: (next: "random" | "direct") => void;
   readonly userAgent: string;
   readonly setUserAgent: (next: string) => void;
   /** Operator-set custom User-Agent override; `null` = no override (native identity). */
@@ -50,6 +54,7 @@ export interface RoutingStrategyState {
   readonly setMaxInflight: (next: number | null) => void;
   readonly setMaxInflightPerProxy: (next: number | null) => void;
   readonly setSkipProxy: (next: boolean) => void;
+  readonly setDeviceFlowProxy: (next: "random" | "direct") => void;
 }
 
 export function useRoutingStrategy(providerId: string, allowUserAgent: boolean): RoutingStrategyState {
@@ -62,6 +67,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
   const [usageFloor, setUsageFloorState] = useState<number | null>(null);
   const [usageFloorUnit, setUsageFloorUnitState] = useState<"credit" | "percent">("percent");
   const [skipProxy, setSkipProxyState] = useState(false);
+  const [deviceFlowProxy, setDeviceFlowProxyState] = useState<"random" | "direct">("random");
   // Placeholder until the fetched row lands; the backend default is the Claude
   // Code CLI identity (see `buildClaudeCliUserAgent`). Hard-coding it here
   // would make the card show one identity and save another if the server ever
@@ -79,6 +85,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
     setUsageFloorState(query.data.usageFloor);
     setUsageFloorUnitState(query.data.usageFloorUnit);
     setSkipProxyState(query.data.skipProxy);
+    setDeviceFlowProxyState(query.data.deviceFlowProxy ?? "random");
     setUserAgentState(query.data.userAgent);
     setCustomUserAgentState(query.data.customUserAgent ?? null);
   }, [query.data]);
@@ -91,6 +98,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
     usageFloor: number | null;
     usageFloorUnit: "credit" | "percent";
     skipProxy: boolean;
+    deviceFlowProxy: "random" | "direct";
     userAgent: string;
     customUserAgent: string | null;
   }) => {
@@ -106,6 +114,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
           usageFloor: next.usageFloor,
           usageFloorUnit: next.usageFloorUnit,
           skipProxy: next.skipProxy,
+          deviceFlowProxy: next.deviceFlowProxy,
           ...(allowUserAgent ? { userAgent: next.userAgent } : {}),
           customUserAgent: next.customUserAgent,
         },
@@ -120,6 +129,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
           setUsageFloorState(query.data.usageFloor);
           setUsageFloorUnitState(query.data.usageFloorUnit);
           setSkipProxyState(query.data.skipProxy);
+          setDeviceFlowProxyState(query.data.deviceFlowProxy ?? "random");
           setUserAgentState(query.data.userAgent);
           setCustomUserAgentState(query.data.customUserAgent ?? null);
         },
@@ -135,6 +145,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       usageFloor,
       usageFloorUnit,
       skipProxy,
+      deviceFlowProxy,
       userAgent,
       customUserAgent,
     }),
@@ -148,6 +159,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       usageFloor,
       usageFloorUnit,
       skipProxy,
+      deviceFlowProxy,
       userAgent,
       customUserAgent,
     }),
@@ -161,6 +173,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       usageFloor,
       usageFloorUnit,
       skipProxy,
+      deviceFlowProxy,
       userAgent,
       customUserAgent,
     }),
@@ -187,6 +200,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       usageFloor,
       usageFloorUnit,
       skipProxy,
+      deviceFlowProxy,
       userAgent,
       customUserAgent: next,
     }),
@@ -201,9 +215,25 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
     setUsageFloor: (floor, unit) => {
       setUsageFloorState(floor);
       setUsageFloorUnitState(unit);
-      save({ strategy, rotateCount, maxInflight, maxInflightPerProxy, usageFloor: floor, usageFloorUnit: unit, skipProxy, userAgent, customUserAgent });
+      save({ strategy, rotateCount, maxInflight, maxInflightPerProxy, usageFloor: floor, usageFloorUnit: unit, skipProxy, deviceFlowProxy, userAgent, customUserAgent });
     },
     skipProxy,
+    deviceFlowProxy,
+    setDeviceFlowProxy: (next) => {
+      setDeviceFlowProxyState(next);
+      save({
+        strategy,
+        rotateCount,
+        maxInflight,
+        maxInflightPerProxy,
+        usageFloor,
+        usageFloorUnit,
+        skipProxy,
+        deviceFlowProxy: next,
+        userAgent,
+        customUserAgent,
+      });
+    },
     userAgent,
     customUserAgent,
     isLoading: query.isPending,
@@ -237,6 +267,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
         usageFloor,
         usageFloorUnit,
         skipProxy: next,
+        deviceFlowProxy,
         userAgent,
         customUserAgent,
       });
@@ -253,6 +284,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
         usageFloor,
         usageFloorUnit,
         skipProxy,
+        deviceFlowProxy,
         userAgent,
         customUserAgent,
       });

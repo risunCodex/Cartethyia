@@ -816,6 +816,12 @@ export const providerRoutingSettings = pgTable(
     // dispatch automatically selects among every active network pool the
     // tenant owns (least-loaded/non-cooldown) — never an admin-pinned pool.
     skipProxy: boolean("skip_proxy").notNull().default(false),
+    // How device-code OAuth flows (start + poll) choose their egress:
+    // 'random' (default) routes them through a randomly selected active
+    // network pool so the upstream sees a rotating IP (avoids "multiple codes
+    // from one IP" detection for Cursor/Grok/device-code providers); 'direct'
+    // always dials direct egress.
+    deviceFlowProxy: text("device_flow_proxy").$type<DeviceFlowProxyMode>().notNull().default("random"),
   },
   (table) => ({
     tenantProviderUnique: uniqueIndex("provider_routing_settings_tenant_provider_idx").on(
@@ -834,6 +840,9 @@ export const poolRoutingStrategy = pgEnum("pool_routing_strategy", [
   "random",
 ]);
 export type PoolRoutingStrategy = (typeof poolRoutingStrategy.enumValues)[number];
+
+/** Egress mode for device-code OAuth flows: random active pool, or direct. */
+export type DeviceFlowProxyMode = "random" | "direct";
 
 /**
  * Per-tenant selection strategy across the tenant's active network pools —

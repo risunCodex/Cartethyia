@@ -401,6 +401,7 @@ export function assertProviderRouting(value: unknown): ProviderRoutingResponse {
     (value.usageFloor !== null && value.usageFloor !== undefined && typeof value.usageFloor !== "number") ||
     (value.usageFloorUnit !== undefined && value.usageFloorUnit !== "credit" && value.usageFloorUnit !== "percent") ||
     typeof value.skipProxy !== "boolean" ||
+    (value.deviceFlowProxy !== undefined && value.deviceFlowProxy !== "random" && value.deviceFlowProxy !== "direct") ||
     typeof value.userAgent !== "string" ||
     value.userAgent.length > 4096
   ) {

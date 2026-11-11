@@ -434,6 +434,11 @@ export function registerConsoleDomains(
     accessResolver: ctx.accessResolver,
     snapshotInvalidator: ctx.routeSnapshotService,
     callbackListener: oauthCallbackListener,
+    deviceEgress: {
+      db: ctx.db,
+      poolSelector: ctx.poolSelector,
+      networkBindingFactory: ctx.networkBindingFactory,
+    },
   };
   console.use(createOAuthLoginRoutes(oauthConfig));
 }

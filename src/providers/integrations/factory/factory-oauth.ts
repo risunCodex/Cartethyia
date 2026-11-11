@@ -145,7 +145,7 @@ export class FactoryOAuthClient extends OAuthDeviceFlow {
   protected override readonly scopes = "";
 
   override async startDeviceAuth(
-    _context?: OAuthDeviceFlowContext,
+    context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDeviceStartResult> {
     return this.startGenericDeviceAuth({
       tokenUrl: FACTORY_DROID_TOKEN_URL,
@@ -153,7 +153,7 @@ export class FactoryOAuthClient extends OAuthDeviceFlow {
       clientId: FACTORY_DROID_CLIENT_ID,
       formHeaders: WORKOS_HEADERS,
       startParams: { user_agent: "cartethyia" },
-    });
+    }, context);
   }
 
   /**
@@ -165,14 +165,14 @@ export class FactoryOAuthClient extends OAuthDeviceFlow {
    */
   override async pollDeviceAuth(
     deviceAuthId: string,
-    _context?: OAuthDeviceFlowContext,
+    context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDevicePollResult> {
     return this.pollGenericDeviceAuth(deviceAuthId, {
       tokenUrl: FACTORY_DROID_TOKEN_URL,
       deviceAuthUrl: FACTORY_DROID_DEVICE_AUTH_URL,
       clientId: FACTORY_DROID_CLIENT_ID,
       formHeaders: { ...WORKOS_HEADERS, "content-type": "application/x-www-form-urlencoded" },
-    });
+    }, context);
   }
 
   protected override afterDeviceTokenExchange(

@@ -40,6 +40,7 @@ function mapRow(row: typeof providerRoutingSettings.$inferSelect): ProviderRouti
     usageFloorUnit: row.usageFloorUnit === "credit" ? "credit" : "percent",
     enabled: row.enabled,
     skipProxy: row.skipProxy,
+    deviceFlowProxy: row.deviceFlowProxy === "direct" ? "direct" : "random",
     userAgent: row.userAgent,
     customUserAgent: row.customUserAgent,
   };
@@ -94,6 +95,7 @@ export class DrizzleProviderDetailStore implements ProviderDetailStore {
       usageFloorUnit: "percent",
       enabled: false,
       skipProxy: defaultSkipProxy(providerId),
+      deviceFlowProxy: "random",
       userAgent: buildClaudeCliUserAgent(),
       customUserAgent: null,
     };
@@ -117,6 +119,7 @@ export class DrizzleProviderDetailStore implements ProviderDetailStore {
       usageFloorUnit: patch.usageFloorUnit ?? "percent",
       enabled: patch.enabled ?? false,
       skipProxy: patch.skipProxy ?? defaultSkipProxy(providerId),
+      deviceFlowProxy: patch.deviceFlowProxy ?? "random",
       userAgent: patch.userAgent ?? buildClaudeCliUserAgent(),
       customUserAgent: patch.customUserAgent ?? null,
     };
@@ -130,6 +133,7 @@ export class DrizzleProviderDetailStore implements ProviderDetailStore {
     if (patch.usageFloorUnit !== undefined) setClause.usageFloorUnit = patch.usageFloorUnit;
     if (patch.enabled !== undefined) setClause.enabled = patch.enabled;
     if (patch.skipProxy !== undefined) setClause.skipProxy = patch.skipProxy;
+    if (patch.deviceFlowProxy !== undefined) setClause.deviceFlowProxy = patch.deviceFlowProxy;
     if (patch.userAgent !== undefined) setClause.userAgent = patch.userAgent;
     if (patch.customUserAgent !== undefined) setClause.customUserAgent = patch.customUserAgent;
     const upserted = await this.db

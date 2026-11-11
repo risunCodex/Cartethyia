@@ -149,13 +149,13 @@ export class GrokOAuthClient extends OAuthDeviceFlow {
   protected override readonly tokenUrl = GROK_TOKEN_URL;
   protected override readonly scopes = GROK_SCOPE;
 
-  override async startDeviceAuth(_context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
+  override async startDeviceAuth(context?: OAuthDeviceFlowContext): Promise<OAuthDeviceStartResult> {
     const body = new URLSearchParams({
       client_id: GROK_CLIENT_ID,
       scope: GROK_SCOPE,
       referrer: "grok-build",
     });
-    const response = await this.fetchFn(GROK_DEVICE_URL, {
+    const response = await this.fetchFor(context)(GROK_DEVICE_URL, {
       method: "POST",
       headers: authHeaders(),
       body,
@@ -178,13 +178,13 @@ export class GrokOAuthClient extends OAuthDeviceFlow {
     };
   }
 
-  override async pollDeviceAuth(deviceAuthId: string, _context?: OAuthDeviceFlowContext): Promise<OAuthDevicePollResult> {
+  override async pollDeviceAuth(deviceAuthId: string, context?: OAuthDeviceFlowContext): Promise<OAuthDevicePollResult> {
     return this.pollGenericDeviceAuth(deviceAuthId, {
       tokenUrl: GROK_TOKEN_URL,
       deviceAuthUrl: GROK_DEVICE_URL,
       clientId: GROK_CLIENT_ID,
       formHeaders: authHeaders(),
-    });
+    }, context);
   }
 
   protected override unparsablePollReason(_status: number): string {

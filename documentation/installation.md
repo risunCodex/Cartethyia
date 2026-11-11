@@ -145,6 +145,14 @@ installer/setup generates it when missing. Keep it out of version control.
 `CARTETHYIA_PUBLIC_ORIGIN` must match the browser-facing scheme, host, and
 port so OAuth callbacks point to the right place.
 
+Browser-code OAuth flows use loopback redirects (`127.0.0.1`) so the callback
+listens on the machine the gateway runs on. On a remote or containerized
+deployment the operator's browser cannot reach that loopback address — the
+login screen's "Paste the redirect URL" field is the supported path there, and
+it works from any machine. The listener's `server.stop(true)` is deferred until
+after the callback response flushes, so a completed login always shows its
+result page instead of a connection reset.
+
 For manual source setup instead of the one-command installer:
 
 ```bash

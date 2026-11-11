@@ -37,9 +37,12 @@ export abstract class OAuthDeviceFlow extends OAuthClient {
   }
 
   /** Standard device-authorization start. Override the body builder for custom providers. */
-  protected async startGenericDeviceAuth(config: DeviceFlowConfig): Promise<OAuthDeviceStartResult> {
+  protected async startGenericDeviceAuth(
+    config: DeviceFlowConfig,
+    context?: OAuthDeviceFlowContext,
+  ): Promise<OAuthDeviceStartResult> {
     const body = this.buildDeviceStartBody(config);
-    const response = await this.fetchFn(config.deviceAuthUrl, {
+    const response = await this.fetchFor(context)(config.deviceAuthUrl, {
       method: "POST",
       ...(config.formHeaders === undefined ? {} : { headers: config.formHeaders }),
       body,
@@ -124,8 +127,9 @@ export abstract class OAuthDeviceFlow extends OAuthClient {
   protected async pollGenericDeviceAuth(
     deviceAuthId: string,
     config: DeviceFlowConfig,
+    context?: OAuthDeviceFlowContext,
   ): Promise<OAuthDevicePollResult> {
-    const response = await this.fetchFn(config.tokenUrl, {
+    const response = await this.fetchFor(context)(config.tokenUrl, {
       method: "POST",
       ...(config.formHeaders === undefined ? {} : { headers: config.formHeaders }),
       body: new URLSearchParams({

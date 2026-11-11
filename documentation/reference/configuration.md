@@ -117,6 +117,6 @@ Variables read outside the spec are therefore **not** listed below:
 | `CARTETHYIA_POOL_PROVIDER_RATE_LIMIT_COOLDOWN_MS` | integer | 3600000 | 0 – 86400000 |
 | `CARTETHYIA_ROUTING_STICKY_WARM_MS` | integer | 300000 | 0 – 86400000 |
 | `CARTETHYIA_ROUTING_STICKY_MAX_SESSIONS` | integer | 256 | 1 – 10000 |
-| `CARTETHYIA_OAUTH_CALLBACK_PORT` | integer | 59653 | 1024 – 65535 |
+| `CARTETHYIA_OAUTH_CALLBACK_PORT` | integer | 59653 | 1024 – 65535 | Loopback port the browser-OAuth callback listener binds (IPv4 + IPv6). The listener is local to the gateway host; use the login dialog's manual paste field when the browser is not on that host. |
 | `CARTETHYIA_ZCODE_AUTO_CLAIM` | string | `false` | — |
 | `CARTETHYIA_OPENCODE_UNAVAILABLE_FREE` | comma-separated list | unset | — |

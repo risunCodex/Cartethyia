@@ -25,6 +25,12 @@ const POOL_STRATEGY_OPTIONS: readonly { value: PoolStrategySetting["strategy"]; 
   { value: "random", label: "Random" },
 ];
 
+/** Device-code OAuth egress modes, mirroring `device_flow_proxy` on the backend. */
+const DEVICE_FLOW_PROXY_OPTIONS: readonly { value: "random" | "direct"; label: string }[] = [
+  { value: "random", label: "Random pool (rotate IP)" },
+  { value: "direct", label: "Direct egress" },
+];
+
 /** The slider's own scale: 1–50, with one step past the end meaning unlimited. */
 const SLIDER_MAX = 50;
 /** A typed number may go past the slider, but not past this. */
@@ -245,6 +251,40 @@ export function RoutingStrategyCard({
                 </label>
                 <div className="mt-1 text-badge text-text-tertiary">
                   Bypass automatic proxy-pool routing for this provider and always dial direct
+                </div>
+              </div>
+            </Row>
+
+            <Row
+              action={
+                <Select
+                  id="routing-device-flow-proxy"
+                  aria-label="Device login egress"
+                  value={routing.deviceFlowProxy}
+                  disabled={routing.isSaving}
+                  options={DEVICE_FLOW_PROXY_OPTIONS}
+                  onValueChange={(value) => {
+                    if (value === "random" || value === "direct") {
+                      routing.setDeviceFlowProxy(value);
+                    }
+                  }}
+                />
+              }
+            >
+              <div className="min-w-0">
+                <label htmlFor="routing-device-flow-proxy">
+                  <Inline gap="6px" className="text-body font-semibold">
+                    <Fingerprint
+                      size={15}
+                      aria-hidden="true"
+                      className={`shrink-0 ${routing.deviceFlowProxy === "random" ? "text-accent" : "text-text-tertiary"}`}
+                    />
+                    Device login egress
+                  </Inline>
+                </label>
+                <div className="mt-1 text-badge text-text-tertiary">
+                  Device-code OAuth (start + poll) uses a random active pool by default so the
+                  upstream sees a rotating IP. Choose direct egress for one stable address.
                 </div>
               </div>
             </Row>

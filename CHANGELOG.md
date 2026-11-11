@@ -12,6 +12,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Device-code OAuth flows can now rotate egress through network pools.**
+  Device-authorization start + token poll previously always dialed from the
+  gateway's own egress, so every code minted on one host appeared to come from
+  a single IP — which let Cursor/Grok/other device-code providers flag
+  "multiple codes from one IP". A new `device_flow_proxy` routing setting
+  (default `random`) routes those requests through a randomly selected active
+  network pool (weighted, cooldown-aware; direct fallback when the tenant has
+  no usable pool). `direct` restores the old single-address behavior. The
+  setting is per-provider and per-tenant with a dropdown in the routing card;
+  the resolved validated fetch is injected into the OAuth flow context so every
+  device-flow client (Grok, Cursor, Codex, Kiro, Kimi, Kilo, Muse, Hermes,
+  Factory, xAI, ZCode Start, Cline, Buddy, GitHub, Qoder) honors it.
+
 - **Vercel AI Gateway provider added.** OpenAI-compatible bearer provider on
   `https://ai-gateway.vercel.sh/v1`, registered in the bundled catalog with
   three default rows (2026-11-11): the free-plan-serving
@@ -58,6 +71,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   and ALPN). Streams keep flowing during profile dials (no full-body buffer).
 
 ### Fixed
+
+- **OAuth callback listener no longer resets the callback connection.** The
+  loopback listener called `server.stop(true)` synchronously from inside the
+  request handler, closing the active connection before the success/denial
+  Response was delivered — the callback tab saw HTTP 000 (connection reset),
+  spuriously on local hosts and consistently on deployed/docker hosts. The
+  release is now deferred one tick so the response flushes first; the port is
+  freed immediately after. Verified live: HTTP 200 + completion. The listener
+  still binds only `127.0.0.1`/`::1` (loopback), so browser-code logins from a
+  machine other than the gateway's must use the dialog's manual paste path.
 
 - **Provider client-version pins refreshed to current upstream releases.**
   Re-fetched every `VERSION_SOURCES` feed live (2026-11-11) and raised the

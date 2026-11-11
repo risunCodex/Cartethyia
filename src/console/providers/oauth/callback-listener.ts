@@ -235,13 +235,32 @@ export class OAuthCallbackListener {
     listener.flows.set(state, { providerId, paths, timer, inFlight: false });
   }
 
-  #forget(port: number, listener: PortListener, state: string): void {
+  #forget(
+    port: number,
+    listener: PortListener,
+    state: string,
+    options: { readonly deferStop?: boolean } = {},
+  ): void {
     const flow = listener.flows.get(state);
     if (flow !== undefined) clearTimeout(flow.timer);
     listener.flows.delete(state);
     if (listener.flows.size > 0) return;
     this.#ports.delete(port);
-    for (const server of listener.servers) void server.stop(true);
+    const stopServers = () => {
+      for (const server of listener.servers) void server.stop(true);
+    };
+    if (options.deferStop === true) {
+      // The stop is called from inside a callback handler that is about to
+      // return its Response. `stop(true)` closes active connections, so
+      // stopping synchronously here kills the very response the browser is
+      // waiting for — the login "succeeds" server-side while the callback tab
+      // sees a connection reset (observed live: HTTP 000, and more reliably on
+      // deployed/docker hosts). Defer the stop one tick so the response is
+      // flushed first; the port is freed a moment later.
+      setTimeout(stopServers, 50);
+    } else {
+      stopServers();
+    }
     log.info(`[oauth] callback listener released on 127.0.0.1:${port}`);
   }
 
@@ -311,7 +330,7 @@ export class OAuthCallbackListener {
     if (error !== null) {
       // A denial carries the state only when the server echoes one; clear it
       // when present so a retry starts a fresh flow.
-      if (state.length > 0) this.#forget(endpoint.port, listener, state);
+      if (state.length > 0) this.#forget(endpoint.port, listener, state, { deferStop: true });
       return new Response(
         `<!doctype html><html><body><p>OAuth login failed: ${escapeHtml(error)}</p></body></html>`,
         { status: 400, headers: { "content-type": "text/html; charset=utf-8" } },
@@ -374,7 +393,7 @@ export class OAuthCallbackListener {
         Object.keys(callbackParams).length > 0 ? callbackParams : undefined,
       );
     } catch (failure) {
-      if (matchedState !== undefined) this.#forget(endpoint.port, listener, matchedState);
+      if (matchedState !== undefined) this.#forget(endpoint.port, listener, matchedState, { deferStop: true });
       const message = failure instanceof Error ? failure.message : "OAuth login failed";
       log.error(`[oauth] callback completion failed for ${matched.providerId}: ${message}`);
       return new Response(
@@ -393,7 +412,7 @@ export class OAuthCallbackListener {
         headers: { location: result.redirectUrl },
       });
     }
-    if (matchedState !== undefined) this.#forget(endpoint.port, listener, matchedState);
+    if (matchedState !== undefined) this.#forget(endpoint.port, listener, matchedState, { deferStop: true });
     if (!result.ok) {
       return new Response(
         `<!doctype html><html><body><p>OAuth login failed: ${escapeHtml(result.message)}</p></body></html>`,

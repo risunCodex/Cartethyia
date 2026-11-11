@@ -504,7 +504,7 @@ export class KiroOAuthClient extends OAuthDeviceFlow {
     const region = assertAwsRegion(registration.region);
     let response: Response;
     try {
-      response = await this.fetchFn(`https://oidc.${region}.amazonaws.com/token`, {
+      response = await this.fetchFor(context)(`https://oidc.${region}.amazonaws.com/token`, {
         method: "POST",
         headers: ssoOidcHeaders(),
         body: JSON.stringify({
@@ -548,7 +548,7 @@ export class KiroOAuthClient extends OAuthDeviceFlow {
     // token is opaque, so ask the usage surface for the account email.
     if (label === kiroDefaultLabel(registration.authMethod)) {
       try {
-        const quota = await fetchKiroQuota(access, this.fetchFn, { auth_state: authStateOf(authState) });
+        const quota = await fetchKiroQuota(access, this.fetchFor(context), { auth_state: authStateOf(authState) });
         if (quota.accountLabel !== undefined && quota.accountLabel.trim().length > 0) {
           label = quota.accountLabel;
         }

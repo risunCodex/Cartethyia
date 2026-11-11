@@ -279,7 +279,7 @@ export class CursorOAuthClient extends OAuthDeviceFlow {
       `${CURSOR_API_BASE_URL}/auth/poll?uuid=${encodeURIComponent(deviceAuthId)}` +
       `&verifier=${encodeURIComponent(state.verifier)}`;
     const outcome = await fetchJson(
-      asFetchFn(this.fetchFn),
+      asFetchFn(this.fetchFor(context)),
       url,
       { method: "GET", headers: { accept: "application/json" } },
       AUTH_REQUEST_TIMEOUT_MS,

@@ -83,7 +83,19 @@ export interface OAuthDeviceFlowContext {
    * needs none ignores it.
    */
   readonly parameters?: Readonly<Record<string, string>> | undefined;
+  /**
+   * Transport override for the device-authorization and token-poll requests.
+   * When supplied, the client MUST use it instead of its default fetch — the
+   * console injects a pool-routed or direct validated fetch here (see the
+   * `device_flow_proxy` routing setting). Providers that ignore it keep
+   * dialing from the gateway's own egress, which is what made multiple device
+   * codes appear to arrive from one IP.
+   */
+  readonly fetchFn?: FetchLike | undefined;
 }
+
+/** Minimal fetch surface accepted by the OAuth flow contracts. */
+export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export type OAuthDevicePollResult =
   /**

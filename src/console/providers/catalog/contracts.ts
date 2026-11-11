@@ -1059,6 +1059,10 @@ export interface ProviderRoutingResponse {
    * default to skipping because their transport can't route through an HTTP
    * CONNECT proxy; it stays a real, per-tenant-overridable setting. */
   readonly skipProxy: boolean;
+  /** How device-code OAuth flows choose their egress: `random` (default)
+   * routes start+poll through a randomly selected active network pool so the
+   * upstream sees a rotating IP; `direct` always dials direct egress. */
+  readonly deviceFlowProxy: "random" | "direct";
   /** Built-in API-key upstream User-Agent; OAuth and custom providers retain their own identity. */
   readonly userAgent: string;
   /** Operator-set custom User-Agent override; `null` = no override (native identity is used). */
@@ -1092,6 +1096,8 @@ export interface UpdateProviderRoutingRequest {
   readonly enabled?: boolean;
   /** When true, this provider's requests always dial direct. */
   readonly skipProxy?: boolean;
+  /** How device-code OAuth flows choose their egress; absent = keep current. */
+  readonly deviceFlowProxy?: "random" | "direct";
   /** Built-in API-key upstream User-Agent. */
   readonly userAgent?: string;
   /** Operator-set custom User-Agent override; `null` clears it back to native. */

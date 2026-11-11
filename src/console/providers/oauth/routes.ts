@@ -2,12 +2,17 @@ import { providerAccounts, providerOauthStates } from "../../../persistence/sche
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { encryptCredential, hashSecret } from "../../../security/crypto";
 import type { CartethyiaDatabase } from "../../../persistence/db-handle";
-import type { OAuthExchangeResult, OAuthLoginClient } from "../../../providers/authentication/oauth-flow-store";
+import type {
+  OAuthDeviceStartResult,
+  OAuthExchangeResult,
+  OAuthLoginClient,
+} from "../../../providers/authentication/oauth-flow-store";
 import { oauthAccountIdentity } from "../../../providers/authentication/oauth-flow-store";
 import type { OAuthDevicePollResponse } from "../catalog/contracts";
 import { providerJwtVerification } from "../../../providers/provider-metadata";
 import type { ProviderRegistry } from "../../../providers/provider-registry";
 import { browserAuthorizeRedirectUri } from "../../../config/providers";
+import { resolveDeviceEgress, type DeviceEgressDeps } from "./device-egress";
 import { log } from "../../../observability/logger";
 import { GatewayError } from "../../../protocol/gateway-error";
 import { Elysia, t, type AnyElysia } from "elysia";
@@ -270,6 +275,8 @@ export interface OAuthLoginConfig {
    * itself instead of waiting for the operator to paste the URL back.
    */
   readonly callbackListener: OAuthCallbackListener;
+  /** Resolves device-flow OAuth egress per the `device_flow_proxy` setting. */
+  readonly deviceEgress: DeviceEgressDeps;
 }
 
 async function requireClient(
@@ -623,12 +630,25 @@ function createOAuthLoginOperations(config: OAuthLoginConfig) {
             `Provider ${providerId} does not support device-code login`,
             { providerId },
           );
-        const started = await client.startDeviceAuth({
+        const egress = await resolveDeviceEgress(
+          config.deviceEgress,
           providerId,
-          tenantId: a.tenantId,
-          accountLabel,
-          ...(parameters === undefined ? {} : { parameters }),
-        });
+          a.tenantId,
+        );
+        let started: OAuthDeviceStartResult;
+        try {
+          started = await client.startDeviceAuth({
+            providerId,
+            tenantId: a.tenantId,
+            accountLabel,
+            fetchFn: egress.fetch,
+            ...(parameters === undefined ? {} : { parameters }),
+          });
+        } finally {
+          // The flow has been started; the pool slot is only needed for the
+          // start request. Polls re-resolve their own egress.
+          egress.release();
+        }
         const { providerState, ...publicStarted } = started;
         await config.oauthFlowStore.saveDevice(started.deviceAuthId, {
           providerId,
@@ -661,15 +681,22 @@ function createOAuthLoginOperations(config: OAuthLoginConfig) {
             409,
             "Provider does not support device-code login",
           );
+        const egress = await resolveDeviceEgress(
+          config.deviceEgress,
+          providerId,
+          a.tenantId,
+        );
         const polled = await client.pollDeviceAuth(deviceAuthId, {
           providerId,
           tenantId: a.tenantId,
           accountLabel: correlation.accountLabel,
+          fetchFn: egress.fetch,
           ...(correlation.providerState === undefined
             ? {}
             : { providerState: correlation.providerState }),
           ...(correlation.parameters === undefined ? {} : { parameters: correlation.parameters }),
         });
+        egress.release();
         if (polled.status === "pending")
           return {
             status: "pending",
