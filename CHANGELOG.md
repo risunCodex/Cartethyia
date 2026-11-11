@@ -12,6 +12,61 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Tool-name alias registry (Claude Messages).** The request builder now
+  records every OAuth tool rename it applies on the canonical request, and
+  the response decoder restores the caller's original name exactly — mirroring
+  the two-way alias pattern the OpenCode free-tier fingerprint uses. The
+  registry (a WeakMap keyed by the request object, exposed via
+  `recordToolAliases` / `toolAliasesFor` / `restoreToolNameFor`) resolves the
+  ambiguity a fixed-prefix guess cannot: a caller declaring both `already` and
+  `_already` round-trips verbatim instead of the prefixed name restoring to the
+  wrong original. Shared restore point `restoreClaudeToolName` keeps the stream
+  and non-stream decoders in agreement (`restoreAliasedToolName` first, OAuth
+  prefix stripping as fallback).
+- **Inbound session ID normalization.** `normalizeInboundSessionId` trims and
+  rejects empty or oversized (>256 chars) values, mirroring the OpenCode CLI's
+  session cap. `resolveInboundSessionId` now skips unusable headers and falls
+  through to the next one, so a defective header can never become a cache key
+  or sticky-routing key.
+- **DeepAI provider (Free Limited).** Bundled provider for the DeepAI Code
+  model API (`https://api.deepai.org/deepai_code`) with the desktop sign-in
+  loopback flow (state + code exchange → opaque `api_key`), an API-key import
+  path validated against `/theos`, and a quota collector reading the daily 50
+  Theos allowance. The adapter stamps the exact upstream headers
+  (`Api-Key`, `X-DeepAI-Code-Theos: 4`, `X-DeepAI-Code-Instance`,
+  `X-DeepAI-Code-Machine`) — no bearer, since the upstream rejects one. The
+  static roster carries the 11 live-verified zero-Theos free rows (plus the
+  metered rows); live discovery keeps the 22-row catalog current, including
+  the responses-wire `gpt-6-astra`.
+- **DeepAI wire probes.** `scripts/provider-probing/deepai/` — capture
+  (`deepai-oauth-capture.mjs`) and wire probe (`probe-deepai.mjs`: models /
+  quota / chat hit) matching the desktop flow and headers; live-verified
+  2026-11-11.
+- **Add-Model modal: unlimited selection + mini cards.** The discovery-picker
+  no longer caps commits at 100 models (the backend commit route and UI both
+  dropped the `DISCOVER_MODEL_COMMIT_MAX` ceiling — any number of selected
+  rows commits). Each candidate row is now a mini card showing context window,
+  output limit, wire family, input modalities, reasoning/tool flags, and
+  free/pro/registered badges. The modal and manual-form copy is English-only
+  (Indonesian "Tambah manual"/"Dari provider" labels replaced).
+- **GitHub Copilot denial copy.** The "not signed up" refusal now reads
+  "not assigned to use GitHub Copilot. Activate Copilot Free at
+  https://github.com/features/copilot and connect again."
+- **OAuth refresh: scheduled-only, no inline request-path refresh.** The
+  dispatch credential resolver no longer refreshes OAuth tokens inline — a
+  hung token endpoint can no longer hold a client request for the full 30 s
+  refresh timeout (the p90/p95/p99 cliff). Tokens are kept fresh only by the
+  scheduled refresh sweep (due by per-provider lead), and a token that still
+  expires before its sweep turn is answered by the upstream's 401, which the
+  dispatch attempt-loop turns into a forced refresh. Unknown-expiry accounts
+  are no longer treated as instantly due (that forced a refresh on every
+  load). Refresh leads are now three coarse buckets — daily (default), 3
+  days, 7 weeks — with per-provider real-expiry notes; short-lived providers
+  (Claude ~8h, Google-backed ~1h, Grok/Kimi) keep tight leads so the sweep
+  does not re-mint on every tick.
+
+### Changed
+
 - **Grok "Test 407" health log quotes the original model response.** The
   probe's health-event reason now records the literal answer the model gave
   (e.g. `returned "202" instead of "407"` for an exhausted account, or the
