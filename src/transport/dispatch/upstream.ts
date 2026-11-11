@@ -48,7 +48,6 @@ export interface DispatchNetworkBindings {
   readonly outboundFetch?: ValidatedOutboundFetch;
   readonly outboundAttachmentFetch?: ValidatedOutboundFetch;
   readonly outboundHttp2?: ValidatedOutboundHttp2Bidi;
-  readonly outboundProfileFetch?: ((profile: string, input: RequestInfo | URL, init?: RequestInit) => Promise<Response>);
 }
 
 /**
@@ -95,10 +94,6 @@ export async function buildDispatchNetworkBindings(input: {
     ),
     outboundAttachmentFetch: factory.fetch(input.networkPoolId, input.tenantId ?? undefined),
     outboundHttp2: factory.http2Bidi(input.networkPoolId, input.tenantId ?? undefined),
-    outboundProfileFetch: (profile, req, init) => {
-      const profiled = factory.fetchWithTls(profile, input.networkPoolId, input.tenantId ?? undefined);
-      return profiled(req, init);
-    },
   };
 }
 
@@ -116,8 +111,6 @@ export function buildUpstreamDispatchContext(input: {
   readonly outboundAttachmentFetch?: ValidatedOutboundFetch;
   /** Validated bidirectional HTTP/2 egress bound to the same selected pool. */
   readonly outboundHttp2?: ValidatedOutboundHttp2Bidi;
-  /** Validated HTTP fetch with a chosen TLS ClientHello profile (see `network/egress/tls-profile.ts`). */
-  readonly outboundProfileFetch?: (profile: string, input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   /**
    * Ownership of this attempt's account/network-pool lease; a provider session
    * that outlives the request takes it over.
@@ -177,9 +170,6 @@ export function buildUpstreamDispatchContext(input: {
       ? { outbound_attachment_fetch: input.outboundAttachmentFetch }
       : {}),
     ...(input.outboundHttp2 ? { outbound_http2: input.outboundHttp2 } : {}),
-    ...(input.outboundProfileFetch
-      ? { outbound_profile_fetch: input.outboundProfileFetch }
-      : {}),
     ...(input.leaseOwnership ? { lease_ownership: input.leaseOwnership } : {}),
     ...(input.continuationScope ? { continuation_scope: input.continuationScope } : {}),
     ...(input.conversationAffinity ? { conversation_affinity: input.conversationAffinity } : {}),

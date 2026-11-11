@@ -34,8 +34,6 @@ export class ValidatedNetworkBindingFactory {
   private readonly pooledFetchCache = new WeakMap<PoolAgent, ValidatedFetch>();
   /** Default TLS ClientHello profile for direct https dials. */
   private readonly tlsProfile: TlsProfile;
-  /** Injected fetch, kept for re-building dialers with a custom profile. */
-  private readonly fetchFn?: typeof fetch | undefined;
 
   constructor(
     private readonly policy: SsrfPolicy = {},
@@ -43,7 +41,6 @@ export class ValidatedNetworkBindingFactory {
     private readonly poolResolver?: PoolAgentResolver,
     tlsProfile: TlsProfile = "default",
   ) {
-    this.fetchFn = fetchFn;
     this.directFetch = createValidatedFetch({
       policy,
       ...(fetchFn ? { fetchFn } : {}),
@@ -96,41 +93,6 @@ export class ValidatedNetworkBindingFactory {
     };
   }
 
-  /**
-   * Like `fetch`, but the dial is made with a specific TLS ClientHello profile
-   * instead of the factory default (see `tls-profile.ts`). This is how an
-   * adapter mirrors a target client's transport fingerprint (e.g. Qoder's
-   * desktop COSY chat) when the default dial would not look like that client.
-   */
-  fetchWithTls(profile: TlsProfile, networkPoolId?: string, tenantId?: string): ValidatedFetch {
-    const tlsProfile = tlsProfileOf(profile) === undefined ? "default" : profile;
-    if (!networkPoolId || !this.poolResolver || !tenantId) {
-      return createValidatedFetch({ policy: this.policy, ...(this.fetchFn ? { fetchFn: this.fetchFn } : {}), tlsProfile });
-    }
-    const { poolResolver, policy } = this;
-    return async (input, init) => {
-      try {
-        const agent = await poolResolver.resolveAgent(networkPoolId, tenantId);
-        let validated = this.pooledFetchCache.get(agent);
-        if (validated === undefined) {
-          validated = createValidatedFetch({ policy, agent });
-          this.pooledFetchCache.set(agent, validated);
-        }
-        return await validated(input, init);
-      } catch (error) {
-        if (error instanceof PoolBindingError) {
-          throw new GatewayError(
-            "proxy_pool_unhealthy",
-            503,
-            "Configured proxy pool could not be established (request {requestId}). This bridge looks shaky — repair or reroute 🔧",
-            { poolId: networkPoolId, reason: error.message.slice(0, 200) },
-            "network",
-          );
-        }
-        throw error;
-      }
-    };
-  }
   webSocket(networkPoolId?: string, tenantId?: string): ValidatedOutboundWebSocket {
     return async (url, headers, signal) => {
       if (url.protocol !== "wss:") {

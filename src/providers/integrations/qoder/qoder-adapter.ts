@@ -154,18 +154,8 @@ class QoderAdapter implements ProviderAdapter {
 
     const lifecycle = createUpstreamDeadlineLifecycle(context);
 
-    // Outbound fetch respects SSRF binding when provided. When the dispatch
-    // context carries a profile-fetch (TLS ClientHello mirror), prefer it for
-    // COSY chat: this is what makes the outbound dial look like the Qoder
-    // desktop app (Bun worker) at the TLS layer — the same fingerprint the
-    // upstream saw when the donor app made the identical request.
-    const profileFetcher =
-      typeof context.outbound_profile_fetch === "function"
-        ? (url: string, init: RequestInit) =>
-            context.outbound_profile_fetch!("qoder-app", url, init)
-        : undefined;
-    const outboundFetch: typeof fetch = (profileFetcher ??
-      ((context.outbound_fetch as unknown as typeof fetch) ?? this.fetchFn)) as typeof fetch;
+    // Outbound fetch respects SSRF binding when provided.
+    const outboundFetch: typeof fetch = (context.outbound_fetch as unknown as typeof fetch) ?? this.fetchFn;
 
     const fetcher: (url: string, init: RequestInit) => Promise<Response> = (url, init) =>
       outboundFetch(url, { ...init, signal: lifecycle.signal } as RequestInit) as Promise<Response>;

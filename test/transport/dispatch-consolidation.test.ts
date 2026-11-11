@@ -278,12 +278,7 @@ function bindingFactory(): {
     bidiCache.set(key, fn);
     return fn;
   };
-  const fetchWithTls = (profile: string, poolId?: string, tenantId?: string): FakeFetch => {
-    // Simple pass-through: profile dials reuse the fetch builder.
-    void profile;
-    return fetch(poolId, tenantId);
-  };
-  return { factory: { fetch, http2Bidi, fetchWithTls } as unknown as ValidatedNetworkBindingFactory, fetches, bidiCalls };
+  return { factory: { fetch, http2Bidi } as unknown as ValidatedNetworkBindingFactory, fetches, bidiCalls };
 }
 
 function captureSink(): ProviderExchangeCapture {
@@ -314,7 +309,6 @@ describe("buildDispatchNetworkBindings", () => {
       "outboundAttachmentFetch",
       "outboundFetch",
       "outboundHttp2",
-      "outboundProfileFetch",
     ]);
     // The attachment and HTTP/2 bindings are the raw factory closures — the
     // same objects the two call sites handed the dispatch context before.

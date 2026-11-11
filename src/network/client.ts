@@ -43,11 +43,6 @@ export interface NetworkClientOptions {
 export interface NetworkClient {
   /** Validated HTTP fetch bound to a pool slot (or direct when omitted). */
   readonly fetch: (poolId?: string, tenantId?: string) => ValidatedFetch;
-  /**
-   * Validated HTTP fetch with a specific TLS ClientHello profile. `profile`
-   * is a `tls-profile.ts` id (e.g. `"qoder-app"`) or `"default"`.
-   */
-  readonly fetchWithTls: (profile: TlsProfile, poolId?: string, tenantId?: string) => ValidatedFetch;
   /** Validated bidirectional HTTP/2 stream. */
   readonly bidi: (poolId?: string, tenantId?: string) => ValidatedOutboundHttp2Bidi;
   /** Validated WSS session. */
@@ -65,7 +60,6 @@ export function createNetworkClient(options: NetworkClientOptions = {}): Network
   );
   return {
     fetch: (poolId, tenantId) => factory.fetch(poolId, tenantId),
-    fetchWithTls: (profile, poolId, tenantId) => factory.fetchWithTls(profile, poolId, tenantId),
     bidi: (poolId, tenantId) => factory.http2Bidi(poolId, tenantId),
     webSocket: (poolId, tenantId) => factory.webSocket(poolId, tenantId),
     resolve: (hostname, signal, port) => factory.resolve(hostname, signal, port),

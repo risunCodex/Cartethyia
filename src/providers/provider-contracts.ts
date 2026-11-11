@@ -190,13 +190,6 @@ export interface ProviderDispatchContext {
   /** Validated bidirectional HTTP/2 egress bound to the same selected network pool. */
   readonly outbound_http2?: ValidatedOutboundHttp2Bidi | undefined;
   /**
-   * Validated HTTP fetch with a chosen TLS ClientHello profile (see
-   * `network/egress/tls-profile.ts` for the profile ids). A provider that needs to
-   * mirror a target client's transport fingerprint — e.g. Qoder's desktop
-   * COSY chat — dials through this instead of `outbound_fetch`.
-   */
-  readonly outbound_profile_fetch?: ((profile: string, input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) | undefined;
-  /**
    * Capture sink for one attempt's provider exchange, filled by HTTP fetch
    * wrapping. Adapters whose real upstream transport is not a `fetch`
    * (Qoder's gRPC) write it directly so Request Detail shows the actual
