@@ -3,7 +3,7 @@
  *
  * Qoder's upstream never reports prompt-cache hits (verified live on gRPC
  * and IDE HTTP surfaces — see
- * `documentation/research/qoder/live/2026-11-05-qoder-cache-hit-live.md`).
+ * `documentation/research/qoder/archive/qoder-research-archive-2026-11-11.zip` (`2026-11-05-qoder-cache-hit-live.md`)).
  * The gateway bridges the gap with the shared session-cache estimator, exactly
  * like Trae and Kiro. These tests pin:
  *

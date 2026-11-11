@@ -37,7 +37,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   GET/HEAD-with-body dial path now bridges the response into a web stream, so
   SSE chat streams are consumed incrementally instead of buffering the whole
   payload before resolving.
-
+- **Qoder: chat wire aligned 1:1 with the desktop-worker capture**
+  (2026-11-11, app 0.5.7 / worker 1.1.79-hotfix.19). The COSY chat surface
+  now sends `Cosy-ClientType: 10` (was `5`), `Cosy-Business-Product: app`
+  (was `cli`), `Cosy-Scene: app` (was `assistant`), `User-Agent: undici`
+  (was `Bun/1.4.2`), `Accept-Encoding: br, gzip, deflate` (was `identity`),
+  `Content-Encoding: zstd` with a zstd-compressed body over the scrambled
+  transform (was uncompressed), plus `traceparent` (W3C), `sec-fetch-mode:
+  cors`, and `accept-language: *`. Verified live 2026-11-11: 5/5 roster keys
+  answer 200 through the adapter path. The signature is computed over the
+  scrambled body before zstd compression — signing over the zstd wire bytes
+  returns `403 Signature invalid`, proving the server decompresses before
+  verifying.
 - **GitHub Copilot: complete profile selection.** `CARTETHYIA_GITHUB_COPILOT_MODE`
   now selects the OAuth app, token mint/refresh behavior, inference headers,
   model discovery, and quota identity together. `opencode-copilot` remains the
@@ -667,7 +678,7 @@ etc. The adapter default surface is now legacy COSY (`cosy`), hosts are
 tried in order (`api1` → `api2` → `api3`), and the intl gRPC/IDE host
 constants point at `api1` instead of the dead `api2-v2`. Legacy COSY on
 `api1`/`api2` verified live: 200 + full stream with model `auto`. Evidence:
-`documentation/research/qoder/live/2026-11-07-qoder-host-inference-fallback.md`.
+`documentation/research/qoder/archive/qoder-research-archive-2026-11-11.zip` (`2026-11-07-qoder-host-inference-fallback.md`).
 
 ### Removed
 
@@ -721,7 +732,7 @@ opencode → CarteLocal: single shell call and multi-call parallel blocks
 (previously `Invalid arguments ... Missing key` and glued JSON
 `{"command":"..."}{"command":"..."}`). Regression tests in
 `test/providers/integrations/qoder-grpc-wire.test.ts`. Documented in
-`documentation/research/qoder/live/2026-11-05-qoder-tool-calling.md` §6.
+`documentation/research/qoder/archive/qoder-research-archive-2026-11-11.zip` (`2026-11-05-qoder-tool-calling.md`) §6.
 - **Qoder adapter restructured into focused modules.** `qoder.ts` is now a
 re-export barrel over `qoder-auth` (PAT→job-token exchange v1), `qoder-cosy`
 (COSY signing), `qoder-chat` (legacy builder/transport), `qoder-ide`
@@ -730,7 +741,9 @@ contract). Public imports unchanged.
 - **Qoder User-Agent aligned to live captures.** CLI/COSY/device flow now use
 `Bun/1.4.2`, the IDE surface `Bun/1.4.4`, the job-token exchange
 `qoder/<version>` (was `Go-http-client/2.0`), and the openapi/business
-surface `Qoder`/`QoderWork`.
+surface `Qoder`/`QoderWork`. Disambiguation: `Bun/1.4.2` is the CLI/device
+flow UA, `undici` is the **app/worker** UA (Electron-hosted Node undici) —
+see `documentation/research/qoder/2026-11-11-qoder-worker-chat-wire-capture.md`.
 - **Qoder PAT→jobToken exchange moved to the v1 endpoint.** intl now uses
 `POST center.qoder.sh/api/v1/jobToken/exchange` with a plain JSON body
 `{personal_token, machine_id}` and uppercase `X-Request-ID` (was the v3

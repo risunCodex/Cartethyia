@@ -28,6 +28,7 @@ export {
   qoderEncodeBody,
   qoderSignerFor,
 } from "./qoder-cosy";
+export type { QoderCosyProfile } from "./qoder-cosy";
 
 // Shared message helpers
 export { flattenCanonicalContent, qoderTools, qoderToolChoice } from "./qoder-body";

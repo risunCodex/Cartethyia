@@ -53,9 +53,16 @@ export interface QoderRealmConfig {
  * - CLI / legacy COSY chat + device flow: `Bun/1.4.2` (flow 218/030, v1.1.83)
  * - IDE surface `/model/v1`: `Bun/1.4.4` (flow 219)
  * - job-token exchange: `qoder/<version>` (capture, e.g. `qoder/1.1.83`)
+ *
+ * The desktop app (0.5.7) hosts an Electron Node worker
+ * (`qoder-worker-runtime.obf.mjs --sdk`) whose fetch stack is undici; its
+ * chat/worker requests carry `User-Agent: undici` (capture 2026-11-11).
+ * The gateway mirrors the app wire on the COSY chat surface, so chat uses
+ * `QODER_UA_APP`; the CLI/device-flow surfaces keep `QODER_UA_CLI`.
  */
 export const QODER_UA_CLI = "Bun/1.4.2";
 export const QODER_UA_IDE = "Bun/1.4.4";
+export const QODER_UA_APP = "undici";
 
 /** Chat + model-list paths, identical across realms. */
 export const QODER_CHAT_PATH =

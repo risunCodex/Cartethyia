@@ -7,13 +7,21 @@
  * Header values mirror live captures of the real client (v1.1.83,
  * 2026-11-05): `User-Agent: Bun/1.4.2`, machine identity headers from the
  * UMID (`cosy-machineid/token/type/code/os/hostname`), business headers,
- * and the static `signature` md5 chain.
+ * and the static `signature` md5 chain. The business/scene/clienttype values
+ * were updated to the desktop-worker capture (2026-11-11, v0.5.7 /
+ * 1.1.79-hotfix.19): `cosy-clienttype: 10`, `cosy-business-product: app`,
+ * `cosy-scene: app`, plus `traceparent`, `sec-fetch-mode: cors`, and
+ * `accept-language: *`. The `profile` switch selects the identity: `app`
+ * (default, desktop worker) or `cli` (qodercli).
  */
-import { constants, createCipheriv, createHash, publicEncrypt, randomUUID } from "node:crypto";
+import { constants, createCipheriv, createHash, publicEncrypt, randomBytes, randomUUID } from "node:crypto";
 import { getQoderVersion } from "../../operations/client-versions";
 import { qoderMachineHostname, qoderMachineOs } from "../../operations/cli-platform";
-import { QODER_UA_CLI } from "./qoder-realm";
+import { QODER_UA_APP, QODER_UA_CLI } from "./qoder-realm";
 import type { QoderAuth } from "./qoder-types";
+
+/** Which Qoder client identity a COSY request presents. */
+export type QoderCosyProfile = "app" | "cli";
 
 const QODER_APPCODE = "cosy";
 const QODER_SIG_SECRET = "d2FyLCB3YXIgbmV2ZXIgY2hhbmdlcw==";
@@ -83,6 +91,7 @@ export function qoderBuildCosyHeaders(
   url: string,
   auth: QoderAuth,
   version = getQoderVersion(),
+  profile: QoderCosyProfile = "app",
 ): Record<string, string> {
   const key = randomUUID().replaceAll("-", "").slice(0, 16);
   const identity = qoderJsonSortedCompact({
@@ -104,12 +113,17 @@ export function qoderBuildCosyHeaders(
   ).toString("base64");
   const date = String(Math.floor(Date.now() / 1000));
   const signature = qoderMd5(`${payload}\n${cosyKey}\n${date}\n${Buffer.from(body).toString("latin1")}\n${qoderPathSignature(url)}`);
+  const traceId = randomBytes(16).toString("hex");
+  const spanId = randomBytes(8).toString("hex");
+  const app = profile === "app";
   return {
     authorization: `Bearer COSY.${payload}.${signature}`,
     "cosy-data-policy": "agree",
     "cosy-machinetype": auth.machineType ?? "5",
     "cosy-machineos": qoderMachineOs(),
-    "cosy-clienttype": "5",
+    // Desktop-worker capture (2026-11-11): `cosy-clienttype: 10` identifies
+    // the app/worker client; the CLI used `5`.
+    "cosy-clienttype": app ? "10" : "5",
     "cosy-date": date,
     "cosy-user": auth.userId,
     "cosy-key": cosyKey,
@@ -126,19 +140,29 @@ export function qoderBuildCosyHeaders(
     ...(auth.httpDnsIp !== undefined && auth.httpDnsIp.length > 0
       ? { "X-Qoder-HTTPDNS-IP": auth.httpDnsIp }
       : {}),
-    "cosy-business-product": "cli",
+    // Desktop-worker capture (2026-11-11): `cosy-business-product: app` and
+    // `cosy-scene: app` mirror the app/worker surface; the CLI used
+    // `cli`/`assistant`.
+    "cosy-business-product": app ? "app" : "cli",
     "cosy-business-type": "agent",
     "cosy-business-version": version,
-    "cosy-scene": "assistant",
+    "cosy-scene": app ? "app" : "assistant",
     "cosy-version": version,
     "login-version": "v2",
     appcode: QODER_APPCODE,
     accept: "application/json",
-    "accept-encoding": "identity",
+    // Desktop-worker capture (2026-11-11): `br, gzip, deflate`. The CLI
+    // sends `identity`.
+    "accept-encoding": app ? "br, gzip, deflate" : "identity",
+    "accept-language": app ? "*" : "",
+    "sec-fetch-mode": app ? "cors" : "",
+    // W3C trace context, as the worker's undici fetch emits it (capture
+    // 2026-11-11): `00-<traceid>-<spanid>-01`.
+    ...(app ? { traceparent: `00-${traceId}-${spanId}-01` } : {}),
     date: new Date().toUTCString(),
     signature: qoderMd5(`${QODER_APPCODE}&${QODER_SIG_SECRET}&${new Date().toUTCString()}`),
     "content-type": "application/json",
-    "user-agent": QODER_UA_CLI,
+    "user-agent": app ? QODER_UA_APP : QODER_UA_CLI,
   };
 }
 
@@ -153,9 +177,10 @@ export function qoderBuildCosyHeaders(
 export function qoderSignerFor(
   auth: QoderAuth,
   version = getQoderVersion(),
+  profile: QoderCosyProfile = "app",
 ): (url: string, body: string) => Record<string, string> {
   return (url: string, body: string): Record<string, string> =>
-    qoderBuildCosyHeaders(Buffer.from(body, "latin1"), url, auth, version);
+    qoderBuildCosyHeaders(Buffer.from(body, "latin1"), url, auth, version, profile);
 }
 
 /** Qoder's own base64 alphabet transform, for a request body. */
