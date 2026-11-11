@@ -11,7 +11,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import {
   AddModelModal,
-  ADD_MODEL_MAX_SELECTION,
   filterDiscoveredModels,
   normalizeManualModelId,
 } from "../../src/features/provider-detail/sections/Models";
@@ -169,19 +168,15 @@ describe("AddModelModal provider mode", () => {
       view.unmount();
     }
   });
-
-  test("the cap is the C3 constant (100 per commit)", () => {
-    expect(ADD_MODEL_MAX_SELECTION).toBe(100);
-  });
 });
 
 describe("AddModelModal manual fallback", () => {
-  test("a failed discovery shows an error banner and a working Tambah manual button", async () => {
+  test("a failed discovery shows an error banner and a working Add manually button", async () => {
     const { view } = await renderModal({ discoverFails: true });
     try {
       const body = document.body.textContent ?? "";
       expect(body).toContain("Could not fetch the provider's model list");
-      const manual = button("Tambah manual");
+      const manual = button("Add manually");
       expect(manual).not.toBeNull();
       await view.act(() => manual!.click());
       await view.flush();
@@ -208,8 +203,8 @@ describe("AddModelModal manual fallback", () => {
     try {
       const body = document.body.textContent ?? "";
       expect(body).toContain("No provider listing available.");
-      expect(body).toContain("Tambah manual");
-      const manual = button("Tambah manual");
+      expect(body).toContain("Add manually");
+      const manual = button("Add manually");
       expect(manual).not.toBeNull();
       await view.act(() => manual!.click());
       await view.flush();

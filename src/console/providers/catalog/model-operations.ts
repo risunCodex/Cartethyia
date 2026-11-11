@@ -12,7 +12,6 @@ import type { AccessDecision } from "../../../security/access-control";
 import { ConsoleDomainError, requireScope, requireTenantAnyScope } from "../../shared/errors";
 import { GatewayError } from "../../../protocol/gateway-error";
 import {
-  DISCOVER_MODEL_COMMIT_MAX,
   MODEL_READ_SCOPES,
   MODEL_WRITE_SCOPES,
 } from "./contracts";
@@ -390,11 +389,11 @@ export function createModelCatalogOperations(config: ProviderCatalogConfig) {
           "modelIds must be non-empty model ids",
         );
       }
-      if (modelIds.length === 0 || modelIds.length > DISCOVER_MODEL_COMMIT_MAX) {
+      if (modelIds.length === 0) {
         throw new ConsoleDomainError(
           "invalid_request",
           400,
-          `modelIds must contain 1-${DISCOVER_MODEL_COMMIT_MAX} entries`,
+          "modelIds must contain at least one entry",
         );
       }
       try {

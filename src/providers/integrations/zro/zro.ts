@@ -45,7 +45,6 @@ const ZRO_MODELS_RAW: readonly {
 }[] = [
   { id: "deepseek-v4-flash-0731", contextLimit: 1_048_576, outputLimit: 64_000 },
   { id: "deepseek-v4.1-flash", contextLimit: 1_048_576, outputLimit: 64_000 },
-  { id: "glm-5.3-flash", contextLimit: 1_048_576, outputLimit: 64_000 },
 ] as const;
 
 export const ZRO_MODELS: readonly ModelDefinition[] = ZRO_MODELS_RAW.map((row) =>

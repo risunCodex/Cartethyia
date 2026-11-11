@@ -108,6 +108,9 @@ const iconAssets: Record<string, { file: string; ext: "svg" | "webp" | "png" }> 
   // Clixad has no shipped brand mark in the asset folder; naming it here keeps
   // the lookup deterministic and the fallback renders the "CL" initials.
   clixad: { file: "clixad", ext: "svg" },
+  // DeepAI has no shipped brand mark in the asset folder either; naming it
+  // here keeps the lookup deterministic and the fallback renders "DE".
+  deepai: { file: "deepai", ext: "svg" },
 };
 
 function assetFor(icon: string): { file: string; ext: "svg" | "webp" | "png" } {

@@ -418,7 +418,7 @@ async function fetchGitHubCopilotEntitlement(
       if (userProfile.can_signup_for_limited) {
         return {
           denied:
-            "This GitHub account is not signed up for GitHub Copilot. Sign up for Copilot Free at https://github.com/features/copilot/plans and connect again.",
+            "This GitHub account is not assigned to use GitHub Copilot. Activate Copilot Free at https://github.com/features/copilot and connect again.",
         };
       }
       return {

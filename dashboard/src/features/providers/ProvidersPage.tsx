@@ -809,6 +809,9 @@ const FREE_LIMITED_IDS = new Set([
   // Clixad is ad-funded: a daily free tier (120k credits/day) plus account
   // credits earned from offers (grant_per_ad ~40k/survey, $5/day cap).
   "clixad",
+  // DeepAI Code ships a daily free allowance (50 Theos/day) with 11
+  // zero-Theos models in the free tier.
+  "deepai",
 ]);
 /**
  * The providers an operator reaches for first: household names with a

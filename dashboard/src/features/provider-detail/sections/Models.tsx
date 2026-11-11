@@ -37,7 +37,7 @@ import {
   useSetModelEnabled,
   useUpdateModelMetadata,
 } from "../../../hooks/providers";
-import { DISCOVER_MODEL_COMMIT_MAX, type DiscoverModelCandidate, type ModelProbeMode, type ModelWarning } from "../../../data/contracts";
+import { type DiscoverModelCandidate, type ModelProbeMode, type ModelWarning } from "../../../data/contracts";
 import {
   formatModelTokens,
   parseTokenInput,
@@ -416,7 +416,7 @@ function ManualAddModelForm({
       <>
         {onSwitchToProvider ? (
           <Button variant="secondary" size="sm" onClick={onSwitchToProvider}>
-            Dari provider
+            From provider
           </Button>
         ) : null}
         <Button variant="secondary" size="sm" onClick={onClose} disabled={register.isPending}>Cancel</Button>
@@ -541,9 +541,6 @@ function ManualAddModelForm({
   );
 }
 
-/** Cap on one commit, kept next to the picker that enforces it (D29). */
-export const ADD_MODEL_MAX_SELECTION = DISCOVER_MODEL_COMMIT_MAX;
-
 /** Pure client-side roster filter: case-insensitive substring over `modelId`. */
 export function filterDiscoveredModels(
   candidates: readonly DiscoverModelCandidate[],
@@ -575,7 +572,7 @@ function ProviderAddModelPanel({
 
   const candidates = query.data?.candidates ?? [];
   // A console that reports no discovery support falls back to the manual form
-  // through the same explicit "Tambah manual" affordance as a failed fetch.
+  // through the same explicit "Add manually" affordance as a failed fetch.
   const unsupported = query.data?.supported === false;
   const filtered = useMemo(
     () => filterDiscoveredModels(candidates, search),
@@ -585,9 +582,7 @@ function ProviderAddModelPanel({
     setSelected((prev) =>
       prev.includes(modelId)
         ? prev.filter((id) => id !== modelId)
-        : prev.length < ADD_MODEL_MAX_SELECTION
-          ? [...prev, modelId]
-          : prev,
+        : [...prev, modelId],
     );
   };
   const canCommit = selected.length > 0 && !commit.isPending && !unsupported;
@@ -607,9 +602,9 @@ function ProviderAddModelPanel({
     : "Using the first usable account";
 
   return (
-    <Dialog open={true} onClose={onClose} title="Add Model" size="md" footer={
+    <Dialog open={true} onClose={onClose} title="Add Model" size="lg" footer={
       <>
-        <Button variant="secondary" size="sm" onClick={onManual}>Tambah manual</Button>
+        <Button variant="secondary" size="sm" onClick={onManual}>Add manually</Button>
         <Button variant="secondary" size="sm" onClick={onClose} disabled={commit.isPending}>Cancel</Button>
         <Button
           variant="primary"
@@ -624,12 +619,12 @@ function ProviderAddModelPanel({
     }>
       <Stack gap="10px">
         <div className="text-badge text-text-tertiary" data-testid="discover-account-label">
-          {accountNote} · {ADD_MODEL_MAX_SELECTION} models per commit · configs follow the provider listing.
+          {accountNote} · configs follow the provider listing.
         </div>
         {unsupported ? (
           <Banner tone="warning" surface="raised">
             This provider does not publish a model directory. Use{" "}
-            <Button variant="ghost" size="sm" onClick={onManual}>Tambah manual</Button>{" "}
+            <Button variant="ghost" size="sm" onClick={onManual}>Add manually</Button>{" "}
             to add a model by id.
           </Banner>
         ) : null}
@@ -663,7 +658,7 @@ function ProviderAddModelPanel({
             ))}
           </div>
         ) : null}
-        <div className="flex min-h-160 max-h-210 flex-1 flex-col gap-3 overflow-y-auto rounded-control border border-inner-border bg-surface-1 p-6">
+        <div className="flex min-h-160 max-h-320 flex-1 flex-col gap-3 overflow-y-auto rounded-control border border-inner-border bg-surface-1 p-6">
           {query.isPending ? (
             <div className="p-16 text-center text-caption text-text-tertiary">Fetching models from provider…</div>
           ) : unsupported ? (
@@ -673,11 +668,11 @@ function ProviderAddModelPanel({
           ) : query.isError ? (
             <div className="p-10 text-center text-caption">
               <Banner tone="danger" live="alert">
-                Could not fetch the provider's model list. Tambah manual is still available.
+                Could not fetch the provider's model list. Add manually is still available.
               </Banner>
               <div className="flex gap-3 justify-center mt-4">
                 <Button variant="secondary" size="sm" onClick={() => void query.refetch()}>Retry</Button>
-                <Button variant="primary" size="sm" onClick={onManual}>Tambah manual</Button>
+                <Button variant="primary" size="sm" onClick={onManual}>Add manually</Button>
               </div>
             </div>
           ) : filtered.length === 0 ? (
@@ -689,46 +684,80 @@ function ProviderAddModelPanel({
               return (
                 <label
                   key={item.modelId}
-                  className={`flex items-center gap-4 min-w-0 rounded-control border border-inner-border p-4 text-caption ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-hover"}`}
+                  className={`block min-w-0 rounded-control border border-inner-border p-4 text-caption transition-colors ${disabled ? "opacity-60" : "cursor-pointer hover:bg-hover"}`}
                 >
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${item.modelId}`}
-                    checked={picked}
-                    disabled={disabled}
-                    onChange={() => toggle(item.modelId)}
-                  />
-                  <span className="font-mono tabular-nums truncate flex-1 min-w-0" title={item.modelId}>
-                    {item.modelId}
-                  </span>
-                  <span className="shrink-0 text-micro text-text-tertiary">{item.wireFamily}</span>
-                  {item.freeTier === true ? (
-                    <span className="shrink-0 rounded-pill border border-teal-soft px-3 py-0.5 text-micro text-teal">Free tier</span>
-                  ) : null}
-                  {item.proOnly === true ? (
-                    <span className="shrink-0 rounded-tiny border border-orange bg-orange-soft px-3 py-0.5 text-micro text-orange">Pro</span>
-                  ) : null}
-                  {disabled ? (
-                    <span className="shrink-0 rounded-pill border border-inner-border px-3 py-0.5 text-micro font-bold text-text-tertiary">Registered</span>
-                  ) : null}
-                  {picked ? <Check size={13} aria-hidden="true" className="shrink-0 text-accent" /> : null}
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${item.modelId}`}
+                      checked={picked}
+                      disabled={disabled}
+                      onChange={() => toggle(item.modelId)}
+                    />
+                    <span className="font-mono tabular-nums truncate flex-1 min-w-0 text-badge font-medium" title={item.modelId}>
+                      {item.modelId}
+                    </span>
+                    {item.freeTier === true ? (
+                      <span className="shrink-0 rounded-pill border border-teal-soft px-3 py-0.5 text-micro text-teal">Free tier</span>
+                    ) : null}
+                    {item.proOnly === true ? (
+                      <span className="shrink-0 rounded-tiny border border-orange bg-orange-soft px-3 py-0.5 text-micro text-orange">Pro</span>
+                    ) : null}
+                    {disabled ? (
+                      <span className="shrink-0 rounded-pill border border-inner-border px-3 py-0.5 text-micro font-bold text-text-tertiary">Registered</span>
+                    ) : null}
+                    {picked ? <Check size={13} aria-hidden="true" className="shrink-0 text-accent" /> : null}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 pl-2 text-micro text-text-tertiary">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-text-quaternary">Context</span>
+                      <span className="font-mono tabular-nums text-text-secondary">
+                        {formatModelTokens(item.contextLimit)}
+                      </span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-text-quaternary">Output</span>
+                      <span className="font-mono tabular-nums text-text-secondary">
+                        {formatModelTokens(item.outputLimit)}
+                      </span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-text-quaternary">Wire</span>
+                      <span className="font-mono tabular-nums text-text-secondary">{item.wireFamily}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-text-quaternary">Input</span>
+                      <span className="text-text-secondary">
+                        {item.modalities.input.length > 0 ? item.modalities.input.join(" · ") : "text"}
+                      </span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-text-quaternary">Reasoning</span>
+                      <span className="text-text-secondary">{item.reasoning ? "yes" : "no"}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-text-quaternary">Tools</span>
+                      <span className="text-text-secondary">{item.toolCall ? "yes" : "no"}</span>
+                    </span>
+                    {item.serviceKind !== "llm" ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="text-text-quaternary">Kind</span>
+                        <span className="text-text-secondary">{item.serviceKind}</span>
+                      </span>
+                    ) : null}
+                  </div>
                 </label>
               );
             })
           )}
         </div>
-        {selected.length >= ADD_MODEL_MAX_SELECTION ? (
-          <div className="text-badge text-text-tertiary">
-            {`Cap reached — commit at most ${ADD_MODEL_MAX_SELECTION} models at a time.`}
-          </div>
-        ) : null}
       </Stack>
     </Dialog>
   );
 }
 
 /**
- * One modal, two modes: "Dari provider" by default, manual only as fallback.
+ * One modal, two modes: "From provider" by default, manual only as fallback.
  * A provider that answers `supported: false` from the wire is handled inside
  * the provider panel itself, so the modal only ever fetches once.
  */

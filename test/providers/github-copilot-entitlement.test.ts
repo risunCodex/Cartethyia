@@ -85,7 +85,7 @@ describe("GitHub Copilot device-login entitlement gate", () => {
     });
     expect(poll.status).toBe("failed");
     if (poll.status !== "failed") throw new Error("unreachable");
-    expect(poll.reason).toContain("Sign up for Copilot Free");
+    expect(poll.reason).toContain("Activate Copilot Free at https://github.com/features/copilot");
   });
 
   test("completes the login for an entitled account", async () => {

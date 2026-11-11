@@ -24,8 +24,6 @@ const MODELS_PAYLOAD = JSON.stringify({
     { id: "zro/deepseek-v4-flash-0731", mode: "chat", max_input_tokens: 1_048_576, max_output_tokens: 64_000 },
     { id: "deepseek-v4.1-flash", mode: "chat", max_input_tokens: 1_048_576, max_output_tokens: 64_000 },
     { id: "zro/deepseek-v4.1-flash", mode: "chat", max_input_tokens: 1_048_576, max_output_tokens: 64_000 },
-    { id: "glm-5.3-flash", mode: "chat", max_input_tokens: 1_048_576, max_output_tokens: 64_000 },
-    { id: "zro/glm-5.3-flash", mode: "chat", max_input_tokens: 1_048_576, max_output_tokens: 64_000 },
   ],
 });
 
@@ -153,11 +151,11 @@ describe("Zro adapter dispatch", () => {
 
 describe("Zro static catalog", () => {
   test("seeds the live reachable models on the Messages wire", () => {
-    expect(ZRO_MODELS.length).toBeGreaterThanOrEqual(3);
+    expect(ZRO_MODELS.length).toBeGreaterThanOrEqual(2);
     for (const model of ZRO_MODELS) {
       expect(model.wireFamily).toBe("messages");
       expect(model.endpointPath).toBe("/v1/messages");
-      expect(model.modelId).toMatch(/^(deepseek|glm)/);
+      expect(model.modelId).toMatch(/^deepseek/);
     }
     const ids = new Set(ZRO_MODELS.map((m) => m.modelId));
     expect(ids.size).toBe(ZRO_MODELS.length);
@@ -187,7 +185,6 @@ describe("Zro model discovery", () => {
     expect(ids).toEqual([
       "deepseek-v4-flash-0731",
       "deepseek-v4.1-flash",
-      "glm-5.3-flash",
     ]);
     // No alias rows survive.
     expect(ids.some((id) => id.startsWith("zro/"))).toBe(false);
