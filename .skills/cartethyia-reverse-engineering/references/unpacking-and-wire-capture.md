@@ -115,7 +115,7 @@ Wire takeaways (Qoder IDE 1.38):
   the 1.38 bundles — chat now goes through the region-resolved inference
   endpoint. The Cartethyia adapter still defaults to `/model/v1/chat/completions`
   on `api2-v2.qoder.sh` with COSY fallback; see
-  `documentation/research/qoder/live/2026-11-05-qoder-wire-reference-adapter-alignment.md`.
+  `documentation/research/qoder/archive/qoder-research-archive-2026-11-11.zip` (`2026-11-05-qoder-wire-reference-adapter-alignment.md`).
 
 ### Bun-compiled CLI (Qoder `qodercli`, v1.1.83, Windows x64)
 

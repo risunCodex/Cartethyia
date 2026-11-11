@@ -4,7 +4,7 @@ Durable knowledge for Qoder account work (both realms — intl and CN): where
 identity comes
 from, which claim surfaces exist, what has been proven dead, and the
 verification order for a new claim path. The full evidence trail lives in
-[`documentation/research/qoder/live/2026-11-05-qoder-credits-claims-identity.md`](../../../documentation/research/qoder/live/2026-11-05-qoder-credits-claims-identity.md)
+[`documentation/research/qoder/archive/qoder-research-archive-2026-11-11.zip`](../../../documentation/research/qoder/archive/qoder-research-archive-2026-11-11.zip) (`2026-11-05-qoder-credits-claims-identity.md`)
 and [`documentation/research/qoder/2026-11-05-qoder-cosy-signing-machine-identity.md`](../../../documentation/research/qoder/2026-11-05-qoder-cosy-signing-machine-identity.md).
 
 **Two realms** (`src/providers/integrations/qoder/qoder-realm.ts`): intl

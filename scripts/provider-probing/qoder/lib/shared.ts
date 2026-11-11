@@ -22,19 +22,31 @@ import {
   requireAccountToken,
   type ExportedAccount,
 } from "../../lib/accounts";
-import type { QoderProbeAuth } from "../cosy-signer";
+import {
+  qoderBuildCosyHeaders,
+  transformQoderBody,
+  type QoderCosyProfile,
+} from "../../../../src/providers/integrations/qoder/qoder-cosy";
+import type { QoderAuth } from "../../../../src/providers/integrations/qoder/qoder-types";
+
+export { transformQoderBody };
+
+/**
+ * Probe identity shape — the COSY signer's auth. Kept as a distinct alias so
+ * probes read `QoderProbeAuth` (the gateway's `QoderAuth` is the source of
+ * truth and lives in `src/`).
+ */
+export type QoderProbeAuth = QoderAuth;
 
 /** Single source for the probe client version (was 9 literals, 2 values). */
-export const QODER_VERSION = "1.1.79-hotfix.11";
+export const QODER_VERSION = "1.1.79-hotfix.19";
 
-export const QODER_IDE_CHAT_URL = "https://api1.qoder.sh/model/v1/chat/completions";
 export const QODER_LEGACY_CHAT_URL =
   "https://api2.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1";
-// Worker runtime (qoder-worker-runtime.obf.mjs v1.1.79-hotfix.11) builds the
-// model list on the gateway without the legacy `/algo` prefix
-// (`Jxt="/api/v2/model/list?Encode=1"`). The legacy `/algo` prefixed path is
-// also reachable, but the canonical worker path is the non-prefixed one.
-export const QODER_MODEL_LIST_URL = "https://api2.qoder.sh/api/v2/model/list?Encode=1";
+// Model list: the gateway's canonical path (`/algo/api/v2/model/list`) — the
+// same one discovery uses and the only one verified alive (2026-11-11; the
+// non-prefixed `/api/v2/model/list` answers 404 on api2).
+export const QODER_MODEL_LIST_URL = "https://api2.qoder.sh/algo/api/v2/model/list?Encode=1";
 export const QODER_OPENAPI_BASE = "https://openapi.qoder.sh";
 
 /** Machine OS token as the upstream expects it (`aarch64_macos`, `x86_64_linux`, …). */
@@ -62,6 +74,7 @@ export function authFromAccount(account: ExportedAccount): QoderProbeAuth {
     userType: "personal_standard",
     securityOauthToken: requireAccountToken(account),
     refreshToken: "",
+    machineId: account.authState?.machineId ?? "",
   };
 }
 
@@ -101,6 +114,40 @@ export function loadProbeAccount(values: {
   return { account, token, userId, machineId, auth: authFromAccount(account) };
 }
 
+/**
+ * Builds the COSY Bearer request headers for one signed probe request.
+ *
+ * Delegate to the gateway's own signer (`src/`), so probes always send
+ * exactly the wire the adapter sends. `profile` selects the client identity:
+ * `app` (default, desktop worker — clienttype 10, app product/scene, undici
+ * UA, zstd body) or `cli` (qodercli — clienttype 5, cli/assistant, Bun UA).
+ */
+export function buildCosyHeaders(
+  url: string,
+  rawBody: string,
+  auth: QoderProbeAuth,
+  version: string,
+  machine?: { readonly id?: string; readonly token?: string; readonly type?: string; readonly code?: string },
+  modelKey?: { readonly key: string; readonly source?: string },
+  profile: QoderCosyProfile = "app",
+): Record<string, string> {
+  const encoded = transformQoderBody(rawBody);
+  const headers = qoderBuildCosyHeaders(encoded, url, auth, version, profile);
+  if (machine !== undefined) {
+    delete headers["cosy-machinetoken"];
+    delete headers["cosy-machinetype"];
+    if (machine.id !== undefined && machine.id.length > 0) headers["Cosy-MachineId"] = machine.id;
+    if (machine.token !== undefined && machine.token.length > 0) headers["Cosy-MachineToken"] = machine.token;
+    if (machine.type !== undefined && machine.type.length > 0) headers["Cosy-MachineType"] = machine.type;
+    if (machine.code !== undefined && machine.code.length > 0) headers["Cosy-MachineCode"] = machine.code;
+  }
+  if (modelKey !== undefined) {
+    headers["X-Model-Key"] = modelKey.key;
+    headers["X-Model-Source"] = modelKey.source ?? "system";
+  }
+  return headers;
+}
+
 /** Full IDE `/model/v1` header set (machine-id tripled only when provided). */
 export function ideChatHeaders(opts: {
   readonly token: string;
@@ -129,196 +176,6 @@ export function ideChatHeaders(opts: {
     headers["Cosy-MachineType"] = "5";
   }
   return headers;
-}
-
-/**
- * Builds the legacy COSY `agent_chat_generation` body — the shape the native
- * client sends. Returns the wrapped `{ body, rid }` pair the caller needs for
- * signing and tracing.
- */
-export function buildLegacyChatBody(opts: {
-  readonly model: string;
-  readonly userId: string;
-  readonly text?: string;
-  readonly isReasoning?: boolean;
-  readonly displayName?: string;
-  readonly maxInputTokens?: number;
-  readonly maxOutputTokens?: number;
-}): { readonly body: Record<string, unknown>; readonly rid: string } {
-  const rid = randomUUID();
-  const text = opts.text ?? "ping";
-  const isReasoning = opts.isReasoning ?? true;
-  const sessionId = createHash("sha256").update(`qoder-session:${opts.userId}:${opts.model}`).digest("hex").slice(0, 32);
-  return {
-    body: {
-      request_id: rid,
-      request_set_id: rid,
-      chat_record_id: rid,
-      session_id: sessionId,
-      stream: true,
-      chat_task: "FREE_INPUT",
-      is_reply: true,
-      is_retry: false,
-      source: 1,
-      version: "3",
-      session_type: "qodercli",
-      agent_id: "agent_common",
-      task_id: "common",
-      code_language: "",
-      chat_prompt: "",
-      image_urls: null,
-      chat_context: {
-        chatPrompt: "",
-        imageUrls: null,
-        extra: { context: [], modelConfig: { key: opts.model, is_reasoning: isReasoning }, originalContent: { text } },
-        features: [],
-        text: { text },
-      },
-      model_config: {
-        key: opts.model,
-        display_name: opts.displayName ?? "Qwen3.8-Flash",
-        format: "openai",
-        model: "",
-        api_key: "",
-        url: "",
-        is_vl: true,
-        is_reasoning: isReasoning,
-        max_input_tokens: opts.maxInputTokens ?? 180000,
-        max_output_tokens: opts.maxOutputTokens ?? 65536,
-        source: "system",
-      },
-      messages: [{ role: "user", content: text }],
-      max_tokens: 256,
-      tools: [],
-      parallel_tool_calls: true,
-    },
-    rid,
-  };
-}
-
-/** Builds the modern IDE `/model/v1` chat body. Returns `{ body, rid, sid }`. */
-export function buildIdeChatBody(opts: {
-  readonly model: string;
-  readonly version?: string;
-  readonly message?: string;
-  readonly maxTokens?: number;
-  readonly contextTokens?: number;
-  readonly outputTokens?: number;
-}): { readonly body: Record<string, unknown>; readonly rid: string; readonly sid: string } {
-  const rid = randomUUID();
-  const sid = randomUUID();
-  const version = opts.version ?? QODER_VERSION;
-  const body: Record<string, unknown> = {
-    model: opts.model,
-    messages: [{ role: "user", content: opts.message ?? "ping" }],
-    stream: true,
-    stream_options: { include_usage: true },
-    metadata: {
-      context: {
-        request_id: rid,
-        request_set_id: randomUUID(),
-        session_id: sid,
-        source_session_id: "",
-        task_id: "common",
-        client_type: "5",
-      },
-      business: {
-        business_product: "cli",
-        business_type: "agent",
-        business_version: version,
-        scene: "assistant",
-      },
-    },
-    max_tokens: opts.maxTokens ?? 16,
-  };
-  if (opts.contextTokens !== undefined || opts.outputTokens !== undefined) {
-    const config: Record<string, unknown> = {};
-    if (opts.contextTokens !== undefined) config.max_input_tokens = opts.contextTokens;
-    if (opts.outputTokens !== undefined) config.max_output_tokens = opts.outputTokens;
-    body.model_config = config;
-  }
-  return { body, rid, sid };
-}
-
-/** Handlers for {@link readSse}. */
-export interface SseHandlers {
-  onDelta?(text: string): void;
-  onReasoning?(text: string): void;
-  onModel?(model: string): void;
-  onFrame?(frame: Record<string, unknown>): void;
-  onError?(error: unknown): void;
-  onDone?(): void;
-  maxFrames?: number;
-}
-
-/**
- * Reads an SSE stream frame by frame. Handles the OpenAI-shaped `data:` JSON
- * (`choices[].delta.content|reasoning_content`, `model`, `error`, `[DONE]`).
- * Cancels the reader when done.
- */
-export async function readSse(
-  response: Response,
-  handlers: SseHandlers,
-): Promise<{ readonly frames: number; readonly stopped: boolean }> {
-  const maxFrames = handlers.maxFrames ?? 60;
-  const reader = response.body?.getReader();
-  if (!reader) return { frames: 0, stopped: false };
-  const decoder = new TextDecoder();
-  let buf = "";
-  let frames = 0;
-  let stopped = false;
-  try {
-    while (frames < maxFrames) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      let idx = buf.indexOf("\n\n");
-      while (idx >= 0) {
-        const chunk = buf.slice(0, idx);
-        buf = buf.slice(idx + 2);
-        frames += 1;
-        for (const line of chunk.split(/\r?\n/)) {
-          if (!line.startsWith("data:")) continue;
-          const data = line.slice(5).trim();
-          if (data === "[DONE]") {
-            stopped = true;
-            continue;
-          }
-          try {
-            const json = JSON.parse(data) as {
-              model?: string;
-              choices?: Array<{
-                delta?: { content?: string; reasoning_content?: string };
-                finish_reason?: string | null;
-              }>;
-              error?: unknown;
-            };
-            if (json.error !== undefined) {
-              handlers.onError?.(json.error);
-              stopped = true;
-              continue;
-            }
-            const frame = json as unknown as Record<string, unknown>;
-            handlers.onFrame?.(frame);
-            if (typeof json.model === "string") handlers.onModel?.(json.model);
-            const delta = json.choices?.[0]?.delta;
-            if (delta) {
-              if (typeof delta.content === "string") handlers.onDelta?.(delta.content);
-              if (typeof delta.reasoning_content === "string") handlers.onReasoning?.(delta.reasoning_content);
-            }
-            if (json.choices?.[0]?.finish_reason) stopped = true;
-          } catch {
-            // not JSON — ignore non-data lines
-          }
-        }
-        idx = buf.indexOf("\n\n");
-      }
-      if (stopped) break;
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
-  }
-  return { frames, stopped };
 }
 
 /** Recursive printer that never shows token/secret/key/credential fields. */

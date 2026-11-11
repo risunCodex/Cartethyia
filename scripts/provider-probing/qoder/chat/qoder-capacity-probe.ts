@@ -25,15 +25,14 @@
 import { parseArgs } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
 import {
-  buildLegacyChatBody,
   loadProbeAccount,
   QODER_LEGACY_CHAT_URL,
-  QODER_VERSION,
-  readSse,
 } from "../lib/shared";
-import { buildCosyHeaders, transformQoderBody } from "../cosy-signer";
 import { createValidatedFetch } from "../../../../src/network/egress/fetch";
 import { isQoderPat, resolveQoderAuth } from "../../../../src/providers/integrations/qoder/qoder-auth";
+import { buildQoderRequest, callQoder } from "../../../../src/providers/integrations/qoder/qoder-chat";
+import { qoderBodyToCanonicalEvents } from "../../../../src/providers/integrations/qoder/qoder-sse";
+import { QODER_INTL_MODEL_CONFIGS } from "../../../../src/providers/integrations/qoder/qoder-catalog";
 
 const args = parseArgs({
   options: {
@@ -50,6 +49,7 @@ const args = parseArgs({
     turns: { type: "string", default: "17" },
     "per-turn": { type: "string", default: "60000" },
     "timeout-ms": { type: "string", default: "120000" },
+    cli: { type: "boolean", default: false },
   },
 });
 
@@ -98,29 +98,32 @@ function parseSizes(csv: string): number[] {
   return sizes;
 }
 
-async function postChat(text: string, lite: boolean): Promise<Response> {
-  const built = buildLegacyChatBody({
+async function postChat(text: string, _lite: boolean): Promise<Response> {
+  const modelConfig = QODER_INTL_MODEL_CONFIGS[model] ?? {
+    id: model,
+    display_name: model,
+    max_input_tokens: 180_000,
+    is_vl: true,
+    is_reasoning: false,
+  };
+  const request = {
     model,
-    userId,
-    text,
-    isReasoning: !lite,
-    ...(lite
-      ? { displayName: "Lite-Qwen-3.7-Plus", maxInputTokens: 1_000_000, maxOutputTokens: 65536 }
-      : {}),
-  });
-  const raw = JSON.stringify(built.body);
-  const encoded = Buffer.from(transformQoderBody(raw)).buffer as ArrayBuffer;
-  const headers = buildCosyHeaders(QODER_LEGACY_CHAT_URL, raw, auth, QODER_VERSION, {
-    id: loaded.machineId,
-    token: loaded.machineId,
-    type: "5",
-  }, { key: model, source: "system" });
-  return profileFetch(QODER_LEGACY_CHAT_URL, {
-    method: "POST",
-    headers,
-    body: encoded,
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+    messages: [{ role: "user", content: [{ kind: "text", text }] }],
+    generation_controls: {},
+    stream: true,
+    source_surface: "chat",
+  } as Record<string, unknown>;
+  const body = buildQoderRequest(model, request as never, modelConfig, auth, "intl");
+  return callQoder(
+    QODER_LEGACY_CHAT_URL,
+    body,
+    model,
+    auth,
+    AbortSignal.timeout(TIMEOUT_MS),
+    profileFetch as never,
+    undefined,
+    args.values.cli ? "cli" : "app",
+  );
 }
 
 async function runContext(): Promise<void> {
@@ -145,7 +148,10 @@ async function runRetention(): Promise<void> {
 
   async function sendTurn(content: string): Promise<number> {
     const res = await postChat(content, false);
-    await readSse(res, {}); // drain/cancel the body so the connection closes
+    // Drain/cancel the body so the connection closes.
+    if (res.body) {
+      for await (const _ev of qoderBodyToCanonicalEvents(res.body as ReadableStream<Uint8Array>, new AbortController().signal, model)) break;
+    }
     return res.status;
   }
 
@@ -155,11 +161,11 @@ async function runRetention(): Promise<void> {
       false,
     );
     let reply = "";
-    await readSse(res, {
-      onDelta(text) {
-        reply += text;
-      },
-    });
+    if (res.body) {
+      for await (const ev of qoderBodyToCanonicalEvents(res.body as ReadableStream<Uint8Array>, new AbortController().signal, model)) {
+        if (ev.type === "content_delta") reply += (ev as { text?: string }).text ?? "";
+      }
+    }
     return { status: res.status, reply };
   }
 

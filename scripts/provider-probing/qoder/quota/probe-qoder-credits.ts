@@ -33,7 +33,7 @@ import {
   type ExportedAccount,
 } from "../../lib/accounts";
 import { formatProbe, probeGet, probePost } from "../../lib/http";
-import { buildCosyHeaders, type QoderProbeAuth } from "../cosy-signer";
+import { buildCosyHeaders, type QoderProbeAuth } from "../lib/shared";
 import { machineOs, machineHostname } from "../lib/shared";
 
 const VERSION = "1.1.79-hotfix.11";
@@ -112,6 +112,7 @@ function proseAuth(account: ExportedAccount): QoderProbeAuth {
     userType: "personal_standard",
     securityOauthToken: requireAccountToken(account),
     refreshToken: account.refreshToken ?? "",
+    machineId: account.authState?.machineId ?? "",
   };
 }
 

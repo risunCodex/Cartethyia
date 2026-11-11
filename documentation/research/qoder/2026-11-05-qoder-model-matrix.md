@@ -258,7 +258,7 @@ _Sintesis [19] §6 (awal) + [20] §2/§3 (final) — 2026-11-05._
 
 ## 7. Roster Metadata — `raw_usage` (supply model / region / target)
 
-_Capture console probe (2026-11-04); format `raw_usage` terminal — lihat juga `documentation/research/qoder/live/2026-11-05-qoder-wire-reference-adapter-alignment.md` §5–6._
+_Capture console probe (2026-11-04); format `raw_usage` terminal — lihat juga `documentation/research/qoder/archive/qoder-research-archive-2026-11-11.zip` (`2026-11-05-qoder-wire-reference-adapter-alignment.md`) §5–6._
 
 Live capture of the provider metadata the IDE surface (`/model/v1`) echoes in
 its terminal `raw_usage` frame for every Qoder roster key. This is the trusted

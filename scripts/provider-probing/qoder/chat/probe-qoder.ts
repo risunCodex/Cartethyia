@@ -23,6 +23,10 @@
  *   --models              list models from the roster endpoint (signed GET)
  *   --prompt <text>       the prompt sent to every model (default: a short
  *                         Indonesian self-introduction)
+ *   --cli                 present the CLI identity (clienttype 5, cli/assistant,
+ *                         Bun UA, plain scrambled body) instead of the desktop
+ *                         app identity (default: app — clienttype 10, app,
+ *                         undici UA, zstd body)
  *   --profile <id>        TLS ClientHello profile id (default "qoder-app";
  *                         "default" uses the runtime TLS stack)
  *   --host <host>         upstream host for COSY chat (default "api2";
@@ -40,28 +44,28 @@
  *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
  *     --creds a.json --all
  *
- *   # Stream full replies on every roster model
+ *   # Stream full replies on every roster model, CLI identity
  *   bun run scripts/provider-probing/qoder/chat/probe-qoder.ts \
- *     --creds a.json --all --reply
+ *     --creds a.json --all --reply --cli
  */
 import { parseArgs } from "node:util";
 import { writeFileSync } from "node:fs";
 import { maskSecret, maskUuid } from "../../lib/accounts";
-import { formatProbe, probeGet, probePost } from "../../lib/http";
-import { buildCosyHeaders, transformQoderBody } from "../cosy-signer";
+import { formatProbe, probeGet } from "../../lib/http";
 import {
   QODER_VERSION,
   QODER_LEGACY_CHAT_URL,
   QODER_MODEL_LIST_URL,
-  buildLegacyChatBody,
+  buildCosyHeaders,
   loadProbeAccount,
   summarizeRedacted,
-  type LoadedProbeAccount,
+  transformQoderBody,
+  type QoderProbeAuth,
 } from "../lib/shared";
-import type { QoderProbeAuth } from "../cosy-signer";
 import { createValidatedFetch } from "../../../../src/network/egress/fetch";
 import { decodeQoderSseEvents, qoderEnvelopeToFrames } from "../../../../src/providers/integrations/qoder/qoder-sse";
 import { isQoderPat, resolveQoderAuth } from "../../../../src/providers/integrations/qoder/qoder-auth";
+import { buildQoderRequest, callQoder } from "../../../../src/providers/integrations/qoder/qoder-chat";
 import { QODER_INTL_MODEL_CONFIGS } from "../../../../src/providers/integrations/qoder/qoder-catalog";
 
 const DEFAULT_PROMPT = "Halo, perkenalkan dirimu singkat.";
@@ -74,29 +78,37 @@ function chatUrl(host: string): string {
   throw new Error(`--host must be api1|api2|api3 or a full https URL (got "${host}")`);
 }
 
-interface LegacyRequest {
-  readonly body: Record<string, unknown>;
-  readonly rid: string;
-  readonly raw: string;
-  readonly encoded: Uint8Array;
+interface LiteModelConfig {
+  readonly id: string;
+  readonly display_name: string;
+  readonly max_input_tokens: number;
+  readonly max_output_tokens?: number;
+  readonly is_vl: boolean;
+  readonly is_reasoning: boolean;
 }
 
-/** Builds a legacy `agent_chat_generation` request (signed COSY). */
-function buildLegacyRequest(model: string, userId: string, text: string, lite: boolean): LegacyRequest {
-  const built = lite
-    ? buildLegacyChatBody({
-        model,
-        userId,
-        text,
-        isReasoning: false,
-        displayName: "Lite-Qwen-3.7-Plus",
-        maxInputTokens: 1_000_000,
-        maxOutputTokens: 65536,
-      })
-    : buildLegacyChatBody({ model, userId, text });
-  const raw = JSON.stringify(built.body);
-  const encoded = new Uint8Array(transformQoderBody(raw));
-  return { body: built.body, rid: built.rid, raw, encoded };
+/** Roster config for one model key, with a safe fallback for unknown keys. */
+function modelConfigFor(model: string): LiteModelConfig {
+  const cfg = QODER_INTL_MODEL_CONFIGS[model];
+  if (cfg) return cfg;
+  return {
+    id: model,
+    display_name: model,
+    max_input_tokens: 180_000,
+    is_vl: true,
+    is_reasoning: false,
+  };
+}
+
+/** A canonical request shaped the way the gateway's `buildQoderRequest` wants it. */
+function canonicalRequestFor(model: string, text: string): Record<string, unknown> {
+  return {
+    model,
+    messages: [{ role: "user", content: [{ kind: "text", text }] }],
+    generation_controls: {},
+    stream: true,
+    source_surface: "chat",
+  };
 }
 
 /**
@@ -156,30 +168,32 @@ async function listModels(
 interface StreamProbeOptions {
   readonly label: string;
   readonly url: string;
-  readonly headers: Record<string, string>;
-  readonly body: Uint8Array;
+  readonly modelKey: string;
+  readonly request: Record<string, unknown>;
+  readonly auth: QoderProbeAuth;
+  readonly realm: "intl" | "cn";
+  readonly profile: "app" | "cli";
   readonly timeoutMs: number;
   readonly showText: boolean;
   readonly showModels: boolean;
 }
 
 /**
- * Streams one SSE reply using the gateway's own Qoder parser, reporting the
- * time-to-first-byte (`ttfb_ms`) — the fingerprint check: a matching
- * ClientHello gets headers back immediately.
+ * Streams one SSE reply through the gateway's own `callQoder` transport, so
+ * the probe sends exactly the adapter's wire (clienttype/business/scene, zstd
+ * body, signature over the scrambled transform). Reports time-to-first-byte
+ * (`ttfb_ms`) — the fingerprint check: a matching ClientHello gets headers
+ * back immediately.
  */
 async function streamProbe(opts: StreamProbeOptions): Promise<void> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), opts.timeoutMs);
   const fetchFn = createValidatedFetch({ tlsProfile: currentProfile });
+  const modelConfig = modelConfigFor(opts.modelKey);
   const startedAt = performance.now();
   try {
-    const response = await fetchFn(opts.url, {
-      method: "POST",
-      headers: opts.headers,
-      body: opts.body.buffer as ArrayBuffer,
-      signal: ac.signal,
-    });
+    const body = buildQoderRequest(opts.modelKey, opts.request as never, modelConfig, opts.auth, opts.realm);
+    const response = await callQoder(opts.url, body, opts.modelKey, opts.auth, ac.signal, fetchFn as never, undefined, opts.profile);
     const ttfbMs = Math.round(performance.now() - startedAt);
     console.log(`[${opts.label}] status=${response.status} ttfb_ms=${ttfbMs}`);
     if (!response.body) {
@@ -251,10 +265,9 @@ async function streamProbe(opts: StreamProbeOptions): Promise<void> {
   }
 }
 
-/** Probes the legacy `/algo` surface (signed COSY). */
+/** Probes the legacy `/algo` surface (signed COSY) via the gateway's transport. */
 async function probeLegacy(
   model: string,
-  loaded: LoadedProbeAccount,
   auth: QoderProbeAuth,
   opts: {
     readonly reply: boolean;
@@ -262,52 +275,57 @@ async function probeLegacy(
     readonly prompt: string;
     readonly host: string;
     readonly timeoutMs: number;
+    readonly cli: boolean;
   },
 ): Promise<void> {
   const url = chatUrl(opts.host);
-  const req = buildLegacyRequest(model, loaded.userId, opts.prompt, false);
   const label = `legacy/cosy (${model} @ ${opts.host})`;
-  const headers = buildCosyHeaders(url, req.raw, auth, QODER_VERSION, {
-    id: loaded.machineId,
-    token: loaded.machineId,
-    type: "5",
-  }, { key: model, source: "system" });
   await streamProbe({
     label,
     url,
-    headers,
-    body: req.encoded,
+    modelKey: model,
+    request: canonicalRequestFor(model, opts.prompt),
+    auth,
+    realm: "intl",
+    profile: opts.cli ? "cli" : "app",
     timeoutMs: opts.timeoutMs,
     showText: opts.reply,
     showModels: opts.echo,
   });
 }
 
-/** Free-tier lite probe: legacy COSY signed, big payload size acceptance. */
+/** Free-tier lite probe: big payload size acceptance, via the gateway's transport. */
 async function probeLite(
-  loaded: LoadedProbeAccount,
   auth: QoderProbeAuth,
-  opts: { readonly model: string; readonly chars: number; readonly timeoutMs: number },
+  opts: { readonly model: string; readonly chars: number; readonly timeoutMs: number; readonly cli: boolean },
 ): Promise<void> {
   const payload = "x".repeat(opts.chars);
-  const req = buildLegacyRequest(opts.model, loaded.userId, payload, true);
-  const headers = buildCosyHeaders(QODER_LEGACY_CHAT_URL, req.raw, auth, QODER_VERSION, {
-    id: loaded.machineId,
-    token: loaded.machineId,
-    type: "5",
-  }, { key: opts.model, source: "system" });
+  const modelKey = opts.model;
+  const cfg: LiteModelConfig = {
+    id: modelKey,
+    display_name: "Lite-Qwen-3.7-Plus",
+    max_input_tokens: 1_000_000,
+    max_output_tokens: 65536,
+    is_vl: true,
+    is_reasoning: false,
+  };
   console.log("=== Qoder LITE legacy COSY probe ===");
-  console.log(`model=${opts.model} chars=${opts.chars.toLocaleString()}`);
-  console.log(`rawBytes=${req.raw.length.toLocaleString()} encodedBytes=${req.encoded.byteLength.toLocaleString()}`);
+  console.log(`model=${modelKey} chars=${opts.chars.toLocaleString()}`);
   const start = Date.now();
   try {
-    const res = await probePost(QODER_LEGACY_CHAT_URL, headers, req.encoded.buffer as ArrayBuffer, { timeoutMs: opts.timeoutMs });
-    console.log(formatProbe("legacy/lite-cosy (signed)", res));
-    console.log(`elapsed=${Math.round((Date.now() - start) / 1000)}s`);
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), opts.timeoutMs);
+    const fetchFn = createValidatedFetch({ tlsProfile: currentProfile });
+    const request = canonicalRequestFor(modelKey, payload);
+    const body = buildQoderRequest(modelKey, request as never, cfg, auth, "intl");
+    const res = await callQoder(QODER_LEGACY_CHAT_URL, body, modelKey, auth, ac.signal, fetchFn as never, undefined, opts.cli ? "cli" : "app");
+    clearTimeout(timer);
+    console.log(`status=${res.status} elapsed=${Math.round((Date.now() - start) / 1000)}s`);
+    const text = await res.text().catch(() => "");
     if (res.ok) {
       console.log(`=> ACCEPTED ${opts.chars.toLocaleString()} chars (${Math.round((opts.chars / 4) / 1000)}k tokens approx)`);
     } else {
-      console.log("=> REJECTED (see head)");
+      console.log(`=> REJECTED (status ${res.status}) head=${text.slice(0, 160)}`);
     }
   } catch (error) {
     console.log(`ERROR ${error instanceof Error ? error.message : String(error)}`);
@@ -323,6 +341,7 @@ const { values } = parseArgs({
     prompt: { type: "string", default: DEFAULT_PROMPT },
     profile: { type: "string", default: "qoder-app" },
     host: { type: "string", default: "api2" },
+    cli: { type: "boolean", default: false },
     reply: { type: "boolean", default: false },
     "model-echo": { type: "boolean", default: false },
     lite: { type: "boolean", default: false },
@@ -385,7 +404,7 @@ if (values.models) {
 }
 
 if (values.lite) {
-  await probeLite(loaded, auth, { model: values.model, chars, timeoutMs });
+  await probeLite(auth, { model: values.model, chars, timeoutMs, cli: values.cli });
   process.exit(0);
 }
 
@@ -393,12 +412,13 @@ const models = values.all ? Object.keys(QODER_INTL_MODEL_CONFIGS) : [values.mode
 
 for (const model of models) {
   try {
-    await probeLegacy(model, loaded, auth, {
+    await probeLegacy(model, auth, {
       reply: values.reply,
       echo: values["model-echo"],
       prompt: values.prompt,
       host: values.host,
       timeoutMs,
+      cli: values.cli,
     });
   } catch (error) {
     console.log(`[model ${model}] ERROR ${error instanceof Error ? error.message : String(error)}`);

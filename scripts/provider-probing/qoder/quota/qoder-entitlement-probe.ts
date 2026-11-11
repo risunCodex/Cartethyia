@@ -55,8 +55,8 @@ import {
   machineOs,
   summarizeRedacted,
 } from "../lib/shared";
-import { buildCosyHeaders } from "../cosy-signer";
-import type { QoderProbeAuth } from "../cosy-signer";
+import { buildCosyHeaders } from "../lib/shared";
+import type { QoderProbeAuth } from "../lib/shared";
 import { maskUuid } from "../../lib/accounts";
 
 const args = parseArgs({

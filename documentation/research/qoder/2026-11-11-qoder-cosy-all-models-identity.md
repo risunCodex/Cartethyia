@@ -5,7 +5,7 @@
 `qoder-app` (desktop mirror), OAuth account `pleged lenger`, output streamed
 with the gateway's own parser. See
 `documentation/research/qoder/2026-11-11-qoder-desktop-0.5.7-chat-surface-evidence.md`
-for the surface evidence and `live/2026-11-05-qoder-model-matrix.md` §7 for the
+for the surface evidence and `2026-11-05-qoder-model-matrix.md` §7 for the
 upstream `raw_usage` metadata baseline.
 
 ## Run summary
@@ -81,4 +81,4 @@ synthesis of both.
 | Metadata probe | `scripts/provider-probing/qoder/chat/probe-qoder-meta.ts` |
 | TLS profile `qoder-app` | `src/network/egress/tls-profile.ts` |
 | Profile dial (`fetchWithTls`) | `src/network/egress/factory.ts` |
-| Upstream metadata baseline | `documentation/research/qoder/live/2026-11-05-qoder-model-matrix.md` §7 |
+| Upstream metadata baseline | `documentation/research/qoder/2026-11-05-qoder-model-matrix.md` §7 |

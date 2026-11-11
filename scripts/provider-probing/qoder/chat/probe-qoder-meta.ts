@@ -50,6 +50,7 @@ const args = parseArgs({
     maxTokens: { type: "string", default: "512" },
     profile: { type: "string", default: "qoder-app" },
     realm: { type: "string", default: "intl" },
+    cli: { type: "boolean", default: false },
   },
 });
 
@@ -129,6 +130,8 @@ async function probeModel(modelKey: string): Promise<void> {
     auth,
     new AbortController().signal,
     profileFetch,
+    undefined,
+    args.values.cli ? "cli" : "app",
   );
   const ttfbMs = Math.round(performance.now() - startedAt);
 
