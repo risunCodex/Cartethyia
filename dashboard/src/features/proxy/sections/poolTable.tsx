@@ -547,6 +547,7 @@ export const PoolRow = memo(function PoolRow({
   pool,
   isSelected,
   onToggleSelect,
+  onShiftSelect,
   checkResult,
   isTesting,
   onDelete,
@@ -562,6 +563,7 @@ export const PoolRow = memo(function PoolRow({
   readonly pool: NetworkPoolResponse;
   readonly isSelected: boolean;
   readonly onToggleSelect: (id: string) => void;
+  readonly onShiftSelect: (id: string) => void;
   readonly checkResult?: HealthCheckResult;
   readonly probe?: PoolProviderProbeResult;
   readonly isTesting: boolean;
@@ -588,6 +590,18 @@ export const PoolRow = memo(function PoolRow({
           type="checkbox"
           checked={isSelected}
           onChange={() => onToggleSelect(pool.id)}
+          onKeyDown={(event) => {
+            if (event.shiftKey && event.key === "Enter") {
+              event.preventDefault();
+              onShiftSelect(pool.id);
+            }
+          }}
+          onClick={(event) => {
+            if (event.shiftKey) {
+              event.preventDefault();
+              onShiftSelect(pool.id);
+            }
+          }}
           aria-label={`Select ${view.poolLabel}`}
         />
       </td>

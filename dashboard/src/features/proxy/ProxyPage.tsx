@@ -199,6 +199,9 @@ export default function Proxy(): ReactNode {
     key: "name",
     direction: "asc",
   });
+  const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "disabled">("all");
+  // The anchor row of a Shift+click range selection, in sorted order.
+  const [selectionAnchor, setSelectionAnchor] = useState<string | null>(null);
   const [deleteTargets, setDeleteTargets] = useState<NetworkPoolResponse[] | null>(null);
   const [activityPool, setActivityPool] = useState<NetworkPoolResponse | null>(null);
   const pools = poolsQuery.data ?? [];
@@ -206,6 +209,12 @@ export default function Proxy(): ReactNode {
     () => sortPools(pools, sort.key, sort.direction, (pool) => poolLatencyMs(pool, checkResults[pool.id])),
     [pools, sort, checkResults],
   );
+  // Status filter: bulk actions and Select All target only the visible rows.
+  const visiblePools = useMemo(() => {
+    if (statusFilter === "all") return sortedPools;
+    const enabled = statusFilter === "enabled";
+    return sortedPools.filter((pool) => (pool.status !== "disabled") === enabled);
+  }, [sortedPools, statusFilter]);
   const toggleSort = useCallback((key: string) => {
     const next = key as PoolSortKey;
     setSort((prev) =>
@@ -217,20 +226,35 @@ export default function Proxy(): ReactNode {
   const isPending = poolsQuery.isPending;
   const isError = poolsQuery.isError;
 
-  const allSelected = pools.length > 0 && pools.every((p) => selectedIds.has(p.id));
+  const allSelected = visiblePools.length > 0 && visiblePools.every((p) => selectedIds.has(p.id));
   const toggleSelectAll = () => {
-    setSelectedIds(allSelected ? new Set() : new Set(pools.map((p) => p.id)));
+    setSelectedIds(allSelected ? new Set() : new Set(visiblePools.map((p) => p.id)));
+    setSelectionAnchor(null);
   };
   // Stable identities: the memoized rows only skip a re-render when the props
   // they receive keep the same reference across the parent's renders.
-  const toggleSelectOne = useCallback((id: string) => {
+  const toggleSelectOne = useCallback((id: string, range = false) => {
     setSelectedIds((prev) => {
+      if (range && selectionAnchor !== null && selectionAnchor !== id) {
+        // Shift+click: select every visible pool between the anchor and this
+        // row (in the current sort order), replacing the current selection.
+        const ids = visiblePools.map((p) => p.id);
+        const start = ids.indexOf(selectionAnchor);
+        const end = ids.indexOf(id);
+        if (start !== -1 && end !== -1) {
+          const [lo, hi] = start < end ? [start, end] : [end, start];
+          const next = new Set(ids.slice(lo, hi + 1));
+          setSelectionAnchor(id);
+          return next;
+        }
+      }
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      setSelectionAnchor(id);
       return next;
     });
-  }, []);
+  }, [selectionAnchor, visiblePools]);
 
   useEffect(() => {
     try {
@@ -620,6 +644,23 @@ export default function Proxy(): ReactNode {
                     <span className="text-text-tertiary">({selectedIds.size})</span>
                   )}
                 </label>
+                <Select
+                  aria-label="Status filter"
+                  value={statusFilter}
+                  onValueChange={(value) => {
+                    setStatusFilter(value as "all" | "enabled" | "disabled");
+                    // A changed filter invalidates the range anchor; bulk
+                    // actions and Select All target only visible rows.
+                    setSelectedIds(new Set());
+                    setSelectionAnchor(null);
+                  }}
+                  options={[
+                    { value: "all", label: `All (${pools.length})` },
+                    { value: "enabled", label: `Enabled (${pools.filter((p) => p.status !== "disabled").length})` },
+                    { value: "disabled", label: `Disabled (${pools.filter((p) => p.status === "disabled").length})` },
+                  ]}
+                  className="w-auto min-w-40"
+                />
                 {testedCount > 0 && (
                   <Inline gap="6px">
                     <span className="text-text-tertiary">
@@ -803,12 +844,13 @@ export default function Proxy(): ReactNode {
                 sortDirection={sort.direction}
                 onSort={toggleSort}
               >
-                {sortedPools.map((pool) => (
+                {visiblePools.map((pool) => (
                   <PoolRow
                     key={pool.id}
                     pool={pool}
                     isSelected={selectedIds.has(pool.id)}
-                    onToggleSelect={toggleSelectOne}
+                    onToggleSelect={(id) => toggleSelectOne(id, false)}
+                    onShiftSelect={(id) => toggleSelectOne(id, true)}
                     checkResult={checkResults[pool.id]}
                     probe={
                       // The row's own verdict wins: it is the one every reader

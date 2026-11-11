@@ -159,6 +159,21 @@ const PARAM_QUIRKS: readonly ParamQuirk[] = [
     stripControls: ["temperature"],
   },
   {
+    provider: "nvidia",
+    // NVIDIA NIM rejects a set of cross-wire fields with 400 even though the
+    // OpenAI-compatible chat wire permits them. Stripping them here keeps the
+    // dispatch on the same wire shape the upstream accepts.
+    stripControls: [
+      "extension:client_metadata",
+      "extension:prompt_cache_key",
+      "service_tier",
+      "extension:anthropic_beta",
+      "extension:thinking_budget",
+      "extension:metadata_user_id",
+      "extension:custom_field",
+    ],
+  },
+  {
     provider: "anthropic",
     matchModel: rejectsSamplingParams,
     stripControls: ["temperature", "top_p", "top_k"],

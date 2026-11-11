@@ -310,6 +310,11 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
       // plus `message_delta.usage` — so nothing is lost by omitting it.
       const existing = payload["stream_options"] as Record<string, unknown> | undefined;
       payload["stream_options"] = { ...(existing ?? {}), include_usage: true };
+    } else if (!effectiveRequest.stream && payload["stream_options"] !== undefined) {
+      // A non-streaming request must not carry `stream_options`: several
+      // OpenAI-compatible upstreams (NVIDIA NIM, DeepSeek) reject the body
+      // with 400 "Stream options can only be defined when stream=True".
+      delete payload["stream_options"];
     }
     // Apply structured_output configuration
     if (this.config.structured_output?.enabled) {

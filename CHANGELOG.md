@@ -12,6 +12,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Outbound keep-alive hardening + stale-socket replay.** Direct dials and
+  socks dispatchers now cap the pooled keep-alive socket lifetime (4 s
+  default) so a silently-dropped connection is not reused; an error that
+  proves the socket died before response headers (`UND_ERR_SOCKET`,
+  `ECONNRESET`, `EPIPE`, headers timeout, "other side closed", "socket hang
+  up") replays the request once on a fresh-socket dispatcher. Host-level
+  failures (DNS, refused, TLS, connect timeout) and aborts are never
+  replayed — a bare "fetch failed" stays ambiguous and is also excluded.
+- **NVIDIA NIM parameter quirks.** `applyParamQuirks` now strips the
+  cross-wire fields NIM rejects with 400 (`extension:client_metadata`,
+  `extension:prompt_cache_key`, `service_tier`,
+  `extension:anthropic_beta`, `extension:thinking_budget`,
+  `extension:metadata_user_id`, `extension:custom_field`), and the
+  compatible adapter drops `stream_options` on non-streaming requests (NIM
+  and DeepSeek accept the field only when `stream: true`).
+- **SenseNova providers (CN + Intl).** Keys are per-site — China keys on
+  `token.sensenova.cn`, international keys on `token.sensenova.ai` — so the
+  two realms are separate providers with separate hosts, catalogs and
+  discovery. Chat (`/v1/chat/completions`) plus image-generation rows
+  (`/v1/images/generations`) are bundled with the official SenseNova marks.
+- **Proxy pool status filter + Shift+click range selection.** The pools page
+  now filters by All/Enabled/Disabled; selections and Select All target only
+  visible rows, range selection works in the current sort order, and the
+  anchor resets when the filter changes.
+
 - **Device-code OAuth flows can now rotate egress through network pools.**
   Device-authorization start + token poll previously always dialed from the
   gateway's own egress, so every code minted on one host appeared to come from

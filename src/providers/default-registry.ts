@@ -626,6 +626,32 @@ export const PROVIDER_CAPABILITIES = {
         ...(fetcher === undefined ? {} : { fetcher }),
       }),
   },
+  sensenova: {
+    loadAdapter: async () => createApiKeyAdapter((await import("./integrations/sensenova/provider")).SENSENOVA_SPEC),
+    loadModels: async () => (await import("./integrations/sensenova/provider")).SENSENOVA_MODELS,
+    loadModelDiscovery: async () => async (input) =>
+      (await import("./integrations/sensenova/provider")).discoverSensenovaModels({
+        baseUrl: input.baseUrl,
+        providerId: "sensenova",
+        ...(typeof input.credential === "string" && input.credential.trim().length > 0
+          ? { credential: input.credential }
+          : {}),
+        ...(input.fetcher === undefined ? {} : { fetcher: input.fetcher }),
+      }),
+  },
+  "sensenova-intl": {
+    loadAdapter: async () => createApiKeyAdapter((await import("./integrations/sensenova/provider")).SENSENOVA_INTL_SPEC),
+    loadModels: async () => (await import("./integrations/sensenova/provider")).SENSENOVA_INTL_MODELS,
+    loadModelDiscovery: async () => async (input) =>
+      (await import("./integrations/sensenova/provider")).discoverSensenovaModels({
+        baseUrl: input.baseUrl,
+        providerId: "sensenova-intl",
+        ...(typeof input.credential === "string" && input.credential.trim().length > 0
+          ? { credential: input.credential }
+          : {}),
+        ...(input.fetcher === undefined ? {} : { fetcher: input.fetcher }),
+      }),
+  },
   openrouter: {
     loadAdapter: async () => createApiKeyAdapter((await import("./integrations/openrouter/provider")).OPENROUTER_SPEC),
     // One dynamic import for both halves: this registry lazy-loads every

@@ -206,6 +206,12 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
   { id: "synthetic", displayName: "Synthetic", baseUrl: "https://api.synthetic.new/v1", credentialUrl: "https://app.synthetic.new/api-keys" },
   { id: "stepfun", displayName: "StepFun", baseUrl: "https://api.stepfun.com/v1", credentialUrl: "https://platform.stepfun.com/console/keys" },
   { id: "sakana", displayName: "Sakana AI", baseUrl: "https://api.sakana.ai/v1", credentialUrl: "https://console.sakana.ai/api-keys" },
+  // SenseNova keys are per-site: China keys (token.sensenova.cn) and
+  // international keys (token.sensenova.ai) reject each other with 401
+  // "Forbidden", so the two deployments are separate providers with separate
+  // hosts and catalogs — the same split as CodeBuddy cb/cbcn.
+  { id: "sensenova", displayName: "SenseNova", baseUrl: "https://token.sensenova.cn/v1", serviceKinds: ["llm", "imageGeneration"], credentialUrl: "https://token.sensenova.cn", credentialHint: "Paste a SenseNova API key created on platform.sensenova.cn. International accounts use SenseNova (Intl)." },
+  { id: "sensenova-intl", displayName: "SenseNova (Intl)", baseUrl: "https://token.sensenova.ai/v1", serviceKinds: ["llm", "imageGeneration"], credentialUrl: "https://platform.sensenova.ai", credentialHint: "Paste a SenseNova API key created on platform.sensenova.ai. China accounts use SenseNova." },
   { id: "helmcode", displayName: "HelmCode", baseUrl: "https://api.helmcode.com/v1", credentialUrl: "https://helmcode.com/dashboard" },
   { id: "coralbricks", displayName: "CoralBricks", baseUrl: "https://api.coralbricks.com/v1", credentialUrl: "https://coralbricks.com/api-keys" },
   { id: "aiand", displayName: "ai&", baseUrl: "https://api.aiand.com/v1", credentialUrl: "https://console.aiand.com/api-keys" },

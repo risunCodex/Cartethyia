@@ -10,6 +10,68 @@ import { isProxyAgentPair, type ProxyAgentPair } from "../pool/agent";
 import { metrics } from "../../observability/metrics";
 import { trackNetworkCall } from "../../observability/performance-metrics";
 import { nodeTlsOptions, tlsProfileOf, type TlsProfile, type TlsProfileConfig } from "./tls-profile";
+
+/**
+ * Keep-alive socket lifetime for outbound direct dials.
+ *
+ * Some upstream edges (accelerated hosting, CDN front doors) drop idle or
+ * silently-errored keep-alive connections without sending a TCP RST. undici
+ * keeps those dead sockets in its pool — the default `keepAliveMaxTimeout`
+ * is 600s, and an upstream `Keep-Alive` header can push it even higher — so a
+ * retry reuses a poisoned socket and hangs until the connect timeout. Capping
+ * the TTL (both fields) keeps a dead socket from being reused; a fresh dial
+ * is also replayed once when a pooled socket dies before response headers.
+ */
+export const DEFAULT_KEEPALIVE_TIMEOUT_MS = 4_000;
+/** Fresh-socket retry agent: keep-alive effectively disabled (1 ms). */
+const FRESH_SOCKET_KEEPALIVE_TIMEOUT_MS = 1;
+
+/** Error codes that prove a pooled keep-alive socket died mid-flight. */
+const STALE_SOCKET_ERROR_CODES: ReadonlySet<string> = new Set([
+  "UND_ERR_SOCKET",
+  "ECONNRESET",
+  "EPIPE",
+  "UND_ERR_HEADERS_TIMEOUT",
+]);
+
+/** Error codes that prove the host itself is unreachable — never a stale socket. */
+const NON_STALE_SOCKET_ERROR_CODES: ReadonlySet<string> = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_INVALID_ARG",
+]);
+
+/** Message fragments that prove the other side closed a pooled connection. */
+const STALE_SOCKET_ERROR_SUBSTRINGS: readonly string[] = [
+  "other side closed",
+  "socket hang up",
+];
+
+/** True when `error` proves a pooled keep-alive socket died before headers. */
+export function isStaleSocketError(error: unknown): boolean {
+  if (!(error instanceof Error) || error.name === "AbortError") return false;
+  const cause = (error as { cause?: unknown }).cause;
+  const code =
+    (cause !== null && typeof cause === "object" && "code" in cause
+      ? (cause as { code?: unknown }).code
+      : undefined) ?? (error as { code?: unknown }).code;
+  if (typeof code === "string") {
+    if (NON_STALE_SOCKET_ERROR_CODES.has(code)) return false;
+    if (STALE_SOCKET_ERROR_CODES.has(code)) return true;
+  }
+  const message = `${error.message} ${cause instanceof Error ? cause.message : ""}`.toLowerCase();
+  return STALE_SOCKET_ERROR_SUBSTRINGS.some((fragment) => message.includes(fragment));
+}
+
+/** True when the request body can be safely replayed (not a locked stream). */
+function isBodyReplaySafe(body: BodyInit | null | undefined): boolean {
+  if (body === null || body === undefined) return true;
+  return !(typeof body === "object" && "locked" in body && body.locked === true);
+}
 // Validated fetch — single egress with ProxyAgent support
 interface ValidatedFetchOptions {
   readonly fetchFn?: typeof fetch;
@@ -104,7 +166,7 @@ function socksDispatcherFor(agent: SocksProxyAgent): UndiciAgent {
   let dispatcher = socksDispatcherCache.get(agent);
   if (!dispatcher) {
     dispatcher = new UndiciAgent({
-      connect: async (opts) => {
+      connect: async (opts: Record<string, unknown>) => {
         const o = opts as {
           hostname?: string;
           port?: number | string;
@@ -121,7 +183,11 @@ function socksDispatcherFor(agent: SocksProxyAgent): UndiciAgent {
           } as never,
         );
       },
-    });
+      // Cap the pooled socket lifetime so a silently-dropped keep-alive
+      // connection is not reused by a later request.
+      keepAliveTimeout: DEFAULT_KEEPALIVE_TIMEOUT_MS,
+      keepAliveMaxTimeout: DEFAULT_KEEPALIVE_TIMEOUT_MS,
+    } as unknown as ConstructorParameters<typeof UndiciAgent>[0]);
     socksDispatcherCache.set(agent, dispatcher);
   }
   return dispatcher;
@@ -149,7 +215,31 @@ export function createProfileAgent(profile: TlsProfileConfig, ca?: string | Buff
   } as unknown as HttpsAgent);
 }
 
-/** One dial, always through `fetch`.
+/**
+ * A shared undici dispatcher whose keep-alive socket lifetime is capped.
+ *
+ * Direct dials go through the runtime's own fetch; when a socks dispatcher is
+ * in play (pool egress) the same TTL cap applies. A fresh-socket dispatcher
+ * (`keepAliveTimeout: 1ms`) backs the stale-socket replay so a retry never
+ * reuses the poisoned connection.
+ */
+let directDispatcherCache: { agent: UndiciAgent; fresh: UndiciAgent } | undefined;
+function directDispatchers(): { agent: UndiciAgent; fresh: UndiciAgent } {
+  directDispatcherCache ??= {
+    agent: new UndiciAgent({
+      keepAliveTimeout: DEFAULT_KEEPALIVE_TIMEOUT_MS,
+      keepAliveMaxTimeout: DEFAULT_KEEPALIVE_TIMEOUT_MS,
+    } as unknown as ConstructorParameters<typeof UndiciAgent>[0]),
+    fresh: new UndiciAgent({
+      keepAliveTimeout: FRESH_SOCKET_KEEPALIVE_TIMEOUT_MS,
+      keepAliveMaxTimeout: FRESH_SOCKET_KEEPALIVE_TIMEOUT_MS,
+    } as unknown as ConstructorParameters<typeof UndiciAgent>[0]),
+  };
+  return directDispatcherCache;
+}
+
+/**
+ * Dial one request, always through `fetch`.
  *
  * The runtime's own fetch (Bun/Undici) is the transport the clients this
  * gateway impersonates actually use, and several upstreams meter per client
@@ -175,6 +265,7 @@ async function dial(
   proxyUrl: string | undefined,
   dispatcher?: UndiciAgent,
   socksFetch: (input: RequestInfo | URL, init?: UndiciRequestInit) => Promise<Response> = undiciFetch,
+  freshSocket = false,
 ): Promise<Response> {
   const headers = new Headers(init.headers);
   const rawBody = init.body;
@@ -191,13 +282,16 @@ async function dial(
     return await socksFetch(url, {
       ...init,
       headers,
-      dispatcher,
+      dispatcher: freshSocket ? directDispatchers().fresh : dispatcher,
     });
   }
   return await fetchFn(url, {
     ...init,
     headers,
     ...(proxyUrl === undefined ? {} : { proxy: proxyUrl }),
+    // Fresh-socket replay uses the capped undici dispatcher directly so a
+    // retry never reuses the pooled connection that just died.
+    ...(freshSocket ? { dispatcher: directDispatchers().fresh } : {}),
   });
 }
 
@@ -367,7 +461,24 @@ export function createValidatedFetch(options: ValidatedFetchOptions = {}): Valid
           // the existing fetch path.
           response = await nodeDial(url, requestInit);
         } else {
-          response = await dial(url, requestInit, fetchFn, proxyUrl, socksAgent ? socksDispatcherFor(socksAgent) : undefined, socksFetch);
+          try {
+            response = await dial(url, requestInit, fetchFn, proxyUrl, socksAgent ? socksDispatcherFor(socksAgent) : undefined, socksFetch);
+          } catch (error) {
+            // A pooled keep-alive socket that died before response headers is
+            // replayed once on a fresh socket. Only errors that *prove* the
+            // socket died qualify; a bare fetch failure (or an abort, or a
+            // locked body) is never replayed — the upstream may already hold
+            // that request and a replay would deliver it twice.
+            if (
+              !requestInit.signal?.aborted &&
+              isBodyReplaySafe(requestInit.body) &&
+              isStaleSocketError(error)
+            ) {
+              response = await dial(url, requestInit, fetchFn, proxyUrl, socksAgent ? socksDispatcherFor(socksAgent) : undefined, socksFetch, true);
+            } else {
+              throw error;
+            }
+          }
         }
       }
       if (response.status < 300 || response.status >= 400) {
