@@ -74,6 +74,13 @@ export interface ProbeModelRequest {
   route?: string;
   wireFamily?: string;
   accountId?: string;
+  /**
+   * Restrict a batched probe (`probeAllAccounts`) to these account ids.
+   * Absent means every account of the provider. The dashboard's Grok
+   * "Test 407" uses it when the operator selected accounts: only the
+   * selection is probed then, instead of every active account.
+   */
+  accountIds?: readonly string[];
   prompt?: string;
   /** Omit or `auto` to probe without any reasoning intent. */
   reasoningEffort?: ProbeReasoningEffort;

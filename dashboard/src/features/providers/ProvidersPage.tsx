@@ -806,6 +806,9 @@ const FREE_LIMITED_IDS = new Set([
   // Freebuff's plan is a metered free allowance (freebucks + per-model
   // sessions), surfaced with a small daily credit.
   "freebuff",
+  // Clixad is ad-funded: a daily free tier (120k credits/day) plus account
+  // credits earned from offers (grant_per_ad ~40k/survey, $5/day cap).
+  "clixad",
 ]);
 /**
  * The providers an operator reaches for first: household names with a

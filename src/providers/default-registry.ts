@@ -584,6 +584,24 @@ export const PROVIDER_CAPABILITIES = {
       return PERCH_MODELS;
     },
   },
+  clixad: {
+    loadAdapter: async () => createApiKeyAdapter((await import("./integrations/clixad/provider")).CLIXAD_SPEC),
+    loadModels: async () => (await import("./integrations/clixad/provider")).CLIXAD_DEFAULT_MODELS,
+    // Clixad login is a GitHub device flow; the issued token (adg_...) is the
+    // credential. Pasting a token is supported via importCredential.
+    loadAuthentication: oauthCapability(() => import("./integrations/clixad/clixad-oauth"), "ClixadOAuthClient"),
+    loadQuotaCollector: quotaCapability(() => import("./integrations/clixad/clixad-quota"), "fetchClixadQuota"),
+    // `/v1/models` is unauthenticated and lists all rows; the static roster
+    // carries the live-verified free tier and discovery keeps the list current.
+    loadModelDiscovery: async () => async (request: Parameters<ProviderModelDiscovery>[0]) => {
+      const { discoverClixadModels, CLIXAD_DEFAULT_MODELS } = await import("./integrations/clixad/provider");
+      const fetcher = request.fetcher as unknown as typeof fetch | undefined;
+      if (fetcher === undefined) return CLIXAD_DEFAULT_MODELS;
+      const rows = await discoverClixadModels({ baseUrl: request.baseUrl, fetcher });
+      if (rows === null || rows.length === 0) return CLIXAD_DEFAULT_MODELS;
+      return rows;
+    },
+  },
   inferhub: {
     loadAdapter: async () => (await import("./integrations/inferhub")).createInferhubAdapter(),
     // Live `/v1/models` is the primary source: the marketplace republishes its

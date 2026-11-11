@@ -125,6 +125,8 @@ provider-probing/
   antigravity/
     probe-antigravity.ts       # control-plane + models + chat + image probe
     probe-antigravity-oauth.ts # Google OAuth PKCE browser flow + refresh probe
+  clixad/
+    probe-clixad.ts            # Clixad gateway wire probe (chat/wallet/ads/auth)
 ```
 
 The Qoder probe covers two surfaces:
@@ -395,3 +397,35 @@ old wire — no tool-schema normalization, no forced-tool restatement, and
 `used_claude` derived only from the model-id substring); `--mode minimal` is
 a small raw agent envelope. Comparing the same model across the three modes
 against the live backend shows exactly which shape the upstream accepts.
+
+## Clixad
+
+`probe-clixad.ts` is a wire probe for the Clixad metering gateway
+(`https://clixad.onrender.com`), reconstructed from the `clixad@0.0.1-beta.50`
+bundle (call-site verified). The gateway is OpenAI-compatible for chat plus a
+`clixad` envelope with credit/billing metadata; keys, free-tier allowance, the
+ad-reward network (ADtention), and referrals all live server-side. The CLI
+itself only holds a bearer token minted at login. Clixad is now also a bundled
+Cartethyia provider (Free Limited section) — the probe is the ground truth for
+that adapter's wire and quota shapes.
+
+```sh
+# Gateway health / model catalog (no credentials)
+bun run scripts/provider-probing/clixad/probe-clixad.ts health
+bun run scripts/provider-probing/clixad/probe-clixad.ts models
+
+# Authed endpoints — token comes from the account export (used as Bearer)
+bun run scripts/provider-probing/clixad/probe-clixad.ts wallet --creds <file>
+bun run scripts/provider-probing/clixad/probe-clixad.ts ask "hello" --creds <file> --stream
+
+# Dev signup — CREATES A REAL ACCOUNT on the live service (throwaway email only)
+bun run scripts/provider-probing/clixad/probe-clixad.ts login-dev --creds <file> --email throwaway@example.com
+
+# Interactive GitHub device-flow login
+bun run scripts/provider-probing/clixad/probe-clixad.ts login-device --creds <file>
+```
+
+The account export's `accessToken` is used as the bearer token; tokens are
+masked on output. `login-dev` hits `/dev/users`, which creates a real account
+on the live service — use only with a throwaway email and only when intended.
+Evidence ledger: `documentation/research/clixad/2026-11-11-clixad-wire.md`.

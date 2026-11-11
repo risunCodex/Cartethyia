@@ -74,6 +74,46 @@ describe("trae client version discovery", () => {
   });
 });
 
+describe("clixad client version discovery", () => {
+  // The gateway publishes its paired CLI build as `cli_latest` on the
+  // unauthenticated `/v1/models` listing.
+  const source = VERSION_SOURCES.clixad.sources[0];
+  const extract = source?.extract;
+
+  test("the source is the gateway's model listing", () => {
+    expect(source?.url).toContain("clixad.onrender.com/v1/models");
+  });
+
+  test("reads cli_latest from the listing", async () => {
+    const page = new Response(JSON.stringify({ cli_latest: "0.0.1-beta.50", data: [] }), {
+      headers: { "content-type": "application/json" },
+    });
+    expect(await extract?.(page)).toBe("0.0.1-beta.50");
+  });
+
+  test("missing cli_latest means no answer", async () => {
+    const page = new Response(JSON.stringify({ data: [] }), {
+      headers: { "content-type": "application/json" },
+    });
+    expect(await extract?.(page)).toBeNull();
+  });
+
+  test("a non-semver cli_latest is rejected", async () => {
+    const page = new Response(JSON.stringify({ cli_latest: "latest" }), {
+      headers: { "content-type": "application/json" },
+    });
+    expect(await extract?.(page)).toBeNull();
+  });
+
+  test("fallback pins the shipped bundle version", () => {
+    expect(VERSION_SOURCES.clixad.fallback).toBe("0.0.1-beta.50");
+  });
+
+  test("the resolver is wired into getProviderClientVersion", () => {
+    expect(getProviderClientVersion("clixad")?.client).toBe("clixad");
+  });
+});
+
 describe("cursor client version discovery", () => {
   const source = VERSION_SOURCES.cursor.sources[0];
   const extract = source?.extract;

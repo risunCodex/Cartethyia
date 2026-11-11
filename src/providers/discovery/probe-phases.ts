@@ -117,14 +117,18 @@ export function grok407ProbeFailure(args: {
   const providerStatus =
     typeof priorDetails.providerStatus === "number" ? priorDetails.providerStatus : undefined;
   const returned202 = normalizedSample === "202" || providerStatus === 202;
+  // The sample is the model's literal final answer — that is the "original
+  // response" an operator wants to see in the health log, not just the
+  // classification. Quote it so the health-event reason records what the
+  // upstream actually said.
   const detail =
     returned202
-      ? "Grok 407 feature probe returned 202 instead of 407"
+      ? `Grok 407 feature probe returned "202" instead of "407"`
       : args.dispatchError instanceof Error
         ? `Grok 407 feature probe failed: ${args.dispatchError.message}`
         : sample === undefined
           ? "Grok 407 feature probe returned no exact 407 response"
-          : `Grok 407 feature probe returned ${sample}`;
+          : `Grok 407 feature probe returned "${sample}" (expected "407")`;
   return new GatewayError(
     "quota_exceeded",
     429,

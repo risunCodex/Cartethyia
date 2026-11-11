@@ -1260,6 +1260,13 @@ export class ProviderProbingService {
         and(
           eq(providerAccounts.providerId, providerId),
           globalOrOwnedBy(providerAccounts.tenantId, tenantId),
+          // `accountIds` absent means every account; when present (even
+          // empty) only those ids are probed — the dashboard's "Test 407"
+          // sends the selection and falls back to all when nothing is
+          // selected.
+          ...(request.accountIds !== undefined
+            ? [inArray(providerAccounts.id, request.accountIds)]
+            : []),
         ),
       );
     // Sliding worker pool: workers claim the next account as soon as their

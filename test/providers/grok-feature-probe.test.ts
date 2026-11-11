@@ -56,6 +56,16 @@ describe("Grok 407 feature probe", () => {
     expect(failure?.details.upstreamStatus).toBe(202);
   });
 
+  test("quotes the literal sample in the message so the health log shows the original response", () => {
+    const failure = grok407ProbeFailure({
+      providerId: "grok",
+      prompt: GROK_407_PROBE_PROMPT,
+      events: textEvent("202"),
+      dispatchError: undefined,
+    });
+    expect(failure?.message).toContain('returned "202" instead of "407"');
+  });
+
   test("parks a refusal (not exactly 407) for the same quota window", () => {
     const failure = grok407ProbeFailure({
       providerId: "grok",

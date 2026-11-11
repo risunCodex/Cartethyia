@@ -179,6 +179,19 @@ const KIRO_SYSTEM_VERSION = "win32#10.0.22631";
 /** Node version the observed Kiro client reports (Electron's bundled Node). */
 const KIRO_NODE_VERSION = "24.18.0";
 
+/** Clixad gateway's own CLI version: `cli_latest` on `/v1/models`. */
+async function clixadVersion(response: Response): Promise<string | null> {
+  const body = await response.text().catch(() => "");
+  if (body.length === 0) return null;
+  try {
+    const parsed = JSON.parse(body) as { cli_latest?: unknown };
+    const candidate = parsed.cli_latest;
+    return typeof candidate === "string" && isSemverish(candidate) ? candidate.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Ordered upstream sources and pinned fallbacks for every client version. */
 export const VERSION_SOURCES = {
   antigravity: {
@@ -359,6 +372,20 @@ export const VERSION_SOURCES = {
     fallback: "2.4.128",
     sources: [{ url: "https://registry.npmjs.org/perchai-cli/latest" }],
   },
+  clixad: {
+    key: "clixad",
+    // The Clixad gateway publishes the CLI build it is paired with as
+    // `cli_latest` on `/v1/models` (unauthenticated). Fallback = the version
+    // the 0.0.1-beta.50 bundle shipped (verified live 2026-11-11); a cold
+    // process sends it until the monitor's first successful discovery.
+    fallback: "0.0.1-beta.50",
+    sources: [
+      {
+        url: "https://clixad.onrender.com/v1/models",
+        extract: clixadVersion,
+      },
+    ],
+  },
   freebuff: {
     key: "freebuff",
     // No machine-readable public feed exists for Freebuff Desktop. GitHub
@@ -421,6 +448,7 @@ const resolvers = {
   trae: createClientVersionResolver({ ...VERSION_SOURCES.trae, client: "trae" }),
   freepi: createClientVersionResolver({ ...VERSION_SOURCES.freepi, client: "freepi" }),
   perch: createClientVersionResolver({ ...VERSION_SOURCES.perch, client: "perch" }),
+  clixad: createClientVersionResolver({ ...VERSION_SOURCES.clixad, client: "clixad" }),
   freebuff: createClientVersionResolver({ ...VERSION_SOURCES.freebuff, client: "freebuff" }),
   cursor: createClientVersionResolver({ ...VERSION_SOURCES.cursor, client: "cursor" }),
   opencode: createClientVersionResolver({ ...VERSION_SOURCES.opencode, client: "opencode" }),
@@ -445,6 +473,7 @@ const PROVIDER_VERSION_RESOLVERS: Readonly<Record<string, ClientVersionResolver>
   antigravity: resolvers.antigravity,
   freepi: resolvers.freepi,
   perch: resolvers.perch,
+  clixad: resolvers.clixad,
   grok: resolvers.grok,
   xai: resolvers.grok,
   opencode: resolvers.opencode,

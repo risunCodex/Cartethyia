@@ -223,7 +223,7 @@ export function AccountsList({
   readonly onDelete: (account: ProviderAccountResponse) => void;
   readonly showGrokProbe?: boolean;
   readonly grokProbePending?: boolean;
-  readonly onGrokProbe?: () => void;
+  readonly onGrokProbe?: (selectedAccountIds: readonly string[]) => void;
 }): ReactNode {
   const queryClient = useQueryClient();
   const setActiveBatch = useSetAccountsActiveBatch();
@@ -583,15 +583,21 @@ const TEST_ALL_CONCURRENCY = 3;
               : `Tested ${testAllProgress.done}/${testAllProgress.total}`}
           </Button>
           {/* Grok-only: the 407 streaming probe is meaningless on any other
-              provider, so it is absent rather than greyed out. */}
+              provider, so it is absent rather than greyed out. When accounts
+              are selected, only those are probed (not every active account);
+              otherwise the probe covers the whole provider. */}
           {showGrokProbe ? (
             <Button
               size="sm"
               variant="secondary"
               icon={<FlaskConical size={12} className={grokProbePending ? "animate-spin" : ""} />}
               disabled={grokProbePending || accounts.length === 0}
-              onClick={onGrokProbe}
-              title="Probe every Grok account with the live 407 streaming request"
+              onClick={() => onGrokProbe?.(selectedAccounts.map((account) => account.id))}
+              title={
+                nothingSelected
+                  ? "Probe every Grok account with the live 407 streaming request"
+                  : `Probe only the ${selectedAccounts.length} selected Grok account${selectedAccounts.length === 1 ? "" : "s"}`
+              }
             >
               {grokProbePending ? "Testing…" : "Test 407"}
             </Button>

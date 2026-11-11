@@ -141,6 +141,7 @@ const probeModelBody = t.Object({
   route: t.Optional(t.String()),
   wireFamily: t.Optional(t.String()),
   accountId: t.Optional(t.String()),
+  accountIds: t.Optional(t.Array(t.String(), { maxItems: 100 })),
   prompt: t.Optional(t.String()),
   reasoningEffort: t.Optional(literalUnion(PROBE_REASONING_EFFORTS)),
   maxOutputTokens: t.Optional(t.Integer({ minimum: 1, maximum: 131072 })),

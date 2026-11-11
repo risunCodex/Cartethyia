@@ -12,6 +12,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Grok "Test 407" health log quotes the original model response.** The
+  probe's health-event reason now records the literal answer the model gave
+  (e.g. `returned "202" instead of "407"` for an exhausted account, or the
+  exact refusal text otherwise) instead of only the classification. The
+  operator sees what the upstream actually said in the health log, not just
+  the quota verdict.
+- **Grok "Test 407" respects the account selection.** When accounts are
+  selected in the provider detail page, the 407 exhaustion probe now runs
+  against only those accounts (fast, no full-provider sweep); with no
+  selection it still probes every account as before. The button's tooltip
+  names the scope, and the completion toast reports how many accounts were
+  probed (`N selected accounts` vs `all accounts`). The probe request gained an
+  optional `accountIds` filter (`probeAllAccounts`), and the console route
+  schema accepts it.
+- **Clixad provider (Free Limited).** Ad-funded coding-agent gateway; the
+  console now bundles it with the five live-verified free-tier rows
+  (`gpt-5-nano`, `gemini-2.5-flash-lite`, `claude-haiku-5.5`,
+  `deepseek-v4-flash`, `gemini-3.5-flash-lite`) — each bills zero per token
+  against the provider's daily free tier (120k credits/day, resets at
+  midnight UTC). Login is a GitHub device flow (the issued `adg_…` token is
+  the credential); quota reads the wallet endpoint and reports the account
+  balance, daily free-tier allowance, and the $5/day ad-reward cap. Live
+  `/v1/models` discovery keeps the roster current, and the client-version
+  monitor reads the gateway's own `cli_latest` from that listing (fallback
+  pin `0.0.1-beta.50`) so the provider presents the CLI build the gateway is
+  paired with. Evidence ledger:
+  `documentation/research/clixad/2026-11-11-clixad-wire.md`.
 - **Outbound keep-alive hardening + stale-socket replay.** Direct dials and
   socks dispatchers now cap the pooled keep-alive socket lifetime (4 s
   default) so a silently-dropped connection is not reused; an error that

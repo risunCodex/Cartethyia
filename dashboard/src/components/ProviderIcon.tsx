@@ -105,6 +105,9 @@ const iconAssets: Record<string, { file: string; ext: "svg" | "webp" | "png" }> 
   // uses the same official mark as its China sibling.
   sensenova: { file: "sensenova", ext: "png" },
   "sensenova-intl": { file: "sensenova-intl", ext: "png" },
+  // Clixad has no shipped brand mark in the asset folder; naming it here keeps
+  // the lookup deterministic and the fallback renders the "CL" initials.
+  clixad: { file: "clixad", ext: "svg" },
 };
 
 function assetFor(icon: string): { file: string; ext: "svg" | "webp" | "png" } {

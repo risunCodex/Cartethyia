@@ -188,6 +188,14 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
   // and the registry pins the Messages endpoint separately.
   { id: "deepseek", displayName: "DeepSeek", baseUrl: "https://api.deepseek.com", wireFamilyDefault: "messages", credentialUrl: "https://platform.deepseek.com/api_keys" },
   { id: "gmi", displayName: "GMI Cloud", baseUrl: "https://api.gmi-serving.com/v1", credentialUrl: "https://console.gmicloud.ai" },
+  {
+    id: "clixad",
+    displayName: "Clixad",
+    baseUrl: "https://clixad.onrender.com/v1",
+    requiresAccount: true,
+    credentialUrl: "https://clixad.io",
+    credentialHint: "Sign in with GitHub (device flow) or paste a Clixad token (adg_...). Model calls draw from the account balance and a daily free tier (120k credits/day).",
+  },
 
   // OpenAI-compatible bearer aggregators. Each is a bare host already rooted at
   // its own version prefix, so the `/v1`-prefixed wire paths stay pinned by the
