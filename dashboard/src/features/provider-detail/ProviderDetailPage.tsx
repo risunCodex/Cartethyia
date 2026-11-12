@@ -180,7 +180,8 @@ export default function ProviderDetail(): ReactNode {
   const [oauthBrowserSession, setOauthBrowserSession] = useState<{
     authorizeUrl: string;
     state: string;
-    popup: Window;
+    popup: Window | null;
+    loopback: boolean;
   } | null>(null);
   // Tracks the OAuth popup outside React state so it can be closed on
   // authorize error or component unmount even if the session never sets.
@@ -387,7 +388,17 @@ export default function ProviderDetail(): ReactNode {
     startAuthorize.mutate(
       { providerId: id, ...(parameters === undefined ? {} : { parameters }) },
       {
-        onSuccess: ({ authorizeUrl, state }) => {
+        onSuccess: ({ authorizeUrl, state, loopback }) => {
+          if (!loopback) {
+            // Deployment mode: the redirect goes to the hosted console callback,
+            // so opening it in a popup is fine — but the URL is not a loopback
+            // the browser can reach on its own, so no popup is forced. The
+            // dialog shows the link for the operator to open.
+            if (blankPopup && !blankPopup.closed) blankPopup.close();
+            if (oauthPopupRef.current === blankPopup) oauthPopupRef.current = null;
+            setOauthBrowserSession({ authorizeUrl, state, popup: null, loopback });
+            return;
+          }
           let target: Window | null = null;
           if (blankPopup && !blankPopup.closed) {
             blankPopup.location.href = authorizeUrl;
@@ -403,7 +414,7 @@ export default function ProviderDetail(): ReactNode {
             toast.error("Popup blocked", "Allow popups to complete OAuth login.");
             return;
           }
-          setOauthBrowserSession({ authorizeUrl, state, popup: target });
+          setOauthBrowserSession({ authorizeUrl, state, popup: target, loopback });
         },
         onError: (err) => {
           if (blankPopup && !blankPopup.closed) blankPopup.close();
@@ -1064,6 +1075,7 @@ export default function ProviderDetail(): ReactNode {
           authorizeUrl={oauthBrowserSession.authorizeUrl}
           state={oauthBrowserSession.state}
           popup={oauthBrowserSession.popup}
+          loopback={oauthBrowserSession.loopback}
           onClose={closeOAuthBrowserSession}
         />
       )}

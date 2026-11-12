@@ -61,6 +61,12 @@ const ALLOW_LIST: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     // parsed with per-value semantics (`none` sentinel, empty→undefined)
     // that the generic list reader does not expose.
     CARTETHYIA_OPENCODE_UNAVAILABLE_FREE: "custom list semantics beyond generic reader",
+    // Loopback-vs-hosted OAuth callback selection: reads raw for PRESENCE and
+    // host classification (localhost vs public origin), because the spec entry
+    // is `required` (throws when absent) while this helper needs to fall back
+    // to the loopback listener in local/dev runs that never set it. The value
+    // itself is only used to build redirect URIs from the same env.
+    CARTETHYIA_PUBLIC_ORIGIN: "presence/host check for callback routing; spec entry is required elsewhere",
   },
   "src/config/runtime.ts": {
     // One-shot sentinel the install script sets to mark a source run; not an

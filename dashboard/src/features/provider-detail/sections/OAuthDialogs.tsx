@@ -67,12 +67,14 @@ export function OAuthBrowserDialog({
   authorizeUrl,
   state,
   popup,
+  loopback,
   onClose,
 }: {
   readonly providerId: string;
   readonly authorizeUrl: string;
   readonly state: string;
-  readonly popup: Window;
+  readonly popup: Window | null;
+  readonly loopback: boolean;
   readonly onClose: (completed: boolean) => void;
 }): ReactNode {
   const [copied, setCopied] = useState(false);
@@ -131,13 +133,13 @@ export function OAuthBrowserDialog({
     const added = ids.find((id) => !baselineAccountIdsRef.current!.has(id));
     if (added === undefined) return;
     completionDetectedRef.current = true;
-    popup.close();
+    popup?.close();
     toast.success("Account connected", "OAuth login completed successfully");
     onClose(true);
   }, [accountsQuery.data, baselinePending, popup, onClose]);
 
   const cancel = () => {
-    popup.close();
+    popup?.close();
     onClose(false);
   };
 
@@ -204,7 +206,7 @@ export function OAuthBrowserDialog({
       { providerId, code: parsed.code, state },
       {
         onSuccess: () => {
-          popup.close();
+          popup?.close();
           toast.success("Account connected", "OAuth login completed successfully");
           onClose(true);
         },
@@ -249,11 +251,20 @@ export function OAuthBrowserDialog({
       }
     >
       <Stack gap="14px">
-        <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-card border border-inner-border bg-surface-2">
-          <Loader2 size={16}
-           className="animate-spin text-accent shrink-0"/>
-          <span className="text-body font-semibold">Waiting for popup authorization…</span>
-        </div>
+        {loopback ? (
+          <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-card border border-inner-border bg-surface-2">
+            <Loader2 size={16}
+             className="animate-spin text-accent shrink-0"/>
+            <span className="text-body font-semibold">Waiting for popup authorization…</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-card border border-inner-border bg-surface-2">
+            <ExternalLink size={16} className="text-accent shrink-0" />
+            <span className="text-body font-semibold">
+              This gateway runs on a server — open the URL in your browser, then paste the redirect URL back.
+            </span>
+          </div>
+        )}
 
         <div className="flex flex-col gap-2">
           <div className="text-body font-semibold text-text-primary">Step 1: Open this URL in your browser</div>
@@ -282,7 +293,9 @@ export function OAuthBrowserDialog({
             </Button>
           </Inline>
           <p className="text-badge leading-snug text-text-tertiary">
-            A popup should open automatically. If it was blocked, open the URL above manually.
+            {loopback
+              ? "A popup should open automatically. If it was blocked, open the URL above manually."
+              : "Open the URL on the machine whose browser can reach the provider sign-in. The gateway listens for the callback over its public origin, so the code lands back here automatically."}
           </p>
         </div>
 

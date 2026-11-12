@@ -9,14 +9,60 @@ import { CONFIG_SPEC, readInt, readOptionalText, readText } from "./spec";
 /**
  * Browser-authorize redirect URI for a provider.
  *
- * Browser OAuth advertises a loopback callback, `http://127.0.0.1:59653/callback`
- * by default — the URI Codex registers with its authorization server, which is
- * why the port is the default rather than a free one. The console callback stays the exchange
- * endpoint: the dashboard dialog pastes the loopback landing URL back and
- * the server exchanges the code against the same loopback URI.
+ * On a host where the operator's browser can reach the gateway directly
+ * (localhost dev), the callback stays a loopback URI — `http://127.0.0.1:59653/callback`
+ * — which the gateway's `callback-listener` binds and completes itself.
+ *
+ * On a deployment (Docker/VPS, where `CARTETHYIA_PUBLIC_ORIGIN` is set), the
+ * browser cannot reach the container's `127.0.0.1`: it would land on the
+ * browser's own machine, not the gateway, and the callback would never be
+ * delivered. There the redirect is the gateway's public origin plus the
+ * hosted console callback path, so the redirect reaches a server that can
+ * complete the exchange — and the loopback listener does not need to bind.
+ *
+ * The public origin is read from the environment (the spec requires it for the
+ * app, so it is present in any real deployment); an empty value keeps the
+ * loopback default for tests and local runs that never set it.
+ */
+/**
+ * Browser-authorize redirect URI for a provider.
+ *
+ * On a host where the operator's browser can reach the gateway directly
+ * (localhost dev), the callback stays a loopback URI — `http://127.0.0.1:59653/callback`
+ * — which the gateway's `callback-listener` binds and completes itself.
+ *
+ * On a deployment (Docker/VPS, where `CARTETHYIA_PUBLIC_ORIGIN` names a public
+ * host), the browser cannot reach the container's `127.0.0.1`: it would land on
+ * the browser's own machine, not the gateway, and the callback would never be
+ * delivered. There the redirect is the gateway's public origin plus the hosted
+ * console callback path, so the redirect reaches a server that can complete the
+ * exchange — and the loopback listener does not need to bind.
+ *
+ * The origin is loopback-aware: a `localhost`/`127.0.0.1` public origin (the
+ * local dev default) still keeps the self-completing loopback URI; only a
+ * non-loopback origin switches to the hosted callback.
  */
 export function browserAuthorizeRedirectUri(): string {
+  const publicOrigin = process.env.CARTETHYIA_PUBLIC_ORIGIN?.trim() ?? "";
+  if (publicOrigin.length > 0 && !isLoopbackOrigin(publicOrigin)) {
+    return `${publicOrigin.replace(/\/+$/, "")}/providers/oauth/callback`;
+  }
   return `http://127.0.0.1:${readInt("CARTETHYIA_OAUTH_CALLBACK_PORT", CONFIG_SPEC.CARTETHYIA_OAUTH_CALLBACK_PORT)}/callback`;
+}
+
+/** Whether `browserAuthorizeRedirectUri()` currently advertises a loopback URI. */
+export function browserAuthorizeUsesLoopback(): boolean {
+  const publicOrigin = process.env.CARTETHYIA_PUBLIC_ORIGIN?.trim() ?? "";
+  return publicOrigin.length === 0 || isLoopbackOrigin(publicOrigin);
+}
+
+/** True for a `localhost`/`127.0.0.1`/`::1` origin the browser can reach as its own loopback. */
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    return ["127.0.0.1", "localhost", "::1", "[::1]"].includes(new URL(origin).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
 }
 
 /**

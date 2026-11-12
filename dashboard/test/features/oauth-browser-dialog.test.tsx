@@ -53,6 +53,7 @@ function renderDialog() {
           authorizeUrl: "https://provider.example/authorize?x=1",
           state: "xyz",
           popup,
+          loopback: true,
           onClose,
         }),
       );
@@ -220,6 +221,64 @@ describe("OAuthBrowserDialog text drop", () => {
       expect(connectButton(view).disabled).toBe(true);
       expect(error).toHaveBeenCalledWith("Invalid OAuth paste", expect.any(String));
       expect(ctx.onClose).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      ctx.restore();
+    }
+  });
+});
+
+describe("OAuthBrowserDialog deployment mode (non-loopback)", () => {
+  function renderDeploymentDialog() {
+    const fetchStub = stubFetch([
+      { match: "/providers/oa-provider/accounts", json: [] },
+      { match: "/providers/oa-provider/oauth/callback", json: { message: "ok" } },
+    ]);
+    const onClose = mock(() => {});
+    globalThis.FileReader = FakeFileReader as unknown as typeof FileReader;
+    return {
+      onClose,
+      async mount() {
+        return mount(
+          createElement(OAuthBrowserDialog, {
+            providerId: "oa-provider",
+            authorizeUrl: "https://carte.example/providers/oa-provider/oauth/authorize?x=1",
+            state: "xyz",
+            popup: null,
+            loopback: false,
+            onClose,
+          }),
+        );
+      },
+      restore() {
+        fetchStub.restore();
+      },
+    };
+  }
+
+  test("shows the server-mode note instead of the popup waiting banner", async () => {
+    const ctx = renderDeploymentDialog();
+    const view = await ctx.mount();
+    try {
+      const text = view.findAll("span").map((el) => el.textContent ?? "").join("\n");
+      expect(text).toContain("This gateway runs on a server");
+    } finally {
+      view.unmount();
+      ctx.restore();
+    }
+  });
+
+  test("still completes by pasting the redirect URL", async () => {
+    const ctx = renderDeploymentDialog();
+    const view = await ctx.mount();
+    try {
+      await pasteIntoField(view, VALID_PASTE);
+      expect(connectButton(view).disabled).toBe(false);
+      await view.act(async () => {
+        connectButton(view).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      });
+      await view.flush();
+      expect(ctx.onClose).toHaveBeenCalledWith(true);
     } finally {
       view.unmount();
       ctx.restore();

@@ -209,6 +209,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **OAuth browser login works on Docker/VPS deployments.** The authorize URL
+  always advertised a loopback redirect (`http://127.0.0.1:59653/callback`),
+  which on a server browser points at the operator's own machine — the code
+  landed on ERR_CONNECTION_REFUSED. The redirect now follows
+  `CARTETHYIA_PUBLIC_ORIGIN` on non-loopback deployments and goes to the
+  hosted console callback; the dashboard detects the mode and shows an "open
+  this URL in your browser" flow instead of forcing a broken popup. Local dev
+  keeps the self-completing loopback listener.
 - **DeepAI and Clixad login buttons now appear in the dashboard.** The registry
   loaded the OAuth client *class* instead of an instance, so
   `resolveLoginClient` returned a `Function` with no flow methods and the
