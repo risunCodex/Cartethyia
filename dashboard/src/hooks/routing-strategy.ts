@@ -53,8 +53,6 @@ export interface RoutingStrategyState {
   readonly refetch: () => void;
   readonly setMaxInflight: (next: number | null) => void;
   readonly setMaxInflightPerProxy: (next: number | null) => void;
-  readonly setSkipProxy: (next: boolean) => void;
-  readonly setDeviceFlowProxy: (next: "random" | "direct") => void;
 }
 
 export function useRoutingStrategy(providerId: string, allowUserAgent: boolean): RoutingStrategyState {
@@ -187,6 +185,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       usageFloor,
       usageFloorUnit,
       skipProxy,
+      deviceFlowProxy,
       userAgent: next,
       customUserAgent,
     }),

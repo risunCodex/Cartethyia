@@ -308,7 +308,7 @@ export {
   RELAY_REGIONS,
 } from "../../../src/console/routing/pools/relay-regions";
 export type { RelayRegion } from "../../../src/console/routing/pools/relay-regions";
-export type { PoolHealthEvent } from "../../../src/network/pool-health-machine";
+export type { PoolHealthEvent } from "../../../src/network/pool/health";
 
 
 export type {

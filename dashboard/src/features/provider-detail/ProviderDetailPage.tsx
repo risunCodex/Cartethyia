@@ -41,7 +41,7 @@ import {
 } from "../../hooks/providers";
 import { queryKeys } from "../../data/query-keys";
 import { toast } from "../../lib/toast";
-import type { ProviderAccountResponse, ProviderResponse } from "../../data/contracts";
+import type { ProbeModelRequest, ProviderAccountResponse, ProviderResponse } from "../../data/contracts";
 import { providerCanConfigureUserAgent } from "../../lib/provider-user-agent";
 import { RoutingStrategyCard } from "./sections/RoutingStrategyCard";
 import { InferhubMarket } from "./sections/InferhubMarket";
@@ -424,13 +424,7 @@ export default function ProviderDetail(): ReactNode {
     }
   };
   const runGrokAccountProbe = (selectedAccountIds: readonly string[]) => {
-    const request: {
-      modelId: string;
-      prompt: string;
-      stream: boolean;
-      serviceKind: string;
-      accountIds?: readonly string[];
-    } = {
+    const request: ProbeModelRequest = {
       modelId: "grok-4.6",
       prompt: "Type the number 407.",
       stream: true,
