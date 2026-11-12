@@ -15,8 +15,8 @@
  * sends the personal default, so "unknown" must not change anything.
  */
 import { describe, expect, test } from "bun:test";
-import { buddyEnterprise } from "../../src/providers/integrations/buddy/buddy-identity";
-import { buddyCliHeaders } from "../../src/providers/integrations/buddy/buddy-cli-headers";
+import { buddyEnterprise } from "../../src/providers/integrations/buddy/headers";
+import { buddyCliHeaders } from "../../src/providers/integrations/buddy/headers";
 import type { ProviderDispatchContext } from "../../src/providers/provider-contracts";
 
 const STAINLESS = [

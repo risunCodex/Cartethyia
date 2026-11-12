@@ -14,7 +14,7 @@ import {
   BUDDY_CN_MODELS_PATH,
   BUDDY_INTL_MODELS_PATH,
   fetchBuddyDirectoryModels,
-} from "../../src/providers/integrations/buddy/buddy-discovery-shared";
+} from "../../src/providers/integrations/buddy/catalog";
 
 const CATALOG = {
   code: 0,

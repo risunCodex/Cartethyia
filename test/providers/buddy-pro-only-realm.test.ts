@@ -7,8 +7,8 @@
  * guarantee must hold regardless of how discovery or seeding later changes.
  */
 import { describe, expect, test } from "bun:test";
-import { CODEBUDDY_MODELS } from "../../src/providers/integrations/buddy/codebuddy/provider";
-import { CODEBUDDY_CN_MODELS } from "../../src/providers/integrations/buddy/codebuddy/cn-provider";
+import { CODEBUDDY_MODELS } from "../../src/providers/integrations/buddy/codebuddy/index";
+import { CODEBUDDY_CN_MODELS } from "../../src/providers/integrations/buddy/codebuddy/index";
 
 describe("Buddy Pro-only tagging follows measured account scope", () => {
   test("none of the CN roster rows carry proOnly", () => {

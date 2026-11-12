@@ -12,9 +12,9 @@
  */
 import { describe, expect, test } from "bun:test";
 import { codebuddyHeaders } from "../../src/providers/integrations/buddy/codebuddy/shared";
-import { buddyOAuthIdentityHeaders } from "../../src/providers/integrations/buddy/buddy-identity";
+import { buddyOAuthIdentityHeaders } from "../../src/providers/integrations/buddy/headers";
 import { isBuddyChannelCheckError } from "../../src/providers/adapters/compatible-adapter";
-import { normalizeBuddyToolNames, buddyPrePayloadCommon } from "../../src/providers/integrations/buddy/buddy-chat-shared";
+import { normalizeBuddyToolNames, buddyPrePayloadCommon } from "../../src/providers/integrations/buddy/chat";
 import type { ProviderDispatchContext, ProviderDispatchTarget } from "../../src/providers/provider-contracts";
 import type { CanonicalRequest } from "../../src/protocol/canonical-model";
 
@@ -106,8 +106,10 @@ describe("CodeBuddy RE2 tool-schema normalization (donor upstream_compat)", () =
     };
     normalizeBuddyToolNames(payload);
     const tool = (payload["tools"] as Array<Record<string, unknown>>)[0]!;
-    expect(tool["name"]).toBe("find");
-    const params = tool["parameters"] as Record<string, unknown>;
+    expect(tool["type"]).toBe("function");
+    const fn = tool["function"] as Record<string, unknown>;
+    expect(fn["name"]).toBe("find");
+    const params = fn["parameters"] as Record<string, unknown>;
     const props = params["properties"] as Record<string, unknown>;
     const fileSchema = props["file_name"] as Record<string, unknown>;
     expect(fileSchema["pattern"]).toBe("^_.+$");
@@ -132,7 +134,9 @@ describe("CodeBuddy RE2 tool-schema normalization (donor upstream_compat)", () =
     };
     normalizeBuddyToolNames(payload);
     const tool = (payload["tools"] as Array<Record<string, unknown>>)[0]!;
-    const params = tool["parameters"] as Record<string, unknown>;
+    expect(tool["type"]).toBe("function");
+    const fn = tool["function"] as Record<string, unknown>;
+    const params = fn["parameters"] as Record<string, unknown>;
     const props = params["properties"] as Record<string, unknown>;
     const nameSchema = props["name"] as Record<string, unknown>;
     expect(nameSchema["pattern"]).toBe("^\\\\_.+$");

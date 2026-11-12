@@ -12,38 +12,38 @@ type BuddyProviderId = "cb" | "cbcn";
  */
 export const BUDDY_PROVIDER_CAPABILITIES = {
   cb: {
-    loadAdapter: async () => (await import("./codebuddy/provider")).createCodeBuddyAdapter(),
-    loadModels: async () => (await import("./codebuddy/provider")).CODEBUDDY_MODELS,
+    loadAdapter: async () => (await import("./codebuddy/index")).createCodeBuddyAdapter(),
+    loadModels: async () => (await import("./codebuddy/index")).CODEBUDDY_MODELS,
     loadModelDiscovery: async () => async ({ credential, fetcher }) =>
-      (await import("./codebuddy/provider")).discoverCodeBuddyModels({
+      (await import("./codebuddy/index")).discoverCodeBuddyModels({
         credential,
         ...(fetcher === undefined ? {} : { fetcher }),
       }),
     loadAuthentication: oauthCapability(
-      () => import("./codebuddy/oauth"),
+      () => import("./codebuddy/index"),
       "codeBuddyOAuthClient",
       { withRefresher: true },
     ),
     loadQuotaCollector: quotaCapability(
-      () => import("./codebuddy/quota"),
+      () => import("./codebuddy/index"),
       "fetchCodeBuddyIntlQuota",
     ),
   },
   cbcn: {
-    loadAdapter: async () => (await import("./codebuddy/cn-provider")).createCodeBuddyCnAdapter(),
-    loadModels: async () => (await import("./codebuddy/cn-provider")).CODEBUDDY_CN_MODELS,
+    loadAdapter: async () => (await import("./codebuddy/index")).createCodeBuddyCnAdapter(),
+    loadModels: async () => (await import("./codebuddy/index")).CODEBUDDY_CN_MODELS,
     loadModelDiscovery: async () => async ({ credential, fetcher }) =>
-      (await import("./codebuddy/cn-provider")).discoverCodeBuddyCnModels({
+      (await import("./codebuddy/index")).discoverCodeBuddyCnModels({
         credential,
         ...(fetcher === undefined ? {} : { fetcher }),
       }),
     loadAuthentication: oauthCapability(
-      () => import("./codebuddy/oauth"),
+      () => import("./codebuddy/index"),
       "codeBuddyCnOAuthClient",
       { withRefresher: true },
     ),
     loadQuotaCollector: quotaCapability(
-      () => import("./codebuddy/quota"),
+      () => import("./codebuddy/index"),
       "fetchCodeBuddyCnQuota",
     ),
   },

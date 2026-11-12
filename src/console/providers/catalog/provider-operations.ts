@@ -892,7 +892,7 @@ export function createProviderCatalogOperations(config: ProviderCatalogConfig) {
                     // dynamic-import: B-02 lazy graph — buddy device-binding materializer, buddy-family only.
                     // The buddy-identity graph is lazy-loaded: the device-binding
                     // materializer only runs for buddy-family accounts (B-02).
-                    ? (await import("../../../providers/integrations/buddy/buddy-identity"))
+                    ? (await import("../../../providers/integrations/buddy/headers"))
                         .materializeBuddyDeviceBinding(account.id, authState)
                     : undefined;
                 const effectiveAuthState = materialized ?? authState;

@@ -21,7 +21,7 @@
  * is still refused, so the fix is to send one, not to send the caller's.
  */
 import { describe, expect, test } from "bun:test";
-import { buddyConversationHeaders } from "../../src/providers/integrations/buddy/buddy-conversation-headers";
+import { buddyConversationHeaders } from "../../src/providers/integrations/buddy/headers";
 
 const REQUIRED = [
   "x-conversation-id",

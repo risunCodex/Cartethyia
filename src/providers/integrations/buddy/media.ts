@@ -27,7 +27,7 @@ import { mapUpstreamHttpError } from "../../../transport/failure-policy";
 import type { ImageGenerationOutcome, ProviderDispatchContext, ProviderDispatchTarget, ValidatedOutboundFetch } from "../../provider-contracts";
 import type { CanonicalRequest } from "../../../protocol/canonical-model";
 import { codebuddyHeaders, type CodeBuddyVariant } from "./codebuddy/shared";
-import { applyBuddySystemPrompt, buddyPrePayloadCommon } from "./buddy-chat-shared";
+import { applyBuddySystemPrompt, buddyPrePayloadCommon } from "./chat";
 
 /** Media adapter identity: the variant's headers, its leading system turn, and base URL. */
 export interface BuddyMediaConfig {

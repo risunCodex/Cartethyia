@@ -3,7 +3,7 @@ import {
   ACTIVITY_REPORT_EVENTS_PER_BATCH,
   ACTIVITY_REPORT_ROUNDS,
   fetchBuddyActivityReport,
-} from "../../src/providers/integrations/buddy/buddy-checkin";
+} from "../../src/providers/integrations/buddy/lifecycle";
 
 /**
  * The growth report is what the billing facade scores as chat activity. One

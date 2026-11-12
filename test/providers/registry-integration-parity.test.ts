@@ -42,7 +42,7 @@ const ORPHAN_ALLOWLIST: Readonly<Record<string, string>> = {
   // no adapter consumer yet: the streaming re-drive loop that consumes it is
   // the next integration step, so it is not reachable from a registry
   // entrypoint today.
-  "src/providers/integrations/buddy/buddy-server-tools.ts":
+  "src/providers/integrations/buddy/lifecycle.ts":
     "server-tools engine; adapter stream loop wiring pending",
 };
 

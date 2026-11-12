@@ -101,7 +101,7 @@ describe("integration import boundaries", () => {
     // `import type` of a non-OAuth integration is erased at compile time and
     // pulls nothing into the runtime graph.
     expect(
-      importsIntegrations(`import type { DailyCheckinResult } from "../../providers/integrations/buddy/buddy-checkin";`),
+      importsIntegrations(`import type { DailyCheckinResult } from "../../providers/integrations/buddy/lifecycle";`),
     ).toBe(false);
   });
 });

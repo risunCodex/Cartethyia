@@ -12,8 +12,8 @@
 import { parseArgs } from "node:util";
 import type { ProviderDispatchContext } from "../../../src/providers/provider-contracts";
 import { readAccountsFile, pickAccount, requireAccountToken, maskSecret } from "../lib/accounts";
-import { createCodeBuddyAdapter } from "../../../src/providers/integrations/buddy/codebuddy/provider";
-import { createCodeBuddyCnAdapter } from "../../../src/providers/integrations/buddy/codebuddy/cn-provider";
+import { createCodeBuddyAdapter } from "../../../src/providers/integrations/buddy/codebuddy/index";
+import { createCodeBuddyCnAdapter } from "../../../src/providers/integrations/buddy/codebuddy/index";
 import type { CanonicalRequest } from "../../../src/protocol/canonical-model";
 
 const { values } = parseArgs({

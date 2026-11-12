@@ -5,7 +5,7 @@ import { providerBaseUrl } from "../../provider-metadata";
 import type { DiscoveryInput } from "../../discovery/discovery-types";
 import { defineModel } from "../../provider-model-definition";
 import { openrouterFreeRoster } from "../../discovery/openrouter-free-roster";
-import { clineReasoningReplayPrepares } from "../buddy/buddy-chat-shared";
+import { clineReasoningReplayPrepares } from "../buddy/chat";
 
 const OPENROUTER_PROVIDER_ID = "openrouter" as const;
 

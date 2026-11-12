@@ -17,8 +17,8 @@
  * request shape and the agreement about what counts as "no data".
  */
 import { describe, expect, test } from "bun:test";
-import { fetchBuddyRequestUsage } from "../../src/providers/integrations/buddy/buddy-usage-shared";
-import { fetchCodeBuddyRequestUsage } from "../../src/providers/integrations/buddy/codebuddy/quota";
+import { fetchBuddyRequestUsage } from "../../src/providers/integrations/buddy/account";
+import { fetchCodeBuddyRequestUsage } from "../../src/providers/integrations/buddy/codebuddy/index";
 import type { FetchLike } from "../../src/providers/quota/quota-contracts";
 
 interface Seen {

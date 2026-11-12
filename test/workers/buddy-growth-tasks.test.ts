@@ -28,7 +28,7 @@ import {
   adoptFirstBuddy,
   agreeBuddyAgreement,
   useBuddyMakeupCard,
-} from "../../src/providers/integrations/buddy/buddy-growth-shared";
+} from "../../src/providers/integrations/buddy/lifecycle";
 import {
   buddyAdoptTask,
   buddyDayKey,

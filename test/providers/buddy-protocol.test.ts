@@ -5,12 +5,12 @@ import {
   buildBuddyPromptCacheKey,
   dropEmptyBuddyMessages,
   scrubBuddyChannelIdentityText,
-} from "../../src/providers/integrations/buddy/buddy-chat-shared";
-import { CODEBUDDY_SYSTEM_PROMPT } from "../../src/providers/integrations/buddy/codebuddy/provider";
-import { codeBuddyCnPrePayload } from "../../src/providers/integrations/buddy/codebuddy/cn-provider";
-import { readBuddyDeviceToken } from "../../src/providers/integrations/buddy/buddy-identity";
-import { resolveBuddyDeviceBinding } from "../../src/providers/integrations/buddy/buddy-identity";
-import { fetchTencentBillingQuota } from "../../src/providers/integrations/buddy/buddy-quota-shared";
+} from "../../src/providers/integrations/buddy/chat";
+import { CODEBUDDY_SYSTEM_PROMPT } from "../../src/providers/integrations/buddy/codebuddy/index";
+import { codeBuddyCnPrePayload } from "../../src/providers/integrations/buddy/codebuddy/index";
+import { readBuddyDeviceToken } from "../../src/providers/integrations/buddy/headers";
+import { resolveBuddyDeviceBinding } from "../../src/providers/integrations/buddy/headers";
+import { fetchTencentBillingQuota } from "../../src/providers/integrations/buddy/account";
 import { parseDsmlToolCalls } from "../../src/protocol/dsml";
 import { parseChatResponseToEvents } from "../../src/protocol/response/chat";
 import { decodeChatSseStream } from "../../src/protocol/response/chat";

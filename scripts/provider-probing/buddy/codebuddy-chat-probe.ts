@@ -15,8 +15,8 @@ import { parseArgs } from "node:util";
 import type { ProviderDispatchContext } from "../../../src/providers/provider-contracts";
 import { readAccountsFile, pickAccount, requireAccountToken, maskSecret } from "../lib/accounts";
 import { codebuddyHeaders } from "../../../src/providers/integrations/buddy/codebuddy/shared";
-import { CODEBUDDY_SYSTEM_PROMPT } from "../../../src/providers/integrations/buddy/codebuddy/provider";
-import { buddyPrePayloadCommon, applyBuddySystemPrompt } from "../../../src/providers/integrations/buddy/buddy-chat-shared";
+import { CODEBUDDY_SYSTEM_PROMPT } from "../../../src/providers/integrations/buddy/codebuddy/index";
+import { buddyPrePayloadCommon, applyBuddySystemPrompt } from "../../../src/providers/integrations/buddy/chat";
 
 const { values } = parseArgs({
   options: {

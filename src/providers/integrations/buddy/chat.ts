@@ -23,14 +23,14 @@ import type { CanonicalRequest } from "../../../protocol/canonical-model";
 import { isRecord } from "../../../protocol/codecs";
 import { GatewayError } from "../../../protocol/gateway-error";
 import { applyDeepSeekReasoning, applyOpenAIReasoning, backfillDeepSeekReasoningContent, clampedEffortOutputFloor, ensureChatReasoningReplayPresence } from "../../../protocol/reasoning";
-import { BUDDY_CN_EFFORTS, BUDDY_INTL_EFFORTS, BUDDY_SHARED_RAW } from "./buddy-catalog-shared";
+import { BUDDY_CN_EFFORTS, BUDDY_INTL_EFFORTS, BUDDY_SHARED_RAW } from "./catalog";
 // Imported for the CN roster only: a CN-only id has no row in the shared
 // table, and without one `raiseOutputForRaisedEffort` silently no-ops, so a
 // raised effort still answers inside a budget sized for the lower one. It is
 // read inside the function below — never at module init — so the cycle with
 // cn-provider (which imports this module) resolves before any call.
-import { CODEBUDDY_CN_RAW } from "./codebuddy/cn-catalog";
-import { buddyAccountUid } from "./buddy-oauth-shared";
+import { CODEBUDDY_CN_RAW } from "./catalog";
+import { buddyAccountUid } from "./account";
 import { SYSTEM_PROMPT_WRAPPER_PREFIX, SYSTEM_PROMPT_WRAPPER_SUFFIX } from "../../../console/system-prompt/contracts";
 import type { ProviderDispatchContext } from "../../provider-contracts";
 
@@ -226,7 +226,7 @@ export function normalizeBuddyToolNames(payload: Record<string, unknown>): void 
         name,
         ...(fn["parameters"] === undefined ? {} : { parameters: completeRequiredSchema(fn["parameters"]) }),
       };
-      return normalizeRe2Declaration(fnOut);
+      return { ...rawTool, function: normalizeRe2Declaration(fnOut) };
     }
     if (custom !== undefined) {
       const customOut = {
@@ -241,7 +241,7 @@ export function normalizeBuddyToolNames(payload: Record<string, unknown>): void 
       name,
       ...(rawTool["parameters"] === undefined ? {} : { parameters: completeRequiredSchema(rawTool["parameters"]) }),
     };
-    return normalizeRe2Declaration(bareOut);
+    return { ...bareOut, ...normalizeRe2Declaration(bareOut) };
   });
   const messages = payload["messages"];
   if (Array.isArray(messages)) {

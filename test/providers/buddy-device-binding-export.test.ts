@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import {
   materializeBuddyDeviceBinding,
   resolveBuddyDeviceBinding,
-} from "../../src/providers/integrations/buddy/buddy-identity";
+} from "../../src/providers/integrations/buddy/headers";
 
 const accountId = "b12d000f-fa65-438b-976b-cf12b0282db0";
 const derived = createHash("sha256")

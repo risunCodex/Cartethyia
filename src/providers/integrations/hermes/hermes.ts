@@ -4,7 +4,7 @@ import type { ApiKeyProviderSpec } from "../../configured-provider";
 import { isRecord } from "../../../protocol/codecs";
 import { boundedUpstreamArray, boundedUpstreamNumber, sanitizeUpstreamLabel } from "../../provider-sanitize";
 import { getHermesVersion } from "../../operations/client-versions";
-import { clineReasoningReplayPrepares } from "../buddy/buddy-chat-shared";
+import { clineReasoningReplayPrepares } from "../buddy/chat";
 
 const HERMES_PROVIDER_ID = "hermes" as const;
 

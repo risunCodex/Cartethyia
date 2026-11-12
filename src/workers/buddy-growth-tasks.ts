@@ -29,7 +29,7 @@ import { sleep } from "../shared/sleep";
 import type {
   BuddyGrowthCall,
   BuddyGrowthResult,
-} from "../providers/integrations/buddy/buddy-growth-shared";
+} from "../providers/integrations/buddy/lifecycle";
 import { withDirectFallback } from "./daily-checkin";
 import { providerBaseUrl, BUDDY_PROVIDER_IDS } from "../providers/provider-metadata";
 import type { FetchLike } from "../providers/quota/quota-contracts";
@@ -185,7 +185,7 @@ async function forAccount(
   // The buddy-oauth-shared graph is lazy-loaded: the uid decoder runs once per
   // pass, and only for accounts whose credential carries a JWT (B-02).
   const { buddyAccountUid } = await import(
-    "../providers/integrations/buddy/buddy-oauth-shared"
+    "../providers/integrations/buddy/account"
   );
   const call: BuddyGrowthCall = {
     baseUrl: providerBaseUrl(account.providerId) ?? "",
@@ -264,7 +264,7 @@ export async function buddyStreakTask(deps: BuddyTaskDeps) {
   // The buddy-growth-shared graph is lazy-loaded: this task only runs once a
   // day, and must not pull the integration into the boot graph (B-02).
   const { useBuddyMakeupCard } = await import(
-    "../providers/integrations/buddy/buddy-growth-shared"
+    "../providers/integrations/buddy/lifecycle"
   );
   return runTask(deps, "buddy-streak", (call) => useBuddyMakeupCard(call));
 }
@@ -283,7 +283,7 @@ export async function buddyAdoptTask(deps: BuddyTaskDeps) {
     agreeBuddyAgreement,
     readBuddyFirstTask,
     readBuddyInfo,
-  } = await import("../providers/integrations/buddy/buddy-growth-shared");
+  } = await import("../providers/integrations/buddy/lifecycle");
   return runTask(deps, "buddy-adopt", async (call) => {
     const info = await readBuddyInfo(call);
     if (info === null || info.hasBuddy) return null;
@@ -312,7 +312,7 @@ export async function buddyActivityReportTask(deps: BuddyTaskDeps) {
   // The buddy-checkin graph is lazy-loaded: this task only runs once a day,
   // and must not pull the integration into the boot graph (B-02).
   const { fetchBuddyActivityReport } = await import(
-    "../providers/integrations/buddy/buddy-checkin"
+    "../providers/integrations/buddy/lifecycle"
   );
   return runTask(deps, "buddy-activity-report", async (call) => {
     if (call.uid === undefined) {
@@ -352,13 +352,13 @@ export async function syncBuddyUsage(deps: BuddyTaskDeps): Promise<number> {
   // six-hourly cadence, and must not pull the integrations into the boot
   // graph (B-02).
   const { fetchBuddyRequestUsage } = await import(
-    "../providers/integrations/buddy/buddy-usage-shared"
+    "../providers/integrations/buddy/account"
   );
   const { saveBuddyUsageSnapshots } = await import(
-    "../providers/integrations/buddy/buddy-usage-store"
+    "../providers/integrations/buddy/account"
   );
   const { buddyAccountUid } = await import(
-    "../providers/integrations/buddy/buddy-oauth-shared"
+    "../providers/integrations/buddy/account"
   );
   const startedAt = Date.now();
   const budgetMs = deps.budgetMs;

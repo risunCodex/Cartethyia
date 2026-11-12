@@ -12,7 +12,7 @@ import {
   executeServerToolInvocations,
   findServerToolDeclarations,
   isServerToolCall,
-} from "../../src/providers/integrations/buddy/buddy-server-tools";
+} from "../../src/providers/integrations/buddy/lifecycle";
 
 const tool = (overrides: Partial<ToolDefinition>): ToolDefinition => ({
   name: "t",

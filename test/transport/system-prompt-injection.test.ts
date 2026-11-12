@@ -14,7 +14,7 @@ import {
   applyInjectSystemPrompt,
   resolveTenantSystemPrompt,
 } from "../../src/transport/request/system-prompt-injection";
-import { applyBuddySystemPrompt } from "../../src/providers/integrations/buddy/buddy-chat-shared";
+import { applyBuddySystemPrompt } from "../../src/providers/integrations/buddy/chat";
 import type { TenantSystemPrompts } from "../../src/console/system-prompt/contracts";
 
 function request(overrides: Partial<CanonicalRequest> = {}): CanonicalRequest {

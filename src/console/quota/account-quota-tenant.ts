@@ -43,7 +43,7 @@ import {
   fetchDailyCheckin,
   type BuddyActivityReportResult,
   type DailyCheckinResult,
-} from "../../providers/integrations/buddy/buddy-checkin";
+} from "../../providers/integrations/buddy/lifecycle";
 import {
   fetchQoderDailyCheckin,
   isQoderCheckinProvider,
@@ -194,7 +194,7 @@ async function runDailyGrowthForAccount(
   // The buddy-oauth-shared graph is lazy-loaded: the uid decoder is only
   // needed for buddy accounts' report leg (B-02).
   const { buddyAccountUid } = await import(
-    "../../providers/integrations/buddy/buddy-oauth-shared"
+    "../../providers/integrations/buddy/account"
   );
   const userId = buddyAccountUid(credential);
   let report: { ok: boolean; message: string };
@@ -427,7 +427,7 @@ export function registerAccountQuotaTenantRoutes(
       // The buddy-usage-store graph is lazy-loaded: it is only needed when the
       // page actually renders buddy accounts (B-02).
       const { readBuddyUsageSnapshots } = await import(
-        "../../providers/integrations/buddy/buddy-usage-store"
+        "../../providers/integrations/buddy/account"
       );
       const usageByAccount = await readBuddyUsageSnapshots(
         db,
@@ -1250,7 +1250,7 @@ export function registerAccountQuotaTenantRoutes(
         // The buddy-oauth-shared graph is lazy-loaded: the uid decoder is only
         // needed on this buddy-only surface (B-02).
         const { buddyAccountUid } = await import(
-          "../../providers/integrations/buddy/buddy-oauth-shared"
+          "../../providers/integrations/buddy/account"
         );
         const userId = buddyAccountUid(credential);
         if (!userId) {

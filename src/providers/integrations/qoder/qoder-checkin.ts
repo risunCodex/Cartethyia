@@ -32,7 +32,7 @@ import { log } from "../../../observability/logger";
 
 /** Structural fetch bound; Bun's own fetch type carries extra host props. */
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-import type { DailyCheckinResult, DailyCheckinState } from "../buddy/buddy-checkin";
+import type { DailyCheckinResult, DailyCheckinState } from "../buddy/lifecycle";
 
 export const QODER_CHECKIN_PROVIDER_IDS: readonly string[] = ["qoder", "qodercn"];
 

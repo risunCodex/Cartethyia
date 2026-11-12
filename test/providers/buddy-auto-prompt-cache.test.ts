@@ -7,7 +7,7 @@ import { expect, test } from "bun:test";
 import {
   applyBuddyAutoPromptCache,
   applyBuddySystemPrompt,
-} from "../../src/providers/integrations/buddy/buddy-chat-shared";
+} from "../../src/providers/integrations/buddy/chat";
 
 const LONG_TEXT = "x".repeat(2048);
 

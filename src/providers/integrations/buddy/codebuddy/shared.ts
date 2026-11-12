@@ -2,7 +2,7 @@ import { withBearerAuthentication, type OpenAICompatibleAdapterConfig } from "..
 import type { CanonicalRequest } from "../../../../protocol/canonical-model";
 import type { ProviderDispatchContext, ProviderDispatchTarget, ProviderId } from "../../../provider-contracts";
 import { resolveInboundSessionId } from "../../../operations/session-resolution";
-import { buddyConversationHeaders } from "../buddy-conversation-headers";
+import { buddyConversationHeaders } from "../headers";
 import {
   buddyAgentPurpose,
   buddyEnterprise,
@@ -11,10 +11,10 @@ import {
   buddyUserId,
   resolveBuddyDeviceBinding,
   resolveBuddyIdentity,
-} from "../buddy-identity";
+} from "../headers";
 import { buildCodeBuddyUserAgent, getCodeBuddyCnVersion, getCodeBuddyVersion } from "../../../operations/client-versions";
-import { buddyDeviceTokenHeaders } from "../buddy-identity";
-import { buddyCliHeaders, buddyCliTraceHeaders } from "../buddy-cli-headers";
+import { buddyDeviceTokenHeaders } from "../headers";
+import { buddyCliHeaders, buddyCliTraceHeaders } from "../headers";
 
 /** Client identity variant behind the per-request CodeBuddy headers. */
 export type CodeBuddyVariant = "IDE" | "CLI";

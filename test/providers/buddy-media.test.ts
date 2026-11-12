@@ -23,7 +23,7 @@ import {
   BuddyMediaAdapter,
   buddyErrorOf,
   extractChatImages,
-} from "../../src/providers/integrations/buddy/buddy-media";
+} from "../../src/providers/integrations/buddy/media";
 import type { ProviderDispatchContext, ProviderDispatchTarget } from "../../src/providers/provider-contracts";
 
 const IMAGE_TARGET = {

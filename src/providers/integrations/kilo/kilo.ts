@@ -24,7 +24,7 @@ import type { CanonicalRequest } from "../../../protocol/canonical-model";
 import { OpenAICompatibleAdapter, withBearerAuthentication } from "../../adapters/compatible-adapter";
 import { providerBaseUrl } from "../../provider-metadata";
 import { decodeKiloCredential } from "../../../security/credential-codec";
-import { clineReasoningReplayPrepares } from "../buddy/buddy-chat-shared";
+import { clineReasoningReplayPrepares } from "../buddy/chat";
 
 export const KILO_PROVIDER_ID = "kilo" as const;
 export const KILO_BASE_URL = providerBaseUrl("kilo");

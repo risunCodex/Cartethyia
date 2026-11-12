@@ -8,7 +8,7 @@ import { completeRequiredSchema, isRecord } from "../../../protocol/codecs";
 import { providerBaseUrl } from "../../provider-metadata";
 import { getCachedModelDiscovery } from "../../operations/provider-caches";
 import { defineModel } from "../../provider-model-definition";
-import { clineReasoningReplayPrepares } from "../buddy/buddy-chat-shared";
+import { clineReasoningReplayPrepares } from "../buddy/chat";
 import { clinePlatform, clinePlatformVersion } from "../../operations/cli-platform";
 import {
   getClineCliVersion,

@@ -10,9 +10,9 @@
  * row.
  */
 import { describe, expect, test } from "bun:test";
-import { CODEBUDDY_MODELS } from "../../src/providers/integrations/buddy/codebuddy/provider";
+import { CODEBUDDY_MODELS } from "../../src/providers/integrations/buddy/codebuddy/index";
 import type { ModelDefinition } from "../../src/providers/provider-model-definition";
-import { CODEBUDDY_CN_MODELS } from "../../src/providers/integrations/buddy/codebuddy/cn-provider";
+import { CODEBUDDY_CN_MODELS } from "../../src/providers/integrations/buddy/codebuddy/index";
 
 function luna(rows: readonly ModelDefinition[]) {
   return rows.find((row) => row.modelId === "gpt-6-luna");

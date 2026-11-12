@@ -1,22 +1,11 @@
-/**
- * The buddy-family static catalog row.
- *
- * CodeBuddy (intl + CN) and WorkBuddy describe their static fallback catalogs
- * with the same seven-field tuple and build each row the same way, differing
- * only in the wire endpoint the row targets. Both had their own copy of the
- * tuple type and the builder, so a new column meant editing two identical
- * declarations.
- *
- * Only the row shape and the builder are shared. Identity headers are not:
- * `codebuddyHeaders` sends genuinely different bytes per realm
- * (`X-Product`/`X-IDE-Type`/`X-Domain` versus the CN CLI profile), and those
- * stay with the provider.
- */
 import { GatewayError } from "../../../protocol/gateway-error";
 import { defineModel } from "../../provider-model-definition";
 import type { ModelDefinition } from "../../provider-model-definition";
+import { asNumber as sharedAsNumber, asRecord } from "../../../shared/coerce";
+import { buddyAccountUid } from "./account";
 
-/** One static catalog row: id, display name, flags, limits, optional tool override. */
+// ── buddy-catalog-shared ──────────────────────────────────────────
+
 export type BuddyRawEntry = readonly [
   string,
   string,
@@ -28,14 +17,6 @@ export type BuddyRawEntry = readonly [
   boolean?,
 ];
 
-/**
- * Realm-specific effort ladders.
- *
- * International DeepSeek Flash accepts only `high`; sending CN's `low`/`max`
- * is a 400. A model absent from its realm's table is not clamped. Lives here,
- * next to the catalog rows, so a row can carry its ladder as
- * `reasoningEfforts` without the catalog importing the chat hook.
- */
 export const BUDDY_INTL_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "deepseek-v4.1-flash": ["high"],
   "glm-5.2": ["high", "xhigh"],
@@ -44,6 +25,7 @@ export const BUDDY_INTL_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   hy4: ["high"],
   hy4free: ["high"],
 };
+
 export const BUDDY_CN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "deepseek-v4-flash": ["low", "high", "max"],
   "deepseek-v4-pro": ["low", "high", "xhigh"],
@@ -57,7 +39,6 @@ export const BUDDY_CN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   hy4free: ["high"],
 };
 
-/** The image-generation ids the international buddy providers serve. */
 const BUDDY_IMAGE_MODEL_IDS: readonly { id: string; endpoint: string; ctx: number; out: number }[] = [
   { id: "gemini-2.5-flash-image", endpoint: "/chat/completions", ctx: 1_000_000, out: 64_000 },
   { id: "gemini-3.0-pro-image", endpoint: "/chat/completions", ctx: 1_000_000, out: 64_000 },
@@ -70,16 +51,6 @@ const BUDDY_IMAGE_MODEL_IDS: readonly { id: string; endpoint: string; ctx: numbe
   { id: "hy-image-3.5", endpoint: "/chat/completions", ctx: 1_000_000, out: 64_000 },
 ];
 
-/**
- * The video-generation ids the international buddy providers serve.
- *
- * `seedance-2.5` is the text-to-video model the buddy facade exposes. It is a
- * distinct service kind (`videoGeneration`), not a chat or image row, so it is
- * built by {@link makeBuddyVideoModels} and reached through
- * `/videos/generations` (relative to each variant's own base) rather than a
- * chat wire. CodeBuddy CN is deliberately absent — it publishes a different
- * roster.
- */
 const BUDDY_VIDEO_MODEL_IDS: readonly { id: string; endpoint: string; ctx: number; out: number }[] = [
   { id: "seedance-2.5", endpoint: "/videos/generations", ctx: 1_000_000, out: 128_000 },
   // Published by /v3/config only, tagged `text-to-video` + `image-to-video`.
@@ -89,42 +60,19 @@ const BUDDY_VIDEO_MODEL_IDS: readonly { id: string; endpoint: string; ctx: numbe
   { id: "kling-video-v3", endpoint: "/videos/generations", ctx: 1_000_000, out: 128_000 },
 ];
 
-/**
- * Ids that belong to the image-generation rows rather than the chat roster.
- *
- * A caller mapping `BUDDY_SHARED_RAW` through {@link makeBuddyModel} must skip
- * these, or the same model id lands in the catalog twice under two service
- * kinds and becomes ambiguous to resolve.
- */
 export const BUDDY_IMAGE_MODEL_ID_SET: ReadonlySet<string> = new Set(
   BUDDY_IMAGE_MODEL_IDS.map((entry) => entry.id),
 );
 
-/**
- * The CN realm's image-generation ids.
- *
- * Separate from {@link BUDDY_IMAGE_MODEL_IDS} because the realms do not share
- * a roster: `hunyuan-image-alpha` (text-to-image) and
- * `hunyuan-image-alpha-edit` (image-to-image) are published by the CN
- * `/v3/config` only, and the intl image ids are not served there. Sharing one
- * list would either leak CN-only ids onto the international catalogs or force
- * a realm check into every consumer.
- */
 const BUDDY_CN_IMAGE_MODEL_IDS: readonly { id: string; ctx: number; out: number }[] = [
   { id: "hunyuan-image-alpha", ctx: 1_000_000, out: 64_000 },
   { id: "hunyuan-image-alpha-edit", ctx: 1_000_000, out: 64_000 },
 ];
 
-/** The CN analogue of {@link BUDDY_IMAGE_MODEL_ID_SET}. */
 export const BUDDY_CN_IMAGE_MODEL_ID_SET: ReadonlySet<string> = new Set(
   BUDDY_CN_IMAGE_MODEL_IDS.map((entry) => entry.id),
 );
 
-/**
- * Builds the CN image-generation rows for one buddy CN provider.
- *
- * Same shape as {@link makeBuddyImageModels}, scoped to the CN roster.
- */
 export function makeBuddyCnImageModels(
   providerId: string,
   endpoint: string,
@@ -145,30 +93,15 @@ export function makeBuddyCnImageModels(
   );
 }
 
-/**
- * The CN realm's video-generation ids.
- *
- * `kling-video-v3` (text-to-video + image-to-video) and
- * `minimax-video-h3` (text-to-video) are published by the CN `/v3/config`,
- * sharing the async task surface the intl video rows use.
- */
 const BUDDY_CN_VIDEO_MODEL_IDS: readonly { id: string; ctx: number; out: number }[] = [
   { id: "kling-video-v3", ctx: 1_000_000, out: 128_000 },
   { id: "minimax-video-h3", ctx: 1_000_000, out: 128_000 },
 ];
 
-/** The CN analogue of {@link BUDDY_VIDEO_MODEL_ID_SET}. */
 export const BUDDY_CN_VIDEO_MODEL_ID_SET: ReadonlySet<string> = new Set(
   BUDDY_CN_VIDEO_MODEL_IDS.map((entry) => entry.id),
 );
 
-/**
- * Builds the CN video-generation rows for one buddy CN provider.
- *
- * Same shape as {@link makeBuddyVideoModels}, scoped to the CN roster: a video
- * row produces `["video"]` on the `videoGeneration` surface and is reached
- * through the native video route, not a chat wire.
- */
 export function makeBuddyCnVideoModels(
   providerId: string,
   endpoint: string,
@@ -189,23 +122,6 @@ export function makeBuddyCnVideoModels(
   );
 }
 
-/**
- * Ids the buddy facade refuses on a free plan.
- *
- * The international CodeBuddy catalog shares this roster and
- * the same Pro-tier model classification.
- *
- * Nothing in the console directory predicts it. `credits` does not — `kimi-k3`
- * bills `x1.62` and is served while `gpt-5.6-luna` bills `x0.14` and is
- * refused — and `vendor` does not either. Only the refusal itself is a signal,
- * which is why this is a list and not a rule.
- *
- * Hardcoded deliberately: it is one account's tier, so it is a fact about that
- * plan rather than about the model. A pro account serves all six. The pill is
- * therefore a hint about a free account, and a dispatch is what settles it.
- *
- * @see `documentation/research/codebuddy/2026-10-19-codebuddy-chat-dispatch-headers.md`
- */
 export const BUDDY_PRO_ONLY_MODEL_IDS: ReadonlySet<string> = new Set([
   "primary-model",
   "gpt-5.6-terra",
@@ -227,18 +143,6 @@ export const BUDDY_PRO_ONLY_MODEL_IDS: ReadonlySet<string> = new Set([
   "claude-opus-4.7-1m",
 ]);
 
-/**
- * Builds the image-generation rows for one buddy provider.
- *
- * Shared rather than copied per provider: cb serves the same image
- * models from the same facade, so the roster and the declared capabilities are
- * one decision instead of two that drift. CodeBuddy CN is deliberately absent —
- * it publishes a different roster.
- *
- * `endpoint` is explicit because the realms disagree about the path their
- * base URL expects, and a bare `defineModel` would infer the generic default
- * and produce a URL the upstream rejects.
- */
 export function makeBuddyImageModels(
   providerId: string,
   endpoint: string,
@@ -260,15 +164,6 @@ export function makeBuddyImageModels(
   );
 }
 
-/**
- * Builds the video-generation rows for one buddy provider.
- *
- * Shared for the same reason as {@link makeBuddyImageModels}: the roster is one
- * decision, not one per provider that drifts. A video row produces `["video"]`
- * on the `videoGeneration` surface and is reached through the native video
- * route, not a chat wire, so `endpoint` names the upstream generation path
- * rather than a chat-completions path.
- */
 export function makeBuddyVideoModels(
   providerId: string,
   endpoint: string,
@@ -289,25 +184,10 @@ export function makeBuddyVideoModels(
   );
 }
 
-/**
- * Ids that belong to the video-generation rows rather than the chat roster.
- *
- * The video analogue of {@link BUDDY_IMAGE_MODEL_ID_SET}: a caller mapping the
- * shared chat tuple must skip these so `seedance-2.5` never lands in the
- * catalog twice under two service kinds.
- */
 export const BUDDY_VIDEO_MODEL_ID_SET: ReadonlySet<string> = new Set(
   BUDDY_VIDEO_MODEL_IDS.map((entry) => entry.id),
 );
 
-/**
- * Builds one buddy catalog row.
- *
- * `endpoint` is explicit rather than left to the generic `/chat/completions`
- * default because the family's CN base URL differs from the intl one; callers
- * pass the endpoint their base URL actually serves, and `undefined` for the
- * default.
- */
 export function makeBuddyModel(
   entry: BuddyRawEntry,
   providerId: string,
@@ -337,17 +217,6 @@ export function makeBuddyModel(
   });
 }
 
-/**
- * The shared model roster for the international buddy site.
- *
- * CodeBuddy intl serves the model set from the same console directory shape, so
- * the catalog is one hand-written list as the single source of truth, mapped
- * with the provider's own endpoint (`codebuddy.ts` takes the family default).
- *
- * CodeBuddy CN is deliberately NOT on this list: its console publishes a
- * different roster (its own `glm-5v-turbo` / `kimi-k3-1` ids and CN-specific
- * output ceilings), so it keeps its own table.
- */
 export const BUDDY_SHARED_RAW: readonly BuddyRawEntry[] = [
   ["auto", "Auto", false, true, 176_000, 24_000],
   // The three named tiers and `gpt-6-astra` are published by /v3/config and sit
@@ -399,4 +268,197 @@ export const BUDDY_SHARED_RAW: readonly BuddyRawEntry[] = [
   ["minimax-m3", "MiniMax-M3", true, false, 512_000, 512_000],
   ["minimax-m3.1-flash", "MiniMax-M3.1 Flash", true, true, 1_000_000, 128_000],
   ["step-5-preview", "Step-5-Preview", true, true, 1_000_000, 64_000, true],
+];
+
+// ── buddy-discovery-shared ──────────────────────────────────────────
+
+export const BUDDY_CN_MODELS_PATH = "/console/enterprises/personal/models" as const;
+
+export const BUDDY_INTL_MODELS_PATH = "/v2/enterprises/personal/models" as const;
+
+export const BUDDY_CONFIG_PATH = "/v3/config" as const;
+
+const BUDDY_OK_CODE = 0;
+
+interface BuddyDirectoryRow {
+  readonly id?: unknown;
+  readonly name?: unknown;
+  readonly disabled?: unknown;
+  readonly maxInputTokens?: unknown;
+  readonly maxOutputTokens?: unknown;
+  readonly supportsImages?: unknown;
+  readonly supportsToolCall?: unknown;
+  readonly supportsReasoning?: unknown;
+  readonly tags?: unknown;
+}
+
+function siteOrigin(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "").replace(/\/v\d+$/, "");
+}
+
+function asNumber(value: unknown): number | null {
+  return sharedAsNumber(value) ?? null;
+}
+
+export async function fetchBuddyDirectoryModels(args: {
+  readonly siteUrl: string;
+  readonly providerId: string;
+  readonly credential: string;
+  readonly modelsPath: string;
+  readonly endpoint: string | undefined;
+  readonly signal?: AbortSignal | undefined;
+  readonly fetcher?: typeof fetch | undefined;
+}): Promise<readonly ModelDefinition[] | null> {
+  const fetcher = args.fetcher ?? globalThis.fetch;
+  // Fetch both catalog scopes and merge them. `/v3/config` is ranked higher and
+  // is the primary source (matches the reference gateways), but the personal
+  // models path carries models the v3 response does not always publish — so a
+  // single-source read can silently miss models that are callable. Merging with
+  // dedupe by model id gives the union, mirroring the upstream codebuddy2api
+  // catalog aggregation. Each failure falls through to the other source, so a
+  // host that answers only one behaves exactly as it does today.
+  const v3 = await fetchBuddyDirectoryOnce(args, fetcher, BUDDY_CONFIG_PATH);
+  const personal = await fetchBuddyDirectoryOnce(args, fetcher, args.modelsPath);
+  if (v3 !== null && personal !== null) return mergeBuddyDirectories(v3, personal);
+  return v3 ?? personal;
+}
+
+function mergeBuddyDirectories(
+  primary: readonly ModelDefinition[],
+  supplemental: readonly ModelDefinition[],
+): readonly ModelDefinition[] {
+  const seen = new Set<string>();
+  const merged: ModelDefinition[] = [];
+  for (const model of primary) {
+    if (seen.has(model.modelId)) continue;
+    seen.add(model.modelId);
+    merged.push(model);
+  }
+  for (const model of supplemental) {
+    if (seen.has(model.modelId)) continue;
+    seen.add(model.modelId);
+    merged.push(model);
+  }
+  return merged;
+}
+
+async function fetchBuddyDirectoryOnce(
+  args: {
+    readonly siteUrl: string;
+    readonly providerId: string;
+    readonly credential: string;
+    readonly endpoint: string | undefined;
+    readonly signal?: AbortSignal | undefined;
+  },
+  fetcher: typeof fetch,
+  path: string,
+): Promise<readonly ModelDefinition[] | null> {
+  // The directory scores by account: an access token's `sub` is the uid. An
+  // opaque API key carries no identity, and the endpoint still answers for it,
+  // so the header is declared absent rather than guessed.
+  const uid = buddyAccountUid(args.credential);
+  let response: Response;
+  try {
+    response = await fetcher(`${siteOrigin(args.siteUrl)}${path}`, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${args.credential}`,
+        "x-product": "SaaS",
+        ...(uid === undefined ? { "x-no-user-id": "1" } : { "x-user-id": uid }),
+        "x-no-enterprise-id": "1",
+        "x-no-department-info": "1",
+      },
+      ...(args.signal === undefined ? {} : { signal: args.signal }),
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok) return null;
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return null;
+  }
+  const envelope = asRecord(body);
+  if (envelope === undefined || envelope["code"] !== BUDDY_OK_CODE) return null;
+  const data = asRecord(envelope["data"]);
+  const rawModels = data?.["models"];
+  if (!Array.isArray(rawModels)) return null;
+
+  // The CLI agent's roster, when published, is the callable subset.
+  const agents = data?.["agents"];
+  let cliRoster: Set<string> | undefined;
+  if (Array.isArray(agents)) {
+    for (const entry of agents) {
+      const agent = asRecord(entry);
+      if (agent?.["name"] !== "cli") continue;
+      const listed = agent["models"];
+      if (Array.isArray(listed) && listed.length > 0) {
+        cliRoster = new Set(listed.filter((id): id is string => typeof id === "string"));
+      }
+      break;
+    }
+  }
+
+  const entries: BuddyRawEntry[] = [];
+  const seen = new Set<string>();
+  for (const entry of rawModels) {
+    const model = asRecord(entry) as BuddyDirectoryRow | undefined;
+    const id = model?.id;
+    if (typeof id !== "string" || id.length === 0 || seen.has(id)) continue;
+    if (model?.disabled === true) continue;
+    // Completion, NES, and codewise rows are not chat models. Listing them
+    // offers a route that 400s on a chat request. A declared output of 256 or
+    // less is the same signal: a completion model published with a chat-sized
+    // name. `text-to-image` is an image row, served by the image roster.
+    const lowerId = id.toLowerCase();
+    if (lowerId.startsWith("nes-") || lowerId.startsWith("completion-") || lowerId.startsWith("codewise-")) continue;
+    const output = asNumber(model?.maxOutputTokens);
+    if (output !== null && output <= 256) continue;
+    const tags = model?.tags;
+    if (Array.isArray(tags) && tags.some((tag) => typeof tag === "string" && tag.toLowerCase() === "text-to-image")) continue;
+    if (cliRoster !== undefined && !cliRoster.has(id)) continue;
+    seen.add(id);
+    entries.push([
+      id,
+      typeof model?.name === "string" && model.name.length > 0 ? model.name : id,
+      model?.supportsReasoning === true,
+      model?.supportsImages === true,
+      asNumber(model?.maxInputTokens),
+      asNumber(model?.maxOutputTokens),
+      model?.supportsToolCall === true,
+    ]);
+  }
+  if (entries.length === 0) return null;
+  return entries.map((entry) => makeBuddyModel(entry, args.providerId, args.endpoint));
+}
+
+// ── codebuddy/cn-catalog ──────────────────────────────────────────
+
+export const CODEBUDDY_CN_RAW: readonly BuddyRawEntry[] = [
+  ["glm-5.1", "GLM 5.1", true, true, 200_000, 48_000],
+  ["glm-5.2", "GLM 5.2", true, true, 1_000_000, 64_000],
+  ["glm-5.3", "GLM 5.3", true, true, 1_000_000, 64_000],
+  ["glm-5.3-flash", "GLM 5.3 Flash", true, true, 1_000_000, 131_072],
+  ["glm-5v-turbo", "GLM 5v Turbo", true, true, 200_000, 64_000],
+  ["minimax-m3", "MiniMax M3", true, true, 512_000, 64_000],
+  // 1M context, reasoning always on (upstream states both); vision inherited
+  // from the M3 row, which is the same family.
+  ["minimax-m3.1-flash", "MiniMax M3.1 Flash", true, true, 1_000_000, 128_000],
+  ["mimo-v2.6-pro", "MiMo V2.6 Pro", true, true, 1_000_000, 128_000],
+  ["kimi-k2.8-preview", "Kimi K2.8 Preview", true, true, 1_000_000, 64_000],
+  ["kimi-k3.1-pro", "Kimi K3.1 Pro", true, true, 1_000_000, 32_000],
+  ["hy3", "Hy3", true, true, 192_000, 64_000],
+  ["hy4", "Hy4", true, true, 960_000, 64_000],
+  ["hy4free", "Hy4 Free", true, true, 960_000, 64_000],
+  ["space-bunny", "Space Bunny", true, true, 1_000_000, 128_000],
+  ["step-5-preview", "Step 5 Preview", true, true, 1_000_000, 64_000],
+  ["deepseek-v4-pro", "DeepSeek V4 Pro", true, true, 1_000_000, 128_000],
+  ["deepseek-v4.1-flash", "DeepSeek V4.1 Flash", true, true, 1_000_000, 128_000],
+  // Live on the CN roster but absent here, so a request for it resolved to
+  // nothing. Limits as published by /v3/config.
+  ["kimi-k3-1", "Kimi K3-1", true, true, 1_000_000, 32_000],
+  ["minimax-m2.7", "MiniMax M2.7", true, true, 200_000, 48_000],
 ];

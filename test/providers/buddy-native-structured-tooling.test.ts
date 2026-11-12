@@ -9,8 +9,9 @@ import type { CanonicalRequest } from "../../src/protocol/canonical-model";
 import {
   applyBuddySystemPrompt,
   injectBuddyParallelToolCalls,
+  normalizeBuddyToolNames,
   omitBuddyAssistantToolCallContent,
-} from "../../src/providers/integrations/buddy/buddy-chat-shared";
+} from "../../src/providers/integrations/buddy/chat";
 
 const CALLS = [{ id: "call_1", type: "function", function: { name: "Read", arguments: "{}" } }];
 
@@ -69,4 +70,16 @@ test("applyBuddySystemPrompt keeps tool_calls-only assistant turns free of a con
   expect(assistant).toBeDefined();
   expect(assistant!["content"]).toBeUndefined();
   expect(assistant!["tool_calls"]).toEqual(CALLS);
+});
+
+test("normalizeBuddyToolNames keeps the OpenAI tool envelope", () => {
+  const payload: Record<string, unknown> = {
+    tools: [
+      { type: "function", function: { name: "find", parameters: { type: "object", properties: {}, required: [] } } },
+    ],
+  };
+  normalizeBuddyToolNames(payload);
+  const tool = (payload["tools"] as Array<Record<string, unknown>>)[0]!;
+  expect(tool["type"]).toBe("function");
+  expect((tool["function"] as Record<string, unknown> | undefined)?.["name"]).toBe("find");
 });
