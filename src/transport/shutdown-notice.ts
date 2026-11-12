@@ -34,7 +34,7 @@ export function shutdownNotice(reason: string | undefined): ShutdownNotice {
     return {
       code: "shutting_down",
       message:
-        "Service is shutting down for an update; it will be back in about a minute (request {requestId}). Maintenance mode — back in a minute 🧘",
+        "Service is restarting for an update; it will be back in about a minute (request {requestId}). Maintenance mode — back in a minute 🧘",
       reason: "restart_for_update",
     };
   }
