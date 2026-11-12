@@ -198,8 +198,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   `qoder-app` profile reproduces the captured desktop ClientHello suite order
   and ALPN). Streams keep flowing during profile dials (no full-body buffer).
 
+### Added
+
+- **DeepAI client version pin.** The DeepAI Code desktop app publishes no
+  machine-readable feed, so `client-versions` carries the audited bundle pin
+  (0.3.35) and wires it into the refresh cycle and route identity.
+- **Freebuff client version joins the refresh cycle.** Freebuff stays on its
+  audited pin (0.0.201), but is now part of the provider version resolvers so
+  the pinned-version report and route identity see it like any other provider.
+
 ### Fixed
 
+- **DeepAI and Clixad login buttons now appear in the dashboard.** The registry
+  loaded the OAuth client *class* instead of an instance, so
+  `resolveLoginClient` returned a `Function` with no flow methods and the
+  provider list hid the Login buttons. Both integration exports now provide a
+  shared client instance (DeepAI browser loopback, Clixad GitHub device flow).
+- **Add-Model discovery cards render in a 2×2 grid** with only Context and
+  Output shown — the reasoning/tools/wire/input lines are dropped since not
+  every provider reports them.
+- **Vercel AI Gateway listed under Free Limited providers.** The single $0
+  model (`nvidia/nemotron-3.5-lightning-free`) is the only free-plan row; the
+  card now groups Vercel with the other daily-allowance providers.
 - **CodeBuddy tools are no longer silently ignored.** `normalizeBuddyToolNames`
   rebuilt `payload.tools` entries on the `function` branch and returned the
   inner declaration instead of the `{ type: "function", function: ... }`

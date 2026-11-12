@@ -588,8 +588,8 @@ export const PROVIDER_CAPABILITIES = {
     loadAdapter: async () => createApiKeyAdapter((await import("./integrations/clixad/provider")).CLIXAD_SPEC),
     loadModels: async () => (await import("./integrations/clixad/provider")).CLIXAD_DEFAULT_MODELS,
     // Clixad login is a GitHub device flow; the issued token (adg_...) is the
-    // credential. Pasting a token is supported via importCredential.
-    loadAuthentication: oauthCapability(() => import("./integrations/clixad/clixad-oauth"), "ClixadOAuthClient"),
+    // credential. The device flow is the only supported login path.
+    loadAuthentication: oauthCapability(() => import("./integrations/clixad/clixad-oauth"), "clixadOAuthClient"),
     loadQuotaCollector: quotaCapability(() => import("./integrations/clixad/clixad-quota"), "fetchClixadQuota"),
     // `/v1/models` is unauthenticated and lists all rows; the static roster
     // carries the live-verified free tier and discovery keeps the list current.
@@ -608,7 +608,7 @@ export const PROVIDER_CAPABILITIES = {
     // DeepAI login is a browser loopback flow; the exchange returns an opaque
     // api_key (the credential). Pasting an api_key is supported via
     // importCredential.
-    loadAuthentication: oauthCapability(() => import("./integrations/deepai/deepai-oauth"), "DeepAIOAuthClient"),
+    loadAuthentication: oauthCapability(() => import("./integrations/deepai/deepai-oauth"), "deepAIOAuthClient"),
     loadQuotaCollector: quotaCapability(() => import("./integrations/deepai/deepai-quota"), "fetchDeepAIQuota"),
     // `/deepai_code/models` is unauthenticated; the static roster carries the
     // live-verified free tier and discovery keeps the list current.

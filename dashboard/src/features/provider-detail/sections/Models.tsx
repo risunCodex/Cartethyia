@@ -678,77 +678,55 @@ function ProviderAddModelPanel({
           ) : filtered.length === 0 ? (
             <div className="p-16 text-center text-caption text-text-tertiary">No models found.</div>
           ) : (
-            filtered.map((item: DiscoverModelCandidate) => {
-              const picked = selected.includes(item.modelId);
-              const disabled = item.alreadyRegistered;
-              return (
-                <label
-                  key={item.modelId}
-                  className={`block min-w-0 rounded-control border border-inner-border p-4 text-caption transition-colors ${disabled ? "opacity-60" : "cursor-pointer hover:bg-hover"}`}
-                >
-                  <div className="flex items-center gap-4">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${item.modelId}`}
-                      checked={picked}
-                      disabled={disabled}
-                      onChange={() => toggle(item.modelId)}
-                    />
-                    <span className="font-mono tabular-nums truncate flex-1 min-w-0 text-badge font-medium" title={item.modelId}>
-                      {item.modelId}
-                    </span>
-                    {item.freeTier === true ? (
-                      <span className="shrink-0 rounded-pill border border-teal-soft px-3 py-0.5 text-micro text-teal">Free tier</span>
-                    ) : null}
-                    {item.proOnly === true ? (
-                      <span className="shrink-0 rounded-tiny border border-orange bg-orange-soft px-3 py-0.5 text-micro text-orange">Pro</span>
-                    ) : null}
-                    {disabled ? (
-                      <span className="shrink-0 rounded-pill border border-inner-border px-3 py-0.5 text-micro font-bold text-text-tertiary">Registered</span>
-                    ) : null}
-                    {picked ? <Check size={13} aria-hidden="true" className="shrink-0 text-accent" /> : null}
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 pl-2 text-micro text-text-tertiary">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="text-text-quaternary">Context</span>
-                      <span className="font-mono tabular-nums text-text-secondary">
-                        {formatModelTokens(item.contextLimit)}
+            <div className="grid grid-cols-2 gap-3">
+              {filtered.map((item: DiscoverModelCandidate) => {
+                const picked = selected.includes(item.modelId);
+                const disabled = item.alreadyRegistered;
+                return (
+                  <label
+                    key={item.modelId}
+                    className={`block min-w-0 rounded-control border border-inner-border p-4 text-caption transition-colors ${disabled ? "opacity-60" : "cursor-pointer hover:bg-hover"}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${item.modelId}`}
+                        checked={picked}
+                        disabled={disabled}
+                        onChange={() => toggle(item.modelId)}
+                      />
+                      <span className="font-mono tabular-nums truncate flex-1 min-w-0 text-badge font-medium" title={item.modelId}>
+                        {item.modelId}
                       </span>
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="text-text-quaternary">Output</span>
-                      <span className="font-mono tabular-nums text-text-secondary">
-                        {formatModelTokens(item.outputLimit)}
-                      </span>
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="text-text-quaternary">Wire</span>
-                      <span className="font-mono tabular-nums text-text-secondary">{item.wireFamily}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="text-text-quaternary">Input</span>
-                      <span className="text-text-secondary">
-                        {item.modalities.input.length > 0 ? item.modalities.input.join(" · ") : "text"}
-                      </span>
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="text-text-quaternary">Reasoning</span>
-                      <span className="text-text-secondary">{item.reasoning ? "yes" : "no"}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="text-text-quaternary">Tools</span>
-                      <span className="text-text-secondary">{item.toolCall ? "yes" : "no"}</span>
-                    </span>
-                    {item.serviceKind !== "llm" ? (
+                      {item.freeTier === true ? (
+                        <span className="shrink-0 rounded-pill border border-teal-soft px-3 py-0.5 text-micro text-teal">Free tier</span>
+                      ) : null}
+                      {item.proOnly === true ? (
+                        <span className="shrink-0 rounded-tiny border border-orange bg-orange-soft px-3 py-0.5 text-micro text-orange">Pro</span>
+                      ) : null}
+                      {disabled ? (
+                        <span className="shrink-0 rounded-pill border border-inner-border px-3 py-0.5 text-micro font-bold text-text-tertiary">Registered</span>
+                      ) : null}
+                      {picked ? <Check size={13} aria-hidden="true" className="shrink-0 text-accent" /> : null}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 pl-2 text-micro text-text-tertiary">
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="text-text-quaternary">Kind</span>
-                        <span className="text-text-secondary">{item.serviceKind}</span>
+                        <span className="text-text-quaternary">Context</span>
+                        <span className="font-mono tabular-nums text-text-secondary">
+                          {formatModelTokens(item.contextLimit)}
+                        </span>
                       </span>
-                    ) : null}
-                  </div>
-                </label>
-              );
-            })
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="text-text-quaternary">Output</span>
+                        <span className="font-mono tabular-nums text-text-secondary">
+                          {formatModelTokens(item.outputLimit)}
+                        </span>
+                      </span>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
           )}
         </div>
       </Stack>

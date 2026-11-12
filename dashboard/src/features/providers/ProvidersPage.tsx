@@ -809,6 +809,11 @@ const FREE_LIMITED_IDS = new Set([
   // Clixad is ad-funded: a daily free tier (120k credits/day) plus account
   // credits earned from offers (grant_per_ad ~40k/survey, $5/day cap).
   "clixad",
+  // Vercel AI Gateway serves a free-tier key with a single $0 model
+  // (`nvidia/nemotron-3.5-lightning-free`); every other zero-priced row is
+  // gated behind a paid plan (verified live), so it belongs with the other
+  // free-limited providers.
+  "vercel",
   // DeepAI Code ships a daily free allowance (50 Theos/day) with 11
   // zero-Theos models in the free tier.
   "deepai",

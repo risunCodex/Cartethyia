@@ -11,6 +11,7 @@ import {
   buildKiroUserAgent,
   getCodeBuddyCnVersion,
   getCodeBuddyVersion,
+  getDeepAIVersion,
   getFreebuffVersion,
   getProviderClientVersion,
   pinnedClientVersions,
@@ -405,9 +406,27 @@ describe("freebuff client version stays pinned", () => {
     expect(getFreebuffVersion()).toBe("0.0.201");
   });
 
-  test("it is deliberately not wired into the refresh cycle", () => {
-    // Pinned-only by design, like `claudeSdk`: wiring it would make
-    // `pinnedClientVersions()` report it as a discovery failure forever.
-    expect(getProviderClientVersion("freebuff")).toBeUndefined();
+  test("it is wired into the refresh cycle and reports its pinned fallback", () => {
+    // No live feed exists, so the resolver stays on its pin — but it is part
+    // of the refresh cycle so the pinned-version report and route identity
+    // see it like any other provider.
+    expect(getProviderClientVersion("freebuff")?.client).toBe("freebuff");
+    expect(getProviderClientVersion("freebuff")?.version).toBe("0.0.201");
+  });
+});
+
+describe("deepai client version stays pinned", () => {
+  test("no discovery source exists, and the fallback is the audited desktop bundle", () => {
+    // DeepAI Code (macOS/Windows only) publishes no machine-readable version
+    // feed. The pin is the version unpacked from the audited bundle — raise
+    // it when the next bundle is audited.
+    expect(VERSION_SOURCES.deepai.fallback).toBe("0.3.35");
+    expect(VERSION_SOURCES.deepai.sources).toEqual([]);
+    expect(getDeepAIVersion()).toBe("0.3.35");
+  });
+
+  test("it is wired into the refresh cycle and reports its pinned fallback", () => {
+    expect(getProviderClientVersion("deepai")?.client).toBe("deepai");
+    expect(getProviderClientVersion("deepai")?.version).toBe("0.3.35");
   });
 });

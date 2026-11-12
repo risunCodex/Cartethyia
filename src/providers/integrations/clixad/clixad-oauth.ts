@@ -5,8 +5,7 @@
 // user code; the gateway polls `POST /v1/auth/device/poll` with the session
 // until the operator approves in the browser, then mints the CLI's bearer
 // token (`adg_...`). There is no refresh token — the token is long-lived and
-// the flow is re-run when needed. Pasting a raw token is supported via
-// `importCredential`.
+// the flow is re-run when needed.
 
 import { OAuthClient } from "../../authentication/oauth-client";
 import type {
@@ -94,3 +93,6 @@ export class ClixadOAuthClient extends OAuthClient {
     return { status: "failed", reason: `device poll failed: ${String(body["error"] ?? body["status"] ?? res.status)}` };
   }
 }
+
+/** Shared Clixad device-login client instance (registry-facing). */
+export const clixadOAuthClient = new ClixadOAuthClient();

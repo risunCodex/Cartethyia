@@ -394,10 +394,18 @@ export const VERSION_SOURCES = {
     // download links are client-rendered with no stable asset path.
     // Fallback = the version unpacked from the official Windows installer
     // during the wire audit (2026-11-09, Freebuff Desktop 0.0.201). Raise it
-    // when the next installer bundle is audited. Pinned-only by design, like
-    // `claudeSdk`: deliberately NOT wired into `PROVIDER_VERSION_RESOLVERS`
-    // so the pinned-version report never flags it as a discovery failure.
+    // when the next installer bundle is audited.
     fallback: "0.0.201",
+    sources: [],
+  },
+  deepai: {
+    key: "deepai",
+    // No machine-readable public feed exists for the DeepAI Code desktop app
+    // (macOS/Windows only, no npm/CLI line). Fallback = the version unpacked
+    // from the audited bundle (2026-11-11, DeepAI Code 0.3.35). Raise it
+    // when the next bundle is audited. Pinned-only by design for the same
+    // reason as `freebuff`.
+    fallback: "0.3.35",
     sources: [],
   },
   cursor: {
@@ -450,6 +458,7 @@ const resolvers = {
   perch: createClientVersionResolver({ ...VERSION_SOURCES.perch, client: "perch" }),
   clixad: createClientVersionResolver({ ...VERSION_SOURCES.clixad, client: "clixad" }),
   freebuff: createClientVersionResolver({ ...VERSION_SOURCES.freebuff, client: "freebuff" }),
+  deepai: createClientVersionResolver({ ...VERSION_SOURCES.deepai, client: "deepai" }),
   cursor: createClientVersionResolver({ ...VERSION_SOURCES.cursor, client: "cursor" }),
   opencode: createClientVersionResolver({ ...VERSION_SOURCES.opencode, client: "opencode" }),
   commandcode: createClientVersionResolver({ ...VERSION_SOURCES.commandcode, client: "command-code" }),
@@ -474,6 +483,8 @@ const PROVIDER_VERSION_RESOLVERS: Readonly<Record<string, ClientVersionResolver>
   freepi: resolvers.freepi,
   perch: resolvers.perch,
   clixad: resolvers.clixad,
+  freebuff: resolvers.freebuff,
+  deepai: resolvers.deepai,
   grok: resolvers.grok,
   xai: resolvers.grok,
   opencode: resolvers.opencode,
@@ -590,6 +601,7 @@ export const getAntigravityVersion = accessor("antigravity").get;
 export const getFreepiVersion = accessor("freepi").get;
 export const getPerchVersion = accessor("perch").get;
 export const getFreebuffVersion = accessor("freebuff").get;
+export const getDeepAIVersion = accessor("deepai").get;
 
 export const getOpenCodeVersion = accessor("opencode").get;
 

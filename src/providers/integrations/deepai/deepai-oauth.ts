@@ -114,3 +114,6 @@ export class DeepAIOAuthClient extends OAuthClient {
     };
   }
 }
+
+/** Shared DeepAI browser-login client instance (registry-facing). */
+export const deepAIOAuthClient = new DeepAIOAuthClient();
