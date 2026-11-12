@@ -64,8 +64,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   days, 7 weeks — with per-provider real-expiry notes; short-lived providers
   (Claude ~8h, Google-backed ~1h, Grok/Kimi) keep tight leads so the sweep
   does not re-mint on every tick.
+- **Cursor transport hardening.** The Cursor integration now falls back from
+  HTTP/2 to HTTP/1 when the upstream rejects the H2 stream (RunSSE /
+  BidiAppend), keeps a stable `requestId` across retries, and exposes
+  `forceH1`. Open and stream retries checkpoint and resume the last
+  confirmed event; in-flight exec handlers drain before a retry; tool counts
+  are reconciled after each attempt; errors resolve to structured codes; and
+  `CARTETHYIA_CURSOR_WIRE_TRACE` dumps the shape-only wire trace for
+  debugging. Healthy streams are untouched.
+- **Free-pi session affinity and rebase.** Each (secret, account, model)
+  pair now owns one `x-session-id`, and the session rotates and rebases when
+  the upstream refuses ownership (`session_mismatch` / `does not belong to`)
+  instead of failing the whole request.
 
 ### Changed
+
+- **CodeBuddy integration consolidated into one folder.** The 21-module
+  `src/providers/integrations/buddy/` tree is merged into 9 files by domain:
+  `catalog.ts` (roster + discovery + CN rows), `headers.ts` (identity + CLI +
+  conversation headers), `account.ts` (OAuth + quota + usage + usage store),
+  `lifecycle.ts` (check-in + growth + server tools), `chat.ts`, `media.ts`,
+  `capabilities.ts`, and `codebuddy/index.ts` + `codebuddy/shared.ts`. No
+  wire behavior changed; module paths in consumers and tests follow the new
+  layout.
 
 - **Grok "Test 407" health log quotes the original model response.** The
   probe's health-event reason now records the literal answer the model gave
@@ -179,6 +200,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **CodeBuddy tools are no longer silently ignored.** `normalizeBuddyToolNames`
+  rebuilt `payload.tools` entries on the `function` branch and returned the
+  inner declaration instead of the `{ type: "function", function: ... }`
+  envelope — the upstream accepted the request (HTTP 200) but emitted zero
+  `tool_calls`. The envelope is preserved again, and the bare-tool branch
+  keeps the original tool object too.
+- **Dashboard pre-existing typecheck failures cleared.** `PoolHealthEvent`
+  imports from the correct pool-health module, the Grok probe request is typed
+  as `ProbeModelRequest` (so `serviceKind` stays a `ServiceKind` union), and
+  the routing-strategy hook drops duplicated `setSkipProxy`/`setDeviceFlowProxy`
+  members and includes `deviceFlowProxy` in the user-agent save. The packed
+  tarball `npm` upgrade rehearsal now passes.
 - **OAuth callback listener no longer resets the callback connection.** The
   loopback listener called `server.stop(true)` synchronously from inside the
   request handler, closing the active connection before the success/denial
