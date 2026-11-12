@@ -105,7 +105,7 @@ function completeClineToolSchemas(payload: Record<string, unknown>): void {
   });
 }
 
-function clinePrePayload(
+export function clinePrePayload(
   payload: Record<string, unknown>,
   request: CanonicalRequest,
   candidate: ProviderDispatchTarget,
