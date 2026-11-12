@@ -209,11 +209,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- **Devin browser OAuth reuses the deployment-aware redirect URI.** The client
-  hardcoded `http://127.0.0.1:59653/callback` in the authorize URL, so on a
-  server the browser was sent to its own machine (`ERR_CONNECTION_REFUSED`).
-  It now uses the redirect URI the console passes — loopback on local dev, the
-  public origin + hosted callback on a deployment.
+- **Devin browser OAuth returns to the popup flow.** Devin's authorization
+  server rejects any redirect URI other than `http://127.0.0.1:59653/callback`
+  (the desktop flow's loopback), so the dashboard always opens the authorize
+  URL in a popup and the operator pastes the redirect URL back when the
+  loopback page cannot be reached. The server-mode banner is removed.
 - **Hermes/OpenRouter free rows re-validated.** `reflection/beam-1.0-501b-a23b:free`
   and `poolside/laguna-s-2.1:free` are withdrawn (dispatch fails); `stepfun/step-3.7-flash:free`
   is kept with a clamped output cap — the catalog's 256k `max_completion_tokens` on a

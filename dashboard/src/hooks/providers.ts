@@ -582,13 +582,6 @@ export function useExportProviderAccounts() {
 export interface OAuthAuthorizeResult {
   readonly authorizeUrl: string;
   readonly state: string;
-  /**
-   * True when the redirect URI is a loopback endpoint the gateway itself binds
-   * (local dev); false on a deployment where the redirect goes to the hosted
-   * console callback instead and a popup to `127.0.0.1` would land on the
-   * operator's own machine.
-   */
-  readonly loopback: boolean;
 }
 
 /** Begins the browser OAuth login flow for a provider account; caller opens `authorizeUrl` in a popup. */
