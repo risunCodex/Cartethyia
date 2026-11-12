@@ -87,7 +87,9 @@ export const CLIXAD_DEFAULT_MODELS: readonly ModelDefinition[] = [
     wireFamily: "chat",
     endpoint: CLIXAD_CHAT_PATH,
     ctx: 24_000,
-    out: 75_000,
+    // The gateway publishes no output cap; clamp under the 24k context so a
+    // request can never exceed the endpoint (input + output budget).
+    out: 16_000,
     reasoning: true,
     toolCall: true,
     free: true,
