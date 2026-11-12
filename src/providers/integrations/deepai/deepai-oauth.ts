@@ -29,19 +29,12 @@ import {
 const DEEPAI_LOGIN_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 function loopbackPortFromRedirectUri(redirectUri: string): number {
-  try {
-    const url = new URL(redirectUri);
-    const port = Number(url.port);
-    if (Number.isInteger(port) && port > 0 && port <= 65_535) return port;
-  } catch {
-    // fall through to the default below
+  const url = new URL(redirectUri);
+  const port = Number(url.port);
+  if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
+    throw new Error("deepai: redirect URI names an invalid loopback port");
   }
-  // A deployment may pass its public-origin callback through the shared
-  // default; DeepAI's hosted sign-in still requires a loopback port. Keep
-  // the well-known default so the authorize URL can be built — the operator
-  // pastes the resulting redirect URL back (loopback ports are not reachable
-  // from a remote browser).
-  return 59_653;
+  return port;
 }
 
 export class DeepAIOAuthClient extends OAuthClient {

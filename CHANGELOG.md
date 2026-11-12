@@ -209,16 +209,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- **DeepAI login starts on a deployment.** `buildAuthorizeUrl` threw when the
-  console's redirect URI was the public-origin callback, failing the login
-  with "OAuth login operation failed" before any URL was shown. It now falls
-  back to the well-known 59653 loopback port, so the popup flow works and the
-  operator pastes the redirect URL back.
+- **DeepAI login builds the authorize URL for any redirect.** `buildAuthorizeUrl`
+  threw when the console's redirect URI was not a loopback URL, failing the
+  login with "OAuth login operation failed" before any URL was shown. It now
+  falls back to the well-known 59653 loopback port, so the popup flow works
+  and the operator pastes the redirect URL back.
 - **Devin browser OAuth returns to the popup flow.** Devin's authorization
   server rejects any redirect URI other than `http://127.0.0.1:59653/callback`
   (the desktop flow's loopback), so the dashboard always opens the authorize
   URL in a popup and the operator pastes the redirect URL back when the
-  loopback page cannot be reached. The server-mode banner is removed.
+  loopback page cannot be reached.
 - **Hermes/OpenRouter free rows re-validated.** `reflection/beam-1.0-501b-a23b:free`
   and `poolside/laguna-s-2.1:free` are withdrawn (dispatch fails); `stepfun/step-3.7-flash:free`
   is kept with a clamped output cap — the catalog's 256k `max_completion_tokens` on a
@@ -226,14 +226,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   The Hermes discovery now clamps output under context and blocklists the known-broken ids.
 - **Cline free roster refreshed.** `reflection/beam-free` and `poolside/laguna-s-2.1-free`
   are dropped; `baidu/ernie-5.5-flash-preview:free` (1.0M ctx / 922k out) added.
-- **OAuth browser login works on Docker/VPS deployments.** The authorize URL
-  always advertised a loopback redirect (`http://127.0.0.1:59653/callback`),
-  which on a server browser points at the operator's own machine — the code
-  landed on ERR_CONNECTION_REFUSED. The redirect now follows
-  `CARTETHYIA_PUBLIC_ORIGIN` on non-loopback deployments and goes to the
-  hosted console callback; the dashboard detects the mode and shows an "open
-  this URL in your browser" flow instead of forcing a broken popup. Local dev
-  keeps the self-completing loopback listener.
 - **DeepAI and Clixad login buttons now appear in the dashboard.** The registry
   loaded the OAuth client *class* instead of an instance, so
   `resolveLoginClient` returned a `Function` with no flow methods and the

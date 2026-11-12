@@ -11,7 +11,7 @@ import { oauthAccountIdentity } from "../../../providers/authentication/oauth-fl
 import type { OAuthDevicePollResponse } from "../catalog/contracts";
 import { providerJwtVerification } from "../../../providers/provider-metadata";
 import type { ProviderRegistry } from "../../../providers/provider-registry";
-import { browserAuthorizeRedirectUri, browserAuthorizeUsesLoopback } from "../../../config/providers";
+import { browserAuthorizeRedirectUri } from "../../../config/providers";
 import { resolveDeviceEgress, type DeviceEgressDeps } from "./device-egress";
 import { log } from "../../../observability/logger";
 import { GatewayError } from "../../../protocol/gateway-error";
@@ -506,7 +506,7 @@ function createOAuthLoginOperations(config: OAuthLoginConfig) {
         providerId: string,
         accountLabel: string,
         parameters?: Readonly<Record<string, string>>,
-      ): Promise<{ authorizeUrl: string; state: string; loopback: boolean }> {
+      ): Promise<{ authorizeUrl: string; state: string }> {
         const a = requireScope(access, "dashboard:write");
         const client = await requireClient(config.providerRegistry, providerId);
         if (typeof client.buildAuthorizeUrl !== "function") {
@@ -560,10 +560,7 @@ function createOAuthLoginOperations(config: OAuthLoginConfig) {
         // here — with no pending flow saved — rather than leaving a flow whose
         // callback can never arrive. A non-loopback redirect (a custom scheme, a
         // remote host) returns false and keeps the manual paste path.
-        const loopback = browserAuthorizeUsesLoopback();
-        if (loopback) {
-          config.callbackListener.register(redirectUri, providerId, state);
-        }
+        config.callbackListener.register(redirectUri, providerId, state);
         await config.oauthFlowStore.savePending(state, {
           providerId,
           codeVerifier,
@@ -581,7 +578,6 @@ function createOAuthLoginOperations(config: OAuthLoginConfig) {
         return {
           authorizeUrl: client.buildAuthorizeUrl(prepared),
           state,
-          loopback,
         };
       },
     async handleCallback(
