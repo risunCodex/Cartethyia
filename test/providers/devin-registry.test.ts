@@ -42,18 +42,23 @@ test("devin registry entry loads every capability", async () => {
   expect(typeof discovery).toBe("function");
 });
 
-test("devin OAuth authorize URL carries PKCE parameters", () => {
+test("devin OAuth authorize URL carries PKCE parameters and the gateway redirect URI", () => {
   const entry = PROVIDER_CAPABILITIES.devin!;
   return entry.loadAuthentication!().then((auth) => {
+    const redirectUri = "http://127.0.0.1:59653/callback";
     const url = auth.client!.buildAuthorizeUrl!({
       state: "state-1",
       codeChallenge: "challenge-1",
-      redirectUri: "http://127.0.0.1:59653/callback",
+      redirectUri,
     });
     expect(url).toContain("https://app.devin.ai/auth/cli/continue");
     expect(url).toContain("code_challenge=challenge-1");
     expect(url).toContain("code_challenge_method=S256");
     expect(url).toContain("state=state-1");
     expect(url).toContain("prompt=select_account");
+    // The redirect URI must come from the caller (the console's deployment
+    // aware default), never hardcoded to loopback: on a server the browser
+    // cannot reach 127.0.0.1.
+    expect(url).toContain(`redirect_uri=${encodeURIComponent(redirectUri)}`);
   });
 });

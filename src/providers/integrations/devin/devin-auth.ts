@@ -137,16 +137,19 @@ export async function resolveDevinAccountLabel(
 
 const DEVIN_AUTHORIZE_URL = "https://app.devin.ai/auth/cli/continue";
 const DEVIN_TOKEN_URL = "https://api.devin.ai/auth/cli/token";
-const DEVIN_BROWSER_REDIRECT_URI = "http://127.0.0.1:59653/callback";
 
 export const devinOAuthClient: OAuthLoginClient = {
   supportsDeviceCode: false,
   supportsBrowserCode: true,
-  browserRedirectUri: DEVIN_BROWSER_REDIRECT_URI,
 
   buildAuthorizeUrl(request: OAuthAuthorizeRequest): string {
+    // The redirect URI comes from the caller — the console's deployment-aware
+    // default (`http://127.0.0.1:{port}/callback` on local dev, the public
+    // origin + `/providers/oauth/callback` on a server). Hardcoding loopback
+    // here would send a server-side browser to its own machine and the login
+    // would never complete.
     const params = new URLSearchParams({
-      redirect_uri: DEVIN_BROWSER_REDIRECT_URI,
+      redirect_uri: request.redirectUri,
       state: request.state,
       prompt: "select_account",
       code_challenge: request.codeChallenge,
