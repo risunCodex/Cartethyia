@@ -85,10 +85,16 @@ export const HERMES_MODELS: readonly ModelDefinition[] = [
   // entirely and dispatching it answers 404 "This model's free period has
   // ended" — a retired row, not a capacity blip, so it cannot be left in.
   //
-  // `poolside/laguna-s-2.1:free`, `poolside/laguna-xs-2.1:free`, and
-  // `stepfun/step-3.7-flash:free` are removed too: they fail at dispatch.
+  // `poolside/laguna-s-2.1:free` and `poolside/laguna-xs-2.1:free` are
+  // removed: they fail at dispatch.
+  //
+  // `stepfun/step-3.7-flash:free` is kept with a corrected output cap: the
+  // upstream serves a 256k context total (input + output), so the catalog's
+  // 256k `max_completion_tokens` makes every request exceed the endpoint and
+  // fail with "you requested about 259137 tokens". Clamped to 128k output the
+  // row fits the endpoint.
+  defineModel({ id: "stepfun/step-3.7-flash:free", ctx: 256_000, out: 128_000, reasoning: true, free: true, freeTier: true }),
   defineModel({ id: "upstage/solar-mini4:free", ctx: 524288, out: 131072, reasoning: true, free: true, freeTier: true }),
-  defineModel({ id: "reflection/beam-1.0-501b-a23b:free", ctx: 262144, out: 131072, reasoning: true, free: true, freeTier: true }),
   // Vision-corrected against the live catalog: `architecture.input_modalities`
   // lists `image` for this row, so it was published without vision it has.
   defineModel({ id: "meituan/longcat-2.5:free", ctx: 1048576, out: 131072, vision: true, reasoning: true, free: true, freeTier: true }),
@@ -162,16 +168,39 @@ export async function discoverHermesFreeModels(options: {
   if (rows === undefined) return null;
 
   const byId = new Map<string, ModelDefinition>();
+  // Ids the live catalog still lists as free but that fail at dispatch (404,
+  // retired, or a context window the catalog mis-states) — never surfaced as
+  // cards again.
+  const blockedIds = new Set([
+    "tencent/hy3:free",
+    "upstage/solar-pro4:free",
+    "meituan/longcat-2.0:free",
+    "stepfun/step-5-preview:free",
+    "poolside/laguna-s-2.1:free",
+    "poolside/laguna-xs-2.1:free",
+    "reflection/beam-1.0-501b-a23b:free",
+  ]);
   for (const entry of rows) {
     if (!isRecord(entry)) continue;
     const id = sanitizeUpstreamLabel(entry["id"]);
     if (id === undefined) continue;
+    if (blockedIds.has(id)) continue;
     if (!isFreePriced(entry)) continue;
 
     const context = boundedUpstreamNumber(entry["context_length"], { min: 1, max: 1_000_000_000 }) ?? undefined;
     const topProvider = isRecord(entry["top_provider"]) ? entry["top_provider"] : undefined;
-    const output =
+    const rawOutput =
       boundedUpstreamNumber(topProvider?.["max_completion_tokens"], { min: 1, max: 1_000_000_000 }) ?? undefined;
+    // The upstream's `max_completion_tokens` is a total budget on some rows
+    // (e.g. `stepfun/step-3.7-flash:free` rejects any request above its 256k
+    // context). The gateway's output cap is a per-request token allowance, so
+    // clamp it under the context window to keep requests admissible.
+    const output =
+      rawOutput === undefined
+        ? undefined
+        : context === undefined || rawOutput < context
+          ? rawOutput
+          : Math.max(1, Math.floor(context * 0.75));
     const architecture = isRecord(entry["architecture"]) ? entry["architecture"] : undefined;
     const inputs = boundedUpstreamArray(architecture?.["input_modalities"]) ?? [];
     const hasImage = inputs.includes("image");

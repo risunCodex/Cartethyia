@@ -96,11 +96,13 @@ describe("hermes portal tags", () => {
     // a card that could only ever fail.
     //
     // `meituan/longcat-2.5-preview:free` was retired in favor of
-    // `meituan/longcat-2.5:free`; `ornith/ornith-1.5-122b:free` was dropped.
+    // `meituan/longcat-2.5:free`; `ornith/ornith-1.5-122b:free` was dropped;
+    // `reflection/beam-1.0-501b-a23b:free` is withdrawn — its upstream rejects
+    // the entire history when any prior turn carries a tool call.
     const ids = HERMES_MODELS.map((m) => m.modelId).sort();
     expect(ids).toEqual([
       "meituan/longcat-2.5:free",
-      "reflection/beam-1.0-501b-a23b:free",
+      "stepfun/step-3.7-flash:free",
       "upstage/solar-mini4:free",
     ]);
   });
