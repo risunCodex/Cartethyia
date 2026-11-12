@@ -525,7 +525,7 @@ function createOAuthLoginOperations(config: OAuthLoginConfig) {
             { providerId },
           );
         }
-        const state = generateOAuthState();
+        const state = client.generateState?.() ?? generateOAuthState();
         const { codeVerifier, codeChallenge } = generatePkcePair();
         /**
          * A client whose authorize URL depends on an upstream discovery runs it

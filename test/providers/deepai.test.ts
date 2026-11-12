@@ -168,6 +168,13 @@ describe("DeepAIOAuthClient", () => {
     expect(parsed.searchParams.get("port")).toBe("48916");
   });
 
+  test("generates a 32-hex state for the hosted sign-in", () => {
+    const { fetchImpl } = stubFetch();
+    const client = new DeepAIOAuthClient(fetchImpl);
+    const state = client.generateState();
+    expect(state).toMatch(/^[0-9a-f]{32}$/);
+  });
+
   test("exchange posts the code and returns the api_key", async () => {
     const { fetchImpl, calls } = stubFetch();
     const client = new DeepAIOAuthClient(fetchImpl);

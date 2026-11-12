@@ -85,6 +85,15 @@ export abstract class OAuthClient implements OAuthLoginClient, OAuthTokenRefresh
    */
   readonly browserRedirectUri?: string;
 
+  /**
+   * Custom state generator; `undefined` keeps the shared base64url state.
+   * A provider whose authorization server validates the format (e.g. DeepAI
+   * requires 32 hex chars) overrides this.
+   */
+  generateState(): string | undefined {
+    return undefined;
+  }
+
   protected readonly fetchFn: FetchLike;
 
   constructor(fetchFn: FetchLike = globalThis.fetch) {

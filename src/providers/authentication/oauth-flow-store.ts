@@ -132,6 +132,12 @@ export interface OAuthLoginClient {
    * compares it against the one the authorize step sent.
    */
   readonly browserRedirectUri?: string;
+  /**
+   * Custom OAuth state generator for providers whose authorization server
+   * validates the `state` format (e.g. DeepAI accepts only 32 hex chars).
+   * Defaults to the shared base64url state when omitted.
+   */
+  generateState?(): string | undefined;
   prepareAuthorize?(request: OAuthAuthorizeRequest): Promise<OAuthAuthorizeRequest>;
   /** Browser-code clients only; device-only clients omit both. */
   buildAuthorizeUrl?(request: OAuthAuthorizeRequest): string;

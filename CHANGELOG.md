@@ -209,6 +209,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **DeepAI sign-in accepts the generated state.** DeepAI's hosted desktop
+  auth validates the `state` as 32 hex characters; the shared base64url state
+  (which can contain `-`/`_`) was rejected with "Invalid desktop sign-in
+  request". The DeepAI client now generates a 32-hex state, and the OAuth
+  login client interface gained an optional `generateState` hook for providers
+  that validate the format.
 - **DeepAI login builds the authorize URL for any redirect.** `buildAuthorizeUrl`
   threw when the console's redirect URI was not a loopback URL, failing the
   login with "OAuth login operation failed" before any URL was shown. It now

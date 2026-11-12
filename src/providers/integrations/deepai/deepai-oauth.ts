@@ -12,6 +12,7 @@
 // `{ api_key, username, is_pro }`, and the api_key authenticates the model
 // API via the `Api-Key` header (a Bearer or `x-api-key` spelling is rejected
 // with 401).
+import { randomBytes } from "node:crypto";
 import { OAuthClient } from "../../authentication/oauth-client";
 import type {
   OAuthAuthorizeRequest,
@@ -44,6 +45,15 @@ export class DeepAIOAuthClient extends OAuthClient {
   override readonly clientId = "";
   override readonly tokenUrl = "";
   override readonly scopes = "";
+
+  /**
+   * DeepAI's hosted sign-in validates the state as 32 hex characters; the
+   * shared base64url state (which can contain `-`/`_`) is rejected with
+   * "Invalid desktop sign-in request".
+   */
+  override generateState(): string {
+    return randomBytes(16).toString("hex");
+  }
 
   /** DeepAI's hosted sign-in URL, carrying the loopback port + state. */
   override buildAuthorizeUrl(request: OAuthAuthorizeRequest): string {
