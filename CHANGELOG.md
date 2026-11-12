@@ -209,6 +209,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **DeepAI login starts on a deployment.** `buildAuthorizeUrl` threw when the
+  console's redirect URI was the public-origin callback, failing the login
+  with "OAuth login operation failed" before any URL was shown. It now falls
+  back to the well-known 59653 loopback port, so the popup flow works and the
+  operator pastes the redirect URL back.
 - **Devin browser OAuth returns to the popup flow.** Devin's authorization
   server rejects any redirect URI other than `http://127.0.0.1:59653/callback`
   (the desktop flow's loopback), so the dashboard always opens the authorize

@@ -168,6 +168,19 @@ describe("DeepAIOAuthClient", () => {
     expect(parsed.searchParams.get("port")).toBe("48916");
   });
 
+  test("authorize URL falls back to the default port for a public redirect", () => {
+    const { fetchImpl } = stubFetch();
+    const client = new DeepAIOAuthClient(fetchImpl);
+    const url = client.buildAuthorizeUrl({
+      state: "st-456",
+      codeChallenge: "challenge",
+      redirectUri: "https://cartethyia.example.com/providers/oauth/callback",
+    });
+    const parsed = new URL(url);
+    expect(parsed.searchParams.get("port")).toBe("59653");
+    expect(parsed.searchParams.get("state")).toBe("st-456");
+  });
+
   test("exchange posts the code and returns the api_key", async () => {
     const { fetchImpl, calls } = stubFetch();
     const client = new DeepAIOAuthClient(fetchImpl);
