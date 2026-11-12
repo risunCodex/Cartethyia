@@ -5,7 +5,6 @@
 // `/v1/chat/completions` and translates the OpenAI-style SSE stream into
 // canonical events.
 
-import { randomUUID } from "node:crypto";
 import type {
   CanonicalEvent,
   CanonicalRequest,
@@ -23,10 +22,17 @@ import {
 } from "../../provider-contracts";
 import { mapUpstreamHttpError } from "../../../transport/failure-policy";
 import { abortGatewayError, createUpstreamDeadlineLifecycle } from "../../operations/upstream-deadline";
-import { resolvePromptCacheKey } from "../../operations/session-resolution";
 import { usageFromProvider } from "../../provider-usage";
 import { buildFreepiChatBody, parseFreepiSse, throwFreepiUpstreamError } from "./freepi-protocol";
 import { buildFreepiHeaders } from "./freepi-headers";
+import {
+  FreepiSessionRegistry,
+  freepiSessionOwner,
+  isFreepiSessionOwnershipError,
+  rebaseFreepiRequest,
+  withFreshFreepiAffinity,
+  type FreepiSessionOwner,
+} from "./freepi-session";
 import {
   FREEPI_AD_IMPRESSION_PATH,
   FREEPI_AD_NEXT_PATH,
@@ -51,12 +57,13 @@ export class FreepiAdapter implements ProviderAdapter {
   readonly provider_id: ProviderId;
   private readonly fetchFn: typeof fetch;
   /**
-   * One stable ad-registered session id per account credential, so repeated
-   * chats reuse a session the upstream knows has shown ads. The session must
-   * exist for the chat wire: without it the server answers `ads_required`
-   * ("Ads aren't showing for this account, so free completions are paused").
+   * One ad-registered session per (credential, account, model, affinity).
+   * A changed affinity is a fresh session by construction: free-pi binds
+   * native tool_call ids to the session that opened them, and reusing a
+   * session across conversations/accounts is what answers "does not belong
+   * to this session".
    */
-  #sessionByCredential = new Map<string, string>();
+  readonly #sessions = new FreepiSessionRegistry();
 
   constructor(options: FreepiAdapterOptions = {}) {
     this.provider_id = (options.providerId ?? FREEPI_PROVIDER_ID) as ProviderId;
@@ -64,24 +71,19 @@ export class FreepiAdapter implements ProviderAdapter {
   }
 
   /**
-   * Ensures a session id exists for this credential and that the session has
+   * Ensures a session id exists for this owner and that the session has
    * registered at least one ad impression (banner + inline). The upstream
    * refuses the chat wire with `ads_required` until a session has shown ads,
-   * so the first call per credential pays the two ad-registration requests.
-   *
-   * Returns the session id to send as `x-session-id`. Falls back to a fresh
-   * random id when registration fails — a broken ad surface must not block
-   * chat entirely, and the error is caught upstream anyway.
+   * so a freshly minted session pays the two ad-registration requests.
    */
-  async #ensureSession(secret: string, outboundFetch: typeof fetch): Promise<string> {
-    const existing = this.#sessionByCredential.get(secret);
-    if (existing !== undefined) return existing;
-    const sessionId = randomUUID();
+  async #ensureSession(secret: string, owner: FreepiSessionOwner, outboundFetch: typeof fetch): Promise<string> {
+    const entry = this.#sessions.get(owner);
+    if (!entry.fresh) return entry.sessionId;
     try {
       for (const slot of ["banner", "inline"] as const) {
         const next = await outboundFetch(new URL(`${FREEPI_AD_NEXT_PATH}?slot=${slot}`, FREEPI_BASE_URL), {
           method: "GET",
-          headers: buildFreepiHeaders(secret, false, sessionId),
+          headers: buildFreepiHeaders(secret, false, entry.sessionId),
           signal: AbortSignal.timeout(15_000),
         });
         if (!next.ok || next.status === 204) continue;
@@ -91,7 +93,7 @@ export class FreepiAdapter implements ProviderAdapter {
         if (typeof adId !== "string" || typeof clickToken !== "string") continue;
         await outboundFetch(new URL(FREEPI_AD_IMPRESSION_PATH, FREEPI_BASE_URL), {
           method: "POST",
-          headers: buildFreepiHeaders(secret, false, sessionId),
+          headers: buildFreepiHeaders(secret, false, entry.sessionId),
           body: JSON.stringify({ ad_id: adId, click_token: clickToken, imp_fired: true }),
           signal: AbortSignal.timeout(15_000),
         });
@@ -99,8 +101,7 @@ export class FreepiAdapter implements ProviderAdapter {
     } catch {
       // The ad surface is best-effort; chat may still work or fail upstream.
     }
-    this.#sessionByCredential.set(secret, sessionId);
-    return sessionId;
+    return entry.sessionId;
   }
 
   async *dispatch(
@@ -113,45 +114,70 @@ export class FreepiAdapter implements ProviderAdapter {
     }
     const secret = readCredentialSecret(context.credential, "Free-pi credential is required");
     const modelId = candidate.model_id || request.model;
-    const lifecycle = createUpstreamDeadlineLifecycle(context);
     const outboundFetch =
       (context.outbound_fetch as unknown as typeof fetch | undefined) ?? this.fetchFn;
-
-    const body = buildFreepiChatBody(modelId, request, candidate.output_limit ?? undefined);
-
-    const sessionKey = resolvePromptCacheKey(request, context);
-    const cacheSessionKey = sessionKey === undefined ? undefined : `${modelId}:${sessionKey}`;
-
-    const sessionId = await this.#ensureSession(secret, outboundFetch);
-    const headers = buildFreepiHeaders(secret, true, sessionId);
+    const owner = freepiSessionOwner({ secret, context, request, modelId });
     const url = `${FREEPI_BASE_URL}${FREEPI_CHAT_PATH}`;
 
-    try {
-      const response = await outboundFetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: lifecycle.signal,
-      });
-      if (!response.ok) throw await mapUpstreamHttpError(response, this.provider_id);
-      if (!response.body) {
-        throw new GatewayError("platform_unavailable", 502, "Free-pi returned empty body (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
+    // Two attempts at most: a connection-bound refusal rotates the session and
+    // rebases the transcript (dropping native tool_call ids the fresh session
+    // never saw) before one retry. Anything after that is terminal.
+    let activeRequest = request;
+    let activeOwner = owner;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const sessionId = await this.#ensureSession(secret, activeOwner, outboundFetch);
+      const body = buildFreepiChatBody(modelId, activeRequest, candidate.output_limit ?? undefined);
+      const lifecycle = createUpstreamDeadlineLifecycle(context);
+      let events: CanonicalEvent[] = [];
+      try {
+        const response = await outboundFetch(url, {
+          method: "POST",
+          headers: buildFreepiHeaders(secret, true, sessionId),
+          body: JSON.stringify(body),
+          signal: lifecycle.signal,
+        });
+        if (!response.ok) throw await mapUpstreamHttpError(response, this.provider_id);
+        if (!response.body) {
+          throw new GatewayError("platform_unavailable", 502, "Free-pi returned empty body (request {requestId}). The upstream came back empty-handed — retry 🌙", {}, "upstream");
+        }
+        lifecycle.release();
+        // Buffered until the stream proves it carries no session-ownership
+        // refusal: an SSE 200 `{"error":{...}}` can arrive after the first
+        // delta, and yielding events before that would make a retry replay
+        // half an answer to the client. Free-pi turns are short; correctness
+        // of the tool loop wins over one RTT of time-to-first-token.
+        events = [];
+        for await (const event of this.#events(
+          response.body as ReadableStream<Uint8Array>,
+          lifecycle.signal,
+          request.model,
+          `${modelId}:${activeOwner.affinity ?? "fresh"}`,
+          activeRequest.messages,
+        )) {
+          events.push(event);
+        }
+      } catch (err: unknown) {
+        const abortError = abortGatewayError(lifecycle, err, context.abort_signal);
+        if (abortError) throw abortError;
+        if (attempt === 0 && isFreepiSessionOwnershipError(err)) {
+          const rebased = rebaseFreepiRequest(request);
+          // A fresh affinity = a fresh session by construction. The old
+          // owner's session is dropped so it can never be reused by a later
+          // turn that still carries the stale tool_call ids.
+          this.#sessions.rotate(owner);
+          activeRequest = rebased;
+          activeOwner = withFreshFreepiAffinity(owner);
+          lifecycle.release();
+          continue;
+        }
+        throw err;
+      } finally {
+        lifecycle.release();
       }
-      lifecycle.release();
-      yield* this.#events(
-        response.body as ReadableStream<Uint8Array>,
-        lifecycle.signal,
-        request.model,
-        cacheSessionKey,
-        request.messages,
-      );
-    } catch (err: unknown) {
-      const abortError = abortGatewayError(lifecycle, err, context.abort_signal);
-      if (abortError) throw abortError;
-      throw err;
-    } finally {
-      lifecycle.release();
+      yield* events;
+      return;
     }
+    throw new GatewayError("upstream_conflict", 409, "Free-pi still refused the session after a rebase (request {requestId}). Resend the complete conversation 🔌", { providerId: this.provider_id }, "upstream");
   }
 
   async *#events(

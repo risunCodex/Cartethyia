@@ -311,8 +311,8 @@ export class BackupService {
     }
 
     if (detected.kind === "nine_router") {
-      // Provider-specific import helpers stay lazy: pulling an OAuth client graph
-      // into the console boot graph would make every console route pay for it.
+      // dynamic-import: lazy OAuth graph — pulling the Github OAuth client into
+      // the console boot graph would make every console route pay for it.
       const { bindImportedGithubCredential } = await import(
         "../../providers/integrations/github/github-oauth"
       );

@@ -78,6 +78,8 @@ export const ZRO_MODELS: readonly ModelDefinition[] = ZRO_MODELS_RAW.map((row) =
  */
 export function zroModelDiscovery(): () => Promise<ProviderModelDiscovery> {
   return async () => async (input) => {
+    // dynamic-import: cycle-break — model discovery is only imported at call time,
+    // so a provider that never runs discovery never pays for the OpenAI discovery graph.
     const { fetchOpenAICompatibleModels } = await import("../../discovery/openai-model-discovery");
     const base = input.baseUrl.replace(/\/+$/, "");
     const models = await fetchOpenAICompatibleModels({

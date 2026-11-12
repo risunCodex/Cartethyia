@@ -194,8 +194,8 @@ export async function* parseFreepiSse(
           }
         } else if (line.startsWith(":")) {
           continue;
-        } else if (line.startsWith("data")) {
-          let value = line.slice(4);
+        } else if (line === "data" || line.startsWith("data:")) {
+          let value = line === "data" ? "" : line.slice(5);
           if (value.startsWith(" ")) value = value.slice(1);
           data.push(value);
         }
@@ -237,6 +237,15 @@ export function throwFreepiUpstreamError(code: unknown, message: unknown): never
   }
   if (codeStr === "upstream_error") {
     throw new GatewayError("platform_unavailable", 502, `${msg} (request {requestId}). The upstream model host errored. 🌙`, { upstream_code: codeStr }, "upstream");
+  }
+  // A connection-bound session refusal: the caller's transcript carries native
+  // items (tool_call_id) from a session this x-session-id does not own. Named
+  // distinctly so the adapter can rotate the session and rebase the history.
+  // The upstream also reports it as a free-form message with only a generic
+  // code, so match the wording too (donor: "does not belong to this connection").
+  const ownershipRefusal = /(?:does not|doesn't|not) belong to|belongs to (?:another|a different)/i.test(msg);
+  if (codeStr === "session_mismatch" || codeStr === "invalid_session" || codeStr === "stale_session" || ownershipRefusal) {
+    throw new GatewayError("upstream_conflict", 409, `Free-pi session ownership refused: ${msg} (request {requestId}). Rebasing onto a fresh session 🔄`, { upstream_code: codeStr, freepi_session_mismatch: true }, "upstream");
   }
   throw new GatewayError("platform_unavailable", 502, `${msg} (request {requestId}). The free-pi upstream refused the request. 🌙`, { upstream_code: codeStr }, "upstream");
 }

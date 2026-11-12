@@ -83,7 +83,7 @@ const ALLOW_LIST: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     CARTETHYIA_TELEMETRY_PAYLOAD_DIR: "telemetry storage path override",
     CARTETHYIA_TELEMETRY_PAYLOAD_FILE_MAX_BYTES: "telemetry file-size override",
   },
-  "src/providers/integrations/buddy/buddy-identity.ts": {
+  "src/providers/integrations/buddy/headers.ts": {
     // Buddy device-token file path, injected by the deployment image, not an
     // operator-facing knob — kept in the integration so it is reviewed with
     // the rest of the buddy credential surface.
@@ -96,6 +96,10 @@ const ALLOW_LIST: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     // Cursor heartbeat tuning; subsystem-specific, only meaningful if the
     // operator is debugging the cursor transport.
     CARTETHYIA_CURSOR_HEARTBEAT_MS: "cursor transport heartbeat override",
+    CARTETHYIA_CURSOR_CLIENT_VERSION: "cursor client version override (wire identity)",
+  },
+  "src/providers/integrations/cursor/cursor-hardening.ts": {
+    CARTETHYIA_CURSOR_WIRE_TRACE: "cursor wire-trace dump flag (debug only)",
   },
   "src/console/cli-tools/cartethyia-websearch-plugin.ts": {
     // OpenCode websearch plugin generation: operator overrides for the

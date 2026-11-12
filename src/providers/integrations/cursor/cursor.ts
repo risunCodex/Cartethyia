@@ -29,7 +29,7 @@ import { resolveImageSource, splitDataUrl } from "../../../protocol/codecs";
 import { IMAGE_CLAMP_MAX_BYTES } from "../../../protocol/image-clamp";
 import type { ProviderAdapter, ProviderDispatchContext, ProviderDispatchTarget } from "../../provider-contracts";
 import { readCredentialSecret } from "../../provider-contracts";
-import type { Http2BidiEndReason, ValidatedHttp2BidiStream } from "../../../network/bidi";
+import type { Http2BidiEndReason } from "../../../network/bidi";
 import type { ProviderContinuationScope } from "../../provider-contracts";
 import { CURSOR_PROVIDER_ID, RUN_IDLE_TTL_MS, isAllowedAgentHost } from "./cursor-shared";
 import {
@@ -54,7 +54,22 @@ import {
   type CursorImageInput,
   type CursorToolDescriptor,
 } from "./cursor-request";
-import { cursorRunTerminationError, decodeServerMessages, openCursorRun } from "./cursor-http2";
+import { decodeServerMessages, isRetryableOpenFailure, openRetryDelayMs, openCursorRunWithFallback } from "./cursor-http2";
+import type { CursorRunTransport } from "./cursor-http2";
+import {
+  classifyCursorFailure,
+  createCheckpointState,
+  createRunCompletion,
+  cursorQuietError,
+  drainInFlightDispatches,
+  frameKindOf,
+  frameShapeOf,
+  reconcileToolCount,
+  wireTraceEnabled,
+  CURSOR_WIRE_TRACE_MAX,
+  type CursorCheckpointState,
+  type CursorFrameShape,
+} from "./cursor-hardening";
 import { cursorRunSessions } from "./cursor-session-manager";
 import type { CursorContinuationScope, CursorRunSession } from "./cursor-session-manager";
 import { fetchCursorRunOrigin } from "./cursor-catalog";
@@ -75,6 +90,34 @@ import { TtlCache } from "../../../persistence/ttl-cache";
  * answers; a shorter one is traffic the upstream does not ask for.
  */
 const CURSOR_HEARTBEAT_INTERVAL_MS = 5_000;
+
+/** Bounded open retries for connection/deadline failures (donor policy). */
+const CURSOR_MAX_OPEN_RETRIES = 5;
+
+/** Heartbeats with no semantic frame before a Run is declared quiet. */
+const CURSOR_QUIET_BEATS = 48; // 48 × 5s = 240s (donor quiet window)
+
+/** Optional client-version override for transport tests and live probes. */
+const clientVersionOverride = (() => {
+  const raw = process.env.CARTETHYIA_CURSOR_CLIENT_VERSION?.trim();
+  return raw === undefined || raw === "" ? undefined : raw;
+})();
+
+/** Abortable open-retry backoff. */
+function sleepBeforeOpenRetry(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃"));
+      },
+      { once: true },
+    );
+  });
+}
 
 /**
  * How long one account's model roster is reused for `parameters` lookups.
@@ -363,9 +406,25 @@ function resultImages(part: Extract<ContentPart, { kind: "toolResult" }>): Resul
 
 /** One Run's live state while this adapter is pumping it. */
 interface RunHandle {
-  readonly stream: ValidatedHttp2BidiStream;
+  readonly transport: CursorRunTransport;
   readonly write: (message: Uint8Array) => Promise<void>;
   close(reason?: string): void;
+}
+
+/** The donor's per-Run stream state, kept across a Run's request legs. */
+interface CursorRunFrameState {
+  readonly completion: ReturnType<typeof createRunCompletion>;
+  readonly checkpoint: CursorCheckpointState;
+  /** Frame kinds since the last checkpoint, for the "went quiet" error. */
+  kindsSinceCheckpoint: string[];
+  /** Heartbeats since the last semantic frame; a quiet Run must not hang. */
+  quietBeats: number;
+  /** `tool_call_completed` frames the edge reported for this step. */
+  serverToolCount: number;
+  /** The transport this Run was opened on. */
+  transport: "http2" | "http1";
+  /** Attempt number, for the structured terminal error. */
+  attempt: number;
 }
 
 /** One decoded server frame, ready for pump consumption. */
@@ -618,9 +677,10 @@ class CursorAdapter implements ProviderAdapter {
     let sequence = 0;
     const next = (): number => (sequence += 1);
     try {
-      for (const item of pending) {
-        const entry = cursorRunSessions.resolveCall(item.callId, scope);
-        if (entry === undefined) continue;
+      try {
+        for (const item of pending) {
+          const entry = cursorRunSessions.resolveCall(item.callId, scope);
+          if (entry === undefined) continue;
           await handle.write(
             buildMcpResult({
               execId: entry.call.execId,
@@ -630,7 +690,25 @@ class CursorAdapter implements ProviderAdapter {
               ...(item.images.length > 0 ? { images: item.images } : {}),
             }),
           );
-        cursorRunSessions.clearPendingCall(runId, item.callId);
+          // Cleared only after the write succeeded: a half-delivered result
+          // must stay pending so a retry answers the same call, never a new one.
+          cursorRunSessions.clearPendingCall(runId, item.callId);
+        }
+      } catch (error) {
+        // The Run's transport rejected a result that the model is waiting on.
+        // The call was never delivered: terminate the held Run and rebase the
+        // whole transcript into a fresh Run (donor rule — a lost owner rebuilds
+        // Chat history on a fresh Run; a result is never replayed into an
+        // uncertain transport twice). Failing the request here instead left the
+        // client loop stuck: every resend hit the same dead handle.
+        cursorRunSessions.terminate(
+          runId,
+          `Cursor Run rejected a tool result: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        this.#handles.delete(runId);
+        this.cleanupReader(runId);
+        yield* this.#startRun(request, candidate, context);
+        return;
       }
       yield* this.#pump({
         request,
@@ -660,13 +738,23 @@ class CursorAdapter implements ProviderAdapter {
     request: CanonicalRequest,
     candidate: ProviderDispatchTarget,
     context: ProviderDispatchContext,
+    retry?: {
+      readonly attempt: number;
+      readonly requestId: string;
+      readonly conversationId: string;
+      readonly checkpoint?: Uint8Array;
+      readonly forceH1?: boolean;
+      readonly rotateConversation?: boolean;
+    },
   ): AsyncIterable<CanonicalEvent> {
+    const attempt = retry?.attempt ?? 0;
     const outboundHttp2 = context.outbound_http2;
-    if (outboundHttp2 === undefined) {
+    const outboundFetch = context.outbound_fetch as unknown as typeof fetch | undefined;
+    if (outboundHttp2 === undefined && outboundFetch === undefined) {
       throw new GatewayError(
         "admission_unavailable",
         503,
-        "Cursor requires validated HTTP/2 egress (request {requestId}); none is configured for this route. No bridge to cross — configure a pool first 🏗️",
+        "Cursor requires validated egress for its Run transport (request {requestId}); none is configured for this route. No bridge to cross — configure a pool first 🏗️",
         { providerId: CURSOR_PROVIDER_ID },
       );
     }
@@ -690,28 +778,66 @@ class CursorAdapter implements ProviderAdapter {
     const images = await collectImages(request, context);
     const descriptors = toolDescriptorsFor(request.tools);
     const systemPrompt = systemPromptFrom(request);
-    const conversationId = crypto.randomUUID();
+    const conversationId = retry?.conversationId ?? crypto.randomUUID();
     const runId = crypto.randomUUID();
-    const opened = await openCursorRun({
-      origin,
-      credential,
-      outboundHttp2,
-      signal: context.abort_signal,
-    });
+    // Bounded open retries with the donor's backoff: connection and deadline
+    // failures retry; auth, quota, and request-shape refusals do not. Inside
+    // each attempt the transport policy applies (HTTP/2 first, HTTP/1.1 when
+    // HTTP/2 is blocked here), so a network that cannot carry HTTP/2 still
+    // serves Cursor without the caller ever seeing a transport error.
+    let opened: { transport: CursorRunTransport; requestId: string } | undefined;
+    let openError: unknown;
+    for (let openAttempt = 0; openAttempt <= CURSOR_MAX_OPEN_RETRIES; openAttempt += 1) {
+      if (context.abort_signal.aborted) {
+        throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
+      }
+      try {
+        opened = await openCursorRunWithFallback({
+          origin,
+          credential,
+          outboundHttp2,
+          outboundFetch,
+          signal: context.abort_signal,
+          ...(retry?.requestId === undefined ? {} : { requestId: retry.requestId }),
+          ...(retry?.forceH1 === true ? { forceH1: true } : {}),
+          ...(clientVersionOverride === undefined ? {} : { clientVersion: clientVersionOverride }),
+        });
+        break;
+      } catch (error) {
+        openError = error;
+        if (!isRetryableOpenFailure(error) || openAttempt === CURSOR_MAX_OPEN_RETRIES) throw error;
+        await sleepBeforeOpenRetry(openRetryDelayMs(openAttempt), context.abort_signal);
+      }
+    }
+    if (opened === undefined) throw openError;
+    const transport = opened.transport;
     let closed = false;
     const handle: RunHandle = {
-      stream: opened.stream,
-      write: opened.write,
+      transport,
+      write: (message) => transport.write(message),
       close: (reason) => {
         if (closed) return;
         closed = true;
         if (reason !== undefined && reason.length > 0) {
-          void opened.write(buildCancelAction(reason)).catch(() => undefined);
+          void transport.write(buildCancelAction(reason)).catch(() => undefined);
         }
-        opened.stream.abort();
+        transport.abort();
       },
     };
     this.#handles.set(runId, handle);
+    this.#frameState.set(runId, {
+      completion: createRunCompletion(),
+      checkpoint: createCheckpointState(),
+      kindsSinceCheckpoint: [],
+      quietBeats: 0,
+      serverToolCount: 0,
+      transport: transport.mode,
+      attempt,
+    });
+    if (retry?.checkpoint !== undefined) {
+      const state = this.#frameState.get(runId);
+      if (state !== undefined) state.checkpoint.bytes = retry.checkpoint;
+    }
     // Reader before the run request: frames can only arrive after it, but the
     // reader must own them from the first byte, across every serving request.
     this.#startReader(runId, handle);
@@ -728,7 +854,7 @@ class CursorAdapter implements ProviderAdapter {
     let sequence = 0;
     const next = (): number => (sequence += 1);
     try {
-      await opened.write(
+      await handle.write(
         buildRunRequest({
           text: liveUserText(request),
           modelId,
@@ -740,7 +866,10 @@ class CursorAdapter implements ProviderAdapter {
           // A fresh Run always rebases the client's history into its user text:
           // Cursor's own checkpoint cannot be reconstructed after a restart, and
           // `root_prompt_messages_json` would suppress the RequestContext rules.
+          // A retry with a checkpoint resumes instead of replaying the turn.
           history: historyFromRequest(request),
+          ...(retry?.checkpoint === undefined ? {} : { conversationState: retry.checkpoint }),
+          ...(retry?.checkpoint === undefined ? {} : { action: "resume" as const }),
         }),
       );
       // Registered before the first frame is pumped: a tool call can arrive on
@@ -762,9 +891,54 @@ class CursorAdapter implements ProviderAdapter {
         continuation: false,
       });
     } catch (error) {
-      cursorRunSessions.terminate(runId, error instanceof Error ? error.message : undefined);
+      const state = this.#frameState.get(runId);
+      const failure = error instanceof GatewayError
+        ? error
+        : new GatewayError(
+            "platform_unavailable",
+            502,
+            `Cursor Run failed (request {requestId}): ${error instanceof Error ? error.message : String(error)}. The upstream came back empty-handed — retry 🌙`,
+            { providerId: CURSOR_PROVIDER_ID },
+            "upstream",
+          );
+      const classification = classifyCursorFailure(
+        failure,
+        state?.transport ?? transport.mode,
+      );
+      // Only a Run that produced no observable event can be safely replayed:
+      // after the first content_delta/tool_call the client has already seen
+      // half an answer. This is the donor's replaySafe rule. A checkpoint
+      // carried across the retry stands for the work already done.
+      const replaySafe = sequence === 0;
+      if (
+        replaySafe &&
+        classification.retryable &&
+        (state?.attempt ?? 0) < CURSOR_MAX_OPEN_RETRIES &&
+        !context.abort_signal.aborted
+      ) {
+        const nextAttempt = (state?.attempt ?? 0) + 1;
+        const checkpoint = state?.checkpoint.bytes;
+        await this.#drainDispatches(runId, context.abort_signal);
+        cursorRunSessions.terminate(runId, failure.message);
+        this.#handles.delete(runId);
+        this.cleanupReader(runId);
+        this.#frameState.delete(runId);
+        this.#dispatches.delete(runId);
+        this.#wireTraces.delete(runId);
+        await sleepBeforeOpenRetry(openRetryDelayMs(nextAttempt - 1), context.abort_signal);
+        yield* this.#startRun(request, candidate, context, {
+          attempt: nextAttempt,
+          requestId: opened.requestId,
+          conversationId: classification.rotateConversation ? crypto.randomUUID() : conversationId,
+          ...(classification.fallbackH1 ? { forceH1: true } : {}),
+          ...(checkpoint === undefined || classification.rotateConversation ? {} : { checkpoint }),
+        });
+        return;
+      }
+      await this.#drainDispatches(runId, context.abort_signal);
+      cursorRunSessions.terminate(runId, failure.message);
       this.#handles.delete(runId);
-      throw error;
+      throw structuredCursorFailure(failure, classification, state, runId);
     } finally {
       if (cursorRunSessions.get(runId) === undefined) {
         this.#handles.delete(runId);
@@ -779,6 +953,9 @@ class CursorAdapter implements ProviderAdapter {
         cursorRunSessions.terminate(runId);
         this.#handles.delete(runId);
         this.cleanupReader(runId);
+        this.#frameState.delete(runId);
+        this.#dispatches.delete(runId);
+        this.#wireTraces.delete(runId);
       }
     }
   }
@@ -787,6 +964,35 @@ class CursorAdapter implements ProviderAdapter {
   readonly #handles = new Map<string, RunHandle>();
   /** One shared frame reader per live Run, surviving its requests. */
   readonly #readers = new Map<string, RunFrameStream>();
+  /** Checkpoint/exec accounting per Run: survives every pump leg. */
+  readonly #frameState = new Map<string, CursorRunFrameState>();
+  /** Async exec handlers decoded from a chunk, drained on both pump exits. */
+  readonly #dispatches = new Map<string, Set<Promise<void>>>();
+  /** Opt-in shape-only traces of failed Runs. */
+  readonly #wireTraces = new Map<string, CursorFrameShape[]>();
+
+  /** Records one frame's shape (opt-in, never payload text/ids). */
+  #trace(runId: string, message: RunFrame): void {
+    if (!wireTraceEnabled()) return;
+    const trace = this.#wireTraces.get(runId) ?? [];
+    if (trace.length < CURSOR_WIRE_TRACE_MAX) trace.push(frameShapeOf(message));
+    this.#wireTraces.set(runId, trace);
+  }
+
+  /** Tracks one async exec handler; it removes itself when it settles. */
+  #trackDispatch(runId: string, dispatch: Promise<void>): void {
+    const dispatches = this.#dispatches.get(runId) ?? new Set<Promise<void>>();
+    dispatches.add(dispatch);
+    void dispatch.finally(() => dispatches.delete(dispatch));
+    this.#dispatches.set(runId, dispatches);
+  }
+
+  /** Drains every still-running exec handler before a Run is finalized. */
+  async #drainDispatches(runId: string, signal?: AbortSignal): Promise<void> {
+    const dispatches = this.#dispatches.get(runId);
+    if (dispatches === undefined) return;
+    await drainInFlightDispatches(dispatches, signal);
+  }
 
   /**
    * Opens the Run's single frame reader.
@@ -804,11 +1010,16 @@ class CursorAdapter implements ProviderAdapter {
     this.#readers.set(runId, frames);
     // The client-heartbeat cadence belongs to the reader: the Cursor edge
     // expects a keepalive while the Run stays open, including the window
-    // between a tool call and the request that carries its result.
+    // between a tool call and the request that carries its result. A write
+    // that failed means the transport died; stop the cadence rather than
+    // spinning on a dead stream until the idle TTL fires.
     let state = "open";
     const beat = (): void => {
       if (state !== "open") return;
-      void handle.write(buildHeartbeat()).catch(() => undefined);
+      void handle.write(buildHeartbeat()).catch(() => {
+        state = "failed";
+        clearInterval(heartbeatTimer);
+      });
     };
     const heartbeatTimer = setInterval(
       beat,
@@ -822,16 +1033,35 @@ class CursorAdapter implements ProviderAdapter {
     // Stream failures do not always surface as a throw from the body iterator;
     // the terminal event is the authoritative signal (auth revoked, quota,
     // RST_STREAM). `local-close` is our own abort: the session manager already
-    // decided the outcome, so the pump just sees a clean end.
-    const unsubscribeTerminal = handle.stream.onTerminal((reason) => {
-      if (reason.kind === "local-close") return;
-      const mapped = cursorRunTerminationError({ stream: handle.stream, reason });
-      frames.end(reason, mapped === undefined ? undefined : mapped);
+    // decided the outcome, so the pump just sees a clean end. Normalized over
+    // both transports: HTTP/1.1 reports the same terminal kinds.
+    const unsubscribeTerminal = handle.transport.onTerminal((terminal) => {
+      if (terminal.kind === "local-close") return;
+      const endReason: Http2BidiEndReason =
+        terminal.kind === "remote-error"
+          ? { kind: "remote-error", error: terminal.failure ?? new Error("Cursor Run transport failed") }
+          : { kind: terminal.kind };
+      // A clean close carries no failure of its own: the pump decides whether
+      // a turn without `turn_ended` is complete (text/step/tool batch) or
+      // quiet. Inventing "ended before turn_ended" here made every held tool
+      // round fail before its call could be handed to the client.
+      const terminalFailure =
+        terminal.failure ??
+        (terminal.kind === "remote-error"
+          ? new GatewayError(
+              "platform_unavailable",
+              502,
+              "Cursor Run transport failed (request {requestId}). The upstream came back empty-handed — retry 🌙",
+              {},
+              "network",
+            )
+          : undefined);
+      frames.end(endReason, terminalFailure);
       unsubscribeTerminal();
     });
     void (async () => {
       try {
-        for await (const message of decodeServerMessages(handle.stream.body)) {
+        for await (const message of decodeServerMessages(handle.transport.body)) {
           frames.push(message);
         }
         // The body ended without a recorded terminal: treat it as a clean
@@ -942,54 +1172,150 @@ class CursorAdapter implements ProviderAdapter {
     let terminalUsage: UsageRecord | undefined;
     let stopReason: CanonicalStopReason = "stop";
     let failure: GatewayError | undefined;
+    const state = this.#frameState.get(runId) ?? {
+      completion: createRunCompletion(),
+      checkpoint: createCheckpointState(),
+      kindsSinceCheckpoint: [],
+      quietBeats: 0,
+      serverToolCount: 0,
+      transport: handle.transport.mode,
+      attempt: 0,
+    };
+    this.#frameState.set(runId, state);
+    const pendingToolCalls: Array<{ callId: string; toolName: string; arguments: string }> = [];
     const frames = this.#readers.get(runId) ?? this.#startReader(runId, handle);
     try {
       const messages = frames.subscribe();
       for await (const item of messages) {
         if (isRunStreamEnd(item)) {
-          failure = item.failure;
+          // The reader can end while an exec handler decoded from its last
+          // chunk is still registering a call: drain before deciding.
+          await this.#drainDispatches(runId, context.abort_signal);
+          if (pendingToolCalls.length > 0) {
+            for (const pending of pendingToolCalls.splice(0)) {
+              yield {
+                type: "tool_call_delta",
+                sequence_number: input.next(),
+                call_id: pending.callId,
+                name: pending.toolName,
+                arguments_delta: pending.arguments,
+              };
+            }
+            sawToolCall = true;
+            cursorRunSessions.touch(runId);
+            yield {
+              type: "terminal",
+              sequence_number: input.next(),
+              state: "complete",
+              stop_reason: "tool_use" as const,
+              usage_deferred: true,
+            };
+            return;
+          }
+          if (item.failure !== undefined && item.__streamEnd.kind !== "remote-clean-close") {
+            failure = item.failure;
+          }
+          state.completion.settle(item.failure === undefined ? "end" : "error");
           break;
         }
         const message = item;
+        this.#trace(runId, message);
         if (context.abort_signal.aborted) {
           failure = new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
+          state.completion.settle("timeout");
           break;
         }
+        // Checkpoint retention: bytes are opaque and are never decoded here.
+        // A checkpoint with no semantic frame since the previous one is a
+        // repeated one: the streak is what the "went quiet" error names.
+        const checkpointBytes = message["conversation_checkpoint_update"];
+        if (checkpointBytes instanceof Uint8Array && checkpointBytes.byteLength > 0) {
+          state.checkpoint.bytes = new Uint8Array(checkpointBytes);
+          state.checkpoint.index += 1;
+          state.checkpoint.step += 1;
+          state.checkpoint.streak = state.kindsSinceCheckpoint.length === 0 ? state.checkpoint.streak + 1 : 1;
+          state.checkpoint.kinds = state.kindsSinceCheckpoint.slice(-8);
+          state.kindsSinceCheckpoint = [];
+          state.quietBeats = 0;
+          continue;
+        }
+        const kind = frameKindOf(message);
+        state.kindsSinceCheckpoint.push(kind);
+        if (state.kindsSinceCheckpoint.length > 16) state.kindsSinceCheckpoint.shift();
+
         const execServer = recordOf(message["exec_server_message"]);
         if (execServer !== undefined) {
-          const handled = await this.#handleExecServerMessage(execServer, session, handle);
-          if (handled.kind !== "tool_call") continue;
-          // Only MCP arms are relayed to the client for execution (client-
-          // declared tools). Native tools are answered in-band by the executor.
-          const callId = `call_cursor_${runId}_${handled.execId}`;
-          const scope = context.continuation_scope;
-          if (scope === undefined) {
-            // Without a scope, no later request could be authorized to answer
-            // this call, so the Run must not be held open for one.
-            await handle.write(buildMcpRejected(handled.execId, "tool call is not answerable", handled.execIdString));
-            continue;
+          // Exec handlers are async and may outlive the chunk that spawned
+          // them. Track the dispatch so BOTH exits drain it before terminal.
+          const dispatch = (async () => {
+            const handled = await this.#handleExecServerMessage(execServer, session, handle);
+            if (handled.kind !== "tool_call") return;
+            // Only MCP arms are relayed to the client for execution (client-
+            // declared tools). Native tools are answered in-band by the executor.
+            const callId = `call_cursor_${runId}_${handled.execId}`;
+            const scope = context.continuation_scope;
+            if (scope === undefined) {
+              // Without a scope, no later request could be authorized to answer
+              // this call, so the Run must not be held open for one.
+              await handle.write(buildMcpRejected(handled.execId, "tool call is not answerable", handled.execIdString));
+              return;
+            }
+            if (state.checkpoint.completedCallIds.has(callId)) {
+              // The server already counted this call (donor rule): answering it
+              // twice is what made tool rounds fail with duplicate results.
+              return;
+            }
+            if (!cursorRunSessions.registerPendingCall(runId, {
+              callId,
+              execId: handled.execId,
+              ...(handled.execIdString === undefined ? {} : { execIdString: handled.execIdString }),
+              toolName: handled.toolName,
+            })) {
+              await handle.write(buildMcpRejected(handled.execId, "tool call is not answerable", handled.execIdString));
+              return;
+            }
+            state.checkpoint.pendingCallIds.add(callId);
+            state.checkpoint.dispatchedCount += 1;
+            sawToolCall = true;
+            // The yield happens on the pump's own loop, not inside this async
+            // dispatch: the queue below carries the call out to the client.
+            pendingToolCalls.push({
+              callId,
+              toolName: handled.toolName,
+              arguments: handled.arguments,
+            });
+          })().catch((error) => {
+            failure = error instanceof GatewayError
+              ? error
+              : new GatewayError(
+                  "platform_unavailable",
+                  502,
+                  `Cursor exec handler failed (request {requestId}): ${error instanceof Error ? error.message : String(error)}`,
+                  { providerId: CURSOR_PROVIDER_ID },
+                  "upstream",
+                );
+          });
+          this.#trackDispatch(runId, dispatch);
+          continue;
+        }
+
+        // Drain handlers before surfacing a tool call: a second exec decoded
+        // from the same chunk may still be registering its call, and the
+        // client's interim terminal must carry the whole batch (donor park).
+        if (pendingToolCalls.length > 0) {
+          await this.#drainDispatches(runId, context.abort_signal);
+          for (const pending of pendingToolCalls.splice(0)) {
+            yield {
+              type: "tool_call_delta",
+              sequence_number: input.next(),
+              call_id: pending.callId,
+              name: pending.toolName,
+              arguments_delta: pending.arguments,
+            };
           }
-          if (!cursorRunSessions.registerPendingCall(runId, {
-            callId,
-            execId: handled.execId,
-            ...(handled.execIdString === undefined ? {} : { execIdString: handled.execIdString }),
-            toolName: handled.toolName,
-          })) {
-            await handle.write(buildMcpRejected(handled.execId, "tool call is not answerable", handled.execIdString));
-            continue;
-          }
-          sawToolCall = true;
-          yield {
-            type: "tool_call_delta",
-            sequence_number: input.next(),
-            call_id: callId,
-            name: handled.toolName,
-            arguments_delta: handled.arguments,
-          };
-          // Interim terminal the moment the call is registered and answered.
-          // The Run stays open for the result leg; this request must not wait
-          // for `turn_ended`, which only arrives after the client answers —
-          // holding it open here is exactly the deadlock that broke tool calling.
+          // Interim terminal the moment the calls are registered: the Run stays
+          // open for the result leg; waiting for `turn_ended` here deadlocked
+          // the original tool loop.
           cursorRunSessions.touch(runId);
           yield {
             type: "terminal",
@@ -1042,12 +1368,45 @@ class CursorAdapter implements ProviderAdapter {
           }
           continue;
         }
-        // `tool_call_started` / `tool_call_completed` are display notifications:
-        // they report what Cursor's host did, not a call this gateway executes.
-        // Only `turn_ended` is authoritative for the turn's end and its usage.
+        // `tool_call_started` / `tool_call_completed` are display notifications,
+        // but their count is authoritative for the step boundary: a step whose
+        // calls are all counted is done without waiting out its heartbeats
+        // (magpie 0.2.35 / oh-my-pi StepCalls rule).
+        const listed = recordOf(interaction["tool_requests_listed"]);
+        if (listed !== undefined) {
+          const count = typeof listed["call_count"] === "number" ? listed["call_count"] : 0;
+          state.checkpoint.expectedCallCount = count;
+          continue;
+        }
+        const completed = recordOf(interaction["tool_call_completed"]);
+        if (completed !== undefined) {
+          state.serverToolCount += 1;
+          const callId = typeof completed["call_id"] === "string" ? completed["call_id"] : "";
+          if (callId.length > 0) state.checkpoint.completedCallIds.add(callId);
+          const reconciled = reconcileToolCount(state.checkpoint, state.serverToolCount);
+          if (reconciled.endStep) {
+            state.checkpoint.step = 0;
+            state.quietBeats = 0;
+          }
+          continue;
+        }
+        const heartbeat = recordOf(interaction["heartbeat"]);
+        if (heartbeat !== undefined) {
+          state.quietBeats += 1;
+          // A Run that keeps heartbeating after a checkpoint with no semantic
+          // frame is "quiet": name the checkpoint instead of hanging forever.
+          if (state.quietBeats >= CURSOR_QUIET_BEATS) {
+            failure = cursorQuietError(state.checkpoint);
+            state.completion.settle("timeout");
+            break;
+          }
+          continue;
+        }
+        // `turn_ended` is authoritative for the turn's end and its usage.
         const turnEnded = recordOf(interaction["turn_ended"]);
         if (turnEnded !== undefined) {
           terminalUsage = usageFromTurnEnded(turnEnded);
+          state.completion.settle("end");
           break;
         }
       }
@@ -1062,18 +1421,47 @@ class CursorAdapter implements ProviderAdapter {
               { providerId: CURSOR_PROVIDER_ID },
               "upstream",
             );
+      state.completion.settle("error");
+    }
+    // BOTH exits drain: an exec handler decoded from the last chunk can still
+    // be running when the transport fails (donor L1198-L1201).
+    await this.#drainDispatches(runId, context.abort_signal);
+    // A dispatch that settled during the drain may have queued a call. Hand it
+    // to the client before any terminal event, so a call is never lost.
+    if (pendingToolCalls.length > 0) {
+      for (const pending of pendingToolCalls.splice(0)) {
+        yield {
+          type: "tool_call_delta",
+          sequence_number: input.next(),
+          call_id: pending.callId,
+          name: pending.toolName,
+          arguments_delta: pending.arguments,
+        };
+      }
+      sawToolCall = true;
+      cursorRunSessions.touch(runId);
+      yield {
+        type: "terminal",
+        sequence_number: input.next(),
+        state: "complete",
+        stop_reason: "tool_use" as const,
+        usage_deferred: true,
+      };
+      return;
     }
 
     if (failure !== undefined) {
-      cursorRunSessions.terminate(runId, failure.message);
+      const classification = classifyCursorFailure(failure, state.transport);
+      const structured = structuredCursorFailure(failure, classification, state, runId);
+      cursorRunSessions.terminate(runId, structured.message);
       yield {
         type: "terminal",
         sequence_number: input.next(),
         state: "failed",
         stop_reason: "error",
-        // The refusal text, so the caller sees "you hit your usage limit"
+        // The refusal text, so the caller sees the checkpoint/transport reason
         // instead of a terminal with no reason attached.
-        stop_details: { code: failure.code, status: failure.status, message: failure.message },
+        stop_details: { code: structured.code, status: structured.status, message: structured.message },
         ...(terminalUsage === undefined ? {} : { usage: terminalUsage }),
       };
       return;
@@ -1311,6 +1699,33 @@ class CursorAdapter implements ProviderAdapter {
     }
     return false;
   }
+}
+
+/** Attaches the donor's structured failure shape to a terminal GatewayError. */
+function structuredCursorFailure(
+  failure: GatewayError,
+  classification: ReturnType<typeof classifyCursorFailure>,
+  state: CursorRunFrameState | undefined,
+  runId: string,
+): GatewayError {
+  const checkpoint = state?.checkpoint;
+  const quiet = classification.kind === "quiet" ? cursorQuietError(checkpoint) : undefined;
+  const detail = quiet?.message ?? failure.message;
+  return new GatewayError(
+    failure.code,
+    failure.status,
+    `Cursor ${classification.kind}: ${detail} (attempt ${(state?.attempt ?? 0) + 1}/${CURSOR_MAX_OPEN_RETRIES + 1}, ` +
+      `transport ${state?.transport ?? "unknown"}, checkpoint ${checkpoint?.index ?? 0}, run ${runId})`,
+    {
+      ...failure.details,
+      providerId: CURSOR_PROVIDER_ID,
+      cursorFailureKind: classification.kind,
+      retryable: classification.retryable,
+      checkpointIndex: checkpoint?.index ?? 0,
+      checkpointStreak: checkpoint?.streak ?? 0,
+    },
+    failure.origin,
+  );
 }
 
 /** RequestContext Cursor receives in reply to a context probe. */
