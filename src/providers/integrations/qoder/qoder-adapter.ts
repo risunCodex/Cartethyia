@@ -3,8 +3,10 @@
  *
  * Surface contract (2026-11-07, verified live 2026-11-11):
  * - `cosy` (default, production): `/algo/.../agent_chat_generation` on
- *   `api1` → `api2` → `api3.qoder.sh` (legacy COSY) — the only surface
- *   verified alive. Accepts free-tier rows (`lite`).
+ *   the realm's token-kind-specific gateway set (legacy COSY) — the only
+ *   surface verified alive. A PAT is exchanged to a job token first; job
+ *   tokens use `api2` → `api1` only, since `api3` rejects them with
+ *   `105 Login expired` (403). Accepts free-tier rows (`lite`).
  * - The gRPC surface (`model.chat.ChatService/ChatCompletionStream`) and the
  *   IDE surface (`/model/v1/chat/completions`) are dead on every host that
  *   resolves (gRPC: UNIMPLEMENTED; IDE: 404) since 2026-11-07 and are not
@@ -47,10 +49,11 @@ interface QoderAdapterOptions {
    * Which chat transport to dispatch on.
    *
    * `cosy` (default) = legacy COSY (`/algo/.../agent_chat_generation`) on
-   * `api1` → `api2` → `api3.qoder.sh` — the only surface verified alive
-   * (2026-11-07; the `api2-v2` model-server host is NXDOMAIN, and the gRPC
-   * service is UNIMPLEMENTED on every host that resolves). This path also
-   * accepts free-tier rows (`lite`).
+   * the realm's gateway candidates (device tokens: `api1` → `api2` → `api3`;
+   * job tokens minted from a PAT: `api2` → `api1` only — `api3` answers
+   * `105 Login expired`). The `api2-v2` model-server host is NXDOMAIN, and
+   * the gRPC service is UNIMPLEMENTED on every host that resolves. This path
+   * also accepts free-tier rows (`lite`).
    */
   readonly surface?: "cosy";
 }

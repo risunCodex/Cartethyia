@@ -10,12 +10,12 @@ test("device tokens use the ordinary intl gateway order", () => {
   expect(hosts).toEqual(qoderGatewayCandidates("intl"));
 });
 
-test("job tokens prefer api2 before the ordinary gateways", () => {
+test("job tokens prefer api2 and never fall back to api3", () => {
   const hosts = qoderInferenceCandidates("intl", "jt-abc123");
-  expect(hosts[0]).toBe("https://api2.qoder.sh");
-  // The ordinary set still follows (api1, then any remaining fallbacks).
-  expect(hosts).toContain("https://api1.qoder.sh");
-  expect(hosts).toContain("https://api3.qoder.sh");
+  expect(hosts).toEqual(["https://api2.qoder.sh", "https://api1.qoder.sh"]);
+  // api3 rejects job tokens with "Login expired" (403), so it must never be
+  // in the candidate set — falling through to it was the observed failure.
+  expect(hosts).not.toContain("https://api3.qoder.sh");
 });
 
 test("unknown token kinds use the ordinary gateway order", () => {

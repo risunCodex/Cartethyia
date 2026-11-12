@@ -171,9 +171,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   `refreshProviderClientVersions()` previously skipped both because they were
   missing from `PROVIDER_VERSION_RESOLVERS` — their wire identities stayed on
   the launch-time pin forever. Both are now wired: free-pi sends the discovered
-  `free-pi-cli` npm version (fallback raised to 0.6.18) in `x-client-version`,
-  and Perch sends the discovered `perchai-cli` npm version (fallback raised to
-  2.4.128) in its CLI user-agent. Freebuff Desktop stays intentionally pinned
+  `free-pi-cli` npm version (fallback raised to 0.6.19, the minimum the
+  upstream now requires) in `x-client-version`, and Perch sends the discovered
+  `perchai-cli` npm version (fallback raised to 2.4.128) in its CLI
+  user-agent. Freebuff Desktop stays intentionally pinned
   to the audited bundle build 0.0.201: no machine-readable public feed exists
   for the desktop line (GitHub releases are Codecane staging builds; npm
   `freebuff` is the CLI, a different product), so discovery would fake an
@@ -232,6 +233,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   The Hermes discovery now clamps output under context and blocklists the known-broken ids.
 - **Cline free roster refreshed.** `reflection/beam-free` and `poolside/laguna-s-2.1-free`
   are dropped; `baidu/ernie-5.5-flash-preview:free` (1.0M ctx / 922k out) added.
+- **Qoder PAT/job-token inference never falls through to `api3`.** A pasted
+  PAT (`pt-…`) is exchanged per request for a short-lived job token (`jt-…`),
+  and `api3.qoder.sh` rejects that token with `403 / {"code":"105","message":
+  "Login expired"}` — the `qoder/deepseek-v4-pro` live-test failure. Job-token
+  dispatches now dial only `api2` → `api1` (the desktop app's elected inference
+  host first); OAuth device tokens keep the ordinary `api1` → `api2` → `api3`
+  set. The PAT itself stays valid: `105` remains retryable, so the next attempt
+  re-exchanges it rather than parking the account as "Re-login required".
+- **DeepAI's loopback auto-complete accepts `/auth-callback`.** The desktop
+  sign-in redirects to `/auth-callback`, but the listener only bound
+  `/callback` and `/signin/callback`, so local logins 404'd after consent.
+  The extra path is harmless for other providers; remote browsers still use
+  the dialog's paste-back flow (DeepAI accepts loopback redirects only).
+- **Free-pi fallback roster carries the two defense rows.** `uncensored-1.2`
+  and `mimo-v2.6-flash` are seeded alongside the free rows, so a cold process
+  whose `/client-version` discovery fails still advertises them. The CLI
+  fallback is raised to 0.6.19, the minimum the upstream now requires.
+- **Cline/OpenRouter system-prompt shaping is pinned by tests.** The gateway
+  adds exactly one "You are a helpful assistant." baseline when none was
+  supplied, preserves a client-supplied `<model_identity>` block verbatim, and
+  OpenRouter's `prePayload` never touches system messages — a duplicated
+  baseline therefore comes from the caller/upstream, not the builders.
 - **DeepAI and Clixad login buttons now appear in the dashboard.** The registry
   loaded the OAuth client *class* instead of an instance, so
   `resolveLoginClient` returned a `Function` with no flow methods and the

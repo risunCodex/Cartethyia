@@ -117,8 +117,9 @@ export function qoderGatewayCandidates(realm: QoderRealm): readonly string[] {
  * Inference hosts for one realm, ordered by token kind — mirrors the donor's
  * `qoderInferenceBase` (donor hub): job tokens (`jt-...`) are served by `api2`
  * and get rejected by `api3` with "Login expired" (403), while device tokens
- * (`dt-...`) and everything else use the ordinary gateway set. CN has a
- * single gateway and serves every token kind.
+ * (`dt-...`) and everything else use the ordinary gateway set. The job-token
+ * set therefore excludes `api3` entirely; CN has a single gateway and serves
+ * every token kind.
  */
 export function qoderInferenceCandidates(
   realm: QoderRealm,
@@ -127,8 +128,9 @@ export function qoderInferenceCandidates(
   const config = QODER_REALMS[realm];
   if (realm === "cn") return [config.gateway];
   if (token !== undefined && token.startsWith("jt-")) {
-    const fallbacks = config.gatewayFallbacks.filter((h) => h !== "https://api2.qoder.sh");
-    return ["https://api2.qoder.sh", config.gateway, ...fallbacks];
+    // api3 rejects job tokens (Login expired, 403); only api2 and api1 can
+    // serve them.
+    return ["https://api2.qoder.sh", config.gateway];
   }
   return [config.gateway, ...config.gatewayFallbacks];
 }
