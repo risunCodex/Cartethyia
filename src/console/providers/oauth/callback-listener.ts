@@ -158,14 +158,14 @@ export class OAuthCallbackListener {
   /**
    * The paths one login may deliver its callback on. Kiro's portal is observed
    * (unpacked IDE 1.4.62) to redirect to both `/oauth/callback` and
-   * `/signin/callback`; binding only the advertised path left a redirect to the
-   * other one hitting a 404 and the login hanging. Other providers neither
-   * register nor expect `/signin/callback`, so adding it is harmless.
+   * `/signin/callback`; DeepAI's desktop flow lands on `/auth-callback`.
+   * Binding only the advertised path left a redirect to the other one hitting
+   * a 404 and the login hanging. Other providers neither register nor expect
+   * these, so adding them is harmless.
    */
   #callbackPaths(advertised: string): readonly string[] {
-    return advertised === "/signin/callback"
-      ? [advertised]
-      : [advertised, "/signin/callback"];
+    const extras = advertised === "/signin/callback" ? [] : ["/signin/callback", "/auth-callback"];
+    return [advertised, ...extras];
   }
 
   /** Drops a flow and frees its port when nothing else is waiting on it. */

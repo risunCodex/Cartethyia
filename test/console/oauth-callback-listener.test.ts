@@ -75,6 +75,16 @@ describe("OAuth callback listener", () => {
     expect(completions).toEqual([{ providerId: "kiro", code: "abc", state: "state-k1" }]);
   });
 
+  test("accepts a callback on the auth-callback third path", async () => {
+    // DeepAI's desktop flow redirects to `/auth-callback` (observed live), not
+    // the advertised `/callback`; without it the auto-complete 404s.
+    const { listener, request, completions } = harness();
+    listener.register("http://127.0.0.1:1455/callback", "deepai", "state-d1");
+    const response = await request("/auth-callback?code=abc&state=state-d1");
+    expect(response.status).toBe(200);
+    expect(completions).toEqual([{ providerId: "deepai", code: "abc", state: "state-d1" }]);
+  });
+
   test("forwards every non-consumed query param to the completer", async () => {
     const { listener, request, completions } = harness();
     listener.register("http://127.0.0.1:1455/oauth/callback", "kiro", "state-k2");
