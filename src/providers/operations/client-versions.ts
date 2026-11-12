@@ -359,9 +359,9 @@ export const VERSION_SOURCES = {
   freepi: {
     key: "freepi",
     // The free-pi CLI version — the `x-client-version` the gateway reports.
-    // Fallback = the current npm latest (0.6.18 as of 2026-11-11); a cold
+    // Fallback = the current npm latest (0.6.19 as of 2026-11-12); a cold
     // process sends it until the monitor's first successful discovery.
-    fallback: "0.6.18",
+    fallback: "0.6.19",
     sources: [{ url: "https://registry.npmjs.org/free-pi-cli/latest" }],
   },
   perch: {

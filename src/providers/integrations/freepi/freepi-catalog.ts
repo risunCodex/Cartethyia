@@ -36,6 +36,11 @@ const FREEPI_ROWS: readonly FreepiRow[] = [
   { id: "deepseek-v4.1-flash", displayName: "DeepSeek V4.1 Flash", free: true },
   { id: "glm-5.3-flash", displayName: "GLM 5.3 Flash", free: true },
   { id: "particle", displayName: "Particle · Free Unlimited", free: true },
+  // Defense rows the live roster keeps under the low-usage section; they
+  // stream for every account like the Free Unlimited rows, so they belong in
+  // the fallback too.
+  { id: "uncensored-1.2", displayName: "Uncensored 1.2" },
+  { id: "mimo-v2.6-flash", displayName: "MiMo V2.6 Flash (Xiaomi)" },
 ];
 
 export const FREEPI_MODELS: readonly ModelDefinition[] = FREEPI_ROWS.map((row) =>
