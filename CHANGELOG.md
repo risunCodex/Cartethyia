@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-11-13
+
 ### Added
 
 - **Tool-name alias registry (Claude Messages).** The request builder now
