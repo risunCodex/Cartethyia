@@ -226,7 +226,7 @@ export function normalizeBuddyToolNames(payload: Record<string, unknown>): void 
         name,
         ...(fn["parameters"] === undefined ? {} : { parameters: completeRequiredSchema(fn["parameters"]) }),
       };
-      return normalizeRe2Declaration(fnOut);
+      return { ...rawTool, function: normalizeRe2Declaration(fnOut) };
     }
     if (custom !== undefined) {
       const customOut = {

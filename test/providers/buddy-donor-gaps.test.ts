@@ -15,6 +15,7 @@ import { codebuddyHeaders } from "../../src/providers/integrations/buddy/codebud
 import { buddyOAuthIdentityHeaders } from "../../src/providers/integrations/buddy/buddy-identity";
 import { isBuddyChannelCheckError } from "../../src/providers/adapters/compatible-adapter";
 import { normalizeBuddyToolNames, buddyPrePayloadCommon } from "../../src/providers/integrations/buddy/buddy-chat-shared";
+import { codeBuddyCnPrePayload } from "../../src/providers/integrations/buddy/codebuddy/cn-provider";
 import type { ProviderDispatchContext, ProviderDispatchTarget } from "../../src/providers/provider-contracts";
 import type { CanonicalRequest } from "../../src/protocol/canonical-model";
 
@@ -30,6 +31,15 @@ function contextWithToken(token: string): ProviderDispatchContext {
 
 const JWT = (claims: Record<string, unknown>): string =>
   `h.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.s`;
+
+/** The OpenAI tool envelope is what the wire reads: `type` plus the `function`
+ * object carrying the name and parameters. Reading the flattened shape here is
+ * what let the drop below go unnoticed. */
+function functionDeclaration(payload: Record<string, unknown>): Record<string, unknown> {
+  const tool = (payload["tools"] as Array<Record<string, unknown>>)[0]!;
+  expect(tool["type"]).toBe("function");
+  return tool["function"] as Record<string, unknown>;
+}
 
 describe("buddy OAuth identity JWT-claim fallback (donor client_profiles)", () => {
   test("reads id_source and token_source from JWT claims when auth_state has none", () => {
@@ -105,9 +115,9 @@ describe("CodeBuddy RE2 tool-schema normalization (donor upstream_compat)", () =
       ],
     };
     normalizeBuddyToolNames(payload);
-    const tool = (payload["tools"] as Array<Record<string, unknown>>)[0]!;
-    expect(tool["name"]).toBe("find");
-    const params = tool["parameters"] as Record<string, unknown>;
+    const declaration = functionDeclaration(payload);
+    expect(declaration["name"]).toBe("find");
+    const params = declaration["parameters"] as Record<string, unknown>;
     const props = params["properties"] as Record<string, unknown>;
     const fileSchema = props["file_name"] as Record<string, unknown>;
     expect(fileSchema["pattern"]).toBe("^_.+$");
@@ -131,11 +141,50 @@ describe("CodeBuddy RE2 tool-schema normalization (donor upstream_compat)", () =
       ],
     };
     normalizeBuddyToolNames(payload);
-    const tool = (payload["tools"] as Array<Record<string, unknown>>)[0]!;
-    const params = tool["parameters"] as Record<string, unknown>;
+    const declaration = functionDeclaration(payload);
+    const params = declaration["parameters"] as Record<string, unknown>;
     const props = params["properties"] as Record<string, unknown>;
     const nameSchema = props["name"] as Record<string, unknown>;
     expect(nameSchema["pattern"]).toBe("^\\\\_.+$");
+  });
+});
+
+describe("CodeBuddy tool envelope (donor upstream_compat)", () => {
+  const findTool = (): Record<string, unknown> => ({
+    type: "function",
+    function: {
+      name: "find",
+      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+    },
+  });
+  const toolPayload = (): Record<string, unknown> => ({
+    model: "glm-5.2",
+    messages: [{ role: "user", content: "find the file" }],
+    tools: [findTool()],
+  });
+
+  test("normalizeBuddyToolNames keeps the type/function wrapper", () => {
+    const payload = toolPayload();
+    normalizeBuddyToolNames(payload);
+    const tool = (payload["tools"] as Array<Record<string, unknown>>)[0]!;
+    const declaration = functionDeclaration(payload);
+    expect(declaration["name"]).toBe("find");
+    expect(declaration["parameters"]).toBeDefined();
+    // The flattened shape is the bug: upstream answers 200 with no tool_calls.
+    expect(tool["name"]).toBeUndefined();
+    expect(tool["parameters"]).toBeUndefined();
+  });
+
+  test("codeBuddyCnPrePayload sends the wrapper on the wire", () => {
+    const payload = toolPayload();
+    const request = {
+      model: "glm-5.2",
+      messages: [{ role: "user", content: "find the file" }],
+    } as unknown as CanonicalRequest;
+    const candidate = { model_id: "glm-5.2" } as unknown as ProviderDispatchTarget;
+    codeBuddyCnPrePayload(payload, request, candidate);
+    const declaration = functionDeclaration(payload);
+    expect(declaration["name"]).toBe("find");
   });
 });
 
