@@ -7,6 +7,7 @@ import { flushAllBuffers } from "./boot/flush";
 import type { CartethyiaBoot } from "./boot/lifecycle";
 import {
   resolveDrainToken,
+  resolveBindHost,
   resolveIdleTimeout,
   resolveMaxBodyBytes,
   resolvePort,
@@ -137,6 +138,7 @@ if (boot) {
   boot.server = app.listen(
     {
       port,
+      hostname: resolveBindHost(),
       // Cap idle sockets so a Slowloris/keep-alive-abuse client cannot
       // pin one of the server's `maxRequestBodySize`-budgeted sockets
       // indefinitely. 60 s aligns with the DB pool idle timeout so all

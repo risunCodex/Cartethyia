@@ -101,6 +101,7 @@ Variables read outside the spec are therefore **not** listed below:
 
 | Variable | Kind | Default | Bounds |
 | --- | --- | --- | --- |
+| `CARTETHYIA_BIND_HOST` | string | `0.0.0.0` | — |
 | `DASHBOARD_DIST` | string | `./dist/dashboard` | — |
 | `CARTETHYIA_API_KEY` | string, optional | unset | — |
 | `CARTETHYIA_SERVER_MAX_BODY_BYTES` | integer | 16777216 | 1024 – 9007199254740991 |

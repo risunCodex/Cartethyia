@@ -85,6 +85,13 @@ export type ConfigEntry =
 export const CONFIG_SPEC = {
   // HTTP listener + dashboard runtime
   PORT: { kind: "int", default: 12_800, min: 1, max: 65_535 },
+  /**
+   * Address the HTTP listener binds. The default keeps the historical
+   * wildcard bind; a reverse-proxy deployment (cloudflared, Caddy, nginx on
+   * the same host) sets `127.0.0.1` so the gateway is reachable only through
+   * the proxy and never directly from the network.
+   */
+  CARTETHYIA_BIND_HOST: { kind: "text", default: "0.0.0.0" },
   DASHBOARD_DIST: { kind: "text", default: DEFAULT_DASHBOARD_DIST },
   CARTETHYIA_API_KEY: { kind: "optional-text" },
   CARTETHYIA_SERVER_MAX_BODY_BYTES: {

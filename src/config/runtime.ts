@@ -9,6 +9,11 @@ export function resolvePort(): number {
   return readInt("PORT", CONFIG_SPEC.PORT);
 }
 
+/** Resolves the address the HTTP listener binds (wildcard by default). */
+export function resolveBindHost(): string {
+  return readText("CARTETHYIA_BIND_HOST", CONFIG_SPEC.CARTETHYIA_BIND_HOST);
+}
+
 /** Resolves the dashboard static asset directory. */
 export function resolveDashboardDist(): string {
   return readText("DASHBOARD_DIST", CONFIG_SPEC.DASHBOARD_DIST);

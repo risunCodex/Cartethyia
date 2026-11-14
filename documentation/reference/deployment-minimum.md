@@ -160,8 +160,9 @@ The first start runs migrations automatically (`ensureMigrated` during boot).
 
 ### 3.7 Reverse proxy / tunnel
 
-Bind the gateway to loopback (`127.0.0.1:12800`) and front it with a reverse
-proxy or a Cloudflare tunnel. With a Cloudflare tunnel (cloudflared):
+Bind the gateway to loopback (`CARTETHYIA_BIND_HOST=127.0.0.1`, port 12800 by
+default) and front it with a reverse proxy or a Cloudflare tunnel. With a
+Cloudflare tunnel (cloudflared):
 
 ```bash
 # remote-managed tunnel: the public hostname maps to http://localhost:12800

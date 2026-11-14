@@ -10,6 +10,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- `CARTETHYIA_BIND_HOST` — the address the HTTP listener binds (default
+  `0.0.0.0`, unchanged). Set `127.0.0.1` for reverse-proxy deployments
+  (cloudflared, Caddy, nginx on the same host) so the gateway is reachable
+  only through the proxy and never directly from the network.
+
 ### Changed
 
 - OAuth browser logins whose redirect port the gateway owns (DeepAI, Trae) now
