@@ -304,15 +304,6 @@ export const CONFIG_SPEC = {
   // Provider OAuth hosts
   CARTETHYIA_KIMI_OAUTH_HOST: { kind: "text", default: DEFAULT_KIMI_OAUTH_HOST },
   /**
-   * Loopback port the browser-OAuth callback listener binds.
-   *
-   * Configurable because the default is a fixed number: a busy port would strand
-   * the operator, since the login could not start and there would be no way to
-   * move it. Codex's authorization server still expects 59653, so changing this
-   * only helps the providers whose redirect URI is not allowlisted upstream.
-   */
-  CARTETHYIA_OAUTH_CALLBACK_PORT: { kind: "int", default: 59_653, min: 1_024, max: 65_535 },
-  /**
    * Kimi Code quota/billing base. The `/usages` path joins on this, so the
    * default includes the `/v1` segment the bundled provider metadata implies.
    */

@@ -10,6 +10,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+
+- OAuth browser logins whose redirect port the gateway owns (DeepAI, Trae) now
+  redirect to the gateway's own listener — `http://127.0.0.1:<port>/callback` —
+  where root-level callback routes complete the exchange, replacing the
+  ephemeral loopback listener for those providers. The login redirect is
+  delivered on the machine the browser runs on: locally it completes in place;
+  on a remote server the browser shows "connection refused" by design, and the
+  console dialog now says so up front and presents pasting the redirect URL as
+  the primary completion step. Providers that pin their own port (Codex, Kiro,
+  OpenRouter, Claude, Antigravity, Devin, Perch) keep the loopback listener for
+  local logins. `CARTETHYIA_OAUTH_CALLBACK_PORT` is removed; the redirect port
+  is the gateway's own listener port.
+
 ## [2.8.2] - 2026-11-14
 
 ### Fixed

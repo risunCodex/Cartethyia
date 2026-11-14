@@ -62,6 +62,12 @@ export function extractOAuthCode(raw: string): { code: string } | { error: strin
   return { code: trimmed };
 }
 
+/** Hosts that name the machine the browser itself runs on. */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+}
+
 export function OAuthBrowserDialog({
   providerId,
   authorizeUrl,
@@ -75,6 +81,16 @@ export function OAuthBrowserDialog({
   readonly popup: Window;
   readonly onClose: (completed: boolean) => void;
 }): ReactNode {
+  /**
+   * Whether this dashboard is served from anything other than the operator's
+   * own machine. The OAuth redirect targets `http://127.0.0.1:<gateway
+   * port>/…`, which the browser resolves on *its* machine — a remote server's
+   * listener is unreachable by construction, so the redirect always fails to
+   * connect there. Saying so up front keeps the paste path from reading as a
+   * broken login; locally the popup completes on its own and none of this
+   * shows.
+   */
+  const remoteDashboard = !isLoopbackHost(window.location.hostname);
   const [copied, setCopied] = useState(false);
   const [callbackValue, setCallbackValue] = useState("");
   const [dragActive, setDragActive] = useState(false);
@@ -252,7 +268,11 @@ export function OAuthBrowserDialog({
         <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-card border border-inner-border bg-surface-2">
           <Loader2 size={16}
            className="animate-spin text-accent shrink-0"/>
-          <span className="text-body font-semibold">Waiting for popup authorization…</span>
+          <span className="text-body font-semibold">
+            {remoteDashboard
+              ? "Waiting for authorization — the sign-in redirect will not connect on a remote server; that is expected."
+              : "Waiting for popup authorization…"}
+          </span>
         </div>
 
         <div className="flex flex-col gap-2">
@@ -286,13 +306,14 @@ export function OAuthBrowserDialog({
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 text-micro font-bold uppercase tracking-label text-text-tertiary"><span aria-hidden="true" className="flex-1 h-px bg-inner-border" /><span>Or complete manually</span><span aria-hidden="true" className="flex-1 h-px bg-inner-border" /></div>
+        <div className="flex items-center gap-2.5 text-micro font-bold uppercase tracking-label text-text-tertiary"><span aria-hidden="true" className="flex-1 h-px bg-inner-border" /><span>{remoteDashboard ? "Then complete it here" : "Or complete manually"}</span><span aria-hidden="true" className="flex-1 h-px bg-inner-border" /></div>
 
         <div className="flex flex-col gap-2">
           <div className="text-body font-semibold text-text-primary">Step 2: Paste the redirect URL here</div>
           <p className="text-badge leading-snug text-text-tertiary">
-            If the redirect lands on an unreachable address, copy that page&apos;s full URL from
-            your browser and paste it below — this works from any machine, not just localhost.
+            {remoteDashboard
+              ? "After you approve, the browser lands on a page that cannot connect — that is the designed path on a remote server. Copy that page's full URL from the address bar and paste it below; the server completes the login from it."
+              : "If the redirect lands on an unreachable address, copy that page's full URL from your browser and paste it below — this works from any machine, not just localhost."}
           </p>
           <Inline gap="8px" align="flex-start">
             <div

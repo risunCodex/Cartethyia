@@ -18,7 +18,6 @@ export const SPEC_ONLY_ENV_EXAMPLE_KEYS: Readonly<Record<string, true>> = {
   // Install-identity directory; only operators who need a stable identity
   // across restarts touch it, and the reference covers it.
   CARTETHYIA_INSTALL_ID_DIR: true,
-  CARTETHYIA_OAUTH_CALLBACK_PORT: true,
   // Provider-specific overrides. Readers live in `src/config/providers.ts`;
   // the majority of installs do not need them in the starter sample.
   CARTETHYIA_KIMI_OAUTH_HOST: true,

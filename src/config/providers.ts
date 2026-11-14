@@ -4,19 +4,50 @@
  * public origin.
  */
 
-import { CONFIG_SPEC, readInt, readOptionalText, readText } from "./spec";
+import { CONFIG_SPEC, readOptionalText, readText } from "./spec";
+import { resolvePort } from "./runtime";
+
+/** Loopback hosts that name the machine the browser runs on. */
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
 /**
- * Browser-authorize redirect URI for a provider.
+ * Browser-authorize redirect URI for a provider whose redirect port this
+ * gateway owns.
  *
- * Browser OAuth advertises a loopback callback, `http://127.0.0.1:59653/callback`
- * by default — the URI Codex registers with its authorization server, which is
- * why the port is the default rather than a free one. The console callback stays the exchange
- * endpoint: the dashboard dialog pastes the loopback landing URL back and
- * the server exchanges the code against the same loopback URI.
+ * It names this gateway's own HTTP listener — `http://127.0.0.1:<port>/callback`
+ * — the same process that serves the dashboard and `/v1`. The browser redirect
+ * therefore arrives without any ephemeral socket: on the machine the browser
+ * runs on, which for a local operator is this gateway and for a remote
+ * operator is nothing (their browser refuses to connect, and the console
+ * dialog's paste path completes the login). The root paths `/callback`,
+ * `/auth-callback` (DeepAI's desktop sign-in), and `/authorize` (Trae's login
+ * page) are served for exactly this delivery.
  */
 export function browserAuthorizeRedirectUri(): string {
-  return `http://127.0.0.1:${readInt("CARTETHYIA_OAUTH_CALLBACK_PORT", CONFIG_SPEC.CARTETHYIA_OAUTH_CALLBACK_PORT)}/callback`;
+  return `http://127.0.0.1:${resolvePort()}/callback`;
+}
+
+/**
+ * Whether a browser redirect URI lands on this process's own listener.
+ *
+ * A redirect naming the gateway's port is delivered by the root OAuth callback
+ * routes, so no loopback listener may be bound for it — binding the port the
+ * gateway itself holds would fail every login with a port conflict. Providers
+ * that pin their own port (Codex 1455, Kiro 3128, …) are not gateway-served
+ * and keep the ephemeral listener; a custom scheme or a remote host is not a
+ * loopback URI at all and keeps the manual paste path.
+ */
+export function isGatewayServedRedirectUri(redirectUri: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(redirectUri);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:") return false;
+  if (!LOOPBACK_HOSTS.has(url.hostname.toLowerCase())) return false;
+  const port = url.port.length > 0 ? Number(url.port) : 80;
+  return port === resolvePort();
 }
 
 /**

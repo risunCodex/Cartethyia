@@ -37,6 +37,7 @@ import {
 import { TRAE_DEVICE_BRAND, TRAE_OS_VERSION, traeDeviceIdentity } from "./trae-headers";
 import { getTraeVersion } from "../../operations/client-versions";
 import { browserAuthorizeRedirectUri } from "../../../config/providers";
+import { resolvePort } from "../../../config/runtime";
 
 /** Upstream client id. Constant across realms. */
 const TRAE_CLIENT_ID = "ono9krqynydwx5";
@@ -113,8 +114,9 @@ export class TraeOAuthClient extends OAuthClient {
   /**
    * The login page only accepts `/authorize` as the callback path (see
    * `TRAE_CALLBACK_PATH`); the gateway-wide default is `/callback`, which it
-   * answers with "Login Failed" before consent. The port still comes from the
-   * gateway's own redirect setting so a deployment can move it.
+   * answers with "Login Failed" before consent. The port is the gateway's own
+   * listener: `auth_callback_url` is echoed back whole, so the callback lands
+   * on the root `/authorize` route and no ephemeral listener is bound.
    */
   override readonly browserRedirectUri: string = withTraeCallbackPath(browserAuthorizeRedirectUri());
 
@@ -773,7 +775,7 @@ function withTraeCallbackPath(redirectUri: string): string {
     url.pathname = TRAE_CALLBACK_PATH;
     return url.toString();
   } catch {
-    return `http://127.0.0.1:59653${TRAE_CALLBACK_PATH}`;
+    return `http://127.0.0.1:${resolvePort()}${TRAE_CALLBACK_PATH}`;
   }
 }
 

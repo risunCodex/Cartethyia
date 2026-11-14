@@ -245,7 +245,7 @@ export function createConsoleRouter(deps: ConsoleApiCompositionDeps): AnyElysia 
       return user === null ? null : { passwordHash: user.passwordHash };
     },
   };
-  registerConsoleDomains(console, ctx);
+  const rootCallbackRoutes = registerConsoleDomains(console, ctx);
   // Compress the JSON control plane on the way out.
   //
   // `wrap` is used rather than a lifecycle hook because this Elysia beta does
@@ -267,5 +267,10 @@ export function createConsoleRouter(deps: ConsoleApiCompositionDeps): AnyElysia 
         gzipResponse(request, response),
       ),
   );
-  return console;
+  // The OAuth root callbacks must not inherit the console prefix, so they ride
+  // back as their own instance and this router composes both: the caller gets
+  // one plugin whose routes cover `/console/api/*` and the root `/callback`
+  // family. The compression wrap above is scoped by path and stays console-only.
+  if (rootCallbackRoutes === undefined) return console;
+  return new Elysia().use(console).use(rootCallbackRoutes);
 }

@@ -7,7 +7,7 @@ import type { OAuthFlowStorage } from "../../../providers/authentication/oauth-f
 import type { OAuthDevicePollResponse } from "../catalog/contracts";
 import { providerJwtVerification } from "../../../providers/provider-metadata";
 import type { ProviderRegistry } from "../../../providers/provider-registry";
-import { browserAuthorizeRedirectUri } from "../../../config/providers";
+import { browserAuthorizeRedirectUri, isGatewayServedRedirectUri } from "../../../config/providers";
 import { resolveDeviceEgress, type DeviceEgressDeps } from "./device-egress";
 import { log } from "../../../observability/logger";
 import { GatewayError } from "../../../protocol/gateway-error";
@@ -307,7 +307,13 @@ export function createOAuthLoginOperations(config: OAuthLoginConfig) {
         // here — with no pending flow saved — rather than leaving a flow whose
         // callback can never arrive. A non-loopback redirect (a custom scheme, a
         // remote host) returns false and keeps the manual paste path.
-        config.callbackListener.register(redirectUri, providerId, state);
+        //
+        // A redirect that names this gateway's own listener needs no listener:
+        // the root `/callback` family is already served there, and binding the
+        // port the gateway holds would fail every login with a conflict.
+        if (!isGatewayServedRedirectUri(redirectUri)) {
+          config.callbackListener.register(redirectUri, providerId, state);
+        }
         await config.oauthFlowStore.savePending(state, {
           providerId,
           codeVerifier,
