@@ -25,6 +25,16 @@ they differ only in the private transport. Rule of thumb: **WireGuard when a
 UDP endpoint exists, SSH tunnel when it does not** — both are encrypted,
 key-authenticated, and systemd-managed.
 
+```mermaid
+flowchart TD
+    start["Where will this run?"] -->|"on my machine"| local["Topology 1 — Local<br/>(Lite, no VPS)"]
+    start -->|"a remote host"| boxes{"One box or two?"}
+    boxes -->|"one does everything"| allin["Topology 2 — All-in-one VPS"]
+    boxes -->|"gateway and database split"| udp{"Any public UDP endpoint?<br/>public IP · provider UDP forward · IPv6 on both ends"}
+    udp -->|"yes"| wg["Topology 3 — Split over WireGuard"]
+    udp -->|"no — NAT on both ends"| ssh["Topology 4 — Split over direct SSH tunnel"]
+```
+
 ---
 
 ## Database modes
@@ -55,9 +65,39 @@ Cartethyia runs either of two database modes (`CARTETHYIA_DB_MODE`, required):
 | Resource | Minimum comfortable | Notes |
 | --- | --- | --- |
 | CPU | 1 vCPU | bursty; mostly I/O-bound |
-| RAM | 1–2 GiB | 2 GiB is the reference; swap helps (5 GiB in the reference install). The data server can live on less — 1 GiB runs PostgreSQL + PgBouncer + Redis when tuned |
+| RAM | 1–2 GiB | 2 GiB is the reference. The data server can live on less — 1 GiB runs PostgreSQL + PgBouncer + Redis when tuned. Size swap per the section below |
 | Disk | 10–20 GiB | grows with telemetry payloads; see retention (`CARTETHYIA_TELEMETRY_RETENTION_DAYS`) |
 | OS | Debian 12/13 | reference install is Debian 12 |
+
+### Swap
+
+Swap is a safety margin, not a performance tier: sized well, it is the
+difference between a memory burst riding out and the kernel shooting the
+gateway (or worse, PostgreSQL) mid-stream. The reference installs both carry
+one — 5 GiB on the 2 GiB app box, 3 GiB on the 1 GiB data server — and
+neither has ever been a problem.
+
+| RAM | Recommended swap | Why |
+| --- | --- | --- |
+| 1 GiB | 3–4 GiB | a PostgreSQL + Redis host has the least headroom; give it room to page cold pages out |
+| 2 GiB | 2–5 GiB | gateway bursts (parallel streams) can momentarily double RSS |
+| 4 GiB+ | 1–2 GiB | headroom-only; the box rarely touches it |
+
+Rules of thumb and the honest trade-offs:
+
+- **Size it 1.5–2.5× RAM**, capped by spare disk — and keep **≥20% of the
+  disk free after the swapfile**: telemetry, packages, and logs still grow.
+- **Use a swapfile, not a partition**, on rented VPS: `fallocate` + `mkswap`
+  + `swapon` resizes without repartitioning.
+- **Swappiness**: the reference data server runs `vm.swappiness=80` — on a
+  memory-tight host a higher value parks cold pages out early and keeps the
+  hot set resident. Leave the default (60) on comfortable boxes.
+- **The trade-off, plainly:** swap lives on your disk, so heavy paging is as
+  slow as that disk — on shared NVMe it is unnoticeable in normal operation;
+  on very slow storage a hard-swapping host degrades responsiveness before it
+  fails. That is the intended behavior: degrade, spill, survive — instead of
+  an abrupt OOM kill. RAM first, swap second; the swap you sized right is the
+  one you never notice.
 
 ---
 
@@ -83,6 +123,12 @@ curl -sS http://127.0.0.1:12800/health/ready
 Full use different databases and migration sets. Full mode locally points
 `DATABASE_URL`/`REDIS_URL` at whatever the machine already provides; check
 what is listening before provisioning anything new.
+
+```mermaid
+flowchart LR
+    you["you"] -->|"localhost"| GW["gateway :12800"]
+    GW --> SQLITE["SQLite<br/>data/cartethyia.sqlite"]
+```
 
 ---
 
@@ -227,9 +273,15 @@ When one box is not enough — more traffic, isolation, or resilience — split
 the roles: the gateway (edge) on one VPS, PostgreSQL + PgBouncer + Redis on a
 persistence VPS, with the database reachable only over a WireGuard tunnel.
 
-```
-Clients → Cloudflare edge → tunnel → cloudflared (VPS A, localhost) → gateway
-              → WireGuard → PostgreSQL/PgBouncer/Redis (VPS B, private)
+```mermaid
+flowchart LR
+    USR["Clients"] --> CF["Cloudflare edge"]
+    CF -->|"tunnel"| CFD["cloudflared<br/>(VPS A, localhost)"]
+    CFD --> GW["gateway<br/>(loopback)"]
+    GW -->|"WireGuard<br/>encrypted UDP"| DB["VPS B<br/><WG_DB_IP>"]
+    DB --> PG["PostgreSQL :5432"]
+    DB --> PB["PgBouncer :6432"]
+    DB --> RD["Redis :6379"]
 ```
 
 ### When WireGuard works
@@ -292,9 +344,18 @@ TCP always works, so the private transport is an SSH tunnel instead. Measured
 overhead on the reference install (two NAT VPS in the same region): ~0.5 ms
 RTT — indistinguishable from a LAN.
 
-```
-Clients → Cloudflare edge → cloudflared (APP box) → gateway
-              └─ SSH tunnel ─▶ DATA box (PostgreSQL/PgBouncer/Redis)
+```mermaid
+flowchart LR
+    USR["Clients"] --> CF["Cloudflare edge"]
+    CF -->|"tunnel (outbound)"| CFD["cloudflared<br/>APP box"]
+    CFD --> GW["gateway<br/>(loopback)"]
+    GW --> L["loopback listeners<br/>127.0.0.1:15432 / :16379<br/>(opened by -R)"]
+    subgraph DATA["DATA box"]
+        SSHC["ssh -N -R<br/>(systemd, Restart=always)"]
+        SVC["PgBouncer :6432<br/>Redis :6379"]
+        SSHC --> SVC
+    end
+    L <-->|"encrypted SSH channel<br/>(data box dials APP sshd)"| SSHC
 ```
 
 ### Direction: the data box dials the app box
