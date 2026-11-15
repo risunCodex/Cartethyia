@@ -180,6 +180,95 @@ describe("F-4: tool-call arguments normalize at every ingress", () => {
   });
 });
 
+describe("F-1: tool schema bounds at ingress", () => {
+  test("a schema nested past 24 levels is a 400", () => {
+    let schema: unknown = { type: "object", properties: {} };
+    for (let depth = 0; depth < 30; depth += 1)
+      schema = { type: "object", properties: { nested: schema } };
+    const body = chatBody([{ name: "f", parameters: schema }]);
+    expect(() => chatAdapter.parse(body)).toThrow("nested deeper than 24");
+  });
+
+  test("a schema serialized above 64 KiB is a 400", () => {
+    const schema = {
+      type: "object",
+      properties: { blob: { type: "string", description: "x".repeat(70 * 1024) } },
+    };
+    expect(() => chatAdapter.parse(chatBody([{ name: "f", parameters: schema }]))).toThrow(
+      "the limit is 65536",
+    );
+  });
+
+  test("a schema array above 512 items is a 400", () => {
+    const schema = {
+      type: "array",
+      items: Array.from({ length: 600 }, (_, index) => ({ type: "string", enum: [String(index)] })),
+    };
+    expect(() => chatAdapter.parse(chatBody([{ name: "f", parameters: schema }]))).toThrow(
+      "the limit is 512",
+    );
+  });
+
+  test("more than 256 tool declarations is a 400", () => {
+    const tools = Array.from({ length: 257 }, (_, index) => ({
+      name: `tool_${index}`,
+      parameters: { type: "object", properties: {} },
+    }));
+    expect(() => chatAdapter.parse(chatBody(tools))).toThrow("the limit is 256");
+  });
+
+  test("a legitimate deep-enough schema still parses", () => {
+    // Ten properties-nesting wrappers is ~21 JSON levels — inside the bound
+    // the same way a real recursive schema is.
+    let schema: unknown = { type: "string" };
+    for (let depth = 0; depth < 10; depth += 1)
+      schema = { type: "object", properties: { nested: schema } };
+    const parsed = chatAdapter.parse(chatBody([{ name: "f", parameters: schema }]));
+    expect(parsed.tools?.length).toBe(1);
+  });
+});
+
+describe("F-2: tool names at ingress", () => {
+  test("duplicate tool names are a 400 on every dialect", () => {
+    const tools = [
+      { name: "f", parameters: { type: "object", properties: {} } },
+      { name: "f", parameters: { type: "object", properties: {} } },
+    ];
+    expect(() => chatAdapter.parse(chatBody(tools))).toThrow('declares "f" more than once');
+    expect(() =>
+      responsesAdapter.parse({ model: "m", input: "hi", tools }),
+    ).toThrow('declares "f" more than once');
+    expect(() => messagesAdapter.parse(messagesBody(tools))).toThrow(
+      'declares "f" more than once',
+    );
+  });
+
+  test("an empty-after-trim name is a 400, including through the function wrapper", () => {
+    expect(() =>
+      chatAdapter.parse(chatBody([{ function: { name: "  ", parameters: {} } }])),
+    ).toThrow("must not be empty");
+  });
+
+  test("names outside the charset or length are a 400 naming the offender", () => {
+    expect(() => chatAdapter.parse(chatBody([{ name: "my tool", parameters: {} }]))).toThrow(
+      "my tool",
+    );
+    expect(() => chatAdapter.parse(chatBody([{ name: "a.b", parameters: {} }]))).toThrow("a.b");
+    const long = "x".repeat(129);
+    expect(() => chatAdapter.parse(chatBody([{ name: long, parameters: {} }]))).toThrow(
+      "must match",
+    );
+  });
+
+  test("charset-safe names of every realistic shape still parse", () => {
+    const names = ["f", "_f", "f_1", "mcp__server__tool", "x".repeat(128)];
+    for (const name of names) {
+      const parsed = chatAdapter.parse(chatBody([{ name, parameters: {} }]));
+      expect(parsed.tools?.[0]?.name, name).toBe(name);
+    }
+  });
+});
+
 describe("F-5: the pairing ledger runs on the Chat and Responses ingress", () => {
   test("chat: an orphan tool result is dropped at ingress", () => {
     const body = {

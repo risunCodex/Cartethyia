@@ -4,6 +4,11 @@ import { readString, readBoolean, readNumber } from "../../protocol/codecs";
 import { isRecord } from "../../protocol/codecs";
 import { completeRequiredSchema } from "../../protocol/codecs";
 import type { ToolDefinition } from "../../protocol/canonical-model";
+import {
+  TOOL_DECLARATIONS_MAX,
+  validateToolName,
+  validateToolSchemaBounds,
+} from "../../protocol/tool-schema";
 
 /** Tool-definition dialects preserve each surface's distinct wire fields. */
 export type ToolDialect = "chat" | "responses" | "messages";
@@ -56,6 +61,8 @@ function parseToolObject(item: Record<string, unknown>, dialect: ToolDialect): T
     if (declaredType === undefined) return undefined;
     name = declaredType;
   }
+  // F-2: the name contract is enforced once here, for every dialect.
+  validateToolName(name);
 
   let description = readString(item, "description");
   if (chatWrapper !== undefined) {
@@ -106,6 +113,10 @@ function parseToolObject(item: Record<string, unknown>, dialect: ToolDialect): T
   const strict =
     (chatWrapper !== undefined ? readBoolean(chatWrapper, "strict") : undefined) ??
     readBoolean(item, "strict");
+  // F-1: schema size/depth/count bounds are enforced once here, at the single
+  // choke point every dialect parses through, before normalization can grow
+  // the structure further.
+  validateToolSchemaBounds(name, schema);
   const result: ToolDefinition = {
     name,
     jsonSchema: isRecord(schema)
@@ -190,9 +201,20 @@ export function parseToolsArray(
   const label = TOOL_DIALECT_LABELS[dialect];
   if (!Array.isArray(value)) throw new Error(`${label} tools must be an array`);
   if (value.length === 0) return undefined;
+  if (value.length > TOOL_DECLARATIONS_MAX)
+    throw new Error(
+      `${label} tools carries ${value.length} declarations; the limit is ${TOOL_DECLARATIONS_MAX}`,
+    );
+  // F-2: two tools with one name pair the ledger against the first while
+  // every provider takes the last — a duplicate is a client bug, refused
+  // here instead of silently misbehaving.
+  const names = new Set<string>();
   return value.map((entry) => {
     const parsed = parseToolDefinition(entry, dialect);
     if (parsed === undefined) throw new Error(`${label} tool failed to parse`);
+    if (names.has(parsed.name))
+      throw new Error(`${label} tools declares "${parsed.name}" more than once`);
+    names.add(parsed.name);
     return parsed;
   });
 }

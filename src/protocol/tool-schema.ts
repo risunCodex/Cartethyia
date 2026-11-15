@@ -10,6 +10,79 @@
 import { isRecord } from "./wire-readers";
 import { descend, ROOT_WALK, shouldStop, type RewriteWalk } from "./rewrite";
 
+// Tool ingress bounds (proposal F-1).
+//
+// The whole-body ingress guard (`MAX_JSON_DEPTH = 64` in rewrite.ts) measures
+// the envelope, not the schema a tool declares — a megabyte-deep or
+// ten-thousand-property schema fits inside it and reaches every provider
+// codec, poisoning retries and replay. These bounds sit at ingress, above
+// every known provider limit, so a legitimate declaration passes untouched
+// and per-provider clamps keep theirs.
+
+/** Serialized JSON-Schema size ceiling for one tool declaration. */
+export const TOOL_SCHEMA_MAX_BYTES = 64 * 1024;
+/** Nesting ceiling for one tool declaration's schema. */
+export const TOOL_SCHEMA_MAX_DEPTH = 24;
+/** Items ceiling for any single array inside a tool schema. */
+export const TOOL_SCHEMA_MAX_ARRAY_ITEMS = 512;
+/** Tools declared per request. */
+export const TOOL_DECLARATIONS_MAX = 256;
+
+/**
+ * Tool-name contract at ingress (proposal F-2).
+ *
+ * Both OpenAI and Anthropic enforce `^[a-zA-Z0-9_-]{1,64}$` on tool names, so
+ * a name outside `^[A-Za-z0-9_-]{1,128}$` fails upstream anyway — the gateway
+ * 400 just says so before the round-trip. The bound sits above the providers'
+ * so per-provider clamps keep theirs. Renamed traffic (OAuth tool aliases)
+ * produces charset-safe names and is unaffected.
+ */
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** Validates one tool name at ingress, naming the offender in the error. */
+export function validateToolName(name: string): void {
+  if (name.trim().length === 0) throw new Error("tool name must not be empty");
+  if (!TOOL_NAME_PATTERN.test(name))
+    throw new Error(
+      `tool name "${name.length > 64 ? `${name.slice(0, 64)}…` : name}" must match ^[A-Za-z0-9_-]{1,128}$`,
+    );
+}
+
+/**
+ * Validates one tool schema against the ingress bounds, naming the tool.
+ * Accepts any root (a custom-grammar string passes trivially); only record
+ * and array structures carry depth/count.
+ */
+export function validateToolSchemaBounds(toolName: string, schema: unknown): void {
+  if (typeof schema === "string") return;
+  const serialized = JSON.stringify(schema);
+  if (serialized !== undefined && serialized.length > TOOL_SCHEMA_MAX_BYTES)
+    throw new Error(
+      `tool "${toolName}" schema is ${serialized.length} bytes; the limit is ${TOOL_SCHEMA_MAX_BYTES}`,
+    );
+  walkSchemaBounds(toolName, schema, 0);
+}
+
+function walkSchemaBounds(toolName: string, value: unknown, depth: number): void {
+  if (depth > TOOL_SCHEMA_MAX_DEPTH)
+    throw new Error(
+      `tool "${toolName}" schema is nested deeper than ${TOOL_SCHEMA_MAX_DEPTH} levels`,
+    );
+  if (Array.isArray(value)) {
+    if (value.length > TOOL_SCHEMA_MAX_ARRAY_ITEMS)
+      throw new Error(
+        `tool "${toolName}" schema carries an array with ${value.length} items; the limit is ${TOOL_SCHEMA_MAX_ARRAY_ITEMS}`,
+      );
+    for (const item of value) walkSchemaBounds(toolName, item, depth + 1);
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const child of Object.values(value as Record<string, unknown>))
+      walkSchemaBounds(toolName, child, depth + 1);
+  }
+}
+
+
 // Anthropic tool-schema sanitization
 
 const SUPPORTED_SCHEMA_KEYS: Readonly<Record<string, true>> = Object.freeze({
