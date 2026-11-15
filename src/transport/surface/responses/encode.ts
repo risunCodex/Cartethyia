@@ -12,12 +12,23 @@ import { computerOutputToWire, outputToWire } from "./wire-output";
 
 
 
-function terminalResponseStatus(state: "complete" | "failed" | "aborted"): {
-  event: string;
-  status: string;
-} {
-  if (state === "complete") return { event: "response.completed", status: "completed" };
+function terminalResponseStatus(
+  state: "complete" | "failed" | "aborted",
+  stopReason?: CanonicalStopReason,
+): { event: string; status: string; incompleteReason?: string } {
   if (state === "failed") return { event: "response.failed", status: "failed" };
+  // The OpenAI Responses wire expresses a length/content-filter stop through
+  // `response.incomplete` + `incomplete_details`, never through
+  // `response.completed` — a client reading `completed` believes it has the
+  // whole answer (F-35: per-state terminal mappings).
+  const incompleteReason = incompleteResponseReason(stopReason);
+  if (state === "complete") {
+    if (incompleteReason !== undefined)
+      return { event: "response.incomplete", status: "incomplete", incompleteReason };
+    return { event: "response.completed", status: "completed" };
+  }
+  if (incompleteReason !== undefined)
+    return { event: "response.incomplete", status: "incomplete", incompleteReason };
   return { event: "response.incomplete", status: "incomplete" };
 }
 
@@ -650,11 +661,10 @@ export class ResponsesEventEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
     // than `response.incomplete` (the same distinction the Messages encoder
     // applies in `stopData`).
     const effectiveState = state === "aborted" && this.hasError ? "failed" : state;
-    const status = terminalResponseStatus(effectiveState);
+    const status = terminalResponseStatus(effectiveState, stopReason);
     const response = this.responseObject(status.status);
-    const incompleteReason =
-      status.status === "incomplete" ? incompleteResponseReason(stopReason) : undefined;
-    if (incompleteReason !== undefined) response.incomplete_details = { reason: incompleteReason };
+    if (status.incompleteReason !== undefined)
+      response.incomplete_details = { reason: status.incompleteReason };
     if (effectiveState === "failed") {
       response.error = stopDetailsError(stopDetails, stopReason);
     }

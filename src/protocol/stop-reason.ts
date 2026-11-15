@@ -57,6 +57,25 @@ export function chatFinishReason(reason: CanonicalStopReason | undefined): strin
 }
 
 /**
+ * Chat's finish_reason for a terminal the encoders know the state of (F-35).
+ *
+ * The plain `chatFinishReason` default is only sound for a COMPLETE terminal:
+ * an aborted or failed terminal with no recorded reason is a turn that never
+ * finished, and "stop" tells agent clients it did — truncated output read as
+ * a finished answer. Non-complete terminals without a reason map to the
+ * table's own failure word (`error`), the same word the table already chose
+ * for canonical `cancelled`/`error`; a terminal that does carry a reason maps
+ * through the table unchanged.
+ */
+export function chatFinishReasonForTerminal(
+  reason: CanonicalStopReason | undefined,
+  state: "complete" | "failed" | "aborted",
+): string {
+  if (reason === undefined && state !== "complete") return "error";
+  return canonicalStopReasonToWire("chat", reason, "stop");
+}
+
+/**
  * Completion's finish_reason, or `null` when the terminal recorded none.
  *
  * Completion inherits chat's wire vocabulary (`length`, `content_filter`,

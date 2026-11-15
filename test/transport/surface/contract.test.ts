@@ -639,18 +639,30 @@ describe("contract: stop-reason table", () => {
 
   for (const [reason, chatWord, messagesWord] of COMPLETE_ROWS) {
     test(`complete terminal with stop_reason=${reason}`, () => {
-      const all = encodeAll([start(), text("hi"), terminal({ state: "complete", reason })]);
+      // A tool_use terminal needs a nameable call, or the F-36 dangling-stop
+      // guard downgrades it — the mapping under test is the reason word, so
+      // the row carries the call a real tool_use turn would have.
+      const events =
+        reason === "tool_use"
+          ? [start(), toolDelta({ id: "call_1", name: "get", args: "{}" }), terminal({ state: "complete", reason })]
+          : [start(), text("hi"), terminal({ state: "complete", reason })];
+      const all = encodeAll(events);
       expect(all.chatSync.stop).toBe(chatWord);
       expect(all.chatStream.stop).toBe(chatWord);
       expect(all.messagesSync.stop).toBe(messagesWord);
       expect(all.messagesStream.stop).toBe(messagesWord);
-      // F-35-family divergence (pinned, flip with the terminal-semantics fix):
-      // a COMPLETE terminal that hit the output limit or a content filter
-      // reports `completed` on Responses with no incomplete_details, although
-      // the OpenAI Responses wire expresses exactly that condition as
-      // `response.incomplete` + `incomplete_details.reason`.
-      expect(all.responses.status).toBe("completed");
-      expect(all.responsesStream.status).toBe("completed");
+      // The OpenAI Responses wire expresses a length/content-filter stop
+      // through `response.incomplete` + `incomplete_details.reason` — never
+      // through `response.completed`, which would tell the client it has the
+      // whole answer (fixed with F-35). A refusal completes with a refusal
+      // output, which is the wire's own shape for it.
+      if (reason === "length" || reason === "content_filter") {
+        expect(all.responses.status).toBe("incomplete");
+        expect(all.responsesStream.status).toBe("incomplete");
+      } else {
+        expect(all.responses.status).toBe("completed");
+        expect(all.responsesStream.status).toBe("completed");
+      }
     });
   }
 
@@ -666,20 +678,18 @@ describe("contract: stop-reason table", () => {
 // ===== 5. Terminal state semantics =====
 
 describe("contract: terminal state semantics", () => {
-  test("F-35 [divergence — to flip in the F-35 commit]: aborted terminal is a fake success on chat", () => {
+  test("F-35 fixed: an aborted terminal is a failure word on chat, never a fake stop", () => {
     // The upstream dropped the stream mid-turn. Messages omits the stop word
-    // (null), Responses reports `incomplete` — chat reports `stop`, which
-    // agents read as a finished answer. The F-35 fix makes chat express the
-    // cancellation instead of the success word.
+    // (null), Responses reports `incomplete`, and Chat reports the table's
+    // failure word — a truncated answer must not read as a finished one.
     const events = [start(), text("partial answ"), terminal({ state: "aborted" })];
     const all = encodeAll(events);
     expect(all.messagesSync.stop).toBeNull();
     expect(all.messagesStream.stop).toBeNull();
     expect(all.responses.status).toBe("incomplete");
     expect(all.responsesStream.status).toBe("incomplete");
-    // Divergence rows (flip with F-35):
-    expect(all.chatSync.stop).toBe("stop");
-    expect(all.chatStream.stop).toBe("stop");
+    expect(all.chatSync.stop).toBe("error");
+    expect(all.chatStream.stop).toBe("error");
   });
 
   test("aborted terminal preceded by an error event is a failure on messages and responses", () => {
@@ -770,12 +780,12 @@ describe("contract: usage parity", () => {
 // ===== 7. Unnamed and interleaved tool calls =====
 
 describe("contract: unnamed tool calls", () => {
-  test("F-36 [divergence — to flip in the F-36 commit]: tool_use stop with zero nameable calls", () => {
+  test("F-36 fixed: a tool_use stop with zero nameable calls downgrades on chat too", () => {
     // The upstream streamed arguments but never a name. Messages drops the
-    // call and downgrades `tool_use` → `end_turn` (a dangling tool_use stop is
-    // a client-side protocol error). Chat keeps `tool_calls` with no calls —
-    // the exact dangling stop Messages guards — on both stream (nameless
-    // deltas suppressed but finish kept) and non-stream.
+    // call and downgrades `tool_use` → `end_turn`; chat now mirrors the rule
+    // on both paths (the argument-only deltas are withheld until a name
+    // arrives, and a `tool_calls` finish with no nameable call downgrades to
+    // `stop` — the dangling stop the client cannot act on).
     const events = [
       start(),
       toolDelta({ id: "call_x", args: '{"a":1}' }),
@@ -786,11 +796,26 @@ describe("contract: unnamed tool calls", () => {
     expect(all.messagesSync.stop).toBe("end_turn");
     expect(all.messagesStream.calls).toEqual([]);
     expect(all.messagesStream.stop).toBe("end_turn");
-    // Divergence rows (flip with F-36):
-    expect(all.chatSync.stop).toBe("tool_calls");
+    expect(all.chatSync.stop).toBe("stop");
     expect(all.chatSync.calls).toEqual([]);
-    expect(all.chatStream.stop).toBe("tool_calls");
+    expect(all.chatStream.stop).toBe("stop");
     expect(all.chatStream.calls).toEqual([]);
+  });
+
+  test("F-36: a named call arriving after argument fragments still emits whole", () => {
+    // The Copilot shape — argument slices first, the name on the last event.
+    // Withholding must not lose the fragments: the tracker accumulates them
+    // and the deltas flow once the name lands.
+    const events = [
+      start(),
+      toolDelta({ id: "call_1", args: '{"a":' }),
+      toolDelta({ id: "call_1", args: "1}" }),
+      toolDelta({ id: "call_1", name: "get" }),
+      terminal({ state: "complete", reason: "tool_use" }),
+    ];
+    const all = encodeAll(events);
+    expectSameCalls([{ id: "call_1", name: "get", args: '{"a":1}' }], all.chatStream.calls, "chat stream");
+    expect(all.chatStream.stop).toBe("tool_calls");
   });
 
   test("F-37 [divergence — to flip in the P2 tail]: continuation delta without a name after a tool result is silently lost on Messages", () => {

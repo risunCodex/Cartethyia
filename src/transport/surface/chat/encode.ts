@@ -5,12 +5,13 @@ import { reasoningTextOf } from "../../../protocol/reasoning-text";
 import { eventText, stopDetailsError } from "../adapters";
 import { isRecord } from "../../../protocol/codecs";
 import {
+  argumentsFrom,
   createToolCallTracker,
   trackToolCall,
   type ToolCallState,
 } from "../../../protocol/tool-identity";
 import { usageToChatWire, type OpenAiUsage } from "../../../providers/provider-usage";
-import { chatFinishReason } from "../../../protocol/stop-reason";
+import { chatFinishReasonForTerminal } from "../../../protocol/stop-reason";
 import { TEXT_ENCODER } from "../../../protocol/sse-frame";
 import { SurfaceStreamEncoder } from "../stream-frame";
 import type { ChatEncodeOptions, ChunkBase, JsonObject } from "./parse";
@@ -102,12 +103,15 @@ function mergedReasoningText(events: readonly CanonicalEvent[]): string {
 
 /**
  * Chat's `finish_reason`. Chat has no "cancelled"/"error" vocabulary of its
- * own: aborted streams are unread and failed streams carry their signal in the
- * error frame/envelope, so the table's words cover both and no reason defaults
- * to `stop`.
+ * own: aborted streams carry the failure word the table chose, and failed
+ * streams carry their signal in the error frame/envelope, so no reason
+ * defaults to `stop` on a terminal that did not complete (F-35).
  */
-function finishReason(stopReason: CanonicalStopReason | undefined): string {
-  return chatFinishReason(stopReason);
+function finishReason(
+  stopReason: CanonicalStopReason | undefined,
+  state: "complete" | "failed" | "aborted",
+): string {
+  return chatFinishReasonForTerminal(stopReason, state);
 }
 function eventToolCall(
   event: CanonicalEvent,
@@ -174,6 +178,7 @@ export function jsonCompletion(
   const toolCalls = new Map<number, ToolCallState>();
   const tracker = createToolCallTracker();
   let terminalFinishReason: string | null = null;
+  let terminalState: "complete" | "failed" | "aborted" | undefined;
   let usage: OpenAiUsage | null = null;
   const cancelled =
     options.cancelled === true || options.aborted === true || options.signal?.aborted === true;
@@ -193,27 +198,34 @@ export function jsonCompletion(
       continue;
     }
     if (event.type === "terminal") {
-      terminalFinishReason = finishReason(event.stop_reason);
+      terminalState = event.state;
+      terminalFinishReason = finishReason(event.stop_reason, event.state);
       if (!cancelled && event.state !== "aborted" && event.usage) usage = usageToChatWire(event.usage);
     }
   }
   if (cancelled) usage = null;
+  const namedToolCalls = [...toolCalls.values()]
+    .filter((tool) => tool.name !== undefined && tool.name.trim().length > 0)
+    .sort((a, b) => a.index - b.index);
+  // F-36: the dangling-stop guard the Messages surface has always applied —
+  // a `tool_calls` finish with zero nameable calls is a stop the client
+  // cannot act on (it would loop forever waiting to answer calls that are
+  // not there), so it downgrades to `stop`.
+  if (terminalFinishReason === "tool_calls" && namedToolCalls.length === 0)
+    terminalFinishReason = "stop";
   const message: JsonObject = {
     role: "assistant",
     content: content.length === 0 ? null : content,
     ...(reasoningContent.length === 0 ? {} : { reasoning_content: reasoningContent }),
   };
-  if (toolCalls.size > 0) {
-    message.tool_calls = [...toolCalls.values()]
-      .filter((tool) => tool.name !== undefined && tool.name.trim().length > 0)
-      .sort((a, b) => a.index - b.index)
-      .map((tool) => ({
-        id: tool.id,
-        type: "function",
-        // Zero-argument calls assemble as "{}": an empty string is not
-        // valid JSON for the client's parser.
-        function: { name: tool.name!, arguments: repairToolArguments(tool.arguments) },
-      }));
+  if (namedToolCalls.length > 0) {
+    message.tool_calls = namedToolCalls.map((tool) => ({
+      id: tool.id,
+      type: "function",
+      // Zero-argument calls assemble as "{}": an empty string is not
+      // valid JSON for the client's parser.
+      function: { name: tool.name!, arguments: repairToolArguments(tool.arguments) },
+    }));
   }
   const audio = events.map(eventAudio).findLast((value) => value !== undefined);
   if (audio !== undefined) message.audio = audio;
@@ -225,18 +237,21 @@ export function jsonCompletion(
     choices: [{ index: 0, message, finish_reason: terminalFinishReason }],
     usage,
   };
-  const terminal = events.findLast((event) => event.type === "terminal");
-  if (terminal?.type === "terminal" && terminal.state === "failed") {
+  if (terminalState === "failed") {
     // A failed terminal returns an error response, not a completion with a
     // finish_reason: the client must be able to tell the refusal/limit from a
     // finished answer. OpenAI error responses carry no `choices`.
+    const terminal = events.findLast(
+      (event): event is Extract<CanonicalEvent, { type: "terminal" }> =>
+        event.type === "terminal",
+    );
     const errorResult: JsonObject = {
       id,
       object: "chat.completion",
       created,
       model,
       usage,
-      error: stopDetailsError(terminal.stop_details, terminal.stop_reason),
+      error: stopDetailsError(terminal?.stop_details, terminal?.stop_reason),
     };
     const serviceTier = options.service_tier ?? options.serviceTier;
     if (serviceTier !== undefined) errorResult.service_tier = serviceTier;
@@ -279,6 +294,12 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
   private readonly includeUsage: boolean | undefined;
   private readonly cancelled: boolean;
   private emittedAny = false;
+  /** True once a delta carrying a real tool name has been emitted (F-36). */
+  private emittedNamedToolCall = false;
+  /** Call ids already introduced to the client (the id rides the first frame). */
+  private readonly emittedToolCallIds = new Set<string>();
+  /** Arguments bytes already emitted per call id (the pending-tail cursor). */
+  private readonly emittedToolArguments = new Map<string, number>();
   private previousReasoningSummaryIdentity: ReasoningSummaryIdentity | undefined;
   private previousReasoningSummaryText: string | undefined;
   private baseModel: string;
@@ -407,30 +428,35 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
       // The last carries the real id, the name, and the whole arguments.
       // Forwarding the slices made one write into dozens of nameless calls.
       //
-      // The discriminator is the tracker, not the id shape. Keying on a `call_`
-      // prefix dropped the argument continuations of every provider whose ids
-      // are shaped differently — Anthropic's `toolu_…`, the synthesized
-      // `call-N-frag` — so those calls reached the client with no arguments at
-      // all. A nameless delta is a slice only when its id is not already an
-      // established call; a continuation reuses the id the tracker holds.
-      if (tool.state.name === undefined && !this.tracker.states.has(tool.state.id)) {
-        return result;
-      }
+      // F-36: a call the upstream has not named yet is withheld entirely —
+      // a `function` delta without a name is a call the client cannot
+      // execute. Every fragment is still tracked (they accumulate under the
+      // id), and emission works on the pending tail: the first named frame
+      // carries the id, the name, and every fragment that arrived before it,
+      // exactly the shape Copilot's own last event had.
       const tracked = trackToolCall(this.tracker, {
         id: tool.state.id,
         name: tool.state.name,
         args: tool.state.arguments,
         index: tool.state.index,
       });
+      const resolvedName = tool.state.name ?? tracked.state.name;
+      if (resolvedName === undefined || resolvedName.trim().length === 0) return result;
+      const alreadyEmitted = this.emittedToolCallIds.has(tool.state.id);
+      const sent = this.emittedToolArguments.get(tool.state.id) ?? 0;
+      const pending = argumentsFrom(tracked.state, sent);
+      if (alreadyEmitted && pending.length === 0) return result;
       const delta: JsonObject = {
         index: tracked.index,
-        ...(tracked.isFirst ? { id: tool.state.id } : {}),
+        ...(alreadyEmitted ? {} : { id: tool.state.id }),
         type: "function",
         function: {
-          ...(tool.state.name === undefined ? {} : { name: tool.state.name }),
-          arguments: tool.state.arguments,
+          name: resolvedName,
+          arguments: pending,
         },
       };
+      this.emittedToolCallIds.add(tool.state.id);
+      this.emittedToolArguments.set(tool.state.id, sent + pending.length);
       result.push(
         this.withBase(
           [{ index: 0, delta: { tool_calls: [delta] }, finish_reason: null }],
@@ -439,6 +465,7 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
         ),
       );
       this.emittedAny = true;
+      this.emittedNamedToolCall = true;
       return result;
     }
     if (event.type === "keepalive") {
@@ -448,7 +475,7 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
     }
     if (event.type === "terminal") {
       this.terminalState = event.state;
-      this.terminalReason = finishReason(event.stop_reason);
+      this.terminalReason = finishReason(event.stop_reason, event.state);
       // A failed terminal is a real failure: emit an error frame with the
       // upstream's message instead of a `finish_reason: "error"` chunk. The
       // client receives the reason (rate limit, quota, upstream error) rather
@@ -459,6 +486,11 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
         this.emittedAny = true;
         return [{ error: stopDetailsError(event.stop_details, event.stop_reason) }];
       }
+      // F-36: the dangling-stop guard — a `tool_calls` finish with no
+      // nameable call emitted is a stop the client cannot act on, so it
+      // downgrades to `stop` (the same rule the Messages encoders apply).
+      if (this.terminalReason === "tool_calls" && !this.emittedNamedToolCall)
+        this.terminalReason = "stop";
       if (!this.cancelled && event.state !== "aborted" && event.usage)
         this.finalUsage = usageToChatWire(event.usage);
       const usage = this.cancelled || event.state === "aborted" ? null : this.finalUsage;
