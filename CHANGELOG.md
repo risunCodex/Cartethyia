@@ -86,6 +86,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **SenseNova provider ids renamed to name their realm.** `sensenova` →
+  `sensecn` (China, `token.sensenova.cn`) and `sensenova-intl` → `senseintl`
+  (`token.sensenova.ai`), displayed as "SenseNova (China)" / "SenseNova (Intl)".
+  A forward migration (0048, both database dialects) repoints existing
+  provider rows, accounts, models, routing settings, pool assignments, and
+  telemetry, so installed deployments keep working unchanged. Model ids
+  (`sensenova-6.8-flash`, the U1.5 image rows, …) are untouched — those are
+  the upstream's own names. No OAuth is affected: both realms are plain
+  API-key providers.
 - **Dashboard: more well-known providers.** NVIDIA NIM, GMI Cloud, Cerebras,
   TokenHarbor, and both Xiaomi MiMo plans now group under "Well Known API Key
   Providers" instead of the long-tail "Other" section.

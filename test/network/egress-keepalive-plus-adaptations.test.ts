@@ -85,8 +85,8 @@ describe("SenseNova providers", () => {
   });
 
   test("specs target the right realms", () => {
-    expect(SENSENOVA_SPEC.provider_id).toBe("sensenova");
-    expect(SENSENOVA_INTL_SPEC.provider_id).toBe("sensenova-intl");
+    expect(SENSENOVA_SPEC.provider_id).toBe("sensecn");
+    expect(SENSENOVA_INTL_SPEC.provider_id).toBe("senseintl");
     expect(SENSENOVA_SPEC.endpoint_paths_by_wire_family?.["chat"]).toBe("/chat/completions");
   });
 });

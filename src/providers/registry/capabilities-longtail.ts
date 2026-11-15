@@ -69,7 +69,7 @@ export const LONGTAIL_CAPABILITIES = {
       }),
     ),
   },
-  sensenova: {
+  sensecn: {
     loadAdapter: async () => createApiKeyAdapter((await import("../integrations/sensenova/provider")).SENSENOVA_SPEC),
     loadModels: async () => (await import("../integrations/sensenova/provider")).SENSENOVA_MODELS,
     loadModelDiscovery: discoveryCapability(
@@ -77,7 +77,7 @@ export const LONGTAIL_CAPABILITIES = {
       (module) => module.discoverSensenovaModels,
       ({ baseUrl, credential, fetcher }: ModelDiscoveryRequest) => ({
         baseUrl,
-        providerId: "sensenova",
+        providerId: "sensecn",
         ...(typeof credential === "string" && credential.trim().length > 0
           ? { credential }
           : {}),
@@ -85,7 +85,7 @@ export const LONGTAIL_CAPABILITIES = {
       }),
     ),
   },
-  "sensenova-intl": {
+  senseintl: {
     loadAdapter: async () => createApiKeyAdapter((await import("../integrations/sensenova/provider")).SENSENOVA_INTL_SPEC),
     loadModels: async () => (await import("../integrations/sensenova/provider")).SENSENOVA_INTL_MODELS,
     loadModelDiscovery: discoveryCapability(
@@ -93,7 +93,7 @@ export const LONGTAIL_CAPABILITIES = {
       (module) => module.discoverSensenovaModels,
       ({ baseUrl, credential, fetcher }: ModelDiscoveryRequest) => ({
         baseUrl,
-        providerId: "sensenova-intl",
+        providerId: "senseintl",
         ...(typeof credential === "string" && credential.trim().length > 0
           ? { credential }
           : {}),

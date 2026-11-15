@@ -26,8 +26,8 @@ const SENSENOVA_CHAT_PATH = "/chat/completions";
 /** Image-generation path below each realm's `/v1` base root. */
 const SENSENOVA_IMAGE_PATH = "/images/generations";
 
-export const SENSENOVA_PROVIDER_ID = "sensenova" as const;
-export const SENSENOVA_INTL_PROVIDER_ID = "sensenova-intl" as const;
+export const SENSENOVA_PROVIDER_ID = "sensecn" as const;
+export const SENSENOVA_INTL_PROVIDER_ID = "senseintl" as const;
 
 function sensenovaSpec(providerId: string): ApiKeyProviderSpec {
   return {
