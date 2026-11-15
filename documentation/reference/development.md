@@ -251,3 +251,44 @@ file, and the tests in `test/persistence/sqlite-type-parity.test.ts` and
   its columns. The same change binds interpolated values: the alias used to
   join the SQL text and drop every parameter, so a statement with a `${}`
   value reached SQLite with a hole in it.
+
+---
+
+## Memory usage (RSS) and reporting leaks
+
+What is normal, what is not, and what to do before you file anything.
+
+### RSS grows, and mostly that is by design
+
+- The JS runtime's allocator retains freed pages instead of returning them to
+  the OS immediately: RSS climbs to a working-set ceiling and stays there.
+  Cold-start RSS < steady-state RSS is the expected shape, not a leak.
+- Every startup phase logs `rss_mb`/`heap_used_mb`, and periodic runtime
+  metrics keep both coming (`CARTETHYIA_RUNTIME_METRICS_INTERVAL_MS`, default
+  30 s). Diff them over time — that is the evidence that decides everything.
+- Steady contributors: lazy module loading (per-provider integrations load on
+  first dispatch), the quota cache (1,024 entries, 15-minute TTL), telemetry
+  buffers, database pool sockets, and per-connection buffers.
+- Read the two numbers separately: `rss_mb` climbing while `heap_used_mb`
+  stays flat is allocator retention (normal). `heap_used_mb` climbing without
+  bound as the same traffic repeats is retained objects — worth investigating.
+- The gateway protects itself: when headroom runs low it sheds load with
+  `overloaded` (503) instead of dying. `CARTETHYIA_MEMORY_LIMIT_BYTES` sets
+  the ceiling; `CARTETHYIA_FORCED_GC` exists for diagnostics, not production
+  tuning.
+
+### Before you open a PR or issue about a memory leak
+
+1. **Update first.** Re-test on the latest version of the branch you run —
+   the leak you are seeing may already be fixed.
+2. **Reproduce without your modifications.** Run the same workload on an
+   unmodified checkout (or a published release):
+   - Leaks on the **stock build** → it is ours: open the issue with the
+     evidence below. A PR with the fix is even better.
+   - Leaks **only with your modifications** — your added feature, your patch,
+     your fork change — → the leak is in your code. Fix it on your side;
+     do not file it upstream. An RSS climb that starts with the feature you
+     added is the feature, not a leak.
+3. Evidence that makes a report actionable: the `rss_mb`/`heap_used_mb`
+   timeline over time, the exact version/commit, mode (lite/full), topology,
+   provider mix, and a minimal reproduction.
