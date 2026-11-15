@@ -7,6 +7,7 @@ import {
   type GenerationControls,
   type WireFamily,
 } from "../canonical-model";
+import { resolveDialect } from "./dialect/resolver";
 
 /** Capabilities declared by one resolved provider/model/route candidate. */
 interface RouteCapabilities {
@@ -20,6 +21,14 @@ interface RouteCapabilities {
   readonly webSearch: boolean;
   readonly tools: boolean;
   readonly parallelToolCalls: boolean;
+  /**
+   * F-19: the route's dialect policy forwards `tool_choice` at all. A
+   * dialect that drops the field (DeepSeek) cannot serve a FORCED selection —
+   * the model would choose freely while the client believes its choice was
+   * enforced — so a forced `tool_choice` is a routing requirement, not a
+   * silently-degraded field.
+   */
+  readonly toolChoice: boolean;
   readonly reasoning: boolean;
   readonly reasoningEncryptedContent: boolean;
   readonly responseJsonObject: boolean;
@@ -185,6 +194,12 @@ export function normalizeWireMaxTokens(controls: GenerationControls): Generation
 interface CapabilityProfileHolder {
   readonly capability_profile: Readonly<Record<string, boolean>>;
   readonly wire_family: WireFamily;
+  /** Catalog model id (the dialect heuristics match on it). */
+  readonly model_id?: string;
+  /** Provider id (the dialect heuristics match on it). */
+  readonly provider_id?: string;
+  /** Explicit wire dialect override (`models.dialect`), when the row sets one. */
+  readonly dialect?: string;
 }
 
 /** Projects a snapshot capability profile onto route capability declarations. */
@@ -208,6 +223,15 @@ export function routeCapabilitiesFor(candidate: CapabilityProfileHolder): RouteC
         : AUDIO_CAPABLE_WIRE_FAMILIES.has(candidate.wire_family),
     tools: profile.tools === true,
     parallelToolCalls: profile.parallelToolCalls === true,
+    // F-19: resolved from the route's dialect policy — the same policy the
+    // payload builder consults when it drops the field, so the router and the
+    // builder can never disagree about whether a forced tool_choice lands.
+    toolChoice: resolveDialect(
+      candidate.model_id ?? "",
+      candidate.provider_id ?? "",
+      candidate.wire_family,
+      candidate.dialect,
+    ).supportsToolChoice,
     reasoning: profile.reasoning === true,
     reasoningEncryptedContent: profile.reasoningEncryptedContent === true,
     responseJsonObject: profile.responseJsonObject !== false,
@@ -302,6 +326,7 @@ export type RequiredCapability =
   | "web_search"
   | "tools"
   | "parallel_tool_calls"
+  | "tool_choice"
   | "reasoning"
   | "reasoning.encrypted_content"
   | "response_format.json_object"
@@ -340,6 +365,21 @@ export function deriveRequiredCapabilities(
   // It remains a valid `RequiredCapability` for callers that opt in.
   if (request.tools?.length || parts.hasToolActivity) {
     capabilities.push("tools");
+  }
+  // F-19: a FORCED tool selection is a routing requirement. `tool_choice:
+  // "auto"` is the default behavior, so a dialect that drops the field
+  // changes nothing and stays servable; every other value — required, none,
+  // a named tool, a custom-tool selection, an allowed_tools restriction —
+  // silently changed semantics when the dialect policy dropped it, so the
+  // router now refuses such a candidate with a typed
+  // `capabilityUnsupported("tool_choice")` instead.
+  if (request.tool_choice !== undefined && request.tool_choice !== "auto") {
+    const choice = request.tool_choice;
+    // An allowed_tools selection naming nothing restricts nothing, so a
+    // dialect that drops it changes no semantics.
+    const isEmptyAllowedTools =
+      typeof choice === "object" && choice.type === "allowed_tools" && choice.names.length === 0;
+    if (!isEmptyAllowedTools) capabilities.push("tool_choice");
   }
   if (request.generation_controls.parallel_tool_calls) {
     capabilities.push("parallel_tool_calls");
@@ -435,6 +475,10 @@ function routeSupports(
   if (required === "parallel_tool_calls") {
     return capabilities.tools && capabilities.parallelToolCalls;
   }
+  // F-19: a forced tool_choice needs a route that both serves tools and
+  // forwards the field (its dialect policy's own claim, so the router and
+  // the payload builder agree).
+  if (required === "tool_choice") return capabilities.tools && capabilities.toolChoice;
   if (required === "reasoning") return capabilities.reasoning;
   if (required === "reasoning.encrypted_content") {
     return capabilities.reasoning && capabilities.reasoningEncryptedContent;
