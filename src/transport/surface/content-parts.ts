@@ -1,5 +1,33 @@
 import type { ContentPart } from "../../protocol/canonical-model";
 import { splitDataUrl } from "../../protocol/codecs";
+import { base64DecodedByteLength } from "../../protocol/image-clamp";
+
+/**
+ * F-42: the decoded-payload ceiling for one inline non-image attachment
+ * (file, document, audio). The clamp policy used to be image-specific, so a
+ * 40 MB base64 PDF passed ingress and poisoned every retry and replay of the
+ * request. Images keep their own richer policy (image-clamp.ts); everything
+ * else shares this one ceiling, enforced at the normalizer all three surface
+ * parsers use.
+ */
+export const ATTACHMENT_CLAMP_MAX_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Refuses an inline attachment whose decoded payload exceeds the ceiling,
+ * naming the kind and the size — a deterministic 400 at ingress instead of an
+ * upstream rejection after the body has been held, retried, and replayed.
+ *
+ * Only inline base64 payloads are measured: a `file_id`/`url` reference has no
+ * inline bytes to hold.
+ */
+export function assertInlineAttachmentSize(kind: string, data: unknown): void {
+  if (typeof data !== "string") return;
+  const decoded = base64DecodedByteLength(data);
+  if (decoded <= ATTACHMENT_CLAMP_MAX_BYTES) return;
+  throw new Error(
+    `${kind} attachment is ${(decoded / (1024 * 1024)).toFixed(1)} MB decoded; the limit is ${ATTACHMENT_CLAMP_MAX_BYTES / (1024 * 1024)} MB`,
+  );
+}
 
 /** Creates a canonical text content part without applying wire-specific parsing. */
 export function textPart(text: string): ContentPart {
@@ -63,8 +91,12 @@ export function normalizeInlineFile(raw: RawFileBlock): { data: unknown; media_t
   const inline = typeof raw.data === "string" ? raw.data : undefined;
   const split = inline === undefined ? undefined : splitDataUrl(inline);
   const declared = raw.media_type !== undefined && raw.media_type.length > 0 ? raw.media_type : undefined;
+  const data = split?.data ?? raw.data ?? "";
+  // F-42: the attachment ceiling applies at this shared normalizer — the file
+  // and document parsers of all three surfaces funnel through here.
+  assertInlineAttachmentSize("inline file", data);
   return {
-    data: split?.data ?? raw.data ?? "",
+    data,
     media_type: declared ?? split?.mediaType ?? "application/octet-stream",
   };
 }

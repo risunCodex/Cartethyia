@@ -106,6 +106,17 @@ export const CONFIG_SPEC = {
     max: Number.MAX_SAFE_INTEGER,
   },
   CARTETHYIA_SERVER_IDLE_TIMEOUT: { kind: "int", default: 60, min: 0, max: 86_400 },
+  // F-43: tool-result payload ceiling, in KiB of text per tool_result. 0 (the
+  // default) leaves results untouched — the truncation is opt-in because it
+  // rewrites client-visible content; an operator whose agents persist
+  // oversized tool outputs (the classic context killer) sets the ceiling and
+  // every surface inherits it at the canonical prepare stage.
+  CARTETHYIA_TOOL_RESULT_MAX_KB: {
+    kind: "int",
+    default: 0,
+    min: 0,
+    max: 1024 * 1024,
+  },
 
   // Graceful-shutdown drain: how long in-flight requests may finish naturally
   // before the drain aborts the stragglers. Sized above the common case (a

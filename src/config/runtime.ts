@@ -39,6 +39,14 @@ export function resolveIdleTimeout(): number {
   return readInt("CARTETHYIA_SERVER_IDLE_TIMEOUT", CONFIG_SPEC.CARTETHYIA_SERVER_IDLE_TIMEOUT);
 }
 
+/**
+ * F-43: the tool-result payload ceiling in KiB, or 0 when truncation is off
+ * (the default — it rewrites client-visible content, so it is opt-in).
+ */
+export function resolveToolResultMaxKb(): number {
+  return readInt("CARTETHYIA_TOOL_RESULT_MAX_KB", CONFIG_SPEC.CARTETHYIA_TOOL_RESULT_MAX_KB);
+}
+
 /** Resolves the graceful-shutdown drain window: time for in-flight requests to finish before abort. */
 export function resolveShutdownDrainWindowMs(): number {
   return readInt(

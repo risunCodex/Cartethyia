@@ -1,6 +1,6 @@
 import type { CanonicalMessage, CanonicalRequest, ContentPart, GenerationControls } from "../../../protocol/canonical-model";
 import { isRecord } from "../../../protocol/codecs";
-import { decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
+import { assertInlineAttachmentSize, decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
 import {
   applyServiceTier,
   parseReasoningIntent,
@@ -198,9 +198,12 @@ function parseInputContent(value: unknown): { parts: ContentPart[]; contentTypes
       continue;
     }
     if (type === "input_audio" || type === "output_audio" || type === "audio") {
+      const audioData = rawPart["data"] ?? rawPart["audio"] ?? "";
+      // F-42: the non-image attachment ceiling applies to audio too.
+      assertInlineAttachmentSize("audio", audioData);
       parts.push({
         kind: "audio",
-        data: rawPart["data"] ?? rawPart["audio"] ?? "",
+        data: audioData,
         media_type: readString(rawPart, "media_type") ?? "audio/mpeg",
       });
       contentTypes.push(type);

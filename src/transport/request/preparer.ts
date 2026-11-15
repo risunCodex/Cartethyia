@@ -18,6 +18,8 @@ import { allowsCliToolMappings } from "../../security/cli-client-fingerprint";
 import { dropIncompleteToolRounds, repairRequestToolCalls } from "../../protocol/translation/tool-repair";
 import { sanitizeRequestToolIds } from "../../protocol/translation/tool-id";
 import { redeclareWithdrawnTools } from "../../protocol/request/sent-tools";
+import { truncateToolResults } from "../../protocol/tool-result-truncate";
+import { resolveToolResultMaxKb } from "../../config/runtime";
 import { dropCorruptAttachments } from "../../protocol/translation/attachment-integrity";
 import { parseThinkingSuffix, withThinkingSuffixIntent } from "../../protocol/translation/thinking";
 import { nativeServicePathFor } from "../contracts";
@@ -453,6 +455,10 @@ export class ProxyRequestPreparer {
       // replays that call on every later turn and strict wires reject it —
       // re-declare the withdrawn names so the history stays dispatchable.
       effectiveRequest = redeclareWithdrawnTools(effectiveRequest);
+      // F-43: the operator-opt-in tool-result ceiling applies at the same
+      // canonical stage, so all three surfaces inherit one policy. Off (0)
+      // returns the same reference.
+      effectiveRequest = truncateToolResults(effectiveRequest, resolveToolResultMaxKb());
     }
     if (signal?.aborted)
       throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");

@@ -42,7 +42,8 @@ describe("F-20: statelessResponses strips the linkage fields once", () => {
 
   test("a stateless route without linkage is unchanged", () => {
     const request = requestWithConversation();
-    const plain: CanonicalRequest = { ...request, conversation: undefined };
+    const { conversation: _omit, ...plain } = request;
+    void _omit;
     expect(
       canonicalToResponsesPayload(plain, { statelessResponses: true }),
     ).toEqual(canonicalToResponsesPayload(plain));

@@ -8,7 +8,7 @@ import {
   scanToolPairingIssues,
   type ToolPairingIssue,
 } from "../../../protocol/tool-ledger";
-import { documentContentPart } from "../content-parts";
+import { assertInlineAttachmentSize, documentContentPart } from "../content-parts";
 import { canContainToolResult } from "../../../protocol/canonical-model";
 import { MessagesLedgerError } from "./errors";
 import { finiteNumber, stringValue } from "../../../protocol/codecs";
@@ -96,8 +96,12 @@ function parseBlock(value: unknown): ContentPart {
       sourceType === "base64" || sourceType === "url" || sourceType === "file" || sourceType === "text"
         ? sourceType
         : undefined;
+    const documentData = source.data ?? fileId ?? url ?? "";
+    // F-42: the messages document site does not go through
+    // normalizeInlineFile, so the ceiling is asserted here as well.
+    assertInlineAttachmentSize("document", documentData);
     return documentContentPart({
-      data: source.data ?? fileId ?? url ?? "",
+      data: documentData,
       media_type: stringValue(source.media_type) ? source.media_type : "application/octet-stream",
       title: stringValue(value.title) ? value.title : undefined,
       citations:
@@ -107,14 +111,18 @@ function parseBlock(value: unknown): ContentPart {
       file_id: fileId,
     });
   }
-  if (type === "audio")
+  if (type === "audio") {
+    const audioData = isRecord(value.source) ? value.source.data ?? "" : "";
+    // F-42: the non-image attachment ceiling applies to audio too.
+    assertInlineAttachmentSize("audio", audioData);
     return {
       kind: "audio",
-      data: isRecord(value.source) ? value.source.data ?? "" : "",
+      data: audioData,
       media_type: isRecord(value.source) && stringValue(value.source.media_type)
         ? value.source.media_type
         : "audio/mpeg",
     };
+  }
   if (type === "refusal") return { kind: "refusal", text: stringValue(value.refusal) ? value.refusal : "" };
   if (type === "tool_use") {
     if (!stringValue(value.id) || !stringValue(value.name)) {

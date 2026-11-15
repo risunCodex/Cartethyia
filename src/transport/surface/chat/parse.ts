@@ -2,7 +2,7 @@ import type { CanonicalMessage, ContentPart, GenerationControls } from "../../..
 import type { SurfaceInput } from "../adapters";
 import { isRecord } from "../../../protocol/codecs";
 import { asNumber } from "../../../shared/coerce";
-import { decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
+import { assertInlineAttachmentSize, decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
 import { applyServiceTier, parseStopSequences } from "../dialects";
 import { normalizeToolCallArguments } from "../../../protocol/tool-arguments";
 import { readNumber, readString } from "../../../protocol/codecs";
@@ -104,9 +104,12 @@ function parseContentPart(value: unknown): ContentPart {
     // `{data, format|media_type}` shape for Responses-origin blocks.
     const nested = isRecord(value.input_audio) ? value.input_audio : value;
     const format = readString(nested, "format") ?? readString(nested, "media_type");
+    const audioData = nested.data ?? nested.audio ?? "";
+    // F-42: the non-image attachment ceiling applies to audio too.
+    assertInlineAttachmentSize("audio", audioData);
     return {
       kind: "audio",
-      data: nested.data ?? nested.audio ?? "",
+      data: audioData,
       media_type: audioFormatToMediaType(format),
     };
   }
