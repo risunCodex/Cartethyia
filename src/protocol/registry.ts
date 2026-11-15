@@ -22,6 +22,12 @@ interface CodecContext {
    */
   readonly dialectPolicy?: DialectPolicy;
   /**
+   * F-20: the upstream does not persist responses — the Responses codec
+   * strips `previous_response_id`/`conversation` instead of forwarding ids
+   * the upstream can only answer with 404.
+   */
+  readonly statelessResponses?: boolean;
+  /**
    * Resolved thinking config (see `translation/dialect/thinking-ladder`).
    * Absent = the codec's own default behavior (today's exact clamp/ladder).
    */
@@ -93,6 +99,7 @@ type CodecModule =
           readonly dialectPolicy?: DialectPolicy;
           readonly thinking?: ThinkingConfig;
           readonly maxOutputTokens?: number;
+          readonly statelessResponses?: boolean;
         },
       ) => Record<string, unknown>;
       readonly decodeWireResponse: (
@@ -190,6 +197,9 @@ export async function encodeWireRequest(
       : { maxOutputTokens: context.maxOutputTokens }),
     ...(context?.dialectPolicy === undefined ? {} : { dialectPolicy: context.dialectPolicy }),
     ...(context?.thinking === undefined ? {} : { thinking: context.thinking }),
+    ...(context?.statelessResponses === undefined
+      ? {}
+      : { statelessResponses: context.statelessResponses }),
   });
 }
 

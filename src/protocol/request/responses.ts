@@ -89,6 +89,14 @@ export function canonicalToResponsesPayload(
     readonly dialectPolicy?: DialectPolicy;
     readonly thinking?: ThinkingConfig;
     readonly maxOutputTokens?: number;
+    /**
+     * F-20: the upstream does not persist responses — a
+     * `previous_response_id` (even a real `response.id` from an earlier turn)
+     * answers 404. Continuity comes from the full `input` history, so the
+     * codec strips the linkage fields once, declaratively, instead of every
+     * stateless provider deleting them in its own prePayload.
+     */
+    readonly statelessResponses?: boolean;
   } = {},
 ): Record<string, unknown> {
   const supportsPromptCaching = options.supportsPromptCaching ?? true;
@@ -330,10 +338,14 @@ export function canonicalToResponsesPayload(
       payload.tool_choice = request.tool_choice;
     }
   }
-  if (request.conversation?.previous_response_id !== undefined)
-    payload.previous_response_id = request.conversation.previous_response_id;
-  if (request.conversation?.conversation_id !== undefined)
-    payload.conversation = request.conversation.conversation_id;
+  if (options.statelessResponses !== true) {
+    // A stateful route preserves the linkage verbatim; a stateless one has no
+    // response store to look the id up in (F-20).
+    if (request.conversation?.previous_response_id !== undefined)
+      payload.previous_response_id = request.conversation.previous_response_id;
+    if (request.conversation?.conversation_id !== undefined)
+      payload.conversation = request.conversation.conversation_id;
+  }
   if (request.metadata !== undefined) payload.metadata = request.metadata;
   if (request.reasoning) {
     const reasoning: Record<string, unknown> = {};

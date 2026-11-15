@@ -101,6 +101,12 @@ export interface OpenAICompatibleAdapterConfig {
   readonly supports_prompt_caching?: boolean;
   /** Chat wire field used for the maximum completion token limit. */
   readonly chat_token_limit_field?: "max_tokens" | "max_completion_tokens";
+  /**
+   * F-20: the upstream does not persist responses — the Responses codec
+   * strips `previous_response_id`/`conversation` declaratively instead of
+   * each provider deleting them in `prePayload`.
+   */
+  readonly stateless_responses?: boolean;
   /** Final payload mutation hook — runs after canonical translation, before serialization. Lets a provider promote extension-namespaced `generation_controls` fields (e.g. Cerebras `extra_body`) without a fetch-wrapping hack. */
   /**
    * Per-dispatch dynamic header hook, applied after `extra_headers` (so it
@@ -289,6 +295,7 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
       ...(context.image_clamp_max_bytes === undefined
         ? {}
         : { maxBytesOverride: context.image_clamp_max_bytes }),
+      ...(this.config.stateless_responses === true ? { statelessResponses: true } : {}),
       dialectPolicy,
       thinking,
     });
