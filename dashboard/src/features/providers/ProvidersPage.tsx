@@ -848,6 +848,9 @@ const WELL_KNOWN_API_KEY_IDS = new Set([
   "tokenharbor",
   "xiaomipg",
   "xiaomitp",
+  // SenseNova: two realms (China + Intl) but one household name.
+  "sensecn",
+  "senseintl",
 ]);
 
 function hasInteractiveOAuth(provider: ProviderResponse): boolean {
