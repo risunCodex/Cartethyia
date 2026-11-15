@@ -159,6 +159,38 @@ function qoderEnvelopeMessage(rec: Record<string, unknown>): string {
 }
 
 /**
+ * The queue shape out of a queued envelope, e.g. `queueType=p4
+ * subCode=RESOURCE_LIMIT`.
+ *
+ * The queue code alone (`10605`) conflates two different upstream states: a
+ * capacity queue that admits within the stated interval, and a sustained
+ * priority-class pin (observed as `queueType: "p4"` with
+ * `subCode: "RESOURCE_LIMIT"` on every account, realm, and model while quota
+ * reads healthy) that is an egress/machine-dimension risk signal, not
+ * congestion. Those fields ride the envelope body, so they are surfaced on
+ * the error detail verbatim — operators need to see `p4` in telemetry to
+ * tell "wait it out" from "your egress is flagged", and the account-health
+ * machinery keys its cooldown evidence off the same detail.
+ */
+function qoderQueueShapeTags(rec: Record<string, unknown>): string {
+  const sources = [rec["body"], rec].filter(
+    (value): value is Record<string, unknown> =>
+      typeof value === "object" && value !== null && !Array.isArray(value),
+  );
+  const tags: string[] = [];
+  for (const key of ["queueType", "subCode", "queue_type", "sub_code"]) {
+    for (const source of sources) {
+      const value = source[key];
+      if (typeof value === "string" && value.trim().length > 0) {
+        tags.push(`${key}=${value.trim()}`);
+        break;
+      }
+    }
+  }
+  return tags.join(" ");
+}
+
+/**
  * Splits one SSE `data:` payload into frames:
  * - the envelope form `{"headers":...,"body":"<json>","statusCodeValue":200}`,
  * - a direct OpenAI chunk `{"choices":[...]}`,
@@ -193,19 +225,38 @@ export function qoderEnvelopeToFrames(data: string): Array<{ event: string | nul
   const rec = envelope as Record<string, unknown>;
   if (rec["statusCodeValue"] !== undefined && rec["statusCodeValue"] !== 200) {
     const status = typeof rec["statusCodeValue"] === "number" ? (rec["statusCodeValue"] as number) : 502;
-    const detail = qoderEnvelopeMessage(rec);
-    const identifier = upstreamErrorIdentifier(rec["body"]) ?? upstreamErrorIdentifier(rec);
-    const queuedWaitMs = isUpstreamQueued(rec["body"]) ?? false;
+    // The body rides the envelope as a JSON *string* on some deployments and
+    // as an object on others. The queue classifier and the retry-after reader
+    // are record-shaped: a string body reached them unparsed, so a queued
+    // stream classified as a plain 403 (`authentication_failed`) and the
+    // priority class (`queueType`/`subCode`) never surfaced. Parse once here
+    // so every consumer sees the same record.
+    let bodyForClassification: unknown = rec["body"];
+    if (typeof bodyForClassification === "string" && /^\s*[{\[]/.test(bodyForClassification)) {
+      try {
+        bodyForClassification = JSON.parse(bodyForClassification);
+      } catch {
+        // keep the raw string; the extractors handle text bodies
+      }
+    }
+    const detail = qoderEnvelopeMessage({ ...rec, body: bodyForClassification });
+    const identifier =
+      upstreamErrorIdentifier(bodyForClassification) ?? upstreamErrorIdentifier(rec);
+    const queuedWaitMs = isUpstreamQueued(bodyForClassification) ?? false;
     const waitMs = queuedWaitMs
-      ? (queueRetryAfterMs(rec["body"]) ?? undefined)
+      ? (queueRetryAfterMs(bodyForClassification) ?? undefined)
       : undefined;
     const classification = queuedWaitMs
       ? { code: "upstream_queued" as const, status: 503, origin: "upstream" as const }
       : classifyUpstreamError(status, identifier);
+    const queueTags = queuedWaitMs
+      ? qoderQueueShapeTags({ ...rec, body: bodyForClassification })
+      : "";
+    const queueDetail = queueTags.length > 0 ? `${detail} [${queueTags}]`.trim() : detail;
     throw new GatewayError(
       classification.code,
       classification.status,
-      detail.length > 0 ? `${detail} (request {requestId}). The upstream came back empty-handed — retry 🌙` : `Qoder stream envelope returned HTTP ${status} (request {requestId}). The upstream came back empty-handed — retry 🌙`,
+      queueDetail.length > 0 ? `${queueDetail} (request {requestId}). The upstream came back empty-handed — retry 🌙` : `Qoder stream envelope returned HTTP ${status} (request {requestId}). The upstream came back empty-handed — retry 🌙`,
       {
         providerId: QODER_PROVIDER_ID,
         providerStatus: status,
