@@ -58,6 +58,14 @@ export interface OAuthExchangeResult extends OAuthAccountIdentity {
    * `auth_state`.
    */
   readonly client_secret?: string;
+  /**
+   * The storage kind the minted credential should be filed under. Flows that
+   * end by minting a durable API credential (the ZCode plan lane's login JWT)
+   * declare `api_key`, so the account dispatches through the api-key contract
+   * instead of failing its kind assertion with an oauth row. Absent = the
+   * default: the account is a plain `oauth` credential.
+   */
+  readonly credentialKind?: "api_key" | "oauth";
 }
 
 export interface OAuthDeviceStartResult {

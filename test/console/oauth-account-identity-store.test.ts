@@ -103,3 +103,48 @@ test("WorkOS email/name learned at login is stored before the identity sweep", a
     }
   }
 });
+
+test("an OAuth flow that mints an API credential files the account as api_key", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cartethyia-oauth-kind-"));
+  const sqlite = createSqliteDatabase(join(dir, "cartethyia.sqlite"));
+  try {
+    await applySqliteMigrations(sqlite);
+    const db = buildSqliteHandle(sqlite).db;
+    const tenantId = randomUUID();
+    await db.insert(tenants).values({ id: tenantId, name: "Operator", status: "active" });
+    await db.insert(providers).values({ id: "zcode-start" });
+    const store = new DrizzleOAuthAccountStore(db);
+
+    // The ZCode plan lane's login JWT IS the api credential the dispatch
+    // contract asserts; the flow declares the storage kind explicitly.
+    const { accountId } = await store.persistAccount(tenantId, "zcode-start", {
+      label: "operator@example.com",
+      access: "zcode-plan-jwt",
+      refresh: "",
+      expiresAt: new Date(Date.now() + 60_000),
+      credentialKind: "api_key",
+      auth_state: { credentialMode: "api_key", tokenKind: "zcode-plan-jwt" },
+    });
+    const row = await db
+      .select({ kind: providerAccounts.credentialKind, staticToken: providerAccounts.staticToken })
+      .from(providerAccounts)
+      .where(eq(providerAccounts.id, accountId));
+    expect(row[0]?.kind).toBe("api_key");
+
+    // The default is unchanged: a plain OAuth login is still an oauth row.
+    await store.persistAccount(tenantId, "zcode-start", {
+      label: "plain@example.com",
+      access: "plain-access",
+      refresh: "plain-refresh",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const rows = await db
+      .select({ kind: providerAccounts.credentialKind, label: providerAccounts.label })
+      .from(providerAccounts)
+      .where(eq(providerAccounts.providerId, "zcode-start"));
+    expect(rows.find((entry) => entry.label === "plain@example.com")?.kind).toBe("oauth");
+  } finally {
+    sqlite.close();
+    removeDir(dir);
+  }
+});

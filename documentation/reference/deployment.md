@@ -553,6 +553,21 @@ Cartethyia ships protections that require no extra tooling:
 | SSRF / egress | Outbound fetch is SSRF-validated; egress can be pinned to network pools. |
 | Telemetry/content safety | Secrets scrubbed from logs; payload captures are bounded and retention-pruned. |
 
+### The default gateway API key
+
+The first-boot wizard can seed a default gateway key (`CARTETHYIA_API_KEY`).
+Treat it as an **admin credential, not a shareable key**. It is created with
+the broadest grants: in the console it can edit other API keys — their limits,
+scopes, and client-router policies — enable or disable them, and change
+routing, pools, and provider settings. Sharing it with a teammate or embedding
+it in a client hands them the whole deployment.
+
+Give every consumer their own key instead — the API-key modal creates scoped
+keys with per-key concurrency, RPM, and token budgets — and keep the default
+key for the operator alone, or disable it once real keys exist. If it leaks,
+rotate it and re-issue the consumer keys: a leaked admin key is not something
+an audit trail can undo.
+
 ---
 
 ## DDoS hardening

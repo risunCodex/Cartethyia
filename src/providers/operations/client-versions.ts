@@ -502,6 +502,30 @@ export function getRouteIdentityVersions(): {
 export async function refreshProviderClientVersions(): Promise<void> {
   const resolversToRefresh = [...new Set(Object.values(PROVIDER_VERSION_RESOLVERS))];
   await Promise.allSettled(resolversToRefresh.map((resolver) => resolver.ensure()));
+  scheduleFallbackRetry(resolversToRefresh);
+}
+
+let fallbackRetryTimer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * One bounded retry for resolvers still on their pinned fallback.
+ *
+ * `ensure()` swallows per-source failures (the loader returns null rather
+ * than throwing, so there is no error to observe), and the monitor's tick is
+ * 30 minutes — a transient blip would otherwise leave a cold identity stale
+ * for the whole interval while every other client is current. One retry
+ * 90 seconds after the pass closes most of that gap. Unref'd and single-shot:
+ * it never holds the process open, never stacks up, and a resolver that
+ * recovers on the retry reports `latest` on the next pinned-versions read.
+ */
+function scheduleFallbackRetry(resolvers: readonly ClientVersionResolver[]): void {
+  if (fallbackRetryTimer !== undefined) return;
+  const stuck = resolvers.filter((resolver) => resolver.snapshot().source === "fallback");
+  if (stuck.length === 0) return;
+  fallbackRetryTimer = setTimeout(() => {
+    fallbackRetryTimer = undefined;
+    void Promise.allSettled(stuck.map((resolver) => resolver.ensure()));
+  }, 90_000);
+  (fallbackRetryTimer as unknown as { unref?: () => void }).unref?.();
 }
 
 /** One client identity still running on its pinned fallback. */

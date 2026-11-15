@@ -38,6 +38,8 @@ export interface StaticExchangeInput {
   /** Explicit storage horizon when the issuer states one (e.g. a JWT `exp`). */
   readonly expiresAt?: Date | undefined;
   readonly auth_state?: Readonly<Record<string, unknown>> | undefined;
+  /** Storage kind the minted credential files under (see `OAuthExchangeResult`). */
+  readonly credentialKind?: "api_key" | "oauth" | undefined;
 }
 
 export function staticExchangeResult(input: StaticExchangeInput): OAuthExchangeResult {
@@ -48,6 +50,7 @@ export function staticExchangeResult(input: StaticExchangeInput): OAuthExchangeR
     expiresAt: input.expiresAt ?? new Date(Date.now() + STATIC_CREDENTIAL_HORIZON_MS),
     ...(label ? { accountLabel: label } : {}),
     ...(input.auth_state === undefined ? {} : { auth_state: input.auth_state }),
+    ...(input.credentialKind === undefined ? {} : { credentialKind: input.credentialKind }),
   };
 }
 

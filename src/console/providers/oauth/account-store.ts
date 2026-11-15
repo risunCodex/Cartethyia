@@ -164,7 +164,7 @@ export class DrizzleOAuthAccountStore implements OAuthAccountStore {
               // concurrent rename cannot lose to the login.
               label: sql`CASE WHEN lower(trim(${providerAccounts.label})) = lower(trim(${providerAccounts.providerId})) OR lower(trim(${providerAccounts.label})) = lower(trim(${label})) THEN ${label} ELSE ${providerAccounts.label} END`,
               credentialCiphertext,
-              credentialKind: "oauth",
+              credentialKind: input.credentialKind ?? "oauth",
               status: "active",
               consecutiveFailures: 0,
               cooldownUntil: null,
@@ -214,7 +214,7 @@ export class DrizzleOAuthAccountStore implements OAuthAccountStore {
             providerId,
             tenantId,
             label: generatedLabel,
-            credentialKind: "oauth",
+            credentialKind: input.credentialKind ?? "oauth",
             credentialCiphertext,
             credentialFingerprint,
             status: "active",

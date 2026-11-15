@@ -149,6 +149,11 @@ export class ZcodeStartPlanOAuthClient extends OAuthDeviceFlow {
         ? claims.exp * 1000 : Date.now() + NO_EXPIRY_MS),
       accountLabel: email || String(userId),
       auth_state: { credentialMode: "api_key", tokenKind: "zcode-plan-jwt" },
+      // The plan lane's dispatch contract files this credential as api_key —
+      // the login JWT IS the bearer the endpoint accepts. Without this the
+      // account is stored as kind=oauth and every dispatch fails the kind
+      // assertion ("api_key credential required") before reaching upstream.
+      credentialKind: "api_key",
     });
     return { status: "complete", result };
   }
