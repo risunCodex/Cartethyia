@@ -107,6 +107,19 @@ export interface OpenAICompatibleAdapterConfig {
    * each provider deleting them in `prePayload`.
    */
   readonly stateless_responses?: boolean;
+  /**
+   * F-22: the upstream only answers streams — the payload forces
+   * `stream: true` declaratively instead of every provider's prePayload
+   * assigning it.
+   */
+  readonly requires_upstream_stream?: boolean;
+  /**
+   * F-18 (`setControls`): static wire facts the upstream requires, applied
+   * when the caller left the field unset. Only ABSENT fields are defaulted —
+   * a caller's explicit value always wins — so this carries facts like
+   * `store: false` that used to be written as ad-hoc prePayload lines.
+   */
+  readonly default_payload?: Readonly<Record<string, unknown>>;
   /** Final payload mutation hook — runs after canonical translation, before serialization. Lets a provider promote extension-namespaced `generation_controls` fields (e.g. Cerebras `extra_body`) without a fetch-wrapping hack. */
   /**
    * Per-dispatch dynamic header hook, applied after `extra_headers` (so it
@@ -299,6 +312,14 @@ export class OpenAICompatibleAdapter extends BaseProviderAdapter {
       dialectPolicy,
       thinking,
     });
+    // F-22 / F-18: the declarative wire facts — forced stream, and defaults
+    // for absent controls — applied once here instead of per prePayload.
+    if (this.config.requires_upstream_stream === true) payload["stream"] = true;
+    if (this.config.default_payload !== undefined) {
+      for (const [key, value] of Object.entries(this.config.default_payload)) {
+        if (payload[key] === undefined || payload[key] === null) payload[key] = value;
+      }
+    }
     if (
       wireFamily !== "messages" &&
       this.config.streaming_usage_mode !== "none" &&

@@ -472,8 +472,6 @@ function normalizeGrokPayload(
   candidate: ProviderDispatchTarget,
   context: ProviderDispatchContext,
 ): void {
-  payload.stream = true;
-  if (payload.store === undefined || payload.store === null) payload.store = false;
   payload.input = normalizeInput(payload.input);
   normalizeTools(payload);
 
@@ -545,6 +543,11 @@ export const GrokConfig = withBearerAuthentication({
   // 2026-11-02). Declared once here; the Responses codec strips the linkage
   // fields instead of this adapter deleting them in its own prePayload.
   stateless_responses: true,
+  // F-22 / F-18: the wire facts as declaration, not prePayload lines — the
+  // proxy only answers streams, and `store` defaults to false when the caller
+  // left it unset.
+  requires_upstream_stream: true,
+  default_payload: { store: false },
   // The real CLI compresses the request body with zstd (sampler
   // `request_compression`); stamp the matching Content-Encoding and compress.
   request_compression: "zstd",
