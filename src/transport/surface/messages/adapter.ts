@@ -14,7 +14,7 @@ import {
   systemBlocks,
   applyMessagesToolLedger,
 } from "./parse";
-import { CANONICAL_REASONING_EFFORTS, parseReasoningIntent, parseToolChoice } from "../dialects";
+import { CANONICAL_REASONING_EFFORTS, applyServiceTier, parseReasoningIntent, parseStopSequences, parseToolChoice, validateToolChoice } from "../dialects";
 import { groupedBlocks, startModel, stopData } from "./encode";
 import { finiteNumber, stringValue } from "../../../protocol/codecs";
 import { ANTHROPIC_DEFAULT_MAX_TOKENS } from "../../../protocol/request/messages";
@@ -61,14 +61,16 @@ export class MessagesAdapter implements SurfaceAdapter {
       parsedMessages.filter((message) => message.role !== "system"),
     );
     const disabledParallel = body.disable_parallel_tool_use ?? body.disableParallelToolUse;
-    const stop = body.stop_sequences ?? body.stopSequences;
+    // F-11: the shared stop verdict — Messages used to forward arrays with
+    // numbers or objects in them verbatim.
+    const stop = parseStopSequences(body.stop_sequences ?? body.stopSequences, "Messages");
     const topP = body.top_p ?? body.topP;
     const topK = body.top_k ?? body.topK;
     const generation_controls: GenerationControls = {
       ...(finiteNumber(body.temperature) ? { temperature: body.temperature } : {}),
       ...(finiteNumber(topP) ? { top_p: topP } : {}),
       ...(finiteNumber(topK) ? { top_k: topK } : {}),
-      ...(Array.isArray(stop) || stringValue(stop) ? { stop } : {}),
+      ...(stop === undefined ? {} : { stop }),
       max_tokens: maxTokens,
       ...(disabledParallel !== undefined ? { parallel_tool_calls: disabledParallel !== true } : {}),
       ...extensionControls(
@@ -76,6 +78,10 @@ export class MessagesAdapter implements SurfaceAdapter {
         isRecord(body.metadata) ? (body.metadata.user_id ?? body.metadata.userId) : undefined,
       ),
     };
+    // F-16: the shared service_tier rule — Anthropic's `standard_only` rides
+    // the extension path (it is not in the canonical set), `auto` lands in
+    // the canonical slot, unknown values forward verbatim.
+    applyServiceTier(generation_controls, body.service_tier, "extension:service_tier");
     const reasoningOptions: MessagesParseOptions =
       headers === undefined ? options : { ...options, headers };
     // `output_config` carries the effort/task-budget controls Anthropic
@@ -120,6 +126,8 @@ export class MessagesAdapter implements SurfaceAdapter {
     const cache = cacheHint(body, system);
     const tools = parseTools(body.tools);
     const toolChoice = parseToolChoice(body.tool_choice ?? body.toolChoice, "messages");
+    // F-6: the same cross-check every surface applies.
+    if (toolChoice !== undefined) validateToolChoice(toolChoice, tools);
     return {
       model: body.model,
       messages,

@@ -531,7 +531,10 @@ export function canonicalToClaudeMessagesPayload(
   if (isRecord(container)) payload.container = container;
   const inferenceGeo = controls["extension:inference_geo"];
   if (stringValue(inferenceGeo)) payload.inference_geo = inferenceGeo;
-  const serviceTier = controls["extension:service_tier"];
+  // F-16: the tier can arrive in the canonical slot (the shared ingress rule
+  // routes known SERVICE_TIERS values there) or in the extension slot
+  // (Anthropic's `standard_only`, or an unknown value forwarded verbatim).
+  const serviceTier = controls.service_tier ?? controls["extension:service_tier"];
   if (serviceTier === "auto" || serviceTier === "standard_only") {
     payload.service_tier = serviceTier;
   } else if (serviceTier !== undefined) {

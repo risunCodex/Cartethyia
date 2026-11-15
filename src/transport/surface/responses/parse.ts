@@ -2,11 +2,13 @@ import type { CanonicalMessage, CanonicalRequest, ContentPart, GenerationControl
 import { isRecord } from "../../../protocol/codecs";
 import { decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
 import {
-  isServiceTier,
+  applyServiceTier,
   parseReasoningIntent,
   parseResponseFormat,
+  parseStopSequences,
   parseToolChoice,
   parseToolsArray,
+  validateToolChoice,
 } from "../dialects";
 import { normalizeToolCallArguments } from "../../../protocol/tool-arguments";
 import { dropUnpairedToolResults } from "../../../protocol/tool-ledger";
@@ -628,8 +630,12 @@ export function parseResponsesRequest(input: unknown): CanonicalRequest {
   }
   const parallel = readBoolean(bodyValue, "parallel_tool_calls");
   if (parallel !== undefined) controls.parallel_tool_calls = parallel;
-  const serviceTier = readString(bodyValue, "service_tier");
-  if (serviceTier !== undefined && isServiceTier(serviceTier)) controls.service_tier = serviceTier;
+  // F-16: one shared service_tier rule instead of the silent drop.
+  applyServiceTier(controls, readString(bodyValue, "service_tier"), "extension:service_tier");
+  // F-11: `stop` was not on the extension whitelist and vanished; every other
+  // surface validates and carries it, so Responses does too.
+  const stop = parseStopSequences(bodyValue["stop"], "Responses");
+  if (stop !== undefined) controls.stop = stop;
   // The Responses API accepts `temperature`/`top_p` as top-level generation
   // parameters; the wire-support matrix already lists them for `responses`.
   const temperature = readNumber(bodyValue, "temperature");
@@ -706,6 +712,8 @@ export function parseResponsesRequest(input: unknown): CanonicalRequest {
   }
   if (tools !== undefined) request.tools = tools;
   const toolChoice = parseToolChoice(bodyValue["tool_choice"], "responses");
+  // F-6: the same cross-check every surface applies.
+  if (toolChoice !== undefined) validateToolChoice(toolChoice, tools);
   if (toolChoice !== undefined) request.tool_choice = toolChoice;
   const reasoning =
     parseReasoningIntent(

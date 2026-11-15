@@ -41,14 +41,24 @@ describe("completion adapter reasoning effort", () => {
     }
   });
 
-  test("an invalid effort yields no reasoning intent", () => {
-    const parsed = parseWith({ reasoning_effort: "ultra" });
-    expect(parsed.reasoning).toBeUndefined();
+  test("an invalid effort is a 400 naming the value (F-13)", () => {
+    // The shared parser refuses an effort the canonical model does not know:
+    // silently dropping it produced a request with no thinking where thinking
+    // was explicitly requested.
+    expect(() => parseWith({ reasoning_effort: "ultra" })).toThrow(
+      'reasoning effort "ultra" is not one of',
+    );
   });
 
   test("a non-string effort yields no reasoning intent", () => {
     expect(parseWith({ reasoning_effort: 5 }).reasoning).toBeUndefined();
     expect(parseWith({ reasoning_level: null }).reasoning).toBeUndefined();
+  });
+
+  test("a sub-floor budget_tokens is a 400 (F-13)", () => {
+    expect(() => parseWith({ reasoning: { budget_tokens: 512 } })).toThrow(
+      "must be an integer of at least 1024",
+    );
   });
 
   test("no effort field yields no reasoning intent", () => {

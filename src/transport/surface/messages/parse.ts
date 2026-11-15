@@ -393,9 +393,9 @@ export function extensionControls(body: MessagesWireObject, userId: unknown): Ge
   if (contextManagement !== undefined)
     extensions["extension:context_management"] = contextManagement;
   if (userId !== undefined) extensions["extension:metadata_user_id"] = userId;
-  // Anthropic top-level params with no canonical slot pass through verbatim.
-  if (body.service_tier === "auto" || body.service_tier === "standard_only")
-    extensions["extension:service_tier"] = body.service_tier;
+  // service_tier is applied by the shared F-16 rule in the adapter
+  // (`applyServiceTier`), which routes known tiers to the canonical slot and
+  // forwards the rest — including Anthropic's `standard_only` — verbatim.
   if (isRecord(body.container)) extensions["extension:container"] = body.container;
   if (stringValue(body.inference_geo)) extensions["extension:inference_geo"] = body.inference_geo;
   if (stringValue(body.user_profile_id))

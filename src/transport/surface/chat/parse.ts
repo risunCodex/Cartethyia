@@ -3,7 +3,7 @@ import type { SurfaceInput } from "../adapters";
 import { isRecord } from "../../../protocol/codecs";
 import { asNumber } from "../../../shared/coerce";
 import { decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
-import { SERVICE_TIERS } from "../dialects";
+import { applyServiceTier, parseStopSequences } from "../dialects";
 import { normalizeToolCallArguments } from "../../../protocol/tool-arguments";
 import { readNumber, readString } from "../../../protocol/codecs";
 import type { OpenAiUsage } from "../../../providers/provider-usage";
@@ -291,13 +291,12 @@ export function parseGenerationControls(body: JsonObject): GenerationControls {
     addExtension(controls, "extension:omit_encrypted_reasoning", body.omit_encrypted_reasoning);
   if (typeof body.parallel_tool_calls === "boolean")
     controls.parallel_tool_calls = body.parallel_tool_calls;
-  if (typeof body.service_tier === "string") controls.service_tier = body.service_tier;
-  if (
-    typeof body.stop === "string" ||
-    (Array.isArray(body.stop) && body.stop.every((part) => typeof part === "string"))
-  ) {
-    controls.stop = body.stop as string | readonly string[];
-  }
+  // F-16: one shared service_tier rule — known tier into the canonical slot,
+  // anything else forwarded verbatim as an extension.
+  applyServiceTier(controls, body.service_tier, "extension:service_tier");
+  // F-11: one shared stop verdict — strings only, 1..64 chars each, ≤ 4.
+  const stop = parseStopSequences(body.stop, "Chat");
+  if (stop !== undefined) controls.stop = stop;
   const tokenLimit = nonNegativeNumber(body.max_tokens);
   const completionLimit = nonNegativeNumber(body.max_completion_tokens);
   if (tokenLimit !== undefined) controls.max_tokens = tokenLimit;
@@ -342,11 +341,5 @@ export function parseGenerationControls(body: JsonObject): GenerationControls {
     addExtension(controls, "extension:web_search_options", body.web_search_options);
   if (typeof body.prompt_cache_key === "string" && body.prompt_cache_key.length > 0)
     addExtension(controls, "extension:prompt_cache_key", body.prompt_cache_key);
-  if (
-    SERVICE_TIERS.has(String(body.service_tier)) === false &&
-    typeof body.service_tier === "string"
-  ) {
-    addExtension(controls, "extension:service_tier", body.service_tier);
-  }
   return controls;
 }

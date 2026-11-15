@@ -15,6 +15,7 @@ import {
   parseResponseFormat,
   parseToolChoice,
   parseToolsArray,
+  validateToolChoice,
 } from "../dialects";
 import {
   asJsonBytes,
@@ -71,6 +72,9 @@ export class ChatAdapter implements SurfaceAdapter {
     const controls = parseGenerationControls(body);
     const toolChoice = parseToolChoice(body.tool_choice, "chat");
     const responseFormat = parseResponseFormat(body.response_format);
+    // F-6: a named selection that no declared tool satisfies is a 400 naming
+    // the missing tool, not a field the upstream gets to misread.
+    if (toolChoice !== undefined) validateToolChoice(toolChoice, tools);
     const model = readString(body, "model") ?? "";
     const request: CanonicalRequest = {
       model,

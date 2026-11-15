@@ -1,4 +1,9 @@
-import type { ReasoningIntent, ResponseFormat, ToolChoice } from "../../protocol/canonical-model";
+import type {
+  GenerationControls,
+  ReasoningIntent,
+  ResponseFormat,
+  ToolChoice,
+} from "../../protocol/canonical-model";
 import { REASONING_EFFORTS } from "../../protocol/canonical-model";
 import { readString, readBoolean, readNumber } from "../../protocol/codecs";
 import { isRecord } from "../../protocol/codecs";
@@ -232,6 +237,101 @@ export function isServiceTier(value: unknown): value is string {
 }
 
 /**
+ * F-16: one shared `service_tier` rule for every surface — a tier the
+ * canonical model knows lands in `controls.service_tier`; anything else is
+ * forwarded verbatim as an extension instead of getting one of three
+ * per-surface verdicts (forwarded / dropped / restricted). What a route does
+ * with the value stays the projection layer's job.
+ */
+export function applyServiceTier(
+  controls: GenerationControls,
+  value: unknown,
+  extensionKey: `extension:${string}`,
+): void {
+  if (typeof value !== "string" || value.length === 0) return;
+  if (isServiceTier(value)) controls.service_tier = value;
+  else controls[extensionKey] = value;
+}
+
+// F-11: stop-sequence bounds — both OpenAI and Anthropic cap stop sequences
+// at 4, and an entry long enough to be useful never exceeds 64 characters.
+export const STOP_MAX_SEQUENCES = 4;
+export const STOP_MAX_SEQUENCE_LENGTH = 64;
+
+/**
+ * F-11: one shared `stop` verdict per surface. The Chat surface accepted any
+ * all-string array unbounded, Messages forwarded arrays with numbers or
+ * objects in them, and Responses dropped the field silently. Every dialect
+ * now answers the same way: strings only, each 1..64 characters, at most 4
+ * entries — else a 400 naming what arrived.
+ */
+export function parseStopSequences(
+  value: unknown,
+  label: string,
+): string | readonly string[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "string") {
+    if (value.length === 0 || value.length > STOP_MAX_SEQUENCE_LENGTH)
+      throw new Error(
+        `${label} stop sequence must be 1..${STOP_MAX_SEQUENCE_LENGTH} characters`,
+      );
+    return value;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return undefined;
+    if (value.length > STOP_MAX_SEQUENCES)
+      throw new Error(
+        `${label} stop accepts at most ${STOP_MAX_SEQUENCES} sequences; received ${value.length}`,
+      );
+    for (const entry of value) {
+      if (typeof entry !== "string" || entry.length === 0 || entry.length > STOP_MAX_SEQUENCE_LENGTH)
+        throw new Error(
+          `${label} stop sequences must be strings of 1..${STOP_MAX_SEQUENCE_LENGTH} characters`,
+        );
+    }
+    return value as readonly string[];
+  }
+  throw new Error(`${label} stop must be a string or an array of strings`);
+}
+
+/** F-6: `allowed_tools` selections accept at most this many entries. */
+export const TOOL_CHOICE_MAX_ALLOWED = 32;
+
+/**
+ * F-6: cross-checks a parsed `tool_choice` against the declared tools.
+ *
+ * A named selection that no declared tool satisfies used to be forwarded
+ * verbatim — the upstream answered with its own opaque error, or a router
+ * candidate silently downgraded the choice. Both spellings (`tool` and
+ * `custom`) and every `allowed_tools` entry must name a declared tool; an
+ * empty name is refused.
+ */
+export function validateToolChoice(
+  choice: ToolChoice,
+  tools: readonly ToolDefinition[] | undefined,
+): void {
+  const declared = new Set((tools ?? []).map((tool) => tool.name));
+  const requireDeclared = (name: string, label: string): void => {
+    if (name.trim().length === 0) throw new Error(`${label} names an empty tool`);
+    if (!declared.has(name))
+      throw new Error(`${label} names tool "${name}" which is not among the declared tools`);
+  };
+  if (typeof choice === "string") {
+    if (choice.trim().length === 0) throw new Error("tool_choice must not be empty");
+    return;
+  }
+  if (choice.type === "tool") requireDeclared(choice.name, "tool_choice");
+  else if (choice.type === "custom") requireDeclared(choice.name, "tool_choice");
+  else if (choice.type === "allowed_tools") {
+    if (choice.names.length > TOOL_CHOICE_MAX_ALLOWED)
+      throw new Error(
+        `tool_choice allowed_tools accepts at most ${TOOL_CHOICE_MAX_ALLOWED} entries; received ${choice.names.length}`,
+      );
+    for (const name of choice.names) requireDeclared(name, "tool_choice allowed_tools");
+  }
+}
+
+/**
  * Dialect-unified tool_choice parser. Accepts string literals across all wires,
  * unwraps function/custom wrappers leniently, extracts allowed_tools names from both
  * `entry.function.name` (Chat wire) and `entry.name` (Responses wire), and enforces
@@ -288,6 +388,13 @@ export function parseReasoningIntent(body: Record<string, unknown>): ReasoningIn
     ? (readString(reasoningObj, "summary_mode") ?? readString(reasoningObj, "summary"))
     : readString(body, "summary_mode");
   const rawSummaryText = reasoningObj ? readString(reasoningObj, "summary") : undefined;
+  // F-13: an effort the caller spelled but the canonical model does not know
+  // is a 400 naming the value — silently dropping it produced a request with
+  // no thinking where thinking was explicitly requested.
+  if (typeof rawEffort === "string" && !isReasoningEffort(rawEffort))
+    throw new Error(
+      `reasoning effort "${rawEffort}" is not one of: ${REASONING_EFFORTS.join(", ")}`,
+    );
   const reasoning: ReasoningIntent = {};
   if (isReasoningEffort(rawEffort)) reasoning.effort = rawEffort;
   if (reasoningObj) {
@@ -299,7 +406,14 @@ export function parseReasoningIntent(body: Record<string, unknown>): ReasoningIn
     if (thinkingType === "enabled" || thinkingType === "adaptive" || thinkingType === "disabled")
       reasoning.thinking_type = thinkingType;
     const budget = readNumber(reasoningObj, "budget_tokens");
-    if (budget !== undefined) reasoning.budget_tokens = budget;
+    if (budget !== undefined) {
+      // F-13: the same floor the Messages thinking parser enforces — a
+      // sub-floor budget passed Chat/Responses and failed (or was ignored)
+      // upstream.
+      if (!Number.isInteger(budget) || budget < 1024)
+        throw new Error("reasoning budget_tokens must be an integer of at least 1024");
+      reasoning.budget_tokens = budget;
+    }
   }
   if (rawSummaryMode === "auto" || rawSummaryMode === "concise" || rawSummaryMode === "detailed") {
     reasoning.summary_mode = rawSummaryMode;
