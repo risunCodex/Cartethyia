@@ -1,7 +1,14 @@
 # Surface protocol & translation audit — unified hardening proposal (v2)
 
-**Status:** DRAFT for operator review — nothing here is implemented yet. Local
-working document; not for push until approved.
+**Status:** APPROVED and EXECUTED (2026-11-15). Every finding below has landed
+on `dev` as its own commit with its own tests, against the F-41 contract
+suite; the suite's divergence rows flipped to the fixed behavior as each
+commit landed. The single rolling remainder is §3/L2 **F-18**: the first
+tranche (the `default_payload` / `requires_upstream_stream` verbs + the grok
+migration) landed with the existing payload tests as its parity harness; the
+remaining adapters (buddy, cline, opencode, kimi, zcode-start-plan,
+agentrouter) mutate from request/candidate-derived values and migrate one at
+a time with their own snapshot parity. §5's deferred item is unchanged.
 **Scope:** the *shared translation layer* all three public surfaces
 (`/v1/messages`, `/v1/responses`, `/v1/chat/completions`) flow through —
 `src/protocol/translation/`, `src/transport/surface/dialects.ts`, the
