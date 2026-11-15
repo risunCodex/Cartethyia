@@ -16,7 +16,7 @@ import {
 } from "../../protocol/tool-schema";
 
 /** Tool-definition dialects preserve each surface's distinct wire fields. */
-export type ToolDialect = "chat" | "responses" | "messages";
+type ToolDialect = "chat" | "responses" | "messages";
 
 /**
  * Parses a tool definition from one wire dialect.
@@ -285,9 +285,9 @@ function isReasoningEffort(value: unknown): value is NonNullable<ReasoningIntent
   return typeof value === "string" && CANONICAL_REASONING_EFFORTS.has(value as NonNullable<ReasoningIntent["effort"]>);
 }
 
-export const SERVICE_TIERS = new Set(["auto", "default", "flex", "scale", "priority", "fast"]);
+const SERVICE_TIERS = new Set(["auto", "default", "flex", "scale", "priority", "fast"]);
 
-export function isServiceTier(value: unknown): value is string {
+function isServiceTier(value: unknown): value is string {
   return typeof value === "string" && SERVICE_TIERS.has(value);
 }
 
@@ -310,8 +310,8 @@ export function applyServiceTier(
 
 // F-11: stop-sequence bounds — both OpenAI and Anthropic cap stop sequences
 // at 4, and an entry long enough to be useful never exceeds 64 characters.
-export const STOP_MAX_SEQUENCES = 4;
-export const STOP_MAX_SEQUENCE_LENGTH = 64;
+const STOP_MAX_SEQUENCES = 4;
+const STOP_MAX_SEQUENCE_LENGTH = 64;
 
 /**
  * F-11: one shared `stop` verdict per surface. The Chat surface accepted any
@@ -350,7 +350,7 @@ export function parseStopSequences(
 }
 
 /** F-6: `allowed_tools` selections accept at most this many entries. */
-export const TOOL_CHOICE_MAX_ALLOWED = 32;
+const TOOL_CHOICE_MAX_ALLOWED = 32;
 
 /**
  * F-6: cross-checks a parsed `tool_choice` against the declared tools.

@@ -21,18 +21,6 @@ interface CacheBreakpointPredicates {
 }
 
 /**
- * Parameterized cache-breakpoint marker that works across wire formats.
- * Finds the latest user/developer input, then scans backwards to mark the first
- * cacheable block with an explicit prompt_cache_breakpoint.
- */
-export function markLatestBreakpoint(
-  items: Array<Record<string, unknown>>,
-  predicates: CacheBreakpointPredicates,
-): void {
-  markBreakpointsAtPositions(items, predicates, [0]);
-}
-
-/**
  * F-34: marks the Nth-from-last cacheable block for each position in `list`
  * (0 = the latest cacheable block, 1 = the one before it, ...) — the caller's
  * explicit breakpoint intent, instead of every builder collapsing the hint to

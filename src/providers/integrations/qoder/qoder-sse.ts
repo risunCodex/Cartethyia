@@ -24,6 +24,7 @@
  */
 
 import { GatewayError } from "../../../protocol/gateway-error";
+import { isCompleteJsonValue } from "../../../protocol/sse-decoder";
 import type { CanonicalEvent } from "../../../protocol/canonical-model";
 import { usageFromProvider, readReasoningText } from "../../provider-usage";
 import { mapChatFinishReason } from "../shared/cli-client-kit";
@@ -42,36 +43,6 @@ export interface QoderSseEvent {
 }
 
 const DEFAULT_MAX_EVENT_BYTES = 8 * 1024 * 1024;
-
-/** True when the accumulated text is a complete JSON value (or non-JSON text). */
-function isCompleteJsonValue(data: string): boolean {
-  if (data.length === 0) return true;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < data.length; i += 1) {
-    const ch = data[i]!;
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch === "\\") {
-        escaped = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-    } else if (ch === "{" || ch === "[") {
-      depth += 1;
-    } else if (ch === "}" || ch === "]") {
-      depth -= 1;
-      if (depth < 0) return true;
-    }
-  }
-  return depth <= 0;
-}
 
 /**
  * Decodes Qoder SSE into complete events.

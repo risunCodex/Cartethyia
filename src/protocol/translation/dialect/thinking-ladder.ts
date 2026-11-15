@@ -50,7 +50,7 @@ export interface ThinkingConfig {
 }
 
 /** Optional model-declared thinking override (compile-time, persisted catalog). */
-export interface ThinkingModelDecl {
+interface ThinkingModelDecl {
   readonly efforts?: readonly string[];
   readonly mode?: ThinkingControlMode;
 }
@@ -144,7 +144,7 @@ interface ThinkingLadderRule {
  * dot-tolerant form (`claude-opus-4.6` → `claude-opus-4-6`), mirroring the
  * removed `claudeUsesAdaptiveThinking` behavior.
  */
-export const THINKING_LADDER_RULES: readonly ThinkingLadderRule[] = [
+const THINKING_LADDER_RULES: readonly ThinkingLadderRule[] = [
   // --- Responses wire (cap at `xhigh` unless a generation ladder says otherwise) ---
   { wireFamily: "responses", id: /gpt-5\.5/, efforts: GPT55_SUPPORTED_EFFORTS },
   { wireFamily: "responses", id: /gpt-5\.6|gpt-6|daybreak/, efforts: LOW_TO_MAX_SUPPORTED_EFFORTS },

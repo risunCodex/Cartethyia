@@ -59,7 +59,7 @@ const DEFAULT_MAX_EVENT_BYTES = 4 * 1024 * 1024;
  * terminator. A non-JSON payload (`[DONE]`, plain text) has depth 0 and reads
  * as complete, so blank-line boundaries stay working for ordinary streams.
  */
-function isCompleteJsonValue(data: string): boolean {
+export function isCompleteJsonValue(data: string): boolean {
   if (data.length === 0) return true;
   let depth = 0;
   let inString = false;

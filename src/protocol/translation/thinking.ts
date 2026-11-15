@@ -55,7 +55,7 @@ export type ReasoningEffortLevel = (typeof REASONING_EFFORT_LADDER)[number];
  * "reasoning off" — both are distinct from an absent suffix, which means the
  * caller expressed no opinion at all.
  */
-export type ThinkingSuffixIntent =
+type ThinkingSuffixIntent =
   | { readonly mode: "level"; readonly level: ReasoningEffortLevel }
   | { readonly mode: "budget"; readonly budget: number }
   | { readonly mode: "none" }

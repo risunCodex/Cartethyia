@@ -259,7 +259,7 @@ describe("default extractor covers the consolidated sources", () => {
     {
       name: "cline vscode extension",
       key: "test-cline-client",
-      source: VERSION_SOURCES.clineClient.sources[0]!,
+      source: { url: "https://raw.githubusercontent.com/cline/cline/main/apps/vscode/package.json" },
       body: { name: "cline", version: "4.1.27" },
       expected: "4.1.27",
     },

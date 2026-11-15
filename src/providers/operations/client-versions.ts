@@ -209,14 +209,6 @@ export const VERSION_SOURCES = {
       { url: "https://registry.npmjs.org/@xai-official/grok/latest" },
     ],
   },
-  clineClient: {
-    key: "cline-client",
-    fallback: "4.1.26",
-    minVersion: "4.1.23",
-    sources: [
-      { url: "https://raw.githubusercontent.com/cline/cline/main/apps/vscode/package.json" },
-    ],
-  },
   clineSdk: {
     key: "cline-sdk",
     fallback: "0.2.0",
@@ -444,7 +436,6 @@ const resolvers = {
   opencode: createClientVersionResolver({ ...VERSION_SOURCES.opencode, client: "opencode" }),
   commandcode: createClientVersionResolver({ ...VERSION_SOURCES.commandcode, client: "command-code" }),
   grok: createClientVersionResolver({ ...VERSION_SOURCES.grok, client: "grok" }),
-  clineClient: createClientVersionResolver({ ...VERSION_SOURCES.clineClient, client: "cline" }),
   clineSdk: createClientVersionResolver({ ...VERSION_SOURCES.clineSdk, client: "cline-sdk" }),
   clineCli: createClientVersionResolver({ ...VERSION_SOURCES.clineCli, client: "cline-cli" }),
   codex: createClientVersionResolver({ ...VERSION_SOURCES.codex, client: "codex" }),
@@ -473,8 +464,7 @@ const PROVIDER_VERSION_RESOLVERS: Readonly<Record<string, ClientVersionResolver>
   "opencode-zen": resolvers.opencode,
   "opencode-go": resolvers.opencode,
   // The identity this provider is dispatched under is the CLI's, so the route
-  // identity reports the CLI version, not the VS Code extension manifest
-  // (`clineClient`).
+  // identity reports the CLI version, not the VS Code extension manifest.
   cline: resolvers.clineCli,
   codex: resolvers.codex,
   qoder: resolvers.qoder,
