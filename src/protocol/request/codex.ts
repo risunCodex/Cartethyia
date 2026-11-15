@@ -552,12 +552,10 @@ export function canonicalToCodexResponsesPayload(
       reasoning_summary_delivery: "sequential_cutoff",
     };
   }
-  if (request.cache_hint !== undefined) {
-    payload["prompt_cache_key"] =
-      request.cache_hint === "stable_prefix"
-        ? "stable_prefix"
-        : `breakpoints:${request.cache_hint.list.join(",")}`;
-  }
+  // F-34: the hint no longer synthesizes a literal cache-key string. A key
+  // reaches this field only when a caller actually declared one (the session
+  // resolution path) — "stable_prefix" and "breakpoints:0,2" as KEYS were
+  // invented strings every caller shared, not cache identities.
   // The reference client threads `prompt_cache_retention` alongside the key
   // on sticky sessions; emit it when the caller declares one so a session
   // that opts into 24h retention keeps it. Unknown to the backend it is

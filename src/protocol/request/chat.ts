@@ -3,7 +3,7 @@
  */
 import type { CanonicalRequest, ResponseFormat } from "../canonical-model";
 import { isRecord } from "../codecs";
-import { markLatestBreakpoint } from "../../protocol/translation/cache-controls";
+import { markBreakpointsAtPositions } from "../../protocol/translation/cache-controls";
 import { isWebSearchTool } from "../../protocol/translation/search";
 import { normalizeWireMaxTokens, pickWireSupportedControls } from "../../protocol/translation/capabilities";
 import { resolveWireMaxTokens } from "../../protocol/translation/quirks";
@@ -164,20 +164,13 @@ const CHAT_CACHEABLE_BLOCK_TYPES: ReadonlySet<string> = new Set([
   "file",
 ]);
 
-/**
- * Marks the latest stable input block with an explicit prompt-cache breakpoint,
- * mirroring the OpenAI client behavior: anchor the block just before the most
- * recent user/developer turn so the cached prefix stays stable as the turn grows.
- */
-function markLatestChatCacheBreakpoint(messages: Array<Record<string, unknown>>): void {
-  markLatestBreakpoint(messages, {
-    isInputItem: (item) => item["role"] === "user" || item["role"] === "developer",
-    isCacheableRole: (role) => role === "user" || role === "developer" || role === "system",
-    isCacheableBlock: (block) =>
-      typeof block["type"] === "string" && CHAT_CACHEABLE_BLOCK_TYPES.has(block["type"]),
-    writeMarker: (block) => (block["prompt_cache_breakpoint"] = { mode: "explicit" }),
-  });
-}
+const CHAT_CACHE_PREDICATES = {
+  isInputItem: (item: Record<string, unknown>) => item["role"] === "user" || item["role"] === "developer",
+  isCacheableRole: (role: unknown) => role === "user" || role === "developer" || role === "system",
+  isCacheableBlock: (block: Record<string, unknown>) =>
+    typeof block["type"] === "string" && CHAT_CACHEABLE_BLOCK_TYPES.has(block["type"]),
+  writeMarker: (block: Record<string, unknown>) => (block["prompt_cache_breakpoint"] = { mode: "explicit" }),
+} as const;
 
 /**
  * Remaining documented top-level Chat parameters, forwarded verbatim when the
@@ -449,13 +442,18 @@ export function canonicalToChatPayload(
       }
     }
   }
+  // F-34: the hint's positions are consumed — each listed n marks the
+  // Nth-from-last cacheable block, not just the latest one. A stable_prefix
+  // hint stays marker-free on this wire: OpenAI-family caching keys off the
+  // prompt_cache_key, and an unsolicited marker field would 400 bridges that
+  // do not carry the 5.6+ extension.
   if (
     supportsPromptCaching &&
     request.cache_hint !== undefined &&
     request.cache_hint !== "stable_prefix" &&
     request.cache_hint.list.length > 0
   ) {
-    markLatestChatCacheBreakpoint(messages);
+    markBreakpointsAtPositions(messages, CHAT_CACHE_PREDICATES, request.cache_hint.list);
   }
   const payload: Record<string, unknown> = {
     model: request.model,

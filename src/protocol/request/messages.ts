@@ -268,24 +268,38 @@ export function canonicalToClaudeMessagesPayload(
   // so Anthropic's own 5m default applies unless the caller asked otherwise.
   const messagesCache = anthropicCacheControl(request.cache_hint);
   if (messages.length > 0 && messagesCache.cache_control) {
-    const last = messages[messages.length - 1];
-    const blocks = last && Array.isArray(last.content) ? last.content : [];
-    for (let index = blocks.length - 1; index >= 0; index -= 1) {
-      const block = blocks[index];
-      if (
-        isRecord(block) &&
-        block.type !== "thinking" &&
-        block.type !== "redacted_thinking" &&
-        block.type !== "fallback" &&
-        block.type !== "tool_addition" &&
-        block.type !== "tool_removal"
-      ) {
-        blocks[index] = {
-          ...block,
-          cache_control: messagesCache.cache_control,
-        };
-        break;
+    // F-34: the hint is consumed literally. A breakpoint hint's positions
+    // mark the Nth-from-last cacheable message block each — the caller's
+    // explicit intent — instead of every hint shape collapsing to the same
+    // trailing ephemeral block. stable_prefix keeps the single trailing mark.
+    const positions =
+      request.cache_hint === undefined || request.cache_hint === "stable_prefix"
+        ? [0]
+        : [...new Set(request.cache_hint.list)].slice(0, 4);
+    // Backward over messages and blocks, so `cacheable[0]` is the LAST
+    // cacheable block of the conversation and `cacheable[n]` is the
+    // Nth-from-last — the positions the hint speaks in.
+    const cacheable: Array<Record<string, unknown>> = [];
+    for (let m = messages.length - 1; m >= 0; m -= 1) {
+      const message = messages[m]!;
+      const blocks = Array.isArray(message["content"]) ? message["content"] : [];
+      for (let index = blocks.length - 1; index >= 0; index -= 1) {
+        const block = blocks[index];
+        if (
+          isRecord(block) &&
+          block.type !== "thinking" &&
+          block.type !== "redacted_thinking" &&
+          block.type !== "fallback" &&
+          block.type !== "tool_addition" &&
+          block.type !== "tool_removal"
+        ) {
+          cacheable.push(block);
+        }
       }
+    }
+    for (const position of positions) {
+      const block = cacheable[position];
+      if (block !== undefined) block["cache_control"] = messagesCache.cache_control;
     }
   }
   const isOAuth = options.isOAuth ?? false;
