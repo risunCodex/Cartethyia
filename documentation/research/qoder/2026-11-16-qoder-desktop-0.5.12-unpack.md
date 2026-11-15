@@ -59,6 +59,56 @@ Layer 1 also carries `$PLUGINSDIR/QoderInstallerHelper.exe`,
 - `"qoder-cn"` literal present — a realm/product flag alongside the
   international build, consistent with the qodercn provider split.
 
+## Decode follow-up (same day): the string table is broken open
+
+`electronMain.js` uses the obfuscator.io string-table scheme: `SW()` returns a
+65,394-entry array; `W(i,e)` decodes entry `i-146` (custom base64 →
+`decodeURIComponent`); `t(a,e) = W(a+523,e)`; every function scope declares a
+local wrapper (`function n(f,r){return t(r-498,f)}`) that folds its offsets
+into the index. The second argument is unused except as a cache-key salt.
+
+Deobfuscator (scratch, `D:\tmp\scratch\qoder-deobf\deobf2.mjs`, Bun + acorn):
+extract SW/W/t verbatim into a sandbox, parse once, register every per-scope
+wrapper in walk 1, resolve each `t(...)` call chain to its numeric index in
+walk 2 (nested wrappers resolve dynamically), splice the decoded string
+literal in place. **337,487 strings inlined** (residual 115); output
+`out/main/electronMain.dec.js`. Ground-truth vocabulary dump:
+`D:\tmp\unpacked\qoder\strings-main.txt` (all 65,394 entries decoded).
+Known limitation: a small subset of property-key accesses decoded to a wrong
+array entry (scope-name collisions in the minifier); markers quoted below
+were verified against the raw array dump, which is unambiguous.
+
+## Wire facts 0.5.12 (decoded main process) — differences vs 0.5.7
+
+- **Region resolution:** both `/algo/api/v2/service/region/endpoints` and
+  `/algo/api/v5/service/region/endpoints` are live literals (0.5.7 evidence
+  had v3; the v2/v5 pair suggests staged rollout with per-region versioning).
+  Also `/algo/api/v1/ping`, `/algo/api/v1/version`, and a relative `"/algo"`
+  prefix joined onto resolved hosts.
+- **Hardcoded gateways (new as literals):** `https://center.qoder.sh/algo/`
+  (intl center), `https://gateway.qoder.com.cn/algo/` (CN),
+  `https://test-gateway.qoder.com.cn/algo/` and
+  `https://test-ops2.qoder.sh/algo/` (test rigs), plus `.qoder.cn` /
+  `.qoder.com.cn` realm suffixes.
+- **Cosy header family grew:** `Cosy-Version`, `Cosy-ClientType`,
+  `Cosy-User`, `Cosy-Key`, `Cosy-Date`, `Cosy-Paid-Confirmed`,
+  `Cosy-MachineToken`, `Cosy-MachineId`, **plus new in 0.5.12**:
+  `X-Cosy-Encrypt`, `Cosy-MachineCode`, `Cosy-MachineHostname`,
+  `Cosy-MachineOS`, `Cosy-MachineType`, `Cosy-Business-Product`.
+- **A machine-identity subsystem** (`machineIdentityService`,
+  `resolveMachineIdentity`, `getHostMachineIdentifier`,
+  `sessionMachineId`, `hostMachineIdentifier`) now backs the machine headers;
+  a Chinese in-bundle note confirms `machineId` is a stable device identity
+  gated behind an explicit `system.machineId.read` SDK permission.
+- One dispatch path pairs `x-gw-user-id` with `Cosy-MachineId` +
+  `Cosy-MachineToken` on a gateway fetch (`/algo`-rooted host with the
+  trailing `/algo/?$` suffix stripped).
+- **Chat paths are still absent from the main-process strings** (no
+  `agent_chat_generation`, no `/model/v1/chat/completions`): the chat wire
+  remains on the region-resolved inference endpoint, consistent with IDE 1.38
+  and the 0.5.7 wire capture. The renderer bundle carries no Qoder hosts
+  either (only `*.qoder.invalid` placeholders).
+
 ## Unknown / next steps
 
 - Chat endpoint paths (`/model/v1/...`, `/algo/api/v2/...`) do not appear as
