@@ -22,6 +22,7 @@ import type { CanonicalRequest } from "../../../protocol/canonical-model";
 import { isRecord } from "../../../protocol/codecs";
 import { GatewayError } from "../../../protocol/gateway-error";
 import { applyDeepSeekReasoning, applyOpenAIReasoning, backfillDeepSeekReasoningContent, clampedEffortOutputFloor, ensureChatReasoningReplayPresence } from "../../../protocol/reasoning";
+import { REASONING_EFFORT_LADDER } from "../../../protocol/translation/thinking";
 import {
   coalesceConsecutiveAssistantMessages,
   finalizeBuddyMessages,
@@ -508,15 +509,15 @@ function cleanupBuddyOrphanToolPairs(messages: Array<Record<string, unknown>>): 
 
 
 
+// F-28: derived from the canonical ladder instead of a hand-kept copy — the
+// two tables indexed the same strings for clamp-vs-floor comparisons, and a
+// tier inserted in one silently corrupted the other's clamp direction.
+// `off`/`none` are the explicit non-ladder spellings buddy payloads carry;
+// both rank at the floor so a comparison against any served level floors.
 const BUDDY_EFFORT_RANK: Readonly<Record<string, number>> = {
+  ...Object.fromEntries(REASONING_EFFORT_LADDER.map((level, index) => [level, index])),
   off: 0,
   none: 0,
-  minimal: 1,
-  low: 2,
-  medium: 3,
-  high: 4,
-  xhigh: 5,
-  max: 6,
 };
 
 /**

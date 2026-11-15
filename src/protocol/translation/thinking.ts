@@ -6,8 +6,30 @@
 // request-level effort intent (OpenAI `reasoning_effort`) survives — that field
 // is a property of the request, not of the turn.
 import type { CanonicalRequest, ReasoningIntent } from "../canonical-model";
-import type { ThinkingConfig } from "./dialect/thinking-ladder";
+import type { ThinkingConfig, ThinkingControlMode } from "./dialect/thinking-ladder";
 import { clampThinkingLevelForModel } from "./dialect/model-thinking";
+
+/**
+ * F-31: the smallest thinking budget each control mode accepts, declared per
+ * mode instead of duplicated as a literal at every derivation site.
+ *
+ * The canonical ladder publishes budgets the budget-era wires reject as-is
+ * (`instant` = 256, `minimal` = 512; the wire floors at 1024), so an unmapped
+ * (ladder level × wire) cell used to fail instead of clamping. Both former
+ * `Math.max(1024, …)` sites now read this table.
+ */
+const MIN_BUDGET_TOKENS_BY_MODE: Readonly<Record<ThinkingControlMode, number | undefined>> = {
+  budget: 1024,
+  "anthropic-adaptive": 1024,
+  effort: undefined,
+  "google-level": undefined,
+};
+
+/** Clamps a derived budget up to its wire's floor (F-31). */
+export function clampBudgetToWireFloor(mode: ThinkingControlMode, budget: number): number {
+  const floor = MIN_BUDGET_TOKENS_BY_MODE[mode];
+  return floor !== undefined && budget < floor ? floor : budget;
+}
 
 /**
  * Canonical reasoning effort ladder, ordered least to most intensive.

@@ -12,7 +12,7 @@ import { assertInlineAttachmentSize, documentContentPart } from "../content-part
 import { canContainToolResult } from "../../../protocol/canonical-model";
 import { MessagesLedgerError } from "./errors";
 import { finiteNumber, stringValue } from "../../../protocol/codecs";
-import { LEVEL_TO_BUDGET } from "../../../protocol/translation/thinking";
+import { clampBudgetToWireFloor, LEVEL_TO_BUDGET } from "../../../protocol/translation/thinking";
 
 export interface MessagesParseOptions {
   /** Explicit Claude model generation (for example `4.6` or `4.7`). */
@@ -308,7 +308,9 @@ export function parseThinking(
     // of answered with `budget_tokens: Field required`.
     const effectiveBudget =
       budget ??
-      (effort !== undefined && effort !== "none" ? Math.max(1024, LEVEL_TO_BUDGET[effort]) : undefined);
+      (effort !== undefined && effort !== "none"
+        ? clampBudgetToWireFloor("budget", LEVEL_TO_BUDGET[effort])
+        : undefined);
     if (!finiteNumber(effectiveBudget) || !Number.isInteger(effectiveBudget))
       throw new Error("Manual Messages thinking requires integer budget_tokens");
     if (generation !== undefined && generation >= 4.7)

@@ -32,7 +32,7 @@ import {
   finiteNumber,
 } from "../codecs";
 import { log } from "../../observability/logger";
-import { LEVEL_TO_BUDGET } from "../../protocol/translation/thinking";
+import { clampBudgetToWireFloor, LEVEL_TO_BUDGET } from "../../protocol/translation/thinking";
 import type { ThinkingConfig } from "../../protocol/translation/dialect/thinking-ladder";
 import { clampThinkingLevelForModel } from "../../protocol/translation/dialect/model-thinking";
 import { resolveThinkingForModel } from "../../protocol/translation/dialect/thinking-ladder";
@@ -349,10 +349,11 @@ export function canonicalToClaudeMessagesPayload(
     request.reasoning !== undefined && request.reasoning.thinking_type !== "disabled";
   if (wantsReasoning && !adaptiveThinking && effectiveBudgetTokens === undefined) {
     const level = request.reasoning?.effort;
-    // The upstream floors a thinking budget at 1024; `LEVEL_TO_BUDGET.minimal`
-    // is 512, so raise it rather than let the request 400.
+    // F-31: the wire's budget floor comes from the shared per-mode table;
+    // `LEVEL_TO_BUDGET.minimal` is 512, so the clamp raises it rather than
+    // letting the request 400.
     if (level !== undefined && level !== "none")
-      effectiveBudgetTokens = Math.max(1024, LEVEL_TO_BUDGET[level]);
+      effectiveBudgetTokens = clampBudgetToWireFloor(resolvedThinking.mode, LEVEL_TO_BUDGET[level]);
   }
   if (!adaptiveThinking && effectiveBudgetTokens !== undefined) {
     // The upstream requires the budget to stay below `max_tokens`; raise

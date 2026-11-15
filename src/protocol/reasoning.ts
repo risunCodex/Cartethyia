@@ -1,7 +1,18 @@
 import type { CanonicalRequest, ReasoningEffort, ReasoningIntent } from "./canonical-model";
 import { budgetToLevel } from "./translation/thinking";
 import { isRecord } from "./codecs";
-import { DEEPSEEK_DEFAULT_EFFORT } from "./translation/dialect/thinking-ladder";
+import { DEEPSEEK_DEFAULT_EFFORT, resolveThinkingForModel } from "./translation/dialect/thinking-ladder";
+
+/**
+ * F-30: whether `modelId`'s resolved ladder carries the reasoning-replay
+ * contract. The helpers below used to regex-match raw model strings — a
+ * family prefix created `thinking` objects and default efforts the capability
+ * preflight never assessed. The contract now lives on the ladder rule that
+ * matches the model, so a non-matching model gets neither.
+ */
+function reasoningReplayFor(modelId: string): boolean {
+  return resolveThinkingForModel(modelId, "", "chat").reasoningReplay === true;
+}
 
 /**
  * The effective reasoning effort for a canonical intent, deriving one from an
@@ -37,7 +48,8 @@ export function applyOpenAIReasoning(payload: Record<string, unknown>, request: 
 /** Applies the DeepSeek chat contract shared by CodeBuddy. */
 export function applyDeepSeekReasoning(payload: Record<string, unknown>): void {
   const model = typeof payload["model"] === "string" ? payload["model"].trim().toLowerCase() : "";
-  if (!model.startsWith("deepseek")) return;
+  // F-30: gate on the resolved ladder's replay contract, not the prefix.
+  if (model.length === 0 || !reasoningReplayFor(model)) return;
   const thinking = isRecord(payload["thinking"]) ? payload["thinking"] : undefined;
   const type = typeof thinking?.["type"] === "string" ? thinking["type"].trim().toLowerCase() : "";
   if (type === "disabled") {
@@ -60,7 +72,9 @@ export function applyDeepSeekReasoning(payload: Record<string, unknown>): void {
  * DeepSeek family. Cline, OpenRouter, Hermes, and Kilo share one chat wire,
  * so the rule is stated once, keyed on the model family.
  */
+/** Kept for diagnostics: the families the ladder rule covers. */
 const REASONING_REPLAY_MODEL_RE = /(?:deepseek|reflection\/beam)/i;
+void REASONING_REPLAY_MODEL_RE;
 
 /**
  * Ensures every assistant turn carries `reasoning_content` for model families
@@ -79,7 +93,8 @@ const REASONING_REPLAY_MODEL_RE = /(?:deepseek|reflection\/beam)/i;
  */
 export function ensureChatReasoningReplayPresence(payload: Record<string, unknown>): void {
   const model = typeof payload["model"] === "string" ? payload["model"] : "";
-  if (!REASONING_REPLAY_MODEL_RE.test(model)) return;
+  // F-30: the family gate is the resolved ladder's replay contract.
+  if (model.length === 0 || !reasoningReplayFor(model)) return;
   const messages = payload["messages"];
   if (!Array.isArray(messages)) return;
   const thinking = payload["thinking"];
@@ -108,7 +123,8 @@ export function backfillDeepSeekReasoningContent(payload: Record<string, unknown
   const thinkingEnabled = isRecord(thinking) && thinking["type"] === "enabled";
   const messages = payload["messages"];
   if (!Array.isArray(messages)) return;
-  const requiresReplay = REASONING_REPLAY_MODEL_RE.test(model);
+  // F-30: the family gate is the resolved ladder's replay contract.
+  const requiresReplay = reasoningReplayFor(model);
   const hasTrace = messages.some(
     (message) =>
       isRecord(message) &&

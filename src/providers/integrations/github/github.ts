@@ -60,35 +60,10 @@ export const GITHUB_MESSAGES_ENDPOINT_PATH = "/v1/messages" as const;
 
 
 
-/**
- * The highest reasoning effort Copilot serves as a fallback when a model does
- * not declare its own ladder. A caller asking for `max` or `xhigh` is answered
- * at `high` rather than refused: the model has no level above it, and the
- * request is otherwise valid.
- */
-const GITHUB_REASONING_EFFORT_CAP = "high";
-const GITHUB_CAPPED_EFFORTS = new Set(["max", "xhigh"]);
-
-/**
- * Rewrites an effort above Copilot's ceiling to the highest level we know the
- * model accepts. The shared encoder already pinned the effort to the model's
- * declared ladder (`resolveThinkingForModel` reads `reasoningEfforts` from the
- * catalog); this hook only guards a bare fallback so a caller asking for
- * `max`/`xhigh` on a model without a declared ladder is answered at `high`
- * rather than refused.
- */
-function clampGithubReasoningEffort(payload: Record<string, unknown>): void {
-  const effort = payload["reasoning_effort"];
-  if (typeof effort === "string" && GITHUB_CAPPED_EFFORTS.has(effort)) {
-    payload["reasoning_effort"] = GITHUB_REASONING_EFFORT_CAP;
-  }
-  const reasoning = payload["reasoning"];
-  if (!isRecord(reasoning)) return;
-  const nested = reasoning["effort"];
-  if (typeof nested === "string" && GITHUB_CAPPED_EFFORTS.has(nested)) {
-    payload["reasoning"] = { ...reasoning, effort: GITHUB_REASONING_EFFORT_CAP };
-  }
-}
+// F-32: the Copilot fallback effort ceiling (`max`/`xhigh` answered at
+// `high` for a model that declares no ladder of its own) moved to a ladder
+// rule (`provider: /^github$/` in thinking-ladder.ts), so the generic clamp
+// owns it and this adapter carries no prePayload mutation for it.
 
 
 /** Supported virtual Copilot Auto catalog ids and their router tiers. */
@@ -433,9 +408,6 @@ class GithubAdapter extends OpenAICompatibleAdapter {
         endpoint_paths_by_wire_family: {
           chat: GITHUB_ENDPOINT_PATH,
           responses: GITHUB_RESPONSES_ENDPOINT_PATH,
-        },
-        prePayload: (payload) => {
-          clampGithubReasoningEffort(payload);
         },
         ...(fetchImpl ? { fetchImpl } : {}),
       }),
