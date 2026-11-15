@@ -2,7 +2,12 @@ import type { CanonicalMessage, CanonicalRequest, ContentPart, GenerationControl
 import { getHeader as readHeader } from "../../../protocol/canonical-model";
 import { requiredObject } from "../adapters";
 import { isRecord } from "../../../protocol/codecs";
-import { parseToolDefinition } from "../dialects";
+import { parseToolsArray } from "../dialects";
+import { normalizeToolCallArguments } from "../../../protocol/tool-arguments";
+import {
+  scanToolPairingIssues,
+  type ToolPairingIssue,
+} from "../../../protocol/tool-ledger";
 import { documentContentPart } from "../content-parts";
 import { canContainToolResult } from "../../../protocol/canonical-model";
 import { MessagesLedgerError } from "./errors";
@@ -119,7 +124,11 @@ function parseBlock(value: unknown): ContentPart {
       kind: "toolCall",
       call_id: value.id,
       name: value.name,
-      arguments: value.input ?? {},
+      // F-4: arguments normalize to a JSON-object string on every surface.
+      // `input` is required to be an object on this wire; a string that
+      // parses to an object is accepted and re-stringified, anything else
+      // malformed is refused here rather than reaching the upstream.
+      arguments: normalizeToolCallArguments(value.input ?? {}, "tool_use input"),
       ...(finiteNumber(value.index) ? { index: value.index } : {}),
       ...(stringValue(value.namespace) ? { namespace: value.namespace } : {}),
     };
@@ -197,13 +206,10 @@ export function parseMessage(value: unknown): CanonicalMessage {
 }
 
 export function parseTools(value: unknown): ToolDefinition[] | undefined {
-  if (value == null) return undefined;
-  if (!Array.isArray(value)) throw new Error("Messages tools must be an array");
-  return value.map((entry) => {
-    const parsed = parseToolDefinition(entry, "messages");
-    if (!parsed) throw new Error("Messages tool failed to parse");
-    return parsed;
-  });
+  // F-3: one tools[] verdict per dialect (non-array 400, every entry must
+  // parse, empty normalizes to undefined) — the Messages labels come from the
+  // shared parser.
+  return parseToolsArray(value, "messages");
 }
 
 
@@ -455,11 +461,10 @@ function collectOccurrences(messages: readonly CanonicalMessage[]): {
   messages.forEach((message, messageIndex) => {
     message.content.forEach((part, partIndex) => {
       if (part.kind === "toolCall") {
-        if (!part.call_id || !part.name)
-          throw new MessagesLedgerError("tool_call must include call_id and name");
-        if (calls.has(part.call_id))
-          throw new MessagesLedgerError(`duplicate tool call occurrence: ${part.call_id}`);
-        calls.set(part.call_id, { callId: part.call_id, messageIndex, server: false });
+        // Invalid and duplicate calls are surfaced by the shared pairing
+        // ledger scan before this map is read (F-5); collect first-wins here.
+        if (part.call_id.length > 0 && !calls.has(part.call_id))
+          calls.set(part.call_id, { callId: part.call_id, messageIndex, server: false });
       }
       const serverId = serverToolId(part);
       if (serverId) {
@@ -480,25 +485,40 @@ function collectOccurrences(messages: readonly CanonicalMessage[]): {
 function validatedResults(
   calls: Map<string, ToolCallOccurrence>,
   results: readonly ToolResultOccurrence[],
-  serverIds: Set<string>,
 ): Map<string, ToolResultOccurrence> {
+  // Validation itself lives in the shared pairing ledger (`scanToolPairingIssues`,
+  // proposal F-5) so Chat/Responses ingress enforce the same checks; this pass
+  // only builds the call→result index the turn rebuild consumes.
   const byCall = new Map<string, ToolResultOccurrence>();
   for (const occurrence of results) {
     const call = calls.get(occurrence.result.call_id);
-    if (!call) {
-      if (serverIds.has(occurrence.result.call_id)) continue;
-      throw new MessagesLedgerError(
-        `tool_result has no matching tool_use: ${occurrence.result.call_id}`,
-      );
-    }
-    if (call.server) continue;
-    if (byCall.has(occurrence.result.call_id))
-      throw new MessagesLedgerError(
-        `duplicate tool_result occurrence: ${occurrence.result.call_id}`,
-      );
+    if (call === undefined || call.server) continue;
+    if (byCall.has(occurrence.result.call_id)) continue;
     byCall.set(occurrence.result.call_id, occurrence);
   }
   return byCall;
+}
+
+/**
+ * Maps one shared-ledger issue onto the typed error this surface has always
+ * thrown, keeping the wire message identical while the checks themselves
+ * live in one owner (F-5).
+ */
+function ledgerErrorFor(issue: ToolPairingIssue): MessagesLedgerError {
+  switch (issue.code) {
+    case "invalid_call":
+      return new MessagesLedgerError("tool_call must include call_id and name");
+    case "duplicate_call":
+      return new MessagesLedgerError(`duplicate tool call occurrence: ${issue.callId ?? ""}`);
+    case "orphan_result":
+      return new MessagesLedgerError(
+        `tool_result has no matching tool_use: ${issue.callId ?? ""}`,
+      );
+    case "duplicate_result":
+      return new MessagesLedgerError(
+        `duplicate tool_result occurrence: ${issue.callId ?? ""}`,
+      );
+  }
 }
 
 function freeContent(message: CanonicalMessage): ContentPart[] {
@@ -513,8 +533,15 @@ function freeContent(message: CanonicalMessage): ContentPart[] {
 export function applyMessagesToolLedger(
   messages: readonly CanonicalMessage[],
 ): readonly CanonicalMessage[] {
-  const { calls, results, serverIds } = collectOccurrences(messages);
-  const byCall = validatedResults(calls, results, serverIds);
+  // F-5: the pairing checks are the shared ledger scan — the same four
+  // structural facts Chat/Responses ingress now repair or reject — mapped
+  // onto this surface's typed error.
+  const serverIds = collectOccurrences(messages).serverIds;
+  const issues = scanToolPairingIssues(messages, { exemptResultId: (id) => serverIds.has(id) });
+  const [firstIssue] = issues;
+  if (firstIssue !== undefined) throw ledgerErrorFor(firstIssue);
+  const { calls, results } = collectOccurrences(messages);
+  const byCall = validatedResults(calls, results);
   const resultMessageIndexes = new Set(results.map((occurrence) => occurrence.messageIndex));
   const output: CanonicalMessage[] = [];
   const consumedResultMessages = new Set<number>();

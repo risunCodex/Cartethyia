@@ -3,6 +3,7 @@ import type { SurfaceAdapter, SurfaceInput, SurfaceOutput } from "../adapters";
 import { isRecord } from "../../../protocol/codecs";
 import { readString } from "../../../protocol/codecs";
 import { decodeWireBody } from "../content-parts";
+import { dropUnpairedToolResults } from "../../../protocol/tool-ledger";
 import type { ChatEncodeOptions } from "./parse";
 import {
   parseGenerationControls,
@@ -13,7 +14,7 @@ import {
   parseReasoningIntent,
   parseResponseFormat,
   parseToolChoice,
-  parseToolDefinition,
+  parseToolsArray,
 } from "../dialects";
 import {
   asJsonBytes,
@@ -58,20 +59,22 @@ export class ChatAdapter implements SurfaceAdapter {
       else if (message.role === "developer") instructions.push(...message.content);
       else messages.push(message);
     }
+    // F-5: the Chat wire runs the shared pairing ledger in repair mode —
+    // orphan and duplicate tool results are dropped at ingress so every
+    // downstream consumer sees the same clean history the dispatch-level
+    // repair would have produced.
+    const pairedMessages = dropUnpairedToolResults(messages);
 
-    const tools = Array.isArray(body.tools)
-      ? body.tools.flatMap((tool) => {
-          const parsed = parseToolDefinition(tool, "chat");
-          return parsed === undefined ? [] : [parsed];
-        })
-      : [];
+    // F-3: one tools[] verdict per dialect — a malformed tool is a 400, never
+    // a silent drop, and an empty array normalizes to "no tools".
+    const tools = parseToolsArray(body.tools, "chat");
     const controls = parseGenerationControls(body);
     const toolChoice = parseToolChoice(body.tool_choice, "chat");
     const responseFormat = parseResponseFormat(body.response_format);
     const model = readString(body, "model") ?? "";
     const request: CanonicalRequest = {
       model,
-      messages,
+      messages: pairedMessages,
       generation_controls: controls,
       stream: body.stream === true,
       source_surface: "chat",
@@ -80,7 +83,7 @@ export class ChatAdapter implements SurfaceAdapter {
       request.cache_hint = "stable_prefix";
     if (system.length > 0) request.system = system;
     if (instructions.length > 0) request.instructions = instructions;
-    if (tools.length > 0) request.tools = tools;
+    if (tools !== undefined) request.tools = tools;
     if (toolChoice !== undefined) request.tool_choice = toolChoice;
     if (responseFormat !== undefined) request.response_format = responseFormat;
     const reasoning = parseReasoningIntent(body);

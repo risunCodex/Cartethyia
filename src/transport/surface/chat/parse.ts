@@ -4,6 +4,7 @@ import { isRecord } from "../../../protocol/codecs";
 import { asNumber } from "../../../shared/coerce";
 import { decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
 import { SERVICE_TIERS } from "../dialects";
+import { normalizeToolCallArguments } from "../../../protocol/tool-arguments";
 import { readNumber, readString } from "../../../protocol/codecs";
 import type { OpenAiUsage } from "../../../providers/provider-usage";
 
@@ -175,17 +176,21 @@ function parseToolCall(value: unknown, index: number): ParsedToolCall | undefine
   const name = readString(functionValue, "name");
   if (id === undefined || name === undefined) return undefined;
   if (type !== undefined && type !== "function") return undefined;
-  // A history tool call without arguments is a zero-arg call, not a
-  // malformed one: default to "{}" instead of dropping the call and
-  // orphaning its paired result. An empty/whitespace string is normalized
-  // too — the Messages wire requires `input` to be an object, and a raw ""
-  // is not valid JSON for the Chat/Responses history either.
-  const args = readString(functionValue, "arguments");
+  // Arguments normalize through the shared F-4 rule so one logical field gets
+  // one verdict on every surface: a string must be valid JSON (a JSON object),
+  // an object is stringified once here, and absence is a zero-arg call — never
+  // a malformed `"not json{"` forwarded verbatim to the upstream. The empty /
+  // whitespace string normalizes to "{}" too, which is what the Messages wire
+  // requires `input` to carry for a zero-arg call.
+  const args = normalizeToolCallArguments(
+    functionValue["arguments"],
+    `tool_calls[${index}] arguments`,
+  );
   const namespace = readString(functionValue, "namespace");
   return {
     id,
     name,
-    arguments: args === undefined || args.trim().length === 0 ? "{}" : args,
+    arguments: args,
     index,
     ...(namespace === undefined ? {} : { namespace }),
   };
@@ -242,8 +247,13 @@ export function parseMessage(value: unknown): CanonicalMessage {
   }
 
   if (role === "tool") {
+    // F-5: a tool turn IS a tool result on this wire — OpenAI requires
+    // `tool_call_id`, and forwarding a turn without one produced a mangled
+    // `role:"tool"` message the upstream rejected with an opaque sequence
+    // error. The Messages parse already refuses the same shape, so both
+    // wire ingresses now give one verdict.
     const callId = readString(value, "tool_call_id");
-    if (callId === undefined) return { role, content };
+    if (callId === undefined) throw new Error("tool message requires tool_call_id");
     return {
       role,
       content: [

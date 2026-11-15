@@ -1,4 +1,4 @@
-import type { CanonicalMessage, CanonicalRequest, ContentPart, GenerationControls, ToolDefinition } from "../../../protocol/canonical-model";
+import type { CanonicalMessage, CanonicalRequest, ContentPart, GenerationControls } from "../../../protocol/canonical-model";
 import { isRecord } from "../../../protocol/codecs";
 import { decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
 import {
@@ -6,8 +6,10 @@ import {
   parseReasoningIntent,
   parseResponseFormat,
   parseToolChoice,
-  parseToolDefinition,
+  parseToolsArray,
 } from "../dialects";
+import { normalizeToolCallArguments } from "../../../protocol/tool-arguments";
+import { dropUnpairedToolResults } from "../../../protocol/tool-ledger";
 import { readBoolean, readNumber, readString } from "../../../protocol/codecs";
 import type { ResponsesComputerAction, ResponsesInputItem, ResponsesItemMetadata } from "./contracts";
 const OPENAI_RESPONSE_INCLUDES = {
@@ -335,8 +337,11 @@ function parseInputItem(item: ResponsesInputItem): {
     const name = readString(item, "name");
     if (callId === undefined || name === undefined)
       throw new Error("Responses function_call requires call_id and name");
-    const args = item["arguments"];
-    if (args === undefined) throw new Error("Responses function_call requires arguments");
+    if (item["arguments"] === undefined)
+      throw new Error("Responses function_call requires arguments");
+    // F-4: arguments normalize to a JSON-object string on every surface —
+    // `arguments: 42` is a malformed call, not a value to forward.
+    const args = normalizeToolCallArguments(item["arguments"], "function_call arguments");
     const namespace = readString(item, "namespace");
     return {
       message: {
@@ -609,6 +614,10 @@ export function parseResponsesRequest(input: unknown): CanonicalRequest {
   }
   if (pendingReasoning !== undefined)
     messagesWithReasoning.push({ role: "assistant", content: pendingReasoning });
+  // F-5: the Responses wire runs the shared pairing ledger in repair mode —
+  // orphan `function_call_output` items and duplicate answers are dropped at
+  // ingress instead of reaching the upstream (or the dispatch repair) first.
+  const pairedMessages = dropUnpairedToolResults(messagesWithReasoning);
   const metadata = parsedItems.map((entry) => entry.metadata);
   const controls: GenerationControls = {};
   const maxOutputTokens = readNumber(bodyValue, "max_output_tokens");
@@ -663,15 +672,11 @@ export function parseResponsesRequest(input: unknown): CanonicalRequest {
   const text = bodyValue["text"];
   if (isRecord(text) && hasOwn(text, "verbosity"))
     assignExtension(controls, "extension:responses.verbosity", text["verbosity"]);
-  const tools = Array.isArray(bodyValue["tools"])
-    ? bodyValue["tools"]
-        .map((tool) => parseToolDefinition(tool, "responses"))
-        .filter((tool): tool is ToolDefinition => tool !== undefined)
-    : undefined;
+  const tools = parseToolsArray(bodyValue["tools"], "responses");
 
   const request: CanonicalRequest = {
     model,
-    messages: messagesWithReasoning,
+    messages: pairedMessages,
     generation_controls: controls,
     stream: readBoolean(bodyValue, "stream") ?? false,
     source_surface: "responses",

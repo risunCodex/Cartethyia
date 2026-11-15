@@ -6,7 +6,7 @@ import { completeRequiredSchema } from "../../protocol/codecs";
 import type { ToolDefinition } from "../../protocol/canonical-model";
 
 /** Tool-definition dialects preserve each surface's distinct wire fields. */
-type ToolDialect = "chat" | "responses" | "messages";
+export type ToolDialect = "chat" | "responses" | "messages";
 
 /**
  * Parses a tool definition from one wire dialect.
@@ -161,6 +161,40 @@ function classifyNativeToolType(type: string): Exclude<ToolDefinition["tool_type
   if (type === "computer_use_preview") return "computer_use";
   if (type === "mcp") return "mcp";
   return "provider";
+}
+
+const TOOL_DIALECT_LABELS: Readonly<Record<ToolDialect, string>> = {
+  chat: "Chat",
+  responses: "Responses",
+  messages: "Messages",
+};
+
+/**
+ * Dialect-unified `tools[]` ingress (proposal F-3).
+ *
+ * One field, three former verdicts: the Chat adapter silently dropped
+ * entries that failed to parse (a typo'd tool vanished while the client
+ * believed the model could call it), Responses filtered them the same way,
+ * and Messages threw. An empty array was dropped by Chat and forwarded by
+ * Responses. Every dialect now gives the same three answers:
+ *
+ * - a non-array `tools` is a 400;
+ * - every entry must parse — a malformed tool is refused, never swallowed;
+ * - an empty array carries no tools at all, so it normalizes to `undefined`.
+ */
+export function parseToolsArray(
+  value: unknown,
+  dialect: ToolDialect,
+): ToolDefinition[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  const label = TOOL_DIALECT_LABELS[dialect];
+  if (!Array.isArray(value)) throw new Error(`${label} tools must be an array`);
+  if (value.length === 0) return undefined;
+  return value.map((entry) => {
+    const parsed = parseToolDefinition(entry, dialect);
+    if (parsed === undefined) throw new Error(`${label} tool failed to parse`);
+    return parsed;
+  });
 }
 
 export const CANONICAL_REASONING_EFFORTS: ReadonlySet<string> = new Set(REASONING_EFFORTS);
