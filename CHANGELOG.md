@@ -16,8 +16,86 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   `0.0.0.0`, unchanged). Set `127.0.0.1` for reverse-proxy deployments
   (cloudflared, Caddy, nginx on the same host) so the gateway is reachable
   only through the proxy and never directly from the network.
+- `CARTETHYIA_TOOL_RESULT_MAX_KB` — opt-in tool-result truncation. Off by
+  default; when set, a tool result larger than the limit is cut with a marker
+  before it enters the conversation history instead of being forwarded whole.
+- **Withdrawn tools stay dispatchable.** Tools that appear in the conversation
+  history but are absent from the current request's `tools` are re-declared to
+  the provider as stateless stubs, so a client that narrows its tool set
+  mid-conversation no longer breaks pairing on the next turn.
+
+### Fixed
+
+- **Cross-surface hardening campaign** (surface audit, 43 findings; see
+  `documentation/archive/2026-11-15-surface-audit-hardening-proposal.md`). The
+  public highlights:
+  - **Tool calls keep one identity.** Tool-call ids collected across stream
+    chunks are keyed per call, composite prefixes (`call_`/`fc_` stacking)
+    collapse, and arguments are repaired exactly once at every completion
+    boundary — chat sync, chat stream, Messages sync/stream, and Responses.
+    A second tool call that reuses an answered id no longer wipes or reopens
+    the previous one.
+  - **Terminal states stop lying.** A stream that dies without a terminal
+    event no longer reports `stop`; chat mirrors the dangling tool-call guard
+    (a `tool_calls` finish with zero emitted calls downgrades to `stop`);
+    upstream-aborted streams attach usage while caller cancels still null it.
+  - **SSE decoding is bounded.** Bare-line continuations only continue an
+    incomplete JSON frame (a lost event boundary is now an error instead of
+    two frames merged into one delta), continuations are capped, and a stream
+    ending mid-JSON throws instead of dispatching the truncated frame. Qoder's
+    blank lines inside JSON strings still decode.
+  - **Hosted tools keep their configuration.** An `mcp` tool's
+    `server_label`/`server_url`/`allowed_tools` and a web-search tool's
+    `search_context_size`/`filters` are captured at ingress per family and
+    re-emitted on the wire that carries them — they were silently dropped.
+  - **Cache hints are consumed literally.** Breakpoint hint positions map to
+    their Nth-from-last placements on every wire, and the Codex builder no
+    longer synthesizes a shared `prompt_cache_key` string (the adapter's real
+    per-session key is the only key source).
+  - **One verdict per request field across surfaces.** Tool schema bounds
+    (64 KiB per schema, depth 24, 512 array items, 256 declarations, name
+    charset), tool arrays (non-array, duplicates), `tool_choice`, stop
+    sequences, `service_tier`, `response_format`, and reasoning effort/budget
+    are validated identically on `/v1/messages`, `/v1/responses`, and
+    `/v1/chat/completions` — the same request no longer passes on one surface
+    and fails on another.
+  - **Ingress content bounds.** Inline attachments are capped at 32 MiB, and
+    the content-part policy (image/media references) is consistent across
+    surfaces.
+  - **`tool_choice` is a routing requirement.** A forced tool_choice routes
+    only to candidates whose dialect supports it instead of silently dropping
+    the constraint.
+  - **Anthropic thinking-strip is wire-family gated.** The thinking-sampling
+    param quirk applies only on the Messages wire, not to every provider that
+    happens to match.
+  - **One error builder on the Responses stream.** Error events share a single
+    shape (origin/code/category) so clients get consistent envelopes, and
+    refusal completions stay wire-faithful.
+- Claude Messages cache hints: the listed positions are consumed from the last
+  message backward as intended (the first forward iteration marked the oldest
+  block instead of the newest).
 
 ### Changed
+
+- **Reasoning ranks live on one ladder.** Effort/budget ranking, per-model
+  defaults, wire floors, and replay gating moved from per-provider hardcoded
+  regexes into a unified thinking-ladder; DeepSeek-style reasoning replay is
+  now a declarative ladder flag instead of a model regex.
+- **Adapter wire facts are declarative.** `stateless_responses`,
+  `requires_upstream_stream`, and `default_payload` moved from per-adapter
+  imperative patches (grok's stream/store fiddling, previous_response_id
+  deletion, hardcoded allowlists) onto the adapter configuration, applied
+  uniformly after encoding.
+- **Strict tool arguments at ingress.** Tool-call arguments are repaired once
+  (bounded) at parse and kept byte-verbatim afterward; unrepairable arguments
+  fail with a clear error instead of flowing as `null` fields. Tool-choice
+  validation is shared, and hosted/native tool declarations reject unknown
+  fields rather than forwarding them.
+- Cross-surface contract suite (`test/transport/surface/contract.test.ts`)
+  pins one canonical event list through all five encoders with an annotated
+  divergence ledger — the regression net behind the fixes above.
+
+## [2.8.2] - 2026-11-14
 
 - OAuth browser logins whose redirect port the gateway owns (DeepAI, Trae) now
   redirect to the gateway's own listener — `http://127.0.0.1:<port>/callback` —
