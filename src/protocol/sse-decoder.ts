@@ -127,6 +127,12 @@ export async function* decodeSseEvents(
   let eventName: string | null = null;
   let dataLines: string[] = [];
   let eventBytes = 0;
+  // F-39: continuation bounding. The two continuation rules below exist for
+  // upstreams that split one JSON event across lines (Qoder IDE); without a
+  // cap, a corrupt stream's lost boundary merged two frames into one "valid"
+  // delta — exactly what the strict-header policy forbids.
+  let continuationCount = 0;
+  const maxContinuations = 100;
 
   const onAbort = (): void => {
     reader.cancel(signal?.reason).catch(() => undefined);
@@ -193,9 +199,11 @@ export async function* decodeSseEvents(
     if (line.startsWith("event:")) {
       const name = line.slice(6).trim();
       eventName = name.length > 0 ? name : null;
+      continuationCount = 0;
       return;
     }
     if (line.startsWith("data:")) {
+      continuationCount = 0;
       const piece = line.slice(5).trimStart();
       dataLines.push(piece);
       eventBytes += piece.length;
@@ -229,6 +237,14 @@ export async function* decodeSseEvents(
     // a bare line as a continuation of the open `data:` event rather than a
     // malformed stream. A bare line with no open data is still an error.
     if (dataLines.length > 0) {
+      // F-39: a bare line continues the open data only while it is still an
+      // incomplete value. A bare line after a COMPLETE frame is a lost event
+      // boundary — appending it decoded two frames as one merged delta, so it
+      // is the malformed-line error the header policy already mandates.
+      if (isCompleteJsonValue(dataLines.join("\n")))
+        throw new GatewayError("platform_unavailable", 502, `Malformed SSE line: ${snippet(line)} (request {requestId}). The upstream sent something we can't read — retry 🌙`, {}, "upstream");
+      if (++continuationCount > maxContinuations)
+        throw oversized("continuation", line);
       dataLines.push(line);
       eventBytes += line.length;
       if (eventBytes > maxEventBytes) throw oversized("event", line);
@@ -269,6 +285,13 @@ export async function* decodeSseEvents(
       }
       pendingBytes = 0;
       yield* emitLine(decoder.decode(total));
+    }
+    // F-39: a stream that ends with open, INCOMPLETE JSON data is a truncated
+    // frame — dispatching it decoded corruption as a final delta.
+    if (dataLines.length > 0) {
+      const joined = dataLines.join("\n");
+      if (!isCompleteJsonValue(joined) && /^\s*[{[]/.test(joined))
+        throw new GatewayError("platform_unavailable", 502, `SSE stream ended mid-event: ${snippet(joined)} (request {requestId}). The upstream's stream was cut — retry 🌙`, {}, "upstream");
     }
     yield* dispatchEvent();
   } finally {

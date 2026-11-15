@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { decodeSseEvents } from "../../src/protocol/sse-decoder";
+import { decodeSseEvents, type SseEvent } from "../../src/protocol/sse-decoder";
 
 function streamFrom(text: string): ReadableStream<Uint8Array> {
   return new ReadableStream({
@@ -89,5 +89,63 @@ describe("decodeSseEvents", () => {
         // drain
       }
     }).toThrow(/Malformed SSE line/);
+  });
+});
+
+describe("F-39: continuation bounds", () => {
+  test("a bare line after a COMPLETE frame is corruption, not a merged delta", async () => {
+    // A lost event boundary: the first frame is complete JSON, then a bare
+    // line starts a new frame without its prefix. Appending it decoded two
+    // frames as one "valid" delta; the decoder now throws.
+    const stream = streamFrom('data: {"a":1}\n{"b":2}\n\n');
+    await expect(async () => {
+      for await (const _ of decodeSseEvents(stream)) {
+        // drain
+      }
+    }).toThrow(/Malformed SSE line/);
+  });
+
+  test("a bare line while the open data is incomplete still continues (Qoder shape)", async () => {
+    const stream = streamFrom('data: {"a":\n1}\n\n');
+    const events: SseEvent[] = [];
+    for await (const event of decodeSseEvents(stream)) events.push(event);
+    expect(events.length).toBe(1);
+    expect(events[0]?.data).toBe('{"a":\n1}');
+  });
+
+  test("a stream that ends mid-JSON throws instead of dispatching the truncated frame", async () => {
+    const stream = streamFrom('data: {"a":1,"b":');
+    await expect(async () => {
+      for await (const _ of decodeSseEvents(stream)) {
+        // drain
+      }
+    }).toThrow(/ended mid-event/);
+  });
+
+  test("a stream that ends with a complete non-JSON payload still dispatches", async () => {
+    const stream = streamFrom("data: [DONE]");
+    const events: SseEvent[] = [];
+    for await (const event of decodeSseEvents(stream)) events.push(event);
+    expect(events.length).toBe(1);
+    expect(events[0]?.data).toBe("[DONE]");
+  });
+
+  test("keepalive comments and CRLF line endings still decode", async () => {
+    const stream = streamFrom(': ping\r\ndata: {"a":1}\r\n\r\n: ping\r\ndata: [DONE]\r\n\r\n');
+    const events: SseEvent[] = [];
+    for await (const event of decodeSseEvents(stream)) events.push(event);
+    expect(events.map((event) => event.data)).toEqual(['{"a":1}', "[DONE]"]);
+  });
+
+  test("runaway continuations are bounded", async () => {
+    // One incomplete frame followed by more continuations than the cap
+    // allows: a corrupt stream must terminate with an error, not buffer.
+    const body = "data: {\n" + "x\n".repeat(150);
+    const stream = streamFrom(body);
+    await expect(async () => {
+      for await (const _ of decodeSseEvents(stream)) {
+        // drain
+      }
+    }).toThrow(/exceeds size bound/);
   });
 });
