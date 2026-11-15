@@ -130,6 +130,29 @@ export class ResponsesEventEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
     this.sequence += 1;
     return event;
   }
+
+  /**
+   * F-38: the one `response.error` payload builder. The push path and the
+   * fatal encoder used to emit two incompatible shapes (`category`+`message`
+   * vs `origin`+`code`+`message`+`details`), so a client keying on `code`
+   * could not classify a mid-stream error. Both paths now emit the same
+   * fields; the push path's canonical category doubles as the code, and the
+   * `category` field is kept so category-keyed clients still classify.
+   */
+  private errorEvent(input: {
+    readonly origin: string;
+    readonly code: string;
+    readonly message: string;
+    readonly details?: unknown;
+  }): ResponsesWireEvent {
+    return this.emit("response.error", {
+      origin: input.origin,
+      code: input.code,
+      category: input.code,
+      message: input.message,
+      ...(input.details === undefined ? {} : { details: input.details }),
+    });
+  }
   private readonly responseId: string;
   private readonly createdAt: number;
   private responseObject(status: string): Record<string, unknown> {
@@ -761,7 +784,7 @@ export class ResponsesEventEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
     if (event.type === "error") {
       this.hasError = true;
       return events.concat(
-        this.emit("response.error", { category: event.category, message: event.message }),
+        this.errorEvent({ origin: "upstream", code: event.category, message: event.message }),
       );
     }
     if (event.type === "terminal")
@@ -800,12 +823,7 @@ export class ResponsesEventEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
   }): ResponsesWireEvent[] {
     if (this.terminal) return [];
     this.terminal = true;
-    const errorEvent = this.emit("response.error", {
-      origin: input.origin,
-      code: input.code,
-      message: input.message,
-      details: input.details,
-    });
+    const errorEvent = this.errorEvent(input);
     const response = this.responseObject("failed");
     response["error"] = {
       type: "server_error",

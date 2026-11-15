@@ -208,7 +208,11 @@ export function jsonCompletion(
     if (event.type === "terminal") {
       terminalState = event.state;
       terminalFinishReason = finishReason(event.stop_reason, event.state);
-      if (!cancelled && event.state !== "aborted" && event.usage) usage = usageToChatWire(event.usage);
+      // F-40: usage on terminal state — an UPSTREAM-aborted stream still
+      // reports the usage it delivered (the client is listening and the turn
+      // is billable); only a caller-cancelled stream (`cancelled`) nulls it,
+      // because nobody is reading.
+      if (!cancelled && event.usage) usage = usageToChatWire(event.usage);
     }
   }
   if (cancelled) usage = null;
@@ -507,9 +511,10 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
       // downgrades to `stop` (the same rule the Messages encoders apply).
       if (this.terminalReason === "tool_calls" && !this.emittedNamedToolCall)
         this.terminalReason = "stop";
-      if (!this.cancelled && event.state !== "aborted" && event.usage)
-        this.finalUsage = usageToChatWire(event.usage);
-      const usage = this.cancelled || event.state === "aborted" ? null : this.finalUsage;
+      // F-40: same policy as the sync path — an upstream-aborted terminal
+      // still reports its usage; only a caller-cancelled stream nulls it.
+      if (!this.cancelled && event.usage) this.finalUsage = usageToChatWire(event.usage);
+      const usage = this.cancelled ? null : this.finalUsage;
       result.push(
         this.withBase(
           [{ index: 0, delta: {}, finish_reason: this.terminalReason }],

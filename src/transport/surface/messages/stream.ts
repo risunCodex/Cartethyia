@@ -331,10 +331,18 @@ export class MessagesStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
         out.push(...this.closeOpenBlock());
         out.push(...this.flushToolCalls());
         out.push(...this.closeOpenBlock());
-        this.tools.states.clear();
-        this.emittedArguments.clear();
-        this.openedToolCalls.clear();
-        this.wireIds.clear();
+        // F-37: per-call reset only. The wipe of every per-call map made an
+        // interleaved parallel stream (delta A, delta B, result A, delta B)
+        // lose B's continuation — its fragments re-entered a fresh tracker
+        // with no name and the nameless guard swallowed them, or re-opened a
+        // duplicate block when the continuation re-carried the name. The
+        // Responses encoder parks a call and resumes the same item; the
+        // answered call retires here, every other call keeps its state.
+        const answeredKey = this.keyFor(part.call_id);
+        this.tools.states.delete(answeredKey);
+        this.tools.indexById.delete(answeredKey);
+        this.emittedArguments.delete(answeredKey);
+        this.openedToolCalls.delete(answeredKey);
         const resultBlock = blockFromPart({
           kind: "toolResult",
           call_id: part.call_id,

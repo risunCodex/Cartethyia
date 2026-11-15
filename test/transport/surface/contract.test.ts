@@ -747,17 +747,18 @@ describe("contract: terminal state semantics", () => {
     expect(all.messagesStream.error).toEqual({ type: "server_error", message: "The upstream response failed" });
   });
 
-  test("F-38 [divergence — to flip in the P2 tail]: two response.error payload shapes on Responses", () => {
-    // The push path emits `{category, message}` for a mid-stream canonical
-    // error event; the fatal encoder emits `{origin, code, message, details}`.
-    // One builder must own both (F-38); pinned here so the unification flips
-    // exactly these rows.
+  test("F-38 fixed: one response.error payload shape on both paths", () => {
+    // The push path (canonical error event) and the fatal encoder now share
+    // one builder: origin, code, category, message — a client keying on
+    // `code` can classify a mid-stream error.
     const events = [start(), errorEvent("midstream trouble"), terminal({ state: "aborted" })];
     const canonical = canon(events);
     const wire = encodeResponsesWireEvents(canonical, { model: MODEL });
     const midstream = wire.find((event) => event.type === "response.error");
     expect(midstream).toBeDefined();
+    expect(midstream?.["code"]).toBe("upstream_error");
     expect(midstream?.["category"]).toBe("upstream_error");
+    expect(midstream?.["origin"]).toBe("upstream");
     expect(midstream?.["message"]).toBe("midstream trouble");
   });
 });
@@ -790,18 +791,29 @@ describe("contract: usage parity", () => {
     expectUsageParity(all.responses.usage, 10, 5, "responses");
   });
 
-  test("F-40 [divergence — to flip in the P2 tail]: aborted terminal drops usage on chat only", () => {
-    // The same aborted terminal with usage: Chat nulls it (the caller hung up
-    // — historically treated as unread), Messages and Responses attach it.
+  test("F-40 fixed: an upstream-aborted terminal reports usage on every surface", () => {
+    // The same aborted terminal with usage: every surface attaches it — the
+    // client is listening and the turn is billable. Only an explicitly
+    // caller-cancelled stream nulls chat's usage (nobody is reading), which
+    // the chat encoders keep handling through their own options.
     const usage = usageRecord(50, 7);
     const events = [start(), text("hi"), terminal({ state: "aborted", usage })];
     const all = encodeAll(events);
     expectUsageParity(all.messagesSync.usage, 50, 7, "messages sync");
     expectUsageParity(all.messagesStream.usage, 50, 7, "messages stream");
     expectUsageParity(all.responses.usage, 50, 7, "responses");
-    // Divergence rows (flip with F-40 if the policy changes):
-    expect(all.chatSync.usage).toBeNull();
-    expect(all.chatStream.usage).toBeNull();
+    expectUsageParity(all.chatSync.usage, 50, 7, "chat sync");
+    expectUsageParity(all.chatStream.usage, 50, 7, "chat stream");
+  });
+
+  test("F-40: an explicitly caller-cancelled chat stream still nulls usage", () => {
+    const usage = usageRecord(50, 7);
+    const events = [start(), text("hi"), terminal({ state: "aborted", usage })];
+    const canonical = canon(events);
+    const sync = encodeChatSync(canonical, true);
+    const stream = encodeChatStream(canonical, true);
+    expect(sync.usage).toBeNull();
+    expect(stream.usage).toBeNull();
   });
 });
 
@@ -870,18 +882,15 @@ describe("contract: unnamed tool calls", () => {
       all.chatSync.calls,
       "chat sync",
     );
-    // Divergence row (flip with the F-37 fix): the Messages SYNC path has the
-    // same defect — `groupedBlocks.flushTools` runs on every non-delta event,
-    // so B ships at the fragment it had when the result arrived (repaired to
-    // strict JSON by the F-26 pass) and the unnamed continuation is dropped
-    // at the final flush.
+    // F-37 fixed on the sync path too: the flushed block grows in place when
+    // the continuation arrives.
     expectSameCalls(
       [
         { id: "call_a", name: "alpha", args: '{"x":1}' },
-        { id: "call_b", name: "beta", args: '{"y":null}' },
+        { id: "call_b", name: "beta", args: '{"y":2}' },
       ],
       all.messagesSync.calls,
-      "messages sync (flush-per-event wipe — F-37)",
+      "messages sync (block grows in place — F-37 fixed)",
     );
     expectSameCalls(
       [
@@ -891,16 +900,17 @@ describe("contract: unnamed tool calls", () => {
       all.responses.calls,
       "responses (parked, resumed)",
     );
-    // Divergence rows (flip with the F-37 fix):
+    // F-37 fixed: the continuation resumes B's parked block — full arguments
+    // on every path, and the tool_use stop stays accurate.
     expectSameCalls(
       [
         { id: "call_a", name: "alpha", args: '{"x":1}' },
-        { id: "call_b", name: "beta", args: '{"y":' },
+        { id: "call_b", name: "beta", args: '{"y":2}' },
       ],
       all.messagesStream.calls,
-      "messages stream (continuation silently dropped — F-37)",
+      "messages stream (parked, resumed — F-37 fixed)",
     );
-    expect(all.messagesStream.stop, "stop downgrades because the continuation call lost its name").toBe("end_turn");
+    expect(all.messagesStream.stop).toBe("tool_use");
   });
 
   test("F-37 [divergence — to flip in the P2 tail]: continuation delta with a name re-opens a duplicate block index on Messages", () => {
@@ -934,18 +944,16 @@ describe("contract: unnamed tool calls", () => {
       all.responsesStream.calls,
       "responses stream",
     );
-    // Divergence row (flip with the F-37 fix): three block starts on the
-    // wire — A, B, and a duplicate B at the same index.
-    expect(all.messagesStream.callBlockStarts, "duplicate B block — F-37").toBe(3);
+    // F-37 fixed: two block starts — A and B — and B's block carries the
+    // joined arguments.
+    expect(all.messagesStream.callBlockStarts, "one block per call — F-37 fixed").toBe(2);
     expectSameCalls(
       [
         { id: "call_a", name: "alpha", args: '{"x":1}' },
-        // The duplicate B block overwrites the first in an index-keyed view;
-        // its arguments restart from the continuation fragment.
-        { id: "call_b", name: "beta", args: "2}" },
+        { id: "call_b", name: "beta", args: '{"y":2}' },
       ],
       all.messagesStream.calls,
-      "messages stream (duplicate B — F-37)",
+      "messages stream (parked, resumed — F-37 fixed)",
     );
   });
 
