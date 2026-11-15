@@ -29,7 +29,8 @@ import {
 } from "../../../protocol/upstream-errors";
 import { QODER_CN_MODEL_CONFIGS, QODER_INTL_MODEL_CONFIGS } from "./qoder-catalog";
 import { isQoderVirtualModel, qoderDispatchModelId } from "./qoder-virtual";
-import { isQoderPat, qoderOAuthAuth, qoderSessionId, resolveQoderAuth } from "./qoder-auth";
+import { attachQoderNativeIdentity, isQoderPat, qoderOAuthAuth, qoderSessionId, resolveQoderAuth } from "./qoder-auth";
+import { noteQoderDispatchOk, qoderAccountGate } from "./qoder-risk";
 import { buildQoderRequest, callQoder } from "./qoder-chat";
 import { qoderBodyToCanonicalEvents } from "./qoder-sse";
 import { estimateQoderSessionCache } from "./qoder-cache";
@@ -129,6 +130,10 @@ class QoderAdapter implements ProviderAdapter {
       assertWireFamily(candidate, "chat", "qoder");
     }
     const secret = readCredentialSecret(context.credential, "Qoder credential is required");
+    // Risk gate: same-account dispatches keep a minimum gap (the upstream
+    // scores request cadence as its own dimension) and the risk counters
+    // observe the outcome.
+    await qoderAccountGate(this.provider_id, context.credential.account_id ?? "");
 
     /**
      * A caller-facing virtual name is translated to its roster key here.
@@ -172,7 +177,7 @@ class QoderAdapter implements ProviderAdapter {
       // identity the login persisted.
       const auth = isQoderPat(secret)
         ? await resolveQoderAuth({ secret, authState: context.credential.auth_state, signal: lifecycle.signal, fetcher, realm: this.realm })
-        : qoderOAuthAuth(secret, context.credential.auth_state, context.credential.account_id);
+        : attachQoderNativeIdentity(qoderOAuthAuth(secret, context.credential.auth_state, context.credential.account_id), this.realm);
 
       // Transport selection — see module doc for the surface contract.
       const cosyCandidates = candidate.endpoint_path?.startsWith("http")
@@ -209,6 +214,7 @@ class QoderAdapter implements ProviderAdapter {
         request,
         qoderSessionId(auth.userId, modelId),
       );
+      noteQoderDispatchOk(this.provider_id);
     } catch (err: unknown) {
       const abortError = abortGatewayError(lifecycle, err, context.abort_signal);
       if (abortError) throw abortError;

@@ -25,6 +25,7 @@ import {
 import { getQoderVersion } from "../../operations/client-versions";
 import { qoderMachineOs } from "../../operations/cli-platform";
 import { parseQoderOAuthState } from "./qoder-oauth";
+import { readMachineIdentityCache } from "./qoder-identity-cache";
 import { QODER_REALMS, type QoderRealm } from "./qoder-realm";
 import type { QoderAuth } from "./qoder-types";
 
@@ -265,18 +266,40 @@ export async function resolveQoderAuth(input: {
   readonly realm?: QoderRealm;
 }): Promise<QoderAuth> {
   const realm = input.realm ?? "intl";
+  let auth: QoderAuth;
   if (isQoderPat(input.secret)) {
-    const auth = await exchangeQoderPat(input.secret, input.signal, input.fetcher, getQoderVersion(), realm);
+    auth = await exchangeQoderPat(input.secret, input.signal, input.fetcher, getQoderVersion(), realm);
     // A PAT exchange never returns the account's identity; when the persisted
     // auth_state also carries the HTTPDNS-route IP, carry it over so the COSY
     // request mirrors the desktop client's `X-Qoder-HTTPDNS-IP` header.
     const state = parseQoderOAuthState(input.authState);
     if (state?.httpDnsIp !== undefined) auth.httpDnsIp = state.httpDnsIp;
-    return auth;
+  } else {
+    // Discovery is handed only the secret and the persisted state, so the
+    // account id is read from that state — the same place `qoderOAuthAuth`
+    // reads it — rather than being a separate field callers can pass wrongly.
+    const state = parseQoderOAuthState(input.authState);
+    auth = qoderOAuthAuth(input.secret, input.authState, state?.userId);
   }
-  // Discovery is handed only the secret and the persisted state, so the
-  // account id is read from that state — the same place `qoderOAuthAuth` reads
-  // it — rather than being a separate field callers can pass wrongly.
-  const state = parseQoderOAuthState(input.authState);
-  return qoderOAuthAuth(input.secret, input.authState, state?.userId);
+  return attachQoderNativeIdentity(auth, realm);
+}
+
+/**
+ * Attaches the machine's native bridge identity (`runtime-info`) to the auth
+ * when the account carries none.
+ *
+ * The bridge token is machine-scoped — byte-identical for any account on one
+ * host — so the per-realm disk cache is the correct shared source, and only a
+ * `runtime-info`-sourced entry qualifies: an OS-derived token must never ride
+ * the chat identity (a full derived header set is a spoof shape the upstream
+ * filters, donor issue #10). An auth that already carries identity fields
+ * (bound through the native-identity store) is left untouched. Exported so
+ * the adapter's direct OAuth branch (which bypasses `resolveQoderAuth`)
+ * shares one pipeline.
+ */
+export function attachQoderNativeIdentity(auth: QoderAuth, realm: QoderRealm): QoderAuth {
+  if (auth.machineToken !== undefined && auth.machineToken.length > 0) return auth;
+  const cached = readMachineIdentityCache(realm);
+  if (cached?.source !== "runtime-info") return auth;
+  return { ...auth, machineToken: cached.machineToken, machineType: cached.machineType, machineCode: cached.machineCode };
 }

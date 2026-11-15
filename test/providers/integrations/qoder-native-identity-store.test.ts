@@ -63,10 +63,13 @@ async function fixture() {
   };
 }
 
-/** A deterministic fake minter: stable token per call, like the real bridge
- * (same seed → same token). An optional `collideWith` makes the first call
- * emit an occupied token so collision-retry tests can exercise the loop. */
-function fakeMinter(collideWith?: string) {
+/** A deterministic fake minter: stable token per call (same seed → same
+ * token). An optional `collideWith` makes the first call emit an occupied
+ * token so collision-retry tests can exercise the loop. `source` defaults to
+ * "os": the per-account mint whose tokens the unique index keeps exclusive.
+ * Pass "runtime-info" for the machine-scoped bridge semantics (tokens are
+ * legitimately shared by every account on one host). */
+function fakeMinter(collideWith?: string, source: QoderNativeIdentity["source"] = "os") {
   let n = 0;
   return {
     mint: (_accountId?: string): { identity: QoderNativeIdentity; seed: string } => {
@@ -78,7 +81,7 @@ function fakeMinter(collideWith?: string) {
           machineType: `type-${n}`,
           machineCode: `code-${n}`,
           isVm: false,
-          source: "runtime-info",
+          source,
         },
         seed: `{"seed":${n}}`,
       };
@@ -125,14 +128,30 @@ describe("DrizzleQoderNativeIdentityStore", () => {
     }
   });
 
-  test("the partial unique index rejects two accounts sharing a token", async () => {
+  test("the partial unique index rejects two accounts sharing a derived token", async () => {
     const f = await fixture();
     try {
       const a = await f.account("a");
       const b = await f.account("b");
       const store = new DrizzleQoderNativeIdentityStore(f.db);
-      await store.bind("qoder", a, RECORD("tok-0"));
-      await expect(store.bind("qoder", b, RECORD("tok-0"))).rejects.toThrow();
+      await store.bind("qoder", a, { ...RECORD("tok-0"), source: "os" });
+      await expect(store.bind("qoder", b, { ...RECORD("tok-0"), source: "os" })).rejects.toThrow();
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  test("machine-scoped runtime-info tokens may repeat across accounts (migration 0049)", async () => {
+    const f = await fixture();
+    try {
+      const a = await f.account("a");
+      const b = await f.account("b");
+      const store = new DrizzleQoderNativeIdentityStore(f.db);
+      await store.bind("qoder", a, { ...RECORD("tok-0"), source: "runtime-info" });
+      // The bridge output is byte-identical for every account on one host —
+      // the second binding is the same machine, not a spoof collision.
+      await store.bind("qoder", b, { ...RECORD("tok-0"), source: "runtime-info" });
+      expect((await store.get("qoder", b))?.machineToken).toBe("tok-0");
     } finally {
       f.cleanup();
     }
@@ -151,6 +170,24 @@ describe("allocateQoderNativeIdentity", () => {
       expect(record?.seed).toBe('{"seed":1}');
       if (record === null) throw new Error("expected a bound record");
       expect(await store.get("qoder", id)).toEqual(record);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  test("a runtime-info cache entry is shared by every account on the host", async () => {
+    const f = await fixture();
+    try {
+      const a = await f.account("a");
+      const store = new DrizzleQoderNativeIdentityStore(f.db);
+      const native = fakeMinter(undefined, "runtime-info");
+      const first = await allocateQoderNativeIdentity(store, "qoder", a, { mint: native.mint, env: f.env, realm: "intl" });
+      expect(first?.machineToken).toBe("tok-1");
+      // The bridge token is machine-scoped: account b's allocation hits the
+      // disk cache and binds the SAME token instead of minting another.
+      const b = await f.account("b");
+      const second = await allocateQoderNativeIdentity(store, "qoder", b, { mint: native.mint, env: f.env, realm: "intl" });
+      expect(second?.machineToken).toBe("tok-1");
     } finally {
       f.cleanup();
     }
@@ -206,7 +243,8 @@ describe("allocateQoderNativeIdentity", () => {
       await store.bind("qoder", a, RECORD("tok-1"));
 
       const id = await f.account("b");
-      // minter returns tok-1 (occupied) then tok-2 (free).
+      // minter returns tok-1 (occupied) then tok-2 (free). "os" source: the
+      // uniqueness semantics the collision loop exists for.
       let calls = 0;
       const mint = () => {
         calls += 1;
@@ -216,7 +254,7 @@ describe("allocateQoderNativeIdentity", () => {
             machineType: "t",
             machineCode: "c",
             isVm: false,
-            source: "runtime-info" as const,
+            source: "os" as const,
           },
           seed: `{"seed":${calls}}`,
         };

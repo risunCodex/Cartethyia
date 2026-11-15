@@ -21,7 +21,9 @@
  * not an Alibaba SG-signed token — it is a spoofed native-shaped identity.
  */
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { join } from "node:path";
 import {
   arch as osArch,
   cpus,
@@ -31,6 +33,8 @@ import {
   totalmem,
   userInfo,
 } from "node:os";
+import { resolveDataDir } from "../../../persistence/db-mode";
+import { log } from "../../../observability/logger";
 import { qoderMachineHostname, qoderMachineOs } from "../../operations/cli-platform";
 
 /** One machine identity sample (same shape the bridge printed). */
@@ -127,6 +131,159 @@ export function mintQoderOsIdentity(accountId: string): QoderNativeIdentity {
 /** Legacy alias retained for callers that still import the generated mint. */
 export function mintQoderGeneratedIdentity(accountId: string): QoderNativeIdentity {
   return mintQoderOsIdentity(accountId);
+}
+
+// ── Native bridge (runtime-info) ───────────────────────────────────────────
+//
+// The vendor bridge is the machine-identity component the official client
+// ships (`resources/umid/runtime-info[.exe]` + the Windows `sgsdk.dll`). The
+// hub's wire audits proved the server scores this identity: a real bridge
+// output is a first-party device, an OS-derived one is a shaped spoof, and a
+// full set of *derived* headers is actively filtered (donor issue #10) or
+// pinned into the low-priority queue (donor issue #158: sustained
+// `queueType: "p4"` on every account/realm/model while quota reads healthy —
+// the score is machine-level, and `runtime-info` output is byte-identical
+// across accounts on one host).
+//
+// Extraction lives in `scripts/tools/qoder-umid-extract.mjs` (downloads the
+// npm `@qoder-ai/qodercli` tarball, carves the per-platform components by
+// magic bytes — the same recipe the hub proved). This module only locates and
+// executes the bridge; it never vendors binaries in-tree.
+
+/** Windows needs the sibling SG SDK next to the bridge executable. */
+export function runtimeInfoExePath(env: NodeJS.ProcessEnv = process.env): string | null {
+  const override = env["QD_UMID_DIR"];
+  const dir =
+    override !== undefined && override.trim().length > 0
+      ? override.trim()
+      : join(resolveDataDir(env), "qoder-umid", `${osPlatform()}-${osArch()}`);
+  const exe = process.platform === "win32" ? "runtime-info.exe" : "runtime-info";
+  const path = join(dir, exe);
+  if (!existsSync(path)) return null;
+  if (process.platform === "win32" && !existsSync(join(dir, "sgsdk.dll"))) return null;
+  return path;
+}
+
+/** The bridge's deployment selector: `0` = CN online, `3` = intl desktop. */
+export function runtimeInfoEnvCode(realm: string): string {
+  return realm === "cn" ? "0" : "3";
+}
+
+interface RuntimeInfoOutput {
+  readonly machineToken?: unknown;
+  readonly machineType?: unknown;
+  readonly machineCode?: unknown;
+  readonly vmInfo?: { readonly isVm?: unknown };
+}
+
+function nonEmpty(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+/**
+ * One bridge invocation. Contract (desktop 0.4.8 / CLI 1.1.75): the component
+ * prints one JSON object — `{machineToken, machineType, machineCode, vmInfo}`,
+ * where darwin/win32 take the account on stdin (`--account-stdin`) and accept
+ * any/absent account (the output is machine-scoped).
+ */
+export function runQoderRuntimeInfo(
+  realm: string,
+  accountId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<QoderNativeIdentity | null> {
+  return new Promise((resolve) => {
+    const exe = runtimeInfoExePath(env);
+    if (exe === null) return resolve(null);
+    const args = [runtimeInfoEnvCode(realm)];
+    const darwinOrWin = process.platform === "darwin" || process.platform === "win32";
+    if (darwinOrWin) args.push("--account-stdin");
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(exe, args, { cwd: join(exe, ".."), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    } catch {
+      return resolve(null);
+    }
+    const timer = setTimeout(() => child.kill(), 25_000);
+    let stdout = "";
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    const finish = (value: QoderNativeIdentity | null) => {
+      clearTimeout(timer);
+      resolve(value);
+    };
+    child.on("error", () => finish(null));
+    child.on("close", () => {
+      try {
+        const parsed = JSON.parse(stdout.trim()) as RuntimeInfoOutput;
+        const machineToken = nonEmpty(parsed.machineToken);
+        const machineType = nonEmpty(parsed.machineType);
+        const machineCode = nonEmpty(parsed.machineCode);
+        if (machineToken === undefined || machineType === undefined || machineCode === undefined) {
+          return finish(null);
+        }
+        finish({
+          machineToken,
+          machineType,
+          machineCode,
+          isVm: parsed.vmInfo?.isVm === true,
+          source: "runtime-info",
+        });
+      } catch {
+        finish(null);
+      }
+    });
+    if (darwinOrWin) child.stdin?.end(`${JSON.stringify({ account: accountId })}\n`);
+    else child.stdin?.end();
+  });
+}
+
+const IDENTITY_VOTE_ROUNDS = 3;
+
+/**
+ * Majority-voted bridge identity for one realm.
+ *
+ * The component's VM verdict can flap between runs (KVM/13 ↔ Docker/50 on the
+ * same host, the hub's live observation), so three rounds vote on the
+ * identity-bearing fields (token/type/code/isVm) and the majority wins. Any
+ * instability means we keep the round that matches the winning token — the
+ * token is the identity, the verdict fields ride along.
+ */
+export async function sampleQoderNativeIdentity(
+  realm: string,
+  accountId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<QoderNativeIdentity | null> {
+  if (env["CARTETHYIA_QODER_NATIVE_IDENTITY"] === "0") return null;
+  const exe = runtimeInfoExePath(env);
+  if (exe === null) return null;
+  const rounds = await Promise.all(
+    Array.from({ length: IDENTITY_VOTE_ROUNDS }, () => runQoderRuntimeInfo(realm, accountId, env)),
+  );
+  const valid = rounds.filter((r): r is QoderNativeIdentity => r !== null);
+  if (valid.length === 0) return null;
+  const counts = new Map<string, number>();
+  for (const round of valid) {
+    const key = `${round.machineToken}|${round.machineType}|${round.machineCode}|${round.isVm ? 1 : 0}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  let bestKey = "";
+  let bestCount = 0;
+  for (const [key, count] of counts) {
+    if (count > bestCount) {
+      bestKey = key;
+      bestCount = count;
+    }
+  }
+  const winner = valid.find(
+    (r) => `${r.machineToken}|${r.machineType}|${r.machineCode}|${r.isVm ? 1 : 0}` === bestKey,
+  );
+  if (winner === undefined) return null;
+  if (bestCount < IDENTITY_VOTE_ROUNDS) {
+    log.warn(`[qoder] runtime-info identity flapped (${bestCount}/${IDENTITY_VOTE_ROUNDS} rounds agree); using the majority sample`);
+  }
+  return winner;
 }
 
 /**

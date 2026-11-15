@@ -18,6 +18,7 @@ import type { CartethyiaDatabase } from "../../../persistence/db-handle";
 import { providerAccounts, type NativeIdentityRecord } from "../../../persistence/schema";
 import {
   mintQoderOsIdentity,
+  sampleQoderNativeIdentity,
   type QoderNativeIdentity,
 } from "./qoder-umid";
 import {
@@ -94,10 +95,29 @@ function withAllocationLock<T>(work: () => Promise<T>): Promise<T> {
   return next;
 }
 
-/** Identity minting injected for tests; defaults to the OS-derived mint. */
-export type NativeIdentityMinter = (accountId?: string) => { identity: QoderNativeIdentity; seed: string } | null;
+/**
+ * Identity minting injected for tests; defaults to the native-first pipeline.
+ * Sync mints remain valid — `allocateQoderNativeIdentity` awaits the result.
+ */
+export type NativeIdentityMinter = (accountId?: string) => Promise<{ identity: QoderNativeIdentity; seed: string } | null> | { identity: QoderNativeIdentity; seed: string } | null;
 
-const defaultMinter: NativeIdentityMinter = (accountId = "") => ({ identity: mintQoderOsIdentity(accountId), seed: "" });
+/**
+ * The production mint for one realm, in order:
+ *  1. the vendor `runtime-info` bridge (a real device identity — the shape
+ *     the server scores; a shaped spoof is filtered from campaigns and can
+ *     pin the account into the low-priority queue), majority-voted, run with
+ *     the realm's own env code (`0` cn / `3` intl — different identities);
+ *  2. the OS-derived deterministic mint when the bridge is absent
+ *     (unextracted, unsupported platform) or disabled
+ *     (`CARTETHYIA_QODER_NATIVE_IDENTITY=0`).
+ */
+function defaultMinterFor(realm: string): NativeIdentityMinter {
+  return async (accountId = "") => {
+    const native = await sampleQoderNativeIdentity(realm, accountId);
+    if (native) return { identity: native, seed: "" };
+    return { identity: mintQoderOsIdentity(accountId), seed: "" };
+  };
+}
 
 /**
  * Mints and binds a fresh device identity for an account and persists both.
@@ -122,18 +142,24 @@ export function allocateQoderNativeIdentity(
     readonly env?: NodeJS.ProcessEnv;
   } = {},
 ): Promise<NativeIdentityRecord | null> {
-  const mint = options.mint ?? defaultMinter;
   const realm = options.realm ?? "intl";
+  const mint = options.mint ?? defaultMinterFor(realm);
   const env = options.env ?? process.env;
   return withAllocationLock(async () => {
     // 1. Disk cache first — reuse the stable device identity across restarts.
     //    But the cache is machine-global: a token already bound to another
     //    account (unique index) must not be reused, so skip the cache and
-    //    mint fresh when the cached token is occupied.
+    //    mint fresh when the cached token is occupied. A runtime-info token
+    //    is machine-scoped, so every account on this host is *supposed* to
+    //    share it; only a derived/os token is per-account.
     const cached = readMachineIdentityCache(realm, env);
     if (cached) {
       const occupied = await store.occupied(accountId);
-      if (cached.machineToken !== options.avoidToken && !occupied.has(cached.machineToken)) {
+      const machineScoped = cached.source === "runtime-info";
+      const cacheUsable =
+        cached.machineToken !== options.avoidToken &&
+        (!occupied.has(cached.machineToken) || machineScoped);
+      if (cacheUsable) {
         const existing = await store.get(providerId, accountId);
         if (existing && existing.machineToken === cached.machineToken) return existing;
         const record: NativeIdentityRecord = {
@@ -148,15 +174,19 @@ export function allocateQoderNativeIdentity(
     }
 
     // 2. No valid cache — mint a fresh identity, re-minting on a collision
-    //    with an occupied or avoided token (bounded attempts).
-    const firstMint = mint(accountId);
+    //    with an occupied or avoided token (bounded attempts). A runtime-info
+    //    token is machine-scoped: every account on this host legitimately
+    //    shares it (migration 0049 relaxed the unique index for that source),
+    //    so only derived/os tokens collide.
+    const firstMint = await mint(accountId);
     if (firstMint) {
       const occupied = await store.occupied(accountId);
       for (let i = 0; i < 6; i += 1) {
-        const minted = i === 0 ? firstMint : mint(accountId);
+        const minted = i === 0 ? firstMint : await mint(accountId);
         if (!minted) return null;
         const token = minted.identity.machineToken;
-        if (occupied.has(token)) continue; // collision (rare) → mint again
+        const machineScoped = minted.identity.source === "runtime-info";
+        if (!machineScoped && occupied.has(token)) continue; // collision (rare) → mint again
         if (token === options.avoidToken) continue;
         const record: NativeIdentityRecord = {
           machineToken: token,

@@ -118,6 +118,24 @@ export const CONFIG_SPEC = {
     max: 1024 * 1024,
   },
 
+  // Qoder risk controls (see src/providers/integrations/qoder/qoder-risk.ts):
+  // the upstream scores request cadence and machine identity as their own
+  // dimensions. The gap spaces same-account dispatches (the donor hub's
+  // PR #78 uses 400ms with concurrency 1); the streak is how many consecutive
+  // queueType=p4 queue envelopes re-alarm the egress/machine-pin warning.
+  CARTETHYIA_QODER_MIN_GAP_MS: {
+    kind: "int",
+    default: 400,
+    min: 0,
+    max: 60_000,
+  },
+  CARTETHYIA_QODER_P4_WARN_STREAK: {
+    kind: "int",
+    default: 5,
+    min: 1,
+    max: 1000,
+  },
+
   // Graceful-shutdown drain: how long in-flight requests may finish naturally
   // before the drain aborts the stragglers. Sized above the common case (a
   // typical response) but below the stream stall bound so a wedged stream is

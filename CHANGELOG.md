@@ -23,6 +23,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   history but are absent from the current request's `tools` are re-declared to
   the provider as stateless stubs, so a client that narrows its tool set
   mid-conversation no longer breaks pairing on the next turn.
+- **Qoder presents the vendor's real machine identity.** The `runtime-info`
+  bridge (extracted from the official CLI's npm package by
+  `scripts/tools/qoder-umid-extract.mjs`) now feeds chat, auth, check-in, and
+  credits-claim with the machine-scoped identity the upstream actually scores
+  — previously chat presented an OS-derived spoof while claims used the
+  desktop token, two different "machines" for one account. The bridge token
+  is shared by every account on one host by design (migration 0049 relaxes
+  the per-account unique index for that source), the identity is
+  majority-voted across three bridge runs and cached per realm, and
+  `CARTETHYIA_QODER_MIN_GAP_MS` (default 400) spaces same-account dispatches
+  because the upstream scores request cadence. Sustained
+  `queueType=p4/RESOURCE_LIMIT` queue envelopes — an egress/machine risk pin,
+  not a capacity queue — re-alarm in telemetry every
+  `CARTETHYIA_QODER_P4_WARN_STREAK` (default 5) and surface their priority
+  class on the error detail; a queued envelope whose body arrives as a JSON
+  string no longer misclassifies as an authentication failure.
 - **Factory Droid tracks the official CLI version.** The client identity
   headers (`X-Client-Version`, `user-agent: factory-cli/<v>`) now follow the
   npm `droid` feed (Factory's own CLI) instead of a pinned `1.0.0`, with a

@@ -36,6 +36,7 @@ import {
   upstreamErrorIdentifier,
 } from "../../../protocol/upstream-errors";
 import { QODER_PROVIDER_ID } from "./qoder-realm";
+import { noteQoderQueue } from "./qoder-risk";
 
 export interface QoderSseEvent {
   readonly event: string | null;
@@ -252,6 +253,19 @@ export function qoderEnvelopeToFrames(data: string): Array<{ event: string | nul
     const queueTags = queuedWaitMs
       ? qoderQueueShapeTags({ ...rec, body: bodyForClassification })
       : "";
+    if (queuedWaitMs) {
+      // Risk telemetry: the queue's priority class is the signal that
+      // distinguishes a capacity wait from an egress/machine pin.
+      const bodyRecord =
+        typeof bodyForClassification === "object" && bodyForClassification !== null
+          ? (bodyForClassification as Record<string, unknown>)
+          : undefined;
+      const queueType =
+        bodyRecord !== undefined && typeof bodyRecord["queueType"] === "string"
+          ? (bodyRecord["queueType"] as string)
+          : undefined;
+      noteQoderQueue(QODER_PROVIDER_ID, queueType);
+    }
     const queueDetail = queueTags.length > 0 ? `${detail} [${queueTags}]`.trim() : detail;
     throw new GatewayError(
       classification.code,
