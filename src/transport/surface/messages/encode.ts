@@ -2,6 +2,8 @@ import type { CanonicalEvent, CanonicalStopReason, ContentPart, UsageRecord } fr
 import { assertBoundedJsonDepth, isRecord } from "../../../protocol/codecs";
 import { messagesStopReason } from "../../../protocol/stop-reason";
 import { reasoningTextOf } from "../../../protocol/reasoning-text";
+import { toolIdentityKey } from "../../../protocol/tool-identity";
+import { repairToolArguments } from "../../../protocol/tool-repair-args";
 import {
   reasoningSummaryHasBoundary,
   reasoningSummaryIdentity,
@@ -48,6 +50,23 @@ function parseArgs(value: unknown): unknown {
     return parsed;
   } catch (error) {
     if (error instanceof GatewayError) throw error;
+    // F-26: repair applies at the boundary where the arguments become a
+    // complete value — the same jsonrepair pass the Chat encoder applies —
+    // so a bridged upstream's truncated object reaches the client as a
+    // `tool_use` block with strict JSON input instead of a raw string the
+    // wire rejects.
+    const repaired = repairToolArguments(value);
+    if (repaired !== value) {
+      try {
+        const parsed = JSON.parse(repaired) as unknown;
+        if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+          assertBoundedJsonDepth(parsed);
+          return parsed;
+        }
+      } catch {
+        // fall through to the raw value below
+      }
+    }
     return value;
   }
 }
@@ -153,10 +172,13 @@ export function groupedBlocks(events: readonly CanonicalEvent[]): {
   let previousReasoningIdentity: ReasoningSummaryIdentity | undefined;
   let previousReasoningText: string | undefined;
   let droppedUnnamedToolCalls = 0;
-  // Fragments per call; joined once at flush so N deltas cost O(N), not O(N²).
-  const toolArguments = new Map<string, { name?: string; chunks: string[] }>();
+  // Fragments per call identity; joined once at flush so N deltas cost O(N),
+  // not O(N²). Keyed by identity (F-24): one call delivered under two prefix
+  // spellings must flush as ONE block under the first raw id, not two blocks
+  // (one of them nameless).
+  const toolArguments = new Map<string, { name?: string; rawId: string; chunks: string[] }>();
   const flushTools = (): void => {
-    for (const [callId, call] of toolArguments) {
+    for (const call of toolArguments.values()) {
       // Never a placeholder: see `requireMessagesToolName`. A call the
       // upstream never named cannot be expressed on the wire at all, so it is
       // dropped and counted — the caller downgrades `tool_use` to `end_turn`
@@ -167,7 +189,7 @@ export function groupedBlocks(events: readonly CanonicalEvent[]): {
       }
       blocks.push({
         type: "tool_use",
-        id: callId,
+        id: call.rawId,
         name: call.name,
         input: parseArgs(call.chunks.join("")),
       });
@@ -176,11 +198,13 @@ export function groupedBlocks(events: readonly CanonicalEvent[]): {
   };
   for (const event of events) {
     if (event.type === "tool_call_delta") {
-      const previous = toolArguments.get(event.call_id);
+      const key = toolIdentityKey(event.call_id);
+      const previous = toolArguments.get(key);
       const chunks = previous?.chunks ?? [];
       chunks.push(event.arguments_delta ?? "");
       const name = event.name ?? previous?.name;
-      toolArguments.set(event.call_id, {
+      toolArguments.set(key, {
+        rawId: previous?.rawId ?? event.call_id,
         // Absent until some delta names the call; sticky once seen.
         ...(name === undefined ? {} : { name }),
         chunks,

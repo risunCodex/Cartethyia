@@ -564,17 +564,12 @@ describe("contract: tool-call parity", () => {
     expectSameCalls(expected, all.responsesStream.calls, "responses stream");
   });
 
-  test("F-24 [divergence — to flip in the F-24 commit]: one call under two prefix spellings", () => {
-    // `call_abc` and `fc_abc` are the same logical call (toolIdentityKey). The
-    // Messages STREAM path keys every per-call map by identity and emits ONE
-    // block with the joined arguments; this suite found the Messages SYNC
-    // path (`groupedBlocks`) keys by raw id too, so it has the same defect as
-    // Chat and Responses. Divergences pinned per surface:
-    // - chat sync:      one call, arguments TRUNCATED at the first spelling
-    // - chat stream:    one call, arguments TRUNCATED (continuation dropped)
-    // - messages sync:  one call, arguments TRUNCATED (suite-found instance)
-    // - messages stream one call, arguments joined (the correct behavior)
-    // - responses:      TWO items, the second nameless
+  test("F-24 fixed: one call under two prefix spellings is one call everywhere", () => {
+    // `call_abc` and `fc_abc` are the same logical call (toolIdentityKey).
+    // Every encoder keys per-call state by identity and hands the client the
+    // first raw spelling it saw, with the arguments joined across both
+    // spellings. Before the fix: chat truncated the arguments, the Messages
+    // sync path split the call, and Responses emitted a second nameless item.
     const events = [
       start(),
       toolDelta({ id: "call_abc", name: "get_weather", args: '{"city":', index: 0 }),
@@ -585,41 +580,74 @@ describe("contract: tool-call parity", () => {
       { id: "call_abc", name: "get_weather", args: '{"city": "Tokyo"}' },
     ];
     const all = encodeAll(events);
+    expectSameCalls(expected, all.chatSync.calls, "chat sync");
+    expectSameCalls(expected, all.chatStream.calls, "chat stream");
+    expectSameCalls(expected, all.messagesSync.calls, "messages sync");
     expectSameCalls(expected, all.messagesStream.calls, "messages stream");
-    // Divergence rows (flip with the F-24 fix):
+    expectSameCalls(expected, all.responses.calls, "responses");
+    expectSameCalls(expected, all.responsesStream.calls, "responses stream");
+    // The reverse order hands back the OTHER spelling (first seen wins).
+    const reversed = encodeAll([
+      start(),
+      toolDelta({ id: "fc_abc", name: "get_weather", args: '{"city":', index: 0 }),
+      toolDelta({ id: "call_abc", args: ' "Tokyo"}', index: 1 }),
+      terminal({ state: "complete", reason: "tool_use" }),
+    ]);
     expectSameCalls(
-      // jsonrepair turns the truncated fragment into `{"city":null}` — a
-      // lossy repair of arguments that were only half-delivered.
-      [{ id: "call_abc", name: "get_weather", args: '{"city":null}' }],
+      [{ id: "fc_abc", name: "get_weather", args: '{"city": "Tokyo"}' }],
+      reversed.chatSync.calls,
+      "chat sync (first raw spelling wins)",
+    );
+    expectSameCalls(
+      [{ id: "fc_abc", name: "get_weather", args: '{"city": "Tokyo"}' }],
+      reversed.responses.calls,
+      "responses (first raw spelling wins)",
+    );
+  });
+
+  test("F-25 fixed: composite prefixes collapse to one call", () => {
+    // Responses bridges wrap already-prefixed ids: `fc_call_x` and `call_x`
+    // are one logical call. The provider decoders' emission ledger
+    // (toolIdentityKey) drops the duplicate definition; at the encoder the
+    // two spellings accumulate as one call's fragments under one identity.
+    const events = [
+      start(),
+      toolDelta({ id: "call_x", name: "get", args: '{"a":' }),
+      toolDelta({ id: "fc_call_x", args: '1}' }),
+      terminal({ state: "complete", reason: "tool_use" }),
+    ];
+    const all = encodeAll(events);
+    expectSameCalls(
+      [{ id: "call_x", name: "get", args: '{"a":1}' }],
       all.chatSync.calls,
-      "chat sync (lossy repair of truncated args — F-24)",
+      "chat sync",
     );
     expectSameCalls(
-      [{ id: "call_abc", name: "get_weather", args: '{"city":' }],
-      all.chatStream.calls,
-      "chat stream (continuation dropped — F-24)",
+      [{ id: "call_x", name: "get", args: '{"a":1}' }],
+      all.messagesStream.calls,
+      "messages stream",
     );
     expectSameCalls(
-      [{ id: "call_abc", name: "get_weather", args: '{"city":' }],
-      all.messagesSync.calls,
-      "messages sync (raw-id keys — F-24, found by this suite)",
-    );
-    expectSameCalls(
-      [
-        { id: "call_abc", name: "get_weather", args: '{"city":' },
-        { id: "fc_abc", name: "", args: ' "Tokyo"}' },
-      ],
+      [{ id: "call_x", name: "get", args: '{"a":1}' }],
       all.responses.calls,
-      "responses (duplicate nameless item — F-24)",
+      "responses",
     );
-    expectSameCalls(
-      [
-        { id: "call_abc", name: "get_weather", args: '{"city":' },
-        { id: "fc_abc", name: "", args: ' "Tokyo"}' },
-      ],
-      all.responsesStream.calls,
-      "responses stream (duplicate nameless item — F-24)",
-    );
+  });
+
+  test("F-26 fixed: truncated argument JSON repairs identically on every sync path", () => {
+    // The near-JSON a bridged upstream streams. Where the arguments become a
+    // complete value (each sync encoder / the Responses finalization), the
+    // shared jsonrepair pass produces the same strict JSON.
+    const events = [
+      start(),
+      toolDelta({ id: "call_1", name: "get", args: '{"a": 1,' }),
+      terminal({ state: "complete", reason: "tool_use" }),
+    ];
+    const all = encodeAll(events);
+    const expected: CallView[] = [{ id: "call_1", name: "get", args: '{"a":1}' }];
+    expectSameCalls(expected, all.chatSync.calls, "chat sync");
+    expectSameCalls(expected, all.messagesSync.calls, "messages sync");
+    expectSameCalls(expected, all.responses.calls, "responses (finalization)");
   });
 });
 
@@ -844,12 +872,13 @@ describe("contract: unnamed tool calls", () => {
     );
     // Divergence row (flip with the F-37 fix): the Messages SYNC path has the
     // same defect — `groupedBlocks.flushTools` runs on every non-delta event,
-    // so B ships at the fragment it had when the result arrived and the
-    // unnamed continuation is dropped at the final flush.
+    // so B ships at the fragment it had when the result arrived (repaired to
+    // strict JSON by the F-26 pass) and the unnamed continuation is dropped
+    // at the final flush.
     expectSameCalls(
       [
         { id: "call_a", name: "alpha", args: '{"x":1}' },
-        { id: "call_b", name: "beta", args: '{"y":' },
+        { id: "call_b", name: "beta", args: '{"y":null}' },
       ],
       all.messagesSync.calls,
       "messages sync (flush-per-event wipe — F-37)",

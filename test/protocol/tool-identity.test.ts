@@ -52,10 +52,15 @@ describe("toolIdentityKey", () => {
     expect(toolIdentityKey("call_abc123")).toBe(toolIdentityKey("fc_abc123"));
   });
 
-  test("only the FIRST prefix is stripped", () => {
-    // The pattern is anchored with `^` and not global, so a nested-looking id
-    // keeps its inner prefix. Pinned: a global replace would over-collapse.
-    expect(toolIdentityKey("call_fc_abc")).toBe("fc_abc");
+  test("composite prefixes collapse (F-25)", () => {
+    // Responses bridges wrap already-prefixed ids: a backend emitting
+    // `fc_call_x` alongside a bridged `call_x` is one logical call, and the
+    // single-pass strip left them distinct — defeating the duplicate ledger
+    // for exactly the composite shape those bridges produce.
+    expect(toolIdentityKey("call_fc_abc")).toBe("abc");
+    expect(toolIdentityKey("fc_call_abc")).toBe("abc");
+    expect(toolIdentityKey("fc_call_fc_abc")).toBe("abc");
+    expect(toolIdentityKey("call_fc_abc")).toBe(toolIdentityKey("call_abc"));
   });
 
   test("an unprefixed id is unchanged", () => {

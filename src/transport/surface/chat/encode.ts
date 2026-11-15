@@ -5,8 +5,9 @@ import { reasoningTextOf } from "../../../protocol/reasoning-text";
 import { eventText, stopDetailsError } from "../adapters";
 import { isRecord } from "../../../protocol/codecs";
 import {
-  argumentsFrom,
   createToolCallTracker,
+  argumentsFrom,
+  toolIdentityKey,
   trackToolCall,
   type ToolCallState,
 } from "../../../protocol/tool-identity";
@@ -177,6 +178,11 @@ export function jsonCompletion(
   const reasoningContent = mergedReasoningText(events);
   const toolCalls = new Map<number, ToolCallState>();
   const tracker = createToolCallTracker();
+  // F-24: one logical call can arrive under two prefix spellings (`call_x` /
+  // `fc_x`). The tracker keys by identity so both spellings accumulate into
+  // ONE call, and the client is handed the first raw spelling it saw — the
+  // id the backend actually sent and the transcript can replay.
+  const rawIdByIdentity = new Map<string, string>();
   let terminalFinishReason: string | null = null;
   let terminalState: "complete" | "failed" | "aborted" | undefined;
   let usage: OpenAiUsage | null = null;
@@ -185,8 +191,10 @@ export function jsonCompletion(
   for (const event of events) {
     const tool = eventToolCall(event);
     if (tool) {
+      const identity = toolIdentityKey(tool.state.id);
+      if (!rawIdByIdentity.has(identity)) rawIdByIdentity.set(identity, tool.state.id);
       const tracked = trackToolCall(tracker, {
-        id: tool.state.id,
+        id: identity,
         name: tool.state.name,
         args: tool.state.arguments,
         index: tool.state.index,
@@ -220,7 +228,7 @@ export function jsonCompletion(
   };
   if (namedToolCalls.length > 0) {
     message.tool_calls = namedToolCalls.map((tool) => ({
-      id: tool.id,
+      id: rawIdByIdentity.get(tool.id) ?? tool.id,
       type: "function",
       // Zero-argument calls assemble as "{}": an empty string is not
       // valid JSON for the client's parser.
@@ -296,10 +304,12 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
   private emittedAny = false;
   /** True once a delta carrying a real tool name has been emitted (F-36). */
   private emittedNamedToolCall = false;
-  /** Call ids already introduced to the client (the id rides the first frame). */
+  /** Call identities already introduced to the client (the id rides the first frame). */
   private readonly emittedToolCallIds = new Set<string>();
-  /** Arguments bytes already emitted per call id (the pending-tail cursor). */
+  /** Arguments bytes already emitted per call identity (the pending-tail cursor). */
   private readonly emittedToolArguments = new Map<string, number>();
+  /** First raw spelling seen per call identity — the id the client is handed (F-24). */
+  private readonly firstRawToolIds = new Map<string, string>();
   private previousReasoningSummaryIdentity: ReasoningSummaryIdentity | undefined;
   private previousReasoningSummaryText: string | undefined;
   private baseModel: string;
@@ -434,16 +444,22 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
       // id), and emission works on the pending tail: the first named frame
       // carries the id, the name, and every fragment that arrived before it,
       // exactly the shape Copilot's own last event had.
+      //
+      // F-24: tracking keys by identity (`call_x` / `fc_x` are one call) and
+      // the client is handed the first raw spelling seen.
+      const identity = toolIdentityKey(tool.state.id);
+      if (!this.firstRawToolIds.has(identity))
+        this.firstRawToolIds.set(identity, tool.state.id);
       const tracked = trackToolCall(this.tracker, {
-        id: tool.state.id,
+        id: identity,
         name: tool.state.name,
         args: tool.state.arguments,
         index: tool.state.index,
       });
       const resolvedName = tool.state.name ?? tracked.state.name;
       if (resolvedName === undefined || resolvedName.trim().length === 0) return result;
-      const alreadyEmitted = this.emittedToolCallIds.has(tool.state.id);
-      const sent = this.emittedToolArguments.get(tool.state.id) ?? 0;
+      const alreadyEmitted = this.emittedToolCallIds.has(identity);
+      const sent = this.emittedToolArguments.get(identity) ?? 0;
       const pending = argumentsFrom(tracked.state, sent);
       if (alreadyEmitted && pending.length === 0) return result;
       const delta: JsonObject = {
@@ -455,8 +471,8 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
           arguments: pending,
         },
       };
-      this.emittedToolCallIds.add(tool.state.id);
-      this.emittedToolArguments.set(tool.state.id, sent + pending.length);
+      this.emittedToolCallIds.add(identity);
+      this.emittedToolArguments.set(identity, sent + pending.length);
       result.push(
         this.withBase(
           [{ index: 0, delta: { tool_calls: [delta] }, finish_reason: null }],

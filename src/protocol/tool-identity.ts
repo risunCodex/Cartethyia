@@ -136,9 +136,15 @@ export function argumentsFrom(state: ToolCallState, offset: number): string {
  * prefix (`call_<suffix>` vs `fc_<suffix>`); both must resolve to one call so
  * an agent does not perform the same action twice. This is the ONLY place
  * that prefix is interpreted.
+ *
+ * F-25: the strip is applied to EVERY leading prefix, not just the first.
+ * Responses bridges wrap already-prefixed ids — a backend that emits
+ * `fc_call_x` next to a bridged `call_x` must collapse to one call, and the
+ * single-pass strip left them distinct, defeating the duplicate ledger for
+ * exactly the composite shape those bridges produce.
  */
 export function toolIdentityKey(callId: string): string {
-  return callId.replace(/^(?:call|fc)_/, "");
+  return callId.replace(/^(?:(?:call|fc)_)+/, "");
 }
 
 interface LedgerEntry {
