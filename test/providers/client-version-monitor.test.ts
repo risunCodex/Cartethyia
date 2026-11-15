@@ -129,7 +129,7 @@ describe("opencode client version fallback", () => {
   test("the fallback is the current latest release", () => {
     // A cold process sends this before discovery resolves; if it lags the
     // upstream release the UA advertises a client build that no longer ships.
-    expect(VERSION_SOURCES.opencode.fallback).toBe("2.2.7");
+    expect(VERSION_SOURCES.opencode.fallback).toBe("2.3.0");
   });
 });
 
@@ -175,13 +175,13 @@ describe("client version monitor snapshot", () => {
   });
 
   test("uses current client feeds for Claude Code and Kiro", async () => {
-    expect(VERSION_SOURCES.claudeCli.fallback).toBe("2.1.322");
+    expect(VERSION_SOURCES.claudeCli.fallback).toBe("2.1.325");
     expect(VERSION_SOURCES.claudeCli.sources[0]?.url).toBe(
       "https://registry.npmjs.org/@anthropic-ai/claude-code/latest",
     );
     expect(VERSION_SOURCES.claudeSdk.fallback).toBe("0.128.0");
     expect(VERSION_SOURCES.claudeSdk.sources).toEqual([]);
-    expect(VERSION_SOURCES.kiro.fallback).toBe("1.4.154");
+    expect(VERSION_SOURCES.kiro.fallback).toBe("1.4.178");
     expect(VERSION_SOURCES.kiro.sources[0]?.url).toBe(
       "https://formulae.brew.sh/api/cask/kiro.json",
     );
@@ -190,7 +190,7 @@ describe("client version monitor snapshot", () => {
     const resolver = createClientVersionResolver({
       key: `test-kiro-cask-${crypto.randomUUID()}`,
       client: "kiro",
-      fallback: "1.4.154",
+      fallback: "1.4.178",
       sources: [VERSION_SOURCES.kiro.sources[0]!],
     });
     await resolver.ensure(
@@ -380,18 +380,22 @@ describe("freebuff client version stays pinned", () => {
   });
 });
 
-describe("deepai client version stays pinned", () => {
-  test("no discovery source exists, and the fallback is the audited desktop bundle", () => {
-    // DeepAI Code (macOS/Windows only) publishes no machine-readable version
-    // feed. The pin is the version unpacked from the audited bundle — raise
-    // it when the next bundle is audited.
-    expect(VERSION_SOURCES.deepai.fallback).toBe("0.3.35");
-    expect(VERSION_SOURCES.deepai.sources).toEqual([]);
-    expect(getDeepAIVersion()).toBe("0.3.35");
+describe("deepai client version tracks the auto-updater feed", () => {
+  test("the Electron-updater generic feed is the discovery source", () => {
+    // The DeepAI Code desktop app polls its own updater feed
+    // (`downloads.deepai.org/deepai-code/releases/latest.yml`) — the same
+    // feed this resolver reads, so discovery cannot go stale while the
+    // vendor ships. The fallback is the version verified live on 2026-11-14.
+    expect(VERSION_SOURCES.deepai.fallback).toBe("0.3.37");
+    expect(VERSION_SOURCES.deepai.sources).toHaveLength(1);
+    expect(VERSION_SOURCES.deepai.sources[0]?.url).toBe(
+      "https://downloads.deepai.org/deepai-code/releases/latest.yml",
+    );
   });
 
-  test("it is wired into the refresh cycle and reports its pinned fallback", () => {
+  test("the identity is wired into the refresh cycle on the new fallback", () => {
     expect(getProviderClientVersion("deepai")?.client).toBe("deepai");
-    expect(getProviderClientVersion("deepai")?.version).toBe("0.3.35");
+    expect(getProviderClientVersion("deepai")?.version).toBe("0.3.37");
+    expect(getDeepAIVersion()).toBe("0.3.37");
   });
 });

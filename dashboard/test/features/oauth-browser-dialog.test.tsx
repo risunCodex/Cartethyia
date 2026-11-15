@@ -8,7 +8,7 @@
  */
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { createElement } from "react";
-import { OAuthBrowserDialog } from "../../src/features/provider-detail/sections/OAuthDialogs";
+import { OAuthBrowserDialog, extractOAuthCode } from "../../src/features/provider-detail/sections/OAuthDialogs";
 import { toast } from "../../src/lib/toast";
 import { mount, stubFetch } from "../helpers/render";
 
@@ -244,5 +244,25 @@ describe("OAuthBrowserDialog popup mode", () => {
       view.unmount();
       ctx.restore();
     }
+  });
+});
+
+describe("extractOAuthCode scheme recovery", () => {
+  test("a loopback paste without a scheme is prefixed with http", () => {
+    expect(extractOAuthCode("127.0.0.1:59653/callback?code=abc&state=def")).toEqual({ code: "abc" });
+    expect(extractOAuthCode("localhost:59653/callback?code=abc")).toEqual({ code: "abc" });
+    expect(extractOAuthCode("[::1]:59653/callback?code=abc")).toEqual({ code: "abc" });
+  });
+
+  test("a domain paste without a scheme is prefixed with https", () => {
+    expect(extractOAuthCode("example.com/cb?code=abc&state=def")).toEqual({ code: "abc" });
+  });
+
+  test("a full URL keeps its own scheme and a bare code is never treated as a URL", () => {
+    expect(extractOAuthCode("https://example.com/cb?code=abc")).toEqual({ code: "abc" });
+    expect(extractOAuthCode("http://127.0.0.1:59653/callback?code=abc&state=def")).toEqual({ code: "abc" });
+    expect(extractOAuthCode("IcfwDauVlJOuUI_pftPd1SA1KfTQLSIbIY40DCa7i98")).toEqual({
+      code: "IcfwDauVlJOuUI_pftPd1SA1KfTQLSIbIY40DCa7i98",
+    });
   });
 });

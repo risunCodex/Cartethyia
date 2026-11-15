@@ -150,11 +150,22 @@ async function clixadVersion(response: Response): Promise<string | null> {
   }
 }
 
+/**
+ * Electron-updater generic feed: `latest.yml` / `latest-mac.yml` carry a
+ * `version:` key with the current desktop release. This is the same feed the
+ * app's own auto-updater polls, so it cannot go stale while the vendor ships.
+ */
+async function electronUpdaterVersion(response: Response): Promise<string | null> {
+  const body = await response.text();
+  const match = /^version:\s*["']?([A-Za-z0-9][A-Za-z0-9.\-]*)/m.exec(body);
+  return match && isSemverish(match[1]) ? match[1] : null;
+}
+
 /** Ordered upstream sources and pinned fallbacks for every client version. */
 export const VERSION_SOURCES = {
   antigravity: {
     key: "antigravity",
-    fallback: "2.31.0",
+    fallback: "2.32.1",
     sources: [
       {
         url: "https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/manifest/latest-arm64-mac.yml",
@@ -178,16 +189,16 @@ export const VERSION_SOURCES = {
     // under `@opencode/cli`, and this feed is what its own installer reads.
     // Fallback = the current latest release; raise it whenever the package
     // moves so a cold process does not present a stale client build.
-    fallback: "2.2.7",
+    fallback: "2.3.0",
     minVersion: "2.0.0",
     sources: [{ url: "https://opencode.ai/update/api/latest/cli/npm" }],
   },
   commandcode: {
     key: "commandcode",
-    // npm `command-code` latest as of 2026-11-07. The CLI sends this as
+    // npm `command-code` latest as of 2026-11-14. The CLI sends this as
     // `x-command-code-version`, so a stale fallback presents a client build
     // the upstream no longer ships — raise it whenever the package moves.
-    fallback: "1.88.5",
+    fallback: "1.89.1",
     sources: [{ url: "https://registry.npmjs.org/command-code/latest" }],
   },
   grok: {
@@ -218,7 +229,7 @@ export const VERSION_SOURCES = {
   },
   codex: {
     key: "codex",
-    fallback: "0.167.1",
+    fallback: "0.169.0",
     sources: [{ url: "https://registry.npmjs.org/@openai/codex/latest" }],
   },
   kimiCli: {
@@ -228,7 +239,7 @@ export const VERSION_SOURCES = {
   },
   kiro: {
     key: "kiro",
-    fallback: "1.4.154",
+    fallback: "1.4.178",
     sources: [
       {
         // Kiro's downloads page exposes no stable version string. Homebrew
@@ -241,7 +252,7 @@ export const VERSION_SOURCES = {
   },
   codebuddy: {
     key: "codebuddy",
-    fallback: "2.183.0",
+    fallback: "2.184.0",
     sources: [
       { url: "https://registry.npmjs.org/@tencent-ai/codebuddy-code/latest" },
       { url: "https://registry.npmmirror.com/@tencent-ai/codebuddy-code/latest" },
@@ -264,7 +275,7 @@ export const VERSION_SOURCES = {
     // Current `@anthropic-ai/claude-code` release, so the billing
     // `cc_version=` suffix and the `claude-cli/` User-Agent stay on what
     // upstream ships.
-    fallback: "2.1.322",
+    fallback: "2.1.325",
     sources: [{ url: "https://registry.npmjs.org/@anthropic-ai/claude-code/latest" }],
   },
   claudeSdk: {
@@ -296,7 +307,7 @@ export const VERSION_SOURCES = {
   },
   muse: {
     key: "muse-code",
-    fallback: "1.4.15-R8339.1",
+    fallback: "1.4.20-R8619.1",
     sources: [{ url: "https://api.meta.ai/muse-code/channels/muse-stable" }],
   },
   trae: {
@@ -315,17 +326,17 @@ export const VERSION_SOURCES = {
   freepi: {
     key: "freepi",
     // The free-pi CLI version — the `x-client-version` the gateway reports.
-    // Fallback = the current npm latest (0.6.19 as of 2026-11-12); a cold
+    // Fallback = the current npm latest (0.6.21 as of 2026-11-14); a cold
     // process sends it until the monitor's first successful discovery.
-    fallback: "0.6.19",
+    fallback: "0.6.21",
     sources: [{ url: "https://registry.npmjs.org/free-pi-cli/latest" }],
   },
   perch: {
     key: "perch",
     // The official Perch CLI, spawned by the adapter for hosted inference.
-    // Fallback = the current npm latest (2.4.128 as of 2026-11-11); a cold
+    // Fallback = the current npm latest (2.4.132 as of 2026-11-14); a cold
     // process sends it until the monitor's first successful discovery.
-    fallback: "2.4.128",
+    fallback: "2.4.132",
     sources: [{ url: "https://registry.npmjs.org/perchai-cli/latest" }],
   },
   clixad: {
@@ -356,22 +367,27 @@ export const VERSION_SOURCES = {
   },
   deepai: {
     key: "deepai",
-    // No machine-readable public feed exists for the DeepAI Code desktop app
-    // (macOS/Windows only, no npm/CLI line). Fallback = the version unpacked
-    // from the audited bundle (2026-11-11, DeepAI Code 0.3.35). Raise it
-    // when the next bundle is audited. Pinned-only by design for the same
-    // reason as `freebuff`.
-    fallback: "0.3.35",
-    sources: [],
+    // The Electron-updater generic feed the DeepAI Code desktop app's own
+    // auto-updater polls (`downloads.deepai.org/deepai-code/releases`,
+    // surfaced by the 0.3.35 wire audit). Verified live 2026-11-14: 0.3.37,
+    // up from the audited 0.3.35 pin — the old "no machine-readable feed"
+    // note was wrong; the feed just was not looked for.
+    fallback: "0.3.37",
+    sources: [
+      {
+        url: "https://downloads.deepai.org/deepai-code/releases/latest.yml",
+        extract: electronUpdaterVersion,
+      },
+    ],
   },
   cursor: {
     key: "cursor",
     // Fallback = the newest stable build from the official download API
-    // (cli-3.29.15-86776fc). Discovery replaces it within one monitor tick; it
+    // (cli-3.30.14-5f54c81). Discovery replaces it within one monitor tick; it
     // is only what a cold process sends before the first successful fetch.
     // Kept equal to `FALLBACK_CLIENT_VERSION` in the cursor adapter so the
     // badge and the request header always send one identity.
-    fallback: "cli-3.29.15-86776fc",
+    fallback: "cli-3.30.14-5f54c81",
     sources: [
       {
         url: "https://cursor.com/api/download?platform=win32-x64-user&releaseTrack=stable",
