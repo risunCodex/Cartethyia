@@ -419,6 +419,15 @@ export const VERSION_SOURCES = {
       },
     ],
   },
+  factoryDroid: {
+    key: "factory-droid",
+    // The official Factory Droid CLI publishes to npm as `droid` (bin `droid`,
+    // repo `Factory-AI/factory`, maintainers @factory.ai). Fallback = the npm
+    // latest at the time of wiring (1.12.1); a cold process sends it until the
+    // monitor's first successful discovery.
+    fallback: "1.12.1",
+    sources: [{ url: "https://registry.npmjs.org/droid/latest" }],
+  },
 } as const;
 
 const resolvers = {
@@ -449,6 +458,7 @@ const resolvers = {
   kilo: createClientVersionResolver({ ...VERSION_SOURCES.kilo, client: "kilo" }),
   muse: createClientVersionResolver({ ...VERSION_SOURCES.muse, client: "muse" }),
   zcode: createClientVersionResolver({ ...VERSION_SOURCES.zcode, client: "zcode" }),
+  factoryDroid: createClientVersionResolver({ ...VERSION_SOURCES.factoryDroid, client: "factory-droid" }),
 } satisfies Record<keyof typeof VERSION_SOURCES, ClientVersionResolver>;
 const PROVIDER_VERSION_RESOLVERS: Readonly<Record<string, ClientVersionResolver>> = {
   antigravity: resolvers.antigravity,
@@ -483,6 +493,10 @@ const PROVIDER_VERSION_RESOLVERS: Readonly<Record<string, ClientVersionResolver>
   kilo: resolvers.kilo,
   muse: resolvers.muse,
   zcode: resolvers.zcode,
+  // Both Qoder realms present the same IDE build identity (one COSY_VERSION
+  // per product, not per deployment host).
+  qodercn: resolvers.qoder,
+  factory: resolvers.factoryDroid,
 };
 
 /** Returns the current client version without performing network I/O. */
@@ -600,6 +614,8 @@ export const getFreebuffVersion = accessor("freebuff").get;
 export const getDeepAIVersion = accessor("deepai").get;
 
 export const getOpenCodeVersion = accessor("opencode").get;
+
+export const getFactoryDroidVersion = accessor("factoryDroid").get;
 
 export const getCommandCodeVersion = accessor("commandcode").get;
 

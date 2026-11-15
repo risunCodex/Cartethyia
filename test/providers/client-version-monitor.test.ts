@@ -40,6 +40,29 @@ describe("trae client version stays pinned", () => {
   });
 });
 
+describe("factory droid client version discovery", () => {
+  // The official CLI publishes to npm as `droid` (repo Factory-AI/factory);
+  // the discovery source follows that feed and the provider id `factory`
+  // resolves to it.
+  test("npm `droid` is the discovery source, with a semver fallback", () => {
+    expect(VERSION_SOURCES.factoryDroid.sources).toEqual([
+      { url: "https://registry.npmjs.org/droid/latest" },
+    ]);
+    expect(VERSION_SOURCES.factoryDroid.fallback).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(getProviderClientVersion("factory")?.client).toBe("factory-droid");
+    expect(getProviderClientVersion("factory")?.version).toBe(VERSION_SOURCES.factoryDroid.fallback);
+  });
+});
+
+describe("qoder and qodercn share one resolver", () => {
+  // One IDE build identity per product, two deployment realms — the CN gateway
+  // must present the same COSY_VERSION the intl gateway sees.
+  test("qodercn resolves the qoder version", () => {
+    expect(getProviderClientVersion("qodercn")?.client).toBe("qoder");
+    expect(getProviderClientVersion("qodercn")?.version).toBe(getProviderClientVersion("qoder")?.version);
+  });
+});
+
 describe("clixad client version discovery", () => {
   // The gateway publishes its paired CLI build as `cli_latest` on the
   // unauthenticated `/v1/models` listing.

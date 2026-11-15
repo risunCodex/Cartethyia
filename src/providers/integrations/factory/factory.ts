@@ -56,6 +56,7 @@ import { createApiKeyAdapter } from "../../configured-provider";
 import type { ApiKeyProviderSpec } from "../../configured-provider";
 import { decodeFactoryDroidCredential } from "../../../security/credential-codec";
 import { log } from "../../../observability/logger";
+import { getFactoryDroidVersion } from "../../operations/client-versions";
 
 import { FACTORY_GEMINI_ENDPOINT_PATH, FACTORY_MODELS, FACTORY_PROVIDER_ID } from "./factory-models";
 
@@ -78,18 +79,19 @@ const OPENAI_WIRE_BASE = "/api/llm/o/v1";
 /**
  * Client identity Factory expects on every call.
  *
- * Pinned to the version Factory's own CLI reports. A version the proxy does not
- * recognise is still a first-party-shaped request; inventing a new number per
- * release would claim compatibility this build has not tested.
+ * The version follows the official CLI: the npm `droid` package is Factory's
+ * own CLI feed (repo `Factory-AI/factory`), discovered by the shared client
+ * version resolver with a pinned fallback for a cold process. A version the
+ * proxy does not recognise is still a first-party-shaped request; the gateway
+ * never invents numbers the CLI has not shipped.
  */
-const FACTORY_DROID_CLIENT_VERSION = "1.0.0";
-
 function factoryClientHeaders(orgId: string): Record<string, string> {
+  const version = getFactoryDroidVersion();
   return {
-    "X-Client-Version": FACTORY_DROID_CLIENT_VERSION,
+    "X-Client-Version": version,
     "X-Factory-Client": "cli",
     "X-Factory-Org-Id": orgId,
-    "user-agent": `factory-cli/${FACTORY_DROID_CLIENT_VERSION}`,
+    "user-agent": `factory-cli/${version}`,
   };
 }
 

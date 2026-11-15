@@ -15,6 +15,7 @@ import { buildClaudeMessagesRequest, filterClaudeCustomHeaders, resolveClaudeMes
 import { resolveInboundSessionId } from "../operations/session-resolution";
 import { isRecord } from "../../protocol/codecs";
 import { sendClaudeMessagesRequest } from "../../protocol/upstream/send-claude-messages";
+import { GATEWAY_USER_AGENT } from "../operations/gateway-user-agent";
 
 const INFERHUB_CACHE_CONTROL = { type: "ephemeral", ttl: "1h" } as const;
 
@@ -160,6 +161,9 @@ const INFERHUB_CHAT_SPEC: ApiKeyProviderSpec = {
   provider_id: INFERHUB_PROVIDER_ID,
   endpoint_paths_by_wire_family: { responses: "/responses" },
   buildExtraHeaders: (context, request) => inferhubSessionHeaders(context, request),
+  // InferHub has no first-party client identity to cloak: the gateway presents
+  // itself as `user-agent: Cartethyia/<version>` by default.
+  gatewayUserAgent: true,
 };
 
 /**
@@ -335,6 +339,8 @@ export class InferhubMessagesAdapter implements ProviderAdapter {
       baseUrl: this.baseUrl,
       endpointPath: candidate.endpoint_path,
       mutatePayload: ensureInferhubMessagesTextBreakpoints,
+      // Same gateway identity as the chat leg: no first-party client to cloak.
+      gatewayUserAgent: GATEWAY_USER_AGENT,
     });
     // Same conversation pin as the chat leg, applied after the shared Claude
     // header builder rather than through `customHeaders`: that field is

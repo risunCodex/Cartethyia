@@ -23,6 +23,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   history but are absent from the current request's `tools` are re-declared to
   the provider as stateless stubs, so a client that narrows its tool set
   mid-conversation no longer breaks pairing on the next turn.
+- **Factory Droid tracks the official CLI version.** The client identity
+  headers (`X-Client-Version`, `user-agent: factory-cli/<v>`) now follow the
+  npm `droid` feed (Factory's own CLI) instead of a pinned `1.0.0`, with a
+  pinned fallback for a cold process. Qoder CN resolves the same discovered
+  Qoder IDE version as the international realm, so both realms present one
+  build identity.
 
 ### Fixed
 
@@ -71,12 +77,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   - **One error builder on the Responses stream.** Error events share a single
     shape (origin/code/category) so clients get consistent envelopes, and
     refusal completions stay wire-faithful.
+  - **InferHub identifies the gateway.** Both wire legs send
+    `user-agent: Cartethyia/<version>` by default — InferHub has no first-party
+    client identity to cloak.
 - Claude Messages cache hints: the listed positions are consumed from the last
   message backward as intended (the first forward iteration marked the oldest
   block instead of the newest).
 
 ### Changed
 
+- **Dashboard: more well-known providers.** NVIDIA NIM, GMI Cloud, Cerebras,
+  TokenHarbor, and both Xiaomi MiMo plans now group under "Well Known API Key
+  Providers" instead of the long-tail "Other" section.
 - **Reasoning ranks live on one ladder.** Effort/budget ranking, per-model
   defaults, wire floors, and replay gating moved from per-provider hardcoded
   regexes into a unified thinking-ladder; DeepSeek-style reasoning replay is

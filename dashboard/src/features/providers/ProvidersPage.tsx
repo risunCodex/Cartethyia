@@ -839,6 +839,15 @@ const WELL_KNOWN_API_KEY_IDS = new Set([
   // Alibaba's OpenAI-compatible DashScope: a household-enough name that an
   // operator looks for beside the other majors rather than in "Other".
   "dashscope",
+  // Inference resellers with a published API-key signup that operators reach
+  // for by name: NVIDIA NIM, GMI Cloud, Cerebras, TokenHarbor, and both
+  // Xiaomi MiMo plans (PAYG + Token Plan).
+  "nvidia",
+  "gmi",
+  "cerebras",
+  "tokenharbor",
+  "xiaomipg",
+  "xiaomitp",
 ]);
 
 function hasInteractiveOAuth(provider: ProviderResponse): boolean {
