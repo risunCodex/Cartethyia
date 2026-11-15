@@ -95,7 +95,7 @@ account health state. See [Usage floor](../../../documentation/features/04-usage
 `base-adapter.ts` and `compatible-adapter.ts` cover standard-wire providers; a
 bespoke provider frames its own bytes in its adapter — that fact lives on
 provider metadata, not in `wire_family`. Details:
-[Providers](../../../documentation/reference/providers.md).
+[Providers](../../../documentation/reference/providers-architecture.md).
 
 ## Routing and network
 

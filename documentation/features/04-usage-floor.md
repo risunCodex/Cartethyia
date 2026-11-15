@@ -97,7 +97,7 @@ Verify current policy and limits in:
 
 - [Architecture](../reference/architecture.md) — candidate eligibility in the
   request path.
-- [Providers](../reference/providers.md) — provider quota contracts and
+- [Providers](../reference/providers-architecture.md) — provider quota contracts and
   accounting.
 - [Health-routing skill](../../.skills/cartethyia-health-routing/SKILL.md) —
   routing, failover, cooldowns, and leases.
