@@ -64,7 +64,7 @@ export class AnthropicApiKeyAdapter implements ProviderAdapter {
       ...context.credential.custom_headers,
     });
     const outbound = buildClaudeMessagesRequest({
-      request: applyParamQuirks(request, candidate.provider_id),
+      request: applyParamQuirks(request, candidate.provider_id, candidate.wire_family),
       authHeader: "x-api-key",
       credential: {
         secret: apiKey,

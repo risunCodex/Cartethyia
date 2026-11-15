@@ -271,7 +271,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     // 400 on every request that carried one — including the probe, which sets
     // `temperature: 0.2` itself.
     const payload = canonicalToClaudeMessagesPayload(
-      applyParamQuirks(request, candidate.provider_id),
+      applyParamQuirks(request, candidate.provider_id, candidate.wire_family),
       { isOAuth: isClaudeCodeOAuth },
     );
     if (isClaudeCodeOAuth) {

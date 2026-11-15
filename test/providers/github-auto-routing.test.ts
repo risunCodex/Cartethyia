@@ -49,7 +49,7 @@ describe("GitHub Copilot Auto routing", () => {
       ...request,
       generation_controls: { temperature: 0.2, top_p: 0.8, max_tokens: 128 },
     } as CanonicalRequest;
-    const prepared = applyParamQuirks(requestWithSampling, "github");
+    const prepared = applyParamQuirks(requestWithSampling, "github", "chat");
 
     expect(prepared.generation_controls.temperature).toBeUndefined();
     expect(prepared.generation_controls.top_p).toBe(0.8);

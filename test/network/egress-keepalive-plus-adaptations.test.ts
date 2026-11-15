@@ -60,7 +60,7 @@ describe("NVIDIA NIM parameter quirks", () => {
         "extension:thinking_budget": 4000,
       },
     };
-    const out = applyParamQuirks(request, "nvidia");
+    const out = applyParamQuirks(request, "nvidia", "chat");
     expect(out.generation_controls["extension:client_metadata"]).toBeUndefined();
     expect(out.generation_controls["extension:custom_field"]).toBeUndefined();
     expect(out.generation_controls["extension:thinking_budget"]).toBeUndefined();
@@ -72,7 +72,7 @@ describe("NVIDIA NIM parameter quirks", () => {
       ...base,
       generation_controls: { service_tier: "default" },
     };
-    expect(applyParamQuirks(request, "openrouter").generation_controls.service_tier).toBe("default");
+    expect(applyParamQuirks(request, "openrouter", "chat").generation_controls.service_tier).toBe("default");
   });
 });
 

@@ -214,7 +214,7 @@ export class ZcodeStartPlanAdapter implements ProviderAdapter {
       ...context.credential.custom_headers,
     });
     const outbound = buildClaudeMessagesRequest({
-      request: applyParamQuirks(request, candidate.provider_id),
+      request: applyParamQuirks(request, candidate.provider_id, candidate.wire_family),
       authHeader: "bearer",
       credential: { secret: planJwt, customHeaders },
       baseUrl: this.baseUrl,

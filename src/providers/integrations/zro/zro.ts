@@ -133,7 +133,7 @@ export class ZroMessagesAdapter implements ProviderAdapter {
       ...context.credential.custom_headers,
     });
     const outbound = buildClaudeMessagesRequest({
-      request: applyParamQuirks(request, candidate.provider_id),
+      request: applyParamQuirks(request, candidate.provider_id, candidate.wire_family),
       authHeader: "bearer",
       credential: { secret: apiKey, customHeaders },
       baseUrl: this.baseUrl,

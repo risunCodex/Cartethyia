@@ -9,7 +9,7 @@
 // Add a row ONLY when a concrete upstream 400/422 proves the quirk; do not
 // speculate. The table is applied on the dispatch path before wire translation.
 
-import type { CanonicalRequest, GenerationControls } from "../canonical-model";
+import type { CanonicalRequest, GenerationControls, WireFamily } from "../canonical-model";
 import {
   THINKING_STRIPPED_SAMPLING_CONTROLS,
   isThinkingEnabled,
@@ -201,17 +201,26 @@ function findParamQuirk(
 /**
  * Applies the provider/model quirks to a canonical request, returning the
  * original reference when nothing matched (callers can compare identity).
+ *
+ * `wire` is the route's wire family (F-17): the universal thinking-sampling
+ * strip below is an Anthropic-wire rule — "extended thinking rejects
+ * sampling controls" is the Messages contract. OpenAI-family chat wires
+ * legally accept `temperature` alongside `reasoning_effort`, and stripping
+ * there deleted a parameter the caller explicitly asked for.
  */
 export function applyParamQuirks(
   request: CanonicalRequest,
   providerId: string,
+  wire: WireFamily,
 ): CanonicalRequest {
   const quirk = findParamQuirk(providerId, request.model);
-  // The thinking-sampling strip is universal, not quirk-gated: extended
-  // thinking rejects temperature/top_p/top_k on every Messages-wire upstream.
-  // It runs before the early return below so a provider with no PARAM_QUIRKS
-  // row still gets it — otherwise a strict upstream takes a 400 the strip
-  // exists to prevent. Declarative rows still apply after.
+  // The thinking-sampling strip is universal across Messages-wire upstreams,
+  // not quirk-gated: extended thinking rejects temperature/top_p/top_k on
+  // every Messages-wire upstream. It runs before the early return below so a
+  // provider with no PARAM_QUIRKS row still gets it — otherwise a strict
+  // upstream takes a 400 the strip exists to prevent. Declarative rows still
+  // apply after. The Gemini wire has no proven strip either way and is left
+  // untouched.
 
   let controls = request.generation_controls;
   let changed = false;
@@ -226,11 +235,11 @@ export function applyParamQuirks(
     }
   }
 
-  // Extended thinking rejects sampling controls upstream. The stripped set is
-  // owned by capabilities.ts (shared with the Messages payload builder, which
-  // applies the same rule at translation time) — the quirks table itself
-  // keeps only its declarative temperature row.
-  if (isThinkingEnabled(request)) {
+  // Extended thinking rejects sampling controls on the Messages wire. The
+  // stripped set is owned by capabilities.ts (shared with the Messages payload
+  // builder, which applies the same rule at translation time) — the quirks
+  // table itself keeps only its declarative temperature row.
+  if (wire === "messages" && isThinkingEnabled(request)) {
     for (const key of THINKING_STRIPPED_SAMPLING_CONTROLS) {
       if (key in controls) {
         if (!changed) controls = { ...controls };

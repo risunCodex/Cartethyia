@@ -520,6 +520,7 @@ class GithubAdapter extends OpenAICompatibleAdapter {
     const routedRequest = applyParamQuirks(
       { ...request, model: selectedModelId },
       candidate.provider_id,
+      candidate.wire_family,
     );
     this.#autoSessionTokens.set(routedRequest, autoDecision.sessionToken);
     yield* super.dispatch(

@@ -95,7 +95,7 @@ class CloudflareAiGatewayAdapter implements ProviderAdapter {
     assertClaudeMessagesWireFamily(candidate, "cloudflareai");
     const { token, baseUrl } = cloudflareEnvelope(context);
     const outbound = buildClaudeMessagesRequest({
-      request: applyParamQuirks(request, candidate.provider_id),
+      request: applyParamQuirks(request, candidate.provider_id, candidate.wire_family),
       // The bearer is built by hand below under Cloudflare's header name; this
       // shape keeps the shared builder's `anthropic-version` and payload rules.
       authHeader: "bearer",

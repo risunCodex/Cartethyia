@@ -415,7 +415,7 @@ class FactoryDroidAdapter implements ProviderAdapter {
 
     if (candidate.wire_family === "messages") {
       const outbound = buildClaudeMessagesRequest({
-        request: applyParamQuirks(request, candidate.provider_id),
+        request: applyParamQuirks(request, candidate.provider_id, candidate.wire_family),
         authHeader: "bearer",
         credential: {
           secret: token,
