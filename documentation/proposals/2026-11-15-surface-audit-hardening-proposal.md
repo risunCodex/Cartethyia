@@ -11,8 +11,8 @@ through integrations.
 
 Reference points: **oh-my-pi** (OMP — a Rust+TS coding-agent *harness*; the
 design ancestor of the toolset identity harness-shaped clients expect) and
-**9router** (9R — a JS *router* with one translator per provider pair). The
-OpenCode tool-shaping question is **explicitly deferred** (§7) and out of
+**9router** (9R — a JS *router* with one translator per provider pair). One
+integration's free-tier tool shaping is **explicitly deferred** and out of
 scope for this document.
 
 ---
@@ -67,7 +67,7 @@ hygiene/parity/documentation.
 
 **F-1 · Tool JSON-schema size and depth are unbounded — P0.**
 `parseToolDefinition` accepts any `parameters` JSON. The only schema bound in
-the tree is OpenCode-specific. A megabyte-deep schema reaches every provider
+the tree is integration-local. A megabyte-deep schema reaches every provider
 codec. *Unified fix:* bound every tool definition at ingress for all three
 dialects — serialized schema ≤ 64 KiB, nesting depth ≤ 24, array items ≤ 512,
 total tools ≤ 256 (above every known provider limit; per-provider clamps keep
@@ -116,8 +116,8 @@ upstream "conversation not found" — plus the contract written into
 unification core).**
 The quirk table's own header states the rule: *"instead of scattering ad-hoc
 `delete payload.x` fixes through adapters, each quirk lives in one table
-row"*. Today shaping still leaks into integrations: OpenCode patches
-payloads in `prePayload`, other integrations mutate bodies in adapters.
+row"*. Today shaping still leaks into integrations: payload patching in
+`prePayload` hooks, body mutations inside adapters.
 *Unified fix:* an audit pass listing every `prePayload`/`prepareRequest`/
 adapter-body mutation in `src/providers/integrations/`, then classify each:
 (a) proven quirk → table row, (b) wire-shape constant (endpoint/key order) →
@@ -210,13 +210,3 @@ changes the canonical model, the architecture, or any single integration's
 identity.
 
 ---
-
-## 5. Deferred
-
-- **OpenCode free-tier tool shaping** (the 11-tool backfill, clamp
-  protection, prompt injection): explicitly deferred by the operator
-  (2026-11-15) to a separate effort. It is an integration-local question —
-  the unified layer above deliberately does not carry it. When it is taken
-  up, the first step is a live verification of the free-tier gate (the code's
-  403 evidence dates to 2026-10-14) against the operator's pass-through
-  report of 2026-11-15.
