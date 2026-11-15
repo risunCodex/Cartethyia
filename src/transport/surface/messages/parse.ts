@@ -8,7 +8,7 @@ import {
   scanToolPairingIssues,
   type ToolPairingIssue,
 } from "../../../protocol/tool-ledger";
-import { assertInlineAttachmentSize, documentContentPart } from "../content-parts";
+import { assertImageReference, assertInlineAttachmentSize, assertMediaReference, documentContentPart } from "../content-parts";
 import { canContainToolResult } from "../../../protocol/canonical-model";
 import { MessagesLedgerError } from "./errors";
 import { finiteNumber, stringValue } from "../../../protocol/codecs";
@@ -84,7 +84,11 @@ function parseBlock(value: unknown): ContentPart {
   if (!isRecord(value)) return { kind: "extension", name: "unknown", payload: value };
   const type = value.type;
   if (type === "text") return textPart(value.text ?? "");
-  if (type === "image") return { kind: "image", payload: value };
+  if (type === "image") {
+    // F-14: an image part with no reference at all died upstream.
+    assertImageReference(value);
+    return { kind: "image", payload: value };
+  }
   if (type === "document") {
     const source: MessagesWireObject = isRecord(value.source) ? value.source : {};
     const sourceType = typeof source.type === "string" ? source.type : undefined;
@@ -113,6 +117,8 @@ function parseBlock(value: unknown): ContentPart {
   }
   if (type === "audio") {
     const audioData = isRecord(value.source) ? value.source.data ?? "" : "";
+    // F-14: an audio part with no data is not a part.
+    assertMediaReference("audio", { data: audioData });
     // F-42: the non-image attachment ceiling applies to audio too.
     assertInlineAttachmentSize("audio", audioData);
     return {

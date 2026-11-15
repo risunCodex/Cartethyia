@@ -29,6 +29,78 @@ export function assertInlineAttachmentSize(kind: string, data: unknown): void {
   );
 }
 
+/**
+ * F-14: the shared content-part policy, stated once.
+ *
+ * - **Unknown part types are quarantined, per owning surface.** Chat rejects
+ *   them (its parser throws). The Responses parser quarantines them as
+ *   `responses.content.<type>` extensions and the Messages parser as
+ *   `messages:<type>` extensions, because both wires legitimately carry block
+ *   types this gateway has no decoder for yet and dropping them would lose
+ *   data mid-conversation; the encoders degrade foreign-surface extensions
+ *   rather than hand a strict client a block type it rejects.
+ * - **Media parts must carry a real reference.** An `{type:"image_url"}` with
+ *   no URL, an audio part with empty data, or a file part with neither data,
+ *   `file_id`, nor URL passed every surface and died upstream with
+ *   provider-specific errors. The asserts below enforce a reference at the
+ *   shared constructors and the audio sites.
+ */
+
+/**
+ * Refuses a media part that carries no reference at all (F-14). Inline base64
+ * in `data`, a Files-API `file_id`, or a source `url` — at least one must be
+ * present and non-empty.
+ */
+export function assertMediaReference(
+  kind: string,
+  fields: { readonly data?: unknown; readonly file_id?: string | undefined; readonly url?: string | undefined },
+): void {
+  const hasData =
+    fields.data !== undefined &&
+    fields.data !== null &&
+    !(typeof fields.data === "string" && fields.data.length === 0);
+  if (hasData || (fields.file_id !== undefined && fields.file_id.length > 0) || (fields.url !== undefined && fields.url.length > 0))
+    return;
+  throw new Error(`${kind} content part requires data, file_id, or url`);
+}
+
+/** Refuses an image part whose payload shape carries no reference (F-14). */
+export function assertImageReference(payload: unknown): void {
+  // A bare string payload IS the URL — the shape some clients send.
+  if (typeof payload === "string") {
+    if (payload.length > 0) return;
+    throw new Error("image content part requires url, data, or file_id");
+  }
+  if (!isRecordValue(payload)) {
+    throw new Error("image content part requires an object payload");
+  }
+  // The OpenAI shape is `image_url: {url}`; a bare string URL is the shape
+  // some clients send and the parsers accept, so both count as a reference.
+  const rawImageUrl = payload["image_url"];
+  const imageUrl =
+    typeof rawImageUrl === "string" && rawImageUrl.length > 0
+      ? rawImageUrl
+      : isRecordValue(rawImageUrl) && typeof rawImageUrl["url"] === "string"
+        ? rawImageUrl["url"]
+        : undefined;
+  const url =
+    imageUrl ??
+    (typeof payload["url"] === "string" && payload["url"].length > 0 ? payload["url"] : undefined);
+  const fileId = typeof payload["file_id"] === "string" ? payload["file_id"] : undefined;
+  const source = isRecordValue(payload["source"]) ? payload["source"] : undefined;
+  const sourceData =
+    source !== undefined && source["data"] !== undefined && source["data"] !== "" ? source["data"] : undefined;
+  const sourceUrl =
+    source !== undefined && typeof source["url"] === "string" && source["url"].length > 0
+      ? source["url"]
+      : undefined;
+  assertMediaReference("image", { data: payload["data"] ?? sourceData, file_id: fileId, url: url ?? sourceUrl });
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** Creates a canonical text content part without applying wire-specific parsing. */
 export function textPart(text: string): ContentPart {
   return { kind: "text", text };
@@ -115,6 +187,8 @@ export function fileContentPart(fields: {
   readonly file_id?: string | undefined;
   readonly url?: string | undefined;
 }): ContentPart {
+  // F-14: at least one real reference.
+  assertMediaReference("file", fields);
   return {
     kind: "file",
     data: fields.data,
@@ -141,6 +215,8 @@ export function documentContentPart(fields: {
   readonly url?: string | undefined;
   readonly file_id?: string | undefined;
 }): ContentPart {
+  // F-14: at least one real reference.
+  assertMediaReference("document", fields);
   return {
     kind: "document",
     data: fields.data,

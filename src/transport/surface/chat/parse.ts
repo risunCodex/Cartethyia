@@ -2,7 +2,7 @@ import type { CanonicalMessage, ContentPart, GenerationControls } from "../../..
 import type { SurfaceInput } from "../adapters";
 import { isRecord } from "../../../protocol/codecs";
 import { asNumber } from "../../../shared/coerce";
-import { assertInlineAttachmentSize, decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
+import { assertImageReference, assertInlineAttachmentSize, assertMediaReference, decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
 import { applyServiceTier, parseStopSequences } from "../dialects";
 import { normalizeToolCallArguments } from "../../../protocol/tool-arguments";
 import { readNumber, readString } from "../../../protocol/codecs";
@@ -97,6 +97,9 @@ function parseContentPart(value: unknown): ContentPart {
     return textPart(text);
   }
   if (type === "image_url" || type === "image") {
+    // F-14: an image part with no reference at all died upstream with a
+    // provider-specific error.
+    assertImageReference(value.image_url ?? value);
     return { kind: "image", payload: value.image_url ?? value };
   }
   if (type === "input_audio" || type === "audio") {
@@ -105,6 +108,8 @@ function parseContentPart(value: unknown): ContentPart {
     const nested = isRecord(value.input_audio) ? value.input_audio : value;
     const format = readString(nested, "format") ?? readString(nested, "media_type");
     const audioData = nested.data ?? nested.audio ?? "";
+    // F-14: an audio part with no data is not a part.
+    assertMediaReference("audio", { data: audioData });
     // F-42: the non-image attachment ceiling applies to audio too.
     assertInlineAttachmentSize("audio", audioData);
     return {

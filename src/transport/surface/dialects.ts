@@ -110,7 +110,21 @@ function parseToolObject(item: Record<string, unknown>, dialect: ToolDialect): T
           wrapped["jsonSchema"] ??
           wrapped["parametersJsonSchema"] ??
           {}
-        : item);
+        : undefined);
+    // F-8: the flat tool with no schema key. A hosted/native declaration is
+    // real without one; a FUNCTION tool with neither schema nor wrapper is
+    // malformed — shipping the whole tool object as the parameter schema
+    // (the old fallback) reached the upstream as invalid_function_parameters.
+    if (schema === undefined) {
+      const declaredType = readString(item, "type");
+      if (declaredType !== undefined && classifyNativeToolType(declaredType) !== "provider") {
+        schema = {};
+      } else {
+        throw new Error(
+          `Responses tool "${readString(item, "name") ?? "unnamed"}" requires parameters, input_schema, or a function envelope`,
+        );
+      }
+    }
   } else {
     schema = item["input_schema"] ?? item["inputSchema"] ?? {};
   }
@@ -118,6 +132,12 @@ function parseToolObject(item: Record<string, unknown>, dialect: ToolDialect): T
   const strict =
     (chatWrapper !== undefined ? readBoolean(chatWrapper, "strict") : undefined) ??
     readBoolean(item, "strict");
+  // F-7: a JSON-Schema-legal boolean root (`true`), array, or number became an
+  // empty parameter schema with no signal. No supported upstream wire accepts
+  // a boolean schema, so the declaration is refused, naming the tool. A
+  // custom-grammar STRING root is legitimate (Chat `custom.format`) and stays.
+  if (!isRecord(schema) && typeof schema !== "string")
+    throw new Error(`tool "${name}" schema must be a JSON object (or a custom-grammar string)`);
   // F-1: schema size/depth/count bounds are enforced once here, at the single
   // choke point every dialect parses through, before normalization can grow
   // the structure further.
@@ -427,17 +447,37 @@ export function parseReasoningIntent(body: Record<string, unknown>): ReasoningIn
 /**
  * Normalized response_format parser. Supports OpenAI `body.response_format` and
  * Responses `body.text.format`. Returns undefined if `json_schema` schema payload is missing.
+ *
+ * F-12: one verdict for the field on every surface — an unknown `type` is a
+ * 400 naming the value (silently dropping it produced json-mode-less output
+ * for a typo'd client), and a `json_schema` format requires a record schema
+ * within the F-1 tool-schema bounds and a non-empty `name` of at most 64
+ * characters.
  */
 export function parseResponseFormat(formatValue: unknown): ResponseFormat | undefined {
   if (!isRecord(formatValue)) return undefined;
   const type = readString(formatValue, "type");
   if (type === "json_object") return { type: "json_object" };
-  if (type !== "json_schema") return undefined;
+  // The Responses `text.format` default is the plain-text format; it carries
+  // no canonical intent and parses to no response_format.
+  if (type === "text") return undefined;
+  if (type !== "json_schema")
+    throw new Error(
+      `response_format type ${JSON.stringify(type ?? null)} is not supported; use "json_object" or "json_schema"`,
+    );
   const schemaObj = isRecord(formatValue["json_schema"]) ? formatValue["json_schema"] : formatValue;
   const schema = schemaObj["schema"] ?? schemaObj["json_schema"];
-  if (schema === undefined) return undefined;
+  if (!isRecord(schema))
+    throw new Error("response_format json_schema requires a schema object");
+  validateToolSchemaBounds("response_format", schema);
   const strict = readBoolean(schemaObj, "strict");
   const name = readString(schemaObj, "name");
+  if (name !== undefined) {
+    if (name.trim().length === 0)
+      throw new Error("response_format json_schema name must not be empty");
+    if (name.length > 64)
+      throw new Error("response_format json_schema name must be at most 64 characters");
+  }
   const description = readString(schemaObj, "description");
   return {
     type: "json_schema",

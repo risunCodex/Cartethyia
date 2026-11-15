@@ -1,6 +1,6 @@
 import type { CanonicalMessage, CanonicalRequest, ContentPart, GenerationControls } from "../../../protocol/canonical-model";
 import { isRecord } from "../../../protocol/codecs";
-import { assertInlineAttachmentSize, decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
+import { assertImageReference, assertInlineAttachmentSize, assertMediaReference, decodeWireBody, textPart, normalizeInlineFile, fileContentPart, documentContentPart } from "../content-parts";
 import {
   applyServiceTier,
   parseReasoningIntent,
@@ -145,6 +145,8 @@ function parseInputContent(value: unknown): { parts: ContentPart[]; contentTypes
       continue;
     }
     if (type === "input_image" || type === "output_image" || type === "image") {
+      // F-14: an image part with no reference at all died upstream.
+      assertImageReference(rawPart);
       parts.push({ kind: "image", payload: rawPart });
       contentTypes.push(type);
       continue;
@@ -199,6 +201,8 @@ function parseInputContent(value: unknown): { parts: ContentPart[]; contentTypes
     }
     if (type === "input_audio" || type === "output_audio" || type === "audio") {
       const audioData = rawPart["data"] ?? rawPart["audio"] ?? "";
+      // F-14: an audio part with no data is not a part.
+      assertMediaReference("audio", { data: audioData });
       // F-42: the non-image attachment ceiling applies to audio too.
       assertInlineAttachmentSize("audio", audioData);
       parts.push({
