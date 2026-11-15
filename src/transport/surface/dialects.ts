@@ -181,8 +181,43 @@ function parseToolObject(item: Record<string, unknown>, dialect: ToolDialect): T
   else if (type === "function" || type === "tool") result.tool_type = "function";
   else if (type !== undefined) result.tool_type = "function";
   if (type !== undefined && type.startsWith("web_search_")) result.native_type = type;
+  // F-9: a hosted declaration's wire fields are allowlisted per native type
+  // and captured verbatim, so the supporting encoders can re-emit them
+  // configured instead of forwarding a bare type.
+  if (result.tool_type !== undefined && result.tool_type !== "function" && result.tool_type !== "custom") {
+    const allowlist =
+      result.tool_type === "provider" || result.tool_type === "computer_use"
+        ? HOSTED_TOOL_FIELDS.computer_use
+        : HOSTED_TOOL_FIELDS[result.tool_type];
+    const fields: Record<string, unknown> = {};
+    if (allowlist !== undefined) {
+      for (const field of allowlist) {
+        if (item[field] !== undefined) fields[field] = item[field];
+      }
+    }
+    // An Anthropic-shaped hosted tool states its knobs at the top level too
+    // (`max_uses`, `max_content_tokens`); both dialects' parsers see them.
+    for (const field of HOSTED_TOOL_FIELDS.anthropic ?? []) {
+      if (item[field] !== undefined && fields[field] === undefined) fields[field] = item[field];
+    }
+    if (Object.keys(fields).length > 0) result.hosted_fields = fields;
+  }
   return result;
 }
+
+/**
+ * F-9: the wire fields each hosted tool family carries, allowlisted per type.
+ * A field on the item that no allowlist names is dropped — an unvalidated
+ * field never reaches an upstream.
+ */
+const HOSTED_TOOL_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  mcp: ["server_label", "server_url", "allowed_tools", "headers", "require_approval"],
+  web_search: ["search_context_size", "filters", "user_location"],
+  file_search: ["vector_store_ids", "max_num_results", "ranking_options", "filters"],
+  code_execution: ["container"],
+  computer_use: ["display_width", "display_height", "environment"],
+  anthropic: ["max_uses", "max_content_tokens", "cache_control", "strict"],
+};
 
 function classifyNativeToolType(type: string): Exclude<ToolDefinition["tool_type"], undefined> {
   if (

@@ -107,6 +107,15 @@ export interface ToolDefinition {
   input_examples?: readonly Record<string, unknown>[];
   /** Provider-native tool family, such as web search or code execution. */
   tool_type?: "function" | "custom" | "web_search" | "file_search" | "code_execution" | "computer_use" | "mcp" | "provider";
+  /**
+   * F-9: the wire fields a HOSTED/native declaration carries beyond the
+   * function envelope (`mcp.server_label`, `web_search.search_context_size`,
+   * `file_search.vector_store_ids`, ...), captured per native type by the
+   * ingress allowlist and preserved through the supporting encoders. Without
+   * it the type was forwarded unconfigured — a search request arrived
+   * search-less and an MCP tool arrived server-less.
+   */
+  hosted_fields?: Record<string, unknown>;
   /** Original native tool type, retained for versioned Anthropic tools. */
   native_type?: string;
   /** Whether this tool may be called by a hosted/programmatic caller. */

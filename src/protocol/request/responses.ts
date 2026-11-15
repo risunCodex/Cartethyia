@@ -11,6 +11,7 @@ import type { ThinkingConfig } from "../../protocol/translation/dialect/thinking
 import { resolveThinkingForModel } from "../../protocol/translation/dialect/thinking-ladder";
 import { clampThinkingLevelForModel } from "../../protocol/translation/dialect/model-thinking";
 import { isClaudeBillingHeaderText, resolveImageSource, resolveOutputVerbosity } from "../codecs";
+import { log } from "../../observability/logger";
 import { resolvePromptCacheKey } from "../../providers/operations/session-resolution";
 import { reasoningEffortFromIntent } from "../../protocol/reasoning";
 import { isWebSearchTool } from "../../protocol/translation/search";
@@ -80,6 +81,37 @@ const RESPONSES_EXTENSION_PASSTHROUGH: ReadonlyArray<string> = [
   "context_management",
   "user",
 ];
+
+/**
+ * F-9: the hosted-declaration fields THIS wire re-emits, per family. Keys in
+ * `hosted_fields` outside the set are dropped with a debug log — a field the
+ * ingress allowlist captured for another wire's vocabulary must not reach an
+ * upstream that rejects unknown fields.
+ */
+const RESPONSES_WEB_SEARCH_FIELDS: ReadonlySet<string> = new Set([
+  "search_context_size",
+  "user_location",
+  "filters",
+]);
+const RESPONSES_MCP_FIELDS: ReadonlySet<string> = new Set([
+  "server_label",
+  "server_url",
+  "allowed_tools",
+  "headers",
+  "require_approval",
+]);
+
+function pickHostedFields(
+  tool: { readonly name: string; readonly hosted_fields?: Record<string, unknown> },
+  allowed: ReadonlySet<string>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(tool.hosted_fields ?? {})) {
+    if (allowed.has(key)) out[key] = value;
+    else if (value !== undefined) log.debug("responses: dropping hosted tool field this wire does not carry", { tool: tool.name, field: key });
+  }
+  return out;
+}
 
 export function canonicalToResponsesPayload(
   request: CanonicalRequest,
@@ -307,8 +339,19 @@ export function canonicalToResponsesPayload(
       // A hosted web-search tool is a first-class tool on this wire. Emitting
       // the caller's Anthropic `web_search_*` payload verbatim sent Codex
       // `{"type": null}` and a 400 ("Unsupported tool type: None"); Responses
-      // names the same capability `web_search_preview`.
-      if (isWebSearchTool(tool)) return { type: "web_search_preview" };
+      // names the same capability `web_search_preview`. F-9: the declaration's
+      // configuration fields arrive in `hosted_fields` (ingress allowlist) and
+      // re-emit here — a search request used to arrive search-less.
+      if (isWebSearchTool(tool))
+        return {
+          type: "web_search_preview",
+          ...pickHostedFields(tool, RESPONSES_WEB_SEARCH_FIELDS),
+        };
+      // F-9: an MCP declaration re-emits its server configuration — without
+      // this the tool arrived server-less (and `jsonSchema` is `{}` for a
+      // hosted type, so the passthrough below emitted an empty object).
+      if (tool.tool_type === "mcp" && tool.hosted_fields !== undefined)
+        return { type: "mcp", ...pickHostedFields(tool, RESPONSES_MCP_FIELDS) };
       if (tool.tool_type !== undefined && tool.tool_type !== "function" && isRecord(tool.jsonSchema))
         return tool.jsonSchema;
       return {
