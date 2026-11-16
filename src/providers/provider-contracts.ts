@@ -171,24 +171,6 @@ export interface AttemptLeaseOwnership {
   transferToProviderSession(): (() => void) | undefined;
 }
 
-/**
- * Identity that authorizes a later request to continue a provider session the
- * gateway is already holding.
- *
- * Cursor's tool loop spans two client HTTP requests on one upstream Run, so the
- * Run — and the account lease it holds — outlives the request that opened it. A
- * later request may only claim the Run by presenting the same tenant, API key,
- * provider, and account, all recorded server-side when the Run was created. A
- * call id alone is never sufficient: it is unguessable but it is still just a
- * string a client could carry into another key's request.
- */
-export interface ProviderContinuationScope {
-  readonly tenantId: string;
-  readonly apiKeyId: string;
-  readonly providerId: string;
-  readonly providerAccountId: string;
-}
-
 /** Context passed from routing to a provider adapter. */
 export interface ProviderDispatchContext {
   readonly credential: ResolvedCredential;
@@ -247,7 +229,6 @@ export interface ProviderDispatchContext {
    * Absent when the route cannot scope a continuation, in which case a session
    * must not be held open across requests at all.
    */
-  readonly continuation_scope?: ProviderContinuationScope | undefined;
 }
 
 const USER_AGENT_HEADER_NAME = /^user-agent$/i;

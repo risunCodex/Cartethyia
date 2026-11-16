@@ -1,10 +1,10 @@
 // Transport-neutral bidirectional HTTP/2 egress contract.
 //
-// Cursor's Run is a Connect-RPC bidi stream: one long-lived writable request
-// whose response body is an unbounded stream of protobuf frames. Neither
-// `fetch` nor the WebSocket session contract can express it — `fetch` needs the
-// whole body up front, and a WebSocket is a different protocol — so the egress
-// boundary gets its own contract.
+// A Connect-RPC bidi stream is one long-lived writable request whose response
+// body is an unbounded stream of protobuf frames. Neither `fetch` nor the
+// WebSocket session contract can express it — `fetch` needs the whole body up
+// front, and a WebSocket is a different protocol — so the egress boundary gets
+// its own contract.
 //
 // This module is transport-neutral on purpose: it declares *what* a validated
 // bidi stream is, and `network/pool/resolver.ts` decides *how* one is dialed

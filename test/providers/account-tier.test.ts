@@ -21,7 +21,6 @@ describe("mapPlanToTier", () => {
     expect(mapPlanToTier("cb", "personal_free_user")).toBe("free");
     expect(mapPlanToTier("cbcn", "personal_free_user_lite")).toBe("free");
     expect(mapPlanToTier("qoder", "free")).toBe("free");
-    expect(mapPlanToTier("cursor", "FREE")).toBe("free");
   });
 
   test("Trae paid plans map to paid", () => {
@@ -33,12 +32,6 @@ describe("mapPlanToTier", () => {
   test("buddy-family paid plans map to paid; enterprise/team map to pro", () => {
     expect(mapPlanToTier("cb", "Professional")).toBe("paid");
     expect(mapPlanToTier("cbcn", "Team")).toBe("pro");
-  });
-
-  test("Cursor non-free membership maps to paid", () => {
-    expect(mapPlanToTier("cursor", "Pro")).toBe("paid");
-    expect(mapPlanToTier("cursor", "Ultra")).toBe("paid");
-    expect(mapPlanToTier("cursor", "Hobby")).toBe("paid");
   });
 
   test("Qoder non-personal_standard / org maps to pro; personal_standard stays unknown", () => {
@@ -60,7 +53,6 @@ describe("mapPlanToTier", () => {
 
   test("provider ids are case-insensitive", () => {
     expect(mapPlanToTier("TRAE", "Pro")).toBe("paid");
-    expect(mapPlanToTier("Cursor", "Pro")).toBe("paid");
     expect(mapPlanToTier("QODER", "team")).toBe("pro");
   });
 });

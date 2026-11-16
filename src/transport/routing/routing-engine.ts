@@ -1,6 +1,6 @@
 // Routing engine planning/admission core.
 import { log } from "../../observability/logger";
-import { GatewayError } from "../../protocol/gateway-error";
+
 import {
   accountsRateLimitedError,
   accountsUnavailableError,
@@ -10,7 +10,6 @@ import {
   type RoutedCandidate,
   type RoutePlan,
   type Reservation,
-  type RouteContinuationAffinity,
   type RouteSnapshot,
   type RoutingDecision,
   ROUTING_RANK,
@@ -360,94 +359,43 @@ export class RoutingEngine {
       (key) => this.getProviderRoundRobin(key),
     );
   }
-
-  /**
-   * Applies continuation affinity as a hard pin (or a rebase pass-through).
-   *
-   * Returns a plan when the pinned account is present and eligible, `null`
-   * when the continuation is rebaseable and the pin is empty (so the caller
-   * continues with ordinary routing), and throws the strict 400 when the pin
-   * is a hard constraint with no matching candidate.
-   */
-  private resolveContinuationPlan(
-    affinity: RouteContinuationAffinity,
-    matching: readonly RouteCandidate[],
+  private resolveMatchingCandidates(
     requestedModel: string,
-    resolvedModel: string,
     snapshot: RouteSnapshot,
-  ): RoutePlan | null {
-    const pinned = matching.filter(
-      (candidate) =>
-        candidate.provider_id === affinity.providerId &&
-        candidate.provider_account_id === affinity.providerAccountId,
+    tid: string | null,
+    allowCliMappings: boolean,
+    keyId?: string,
+  ): {
+    resolved: ReturnType<typeof resolveMatchingCandidates>["resolved"];
+    combo: ReturnType<typeof resolveMatchingCandidates>["combo"];
+    matching: RouteCandidate[];
+    unmatchedMembers: readonly string[];
+  } {
+    return resolveMatchingCandidates(
+      requestedModel,
+      snapshot,
+      tid,
+      allowCliMappings,
+      keyId,
+      (key) => this.getRoundRobin(key),
     );
-    if (pinned.length === 0) {
-      if (affinity.rebaseable) return null;
-      throw new GatewayError(
-        "invalid_request",
-        400,
-        "This tool result belongs to a Cursor account that is no longer routable (request {requestId}). Reconnect the account, or resend the complete conversation. The session went cold — reconnect or resend 🔌",
-        {
-          providerId: affinity.providerId,
-          accountId: affinity.providerAccountId,
-        },
-      );
-    }
-    // The pinned account owns the live session, so it is the only correct
-    // target for this tool result — but health still applies. Forcing a
-    // session whose account is hard-cooling (quota exhausted) reproduces the
-    // refusal that cooled it, which is how "still hit a cooled-down account"
-    // leaked through continuation affinity. Evaluate the pin before
-    // returning: time-bounded cooling answers 429 with the real reset; an
-    // account that is disabled/locked answers a clear 400.
-    const pinnedDecisions = pinned.map((candidate) => this.eligibility.evaluate(candidate));
-    const blocked = pinnedDecisions.find((decision) => !decision.eligible);
-    if (blocked !== undefined) {
-      // A rebaseable continuation (complete conversation replay) is not owed
-      // to this account: the recorded exchange may travel as history to a
-      // fresh Run on an eligible account. Cooling/blocked pinned account must
-      // not turn that into a hard refusal — fall through to normal routing.
-      if (affinity.rebaseable) return null;
-      const reason = blocked.reason;
-      if (
-        reason === "cooldown_hard" ||
-        reason === "model_cooldown" ||
-        (reason === "quota_exhausted" && typeof blocked.cooldown_until === "number")
-      ) {
-        throw accountsRateLimitedError(requestedModel, resolvedModel, earliestResetMs(pinnedDecisions));
-      }
-      throw new GatewayError(
-        "invalid_request",
-        400,
-        "This tool result belongs to an account that is no longer routable (request {requestId}). Reconnect the account, or resend the complete conversation. The session went cold — reconnect or resend 🔌",
-        {
-          providerId: affinity.providerId,
-          accountId: affinity.providerAccountId,
-        },
-      );
-    }
-    const decisions = new Map<RouteCandidate, RoutingDecision>();
-    for (const candidate of pinned) {
-      const decision = pinnedDecisions.find((d) => d.candidate === candidate);
-      decisions.set(candidate, {
-        eligible: true,
-        rank: ROUTING_RANK.FRESH_KNOWN,
-        reason: "healthy",
-        ...(decision?.cooldown_until !== undefined
-          ? { cooldown_until: decision.cooldown_until }
-          : {}),
-      });
-    }
-    return {
-      revision: snapshot.revision,
-      candidates: pinned,
-      requested_model: requestedModel,
-      resolved_model: resolvedModel,
-      provider_id: pinned[0]!.provider_id,
-      decisions,
-    };
   }
 
+  async reserve(plan: RoutePlan): Promise<Reservation> {
+    for (const candidate of plan.candidates) {
+      const admitted = await this.admission.admit(candidate);
+      if (admitted.admitted) return this.reservations.acquire(candidate, plan.revision);
+    }
+    // Last candidate's identity names the provider the plan was actually for;
+    // every candidate shares it, so any one of them is representative.
+    const last = plan.candidates[plan.candidates.length - 1];
+    throw capacityExhaustedError({
+      ...(last?.provider_id !== undefined ? { providerId: last.provider_id } : {}),
+      ...(plan.resolved_model !== undefined ? { model: plan.resolved_model } : {}),
+      candidateCount: plan.candidates.length,
+      ...(last?.max_inflight !== undefined ? { maxInflight: last.max_inflight } : {}),
+    });
+  }
   async plan(
     requestedModel: string,
     snapshot: RouteSnapshot,
@@ -455,7 +403,6 @@ export class RoutingEngine {
     requiredCapabilities?: readonly RequiredCapability[],
     allowCliMappings = false,
     keyId?: string,
-    continuationAffinity?: RouteContinuationAffinity,
     sessionId?: string,
   ): Promise<RoutePlan> {
     const tid = tenantId ?? null;
@@ -466,33 +413,6 @@ export class RoutingEngine {
       allowCliMappings,
       keyId,
     );
-    // Continuation affinity is applied first and absolutely.
-    //
-    // A request carrying a tool result for a provider session this process is
-    // holding MUST reach the exact live account that owns that session. Routing
-    // it anywhere else is not a degraded choice — it is a correctness failure:
-    // the result would be written onto a different account's upstream turn
-    // (corrupting both conversations and leaking the first account's context),
-    // or into a fresh turn that never asked for the call. So the candidate set
-    // is restricted before any health, cooling, or rotation logic runs, and an
-    // empty result is a refusal rather than a fallback to normal routing.
-    //
-    // The one exception is a *rebaseable* continuation: when the conversation
-    // is complete (every tool result is answered in the history) and the pinned
-    // account is no longer routable for the requested model, the request may
-    // fall through to normal routing so the adapter starts a fresh Run carrying
-    // the recorded history. This is what makes model switches across accounts
-    // work — see `resolveContinuationPlan` and `preparer.ts`.
-    if (continuationAffinity !== undefined) {
-      const continuationPlan = this.resolveContinuationPlan(
-        continuationAffinity,
-        matching,
-        requestedModel,
-        resolved.model,
-        snapshot,
-      );
-      if (continuationPlan !== null) return continuationPlan;
-    }
     // ── One evaluation pass ──────────────────────────────────────────────
     // Every filter that used to run as a separate pass (usage floor, slow lane,
     // health/cooldown eligibility, plan gate, capability) is merged into a
@@ -667,8 +587,7 @@ export class RoutingEngine {
     // warm window can prefer it (prompt-cache warmth). Explicit operator pins are
     // recorded as explicit so they win even past the warm window.
     if (sessionId !== undefined && chosen.provider_account_id !== undefined) {
-      const explicitPin = continuationAffinity?.providerAccountId === chosen.provider_account_id;
-      this.sticky.set(chosen.provider_id, sessionId, chosen.provider_account_id, explicitPin);
+      this.sticky.set(chosen.provider_id, sessionId, chosen.provider_account_id, false);
     }
     return {
       revision: snapshot.revision,
@@ -678,44 +597,6 @@ export class RoutingEngine {
       provider_id: chosen.provider_id,
       decisions,
     };
-  }
-
-  private resolveMatchingCandidates(
-    requestedModel: string,
-    snapshot: RouteSnapshot,
-    tid: string | null,
-    allowCliMappings: boolean,
-    keyId?: string,
-  ): {
-    resolved: ReturnType<typeof resolveMatchingCandidates>["resolved"];
-    combo: ReturnType<typeof resolveMatchingCandidates>["combo"];
-    matching: RouteCandidate[];
-    unmatchedMembers: readonly string[];
-  } {
-    return resolveMatchingCandidates(
-      requestedModel,
-      snapshot,
-      tid,
-      allowCliMappings,
-      keyId,
-      (key) => this.getRoundRobin(key),
-    );
-  }
-
-  async reserve(plan: RoutePlan): Promise<Reservation> {
-    for (const candidate of plan.candidates) {
-      const admitted = await this.admission.admit(candidate);
-      if (admitted.admitted) return this.reservations.acquire(candidate, plan.revision);
-    }
-    // Last candidate's identity names the provider the plan was actually for;
-    // every candidate shares it, so any one of them is representative.
-    const last = plan.candidates[plan.candidates.length - 1];
-    throw capacityExhaustedError({
-      ...(last?.provider_id !== undefined ? { providerId: last.provider_id } : {}),
-      ...(plan.resolved_model !== undefined ? { model: plan.resolved_model } : {}),
-      candidateCount: plan.candidates.length,
-      ...(last?.max_inflight !== undefined ? { maxInflight: last.max_inflight } : {}),
-    });
   }
   async release(reservation: Reservation): Promise<void> {
     await this.admission.release(reservation);

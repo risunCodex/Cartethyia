@@ -200,7 +200,7 @@ export function parsePastedOAuthCredential(raw: string): {
  *
  * A wrapper's own `authState` bag travels wholesale rather than cherry-picked:
  * adapters read provider-specific keys this picker cannot enumerate (Qoder's
- * `machineId`, buddy's `qimei36` device binding, cursor's `method`, coreweave's
+ * `machineId`, buddy's `qimei36` device binding, coreweave's
  * project, kiro's `startUrl`), and dropping the bag silently degraded every
  * imported account to a half-identity credential — failing closed at dispatch
  * (Qoder answered 401 "missing its user identity"). The flat aliases below only

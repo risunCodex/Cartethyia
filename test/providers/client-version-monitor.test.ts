@@ -103,45 +103,6 @@ describe("clixad client version discovery", () => {
   });
 });
 
-describe("cursor client version discovery", () => {
-  const source = VERSION_SOURCES.cursor.sources[0];
-  const extract = source?.extract;
-
-  function download(body: unknown): Response {
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
-  }
-
-  test("the wire identity is cli-<version>-<sha7>, not the bare semver", async () => {
-    // Cursor's own header was observed live as `cli-2026.10.19-6bbf2c4`. The
-    // download API returns `version` and `commitSha` separately, so the header
-    // has to be composed here; sending the semver alone advertises a different
-    // client than the IDE does.
-    const got = await extract?.(download({ version: "3.26.13", commitSha: "3bfec373749d3d4a53a151283022d49743ab50ba" }));
-    expect(got).toBe("cli-3.26.13-3bfec37");
-  });
-
-  test("a missing commit sha degrades to the semver, not to null", async () => {
-    // Half an identity is still better than a pinned fallback.
-    expect(await extract?.(download({ version: "3.26.13" }))).toBe("3.26.13");
-  });
-
-  test("a non-semver version is rejected", async () => {
-    expect(await extract?.(download({ version: "nightly", commitSha: "3bfec37" }))).toBeNull();
-  });
-
-  test("an unparseable body is rejected rather than guessed", async () => {
-    expect(await extract?.(new Response("not json", { status: 200 }))).toBeNull();
-  });
-
-  test("cursor has a discovery source and a wire-shaped fallback", () => {
-    expect(source?.url).toContain("cursor.com/api/download");
-    expect(VERSION_SOURCES.cursor.fallback).toMatch(/^cli-/);
-  });
-});
-
 describe("opencode client version fallback", () => {
   test("the source is the CLI's own npm feed", () => {
     expect(VERSION_SOURCES.opencode.sources[0]?.url).toContain(

@@ -30,8 +30,6 @@ import {
 import { runAttemptLoop } from "./attempt-loop";
 import { projectForRoute, routeCapabilitiesFor } from "../../protocol/translation/capabilities";
 import { dispatchStreamingAttempt } from "./streaming/stream";
-import type { ProviderContinuationScope } from "../../providers/provider-contracts";
-import type { PreparedProxyRequest } from "../request/preparer";
 
 import type { GatewayHandlerDeps } from "./handler-deps";
 
@@ -39,24 +37,6 @@ type ProviderProxyHandlerDeps = GatewayHandlerDeps & {
   /** Live lookup of a provider's SSRF-validated upstream host. */
   readonly byokUpstreamHosts?: { readonly get: (providerId: string) => ByokUpstreamHost | undefined };
 };
-
-/**
- * The continuation scope one dispatch carries.
- *
- * Present only for a route that has an account: a provider session held across
- * requests is authorized by tenant + API key + provider + account, and a route
- * with no account cannot be scoped — so it must not hold a session open at all.
- */
-function continuationScopeFor(prepared: PreparedProxyRequest): ProviderContinuationScope | undefined {
-  const accountId = prepared.candidate.provider_account_id;
-  if (accountId === undefined) return undefined;
-  return {
-    tenantId: prepared.authorization.tenantId,
-    apiKeyId: prepared.authorization.id,
-    providerId: prepared.candidate.provider_id,
-    providerAccountId: accountId,
-  };
-}
 
 /**
  * First-token latency for one attempt, in the spread shape `completeAttempt`
@@ -170,14 +150,6 @@ export async function handleProviderProxyRequest(
       estimatedInputTokens: prepared.estimatedInputTokens,
       estimatedOutputTokens: prepared.estimatedOutputTokens,
       authorizationSnapshot: prepared.authorization.snapshot,
-      // A continuation borrows the held Cursor Run: one upstream turn must not
-      // occupy two account/pool concurrency slots. A rebaseable continuation
-      // (complete history, pinned account no longer routable) does NOT borrow —
-      // it starts a fresh Run on a newly selected account, so it leases like a
-      // normal request.
-      ...(prepared.continuationAffinity === undefined || prepared.continuationAffinity.rebaseable
-        ? {}
-        : { borrowsHeldSession: true }),
     },
     candidates: attemptCandidates,
     tenantId: prepared.authorization.tenantId,
@@ -225,7 +197,6 @@ export async function handleProviderProxyRequest(
       const reservation = context.leases.reservation;
       const proxySlot = context.leases.proxySlot;
       const leaseOwnership = context.leases.ownership;
-      const continuationScope = continuationScopeFor(prepared);
       const providerRouteCandidate = {
         provider_id: candidate.provider_id,
         model_id: candidate.model_id,
@@ -266,7 +237,6 @@ export async function handleProviderProxyRequest(
           state,
         })),
         ...(leaseOwnership === undefined ? {} : { leaseOwnership }),
-        ...(continuationScope === undefined ? {} : { continuationScope }),
       });
       if (dispatchRequest.stream) {
         return dispatchStreamingAttempt({
@@ -289,8 +259,7 @@ export async function handleProviderProxyRequest(
           retainLeases: context.retainLeases,
           ttfbFields,
           ...(leaseOwnership === undefined ? {} : { leaseOwnership }),
-          ...(continuationScope === undefined ? {} : { continuationScope }),
-        });
+          });
       }
       // Pool slot ownership belongs to the candidate attempt: the slot was
       // acquired atomically with selection above, and `proxySlot` is

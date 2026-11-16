@@ -96,23 +96,6 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
     credentialHint: "Sign in with Google or GitHub in the browser, or use the device-code login with an Identity Center organization, then paste a Kiro API key if you prefer. Prompt caching is not reliably working for Kiro: the upstream recomputes the prompt on every turn, so cached-token savings should not be expected.",
   },
   {
-    id: "cursor",
-    displayName: "Cursor",
-    baseUrl: "https://api2.cursor.sh",
-    wireFamilyDefault: "chat",
-    requiresAccount: true,
-    bespokeWire: true,
-    hasAdapterUserAgent: true,
-    // Always direct. Cursor's upstream is reached over its own HTTP/2 path and
-    // an egress proxy in front of it breaks the connection shape the upstream
-    // expects, so proxying is not a discovery an operator should have to make
-    // after the first failures. Only the initial value: an explicit `skipProxy`
-    // patch still wins.
-    defaultSkipProxy: true,
-    credentialUrl: "https://cursor.com",
-    credentialHint: "Sign in with Cursor or import a Cursor API key.",
-  },
-  {
     id: "devin",
     displayName: "Devin",
     baseUrl: "https://server.codeium.com",

@@ -40,25 +40,6 @@ export const AGENTIC_CAPABILITIES = {
     loadAuthentication: oauthCapability(() => import("../integrations/kimi/kimi-oauth"), "kimiCodeOAuthClient", { withRefresher: true }),
     loadQuotaCollector: quotaCapability(() => import("../integrations/kimi/kimi-quota"), "fetchKimiQuota"),
   },
-  cursor: {
-    // Cursor's Run is a Connect-RPC bidi stream on a *dynamically discovered*
-    // agent origin, not the API host the auth and catalog calls use. The path
-    // is pinned here so a probe verifies the endpoint dispatch actually calls;
-    // the origin itself is resolved per dispatch from GetServerConfig.
-    endpointPathsByWireFamily: { chat: "/agent.v1.AgentService/Run" },
-    loadAdapter: async () => (await import("../integrations/cursor/cursor")).cursorAdapter,
-    loadModels: async () => (await import("../integrations/cursor/cursor-catalog")).CURSOR_MODELS,
-    loadAuthentication: oauthCapability(() => import("../integrations/cursor/cursor-auth"), "cursorOAuthClient", {
-      withRefresher: true,
-    }),
-    loadQuotaCollector: quotaCapability(() => import("../integrations/cursor/cursor-quota"), "fetchCursorQuota"),
-    // The roster is per-account and per-plan, and Cursor declares each model's
-    // capabilities, so discovery is the catalog rather than a static list.
-    loadModelDiscovery: discoveryCapability(
-      () => import("../integrations/cursor/cursor-catalog"),
-      (module) => module.discoverCursorModels,
-    ),
-  },
   devin: {
     // Devin's chat wire is a Connect-RPC protobuf stream; the path is pinned
     // here so a probe verifies dispatch actually calls it.

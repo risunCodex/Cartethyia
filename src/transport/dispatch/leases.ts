@@ -82,21 +82,6 @@ export interface AttemptLeaseSource {
   readonly estimatedInputTokens: number;
   readonly estimatedOutputTokens: number;
   readonly authorizationSnapshot: ApiKeyAuthorizationSnapshot;
-  /**
-   * True when this request continues a provider session the gateway already
-   * holds, so its account and network-pool slot are already occupied by that
-   * session.
-   *
-   * A Cursor tool-result request borrows the held Run: it talks to the socket
-   * that is already open and does not open another connection. Acquiring a
-   * second pool slot would charge one logical upstream turn two concurrency
-   * slots — and, with a pool at its limit, would make the continuation fail
-   * with `proxy_pool_capacity_exceeded` for a turn that is already inside it.
-   *
-   * Admission (API-key authorization) and the routing reservation still run:
-   * per-request accounting is per request.
-   */
-  readonly borrowsHeldSession?: boolean;
 }
 
 async function acquirePoolSlot(
@@ -275,10 +260,7 @@ export async function acquireAttemptLeases(
     // address per request, so storing it here would only pin a stale answer.
     if (input.networkBindingFactory && input.host)
       await input.networkBindingFactory.resolve(input.host.hostname, input.signal, input.host.port);
-    // A continuation borrows the session's slot; see `borrowsHeldSession`.
-    const slot = source.borrowsHeldSession === true
-      ? undefined
-      : await acquirePoolSlot(candidate, source, input.poolSelector, input.strictPoolSelection);
+    const slot = await acquirePoolSlot(candidate, source, input.poolSelector, input.strictPoolSelection);
     if (slot) partial.proxySlot = slot;
     if (input.strictPoolSelection && input.signal.aborted)
       throw new GatewayError("transport_closed", 499, "The request was cancelled (request {requestId}). Send it again whenever ready 🙃");
@@ -314,9 +296,7 @@ export async function releaseAttemptLeases(
     /**
      * When present, the pool slot's release is owned rather than called
      * directly: `releaseByResponse()` releases only if a provider session did
-     * not take it over. A slot a live Cursor Run is holding must not be freed
-     * at response time — the Run's next request needs it, and releasing early
-     * is what lets another tenant's request occupy a slot that is still in use.
+     * not take it over.
      */
     readonly ownership?: AttemptLeaseOwnership | undefined;
   },

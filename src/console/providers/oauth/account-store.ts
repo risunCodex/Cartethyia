@@ -22,7 +22,7 @@ import { pickDefined } from "../../shared/object";
  * across logins, so it is what a re-login replaces.
  *
  * A label the provider never resolved is *not* that identity. Callers fill the
- * gap with the provider id (`cursor`, `github`), and hashing that made every
+ * gap with the provider id (e.g. `github`), and hashing that made every
  * login of every account of that provider collide: the second login matched the
  * first row and replaced it, so adding an account silently consumed the one
  * already there. Only a label the provider actually reported — or the refresh

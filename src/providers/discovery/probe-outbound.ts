@@ -16,7 +16,7 @@ export interface ProbeOutboundBinding {
   readonly fetch: ValidatedOutboundFetch;
   /**
    * Validated bidirectional HTTP/2 egress for the same pool/tenant. A provider
-   * whose only transport is a bidi stream (Cursor's Connect-RPC Run) has no
+   * whose only transport is a bidi stream (a Connect-RPC run) has no
    * `fetch` path to fall back to, so a probe without this binding reports a
    * healthy account as broken.
    */

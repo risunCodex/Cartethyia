@@ -49,7 +49,6 @@ import { resolveTenantSystemPrompt } from "../../request/system-prompt-injection
 import { isWrappedInjectionProvider } from "../../../protocol/system-prompt-contracts";
 import { proxySuccessHeaders, buildUpstreamDispatchContext, buildDispatchNetworkBindings } from "../upstream";
 import type { AttemptLeaseOwnership } from "../leases";
-import type { ProviderContinuationScope } from "../../../providers/provider-contracts";
 import { resolveStreamFirstChunkTimeoutMs, resolveStreamStallTimeoutMs, resolveUpstreamTimeoutMs } from "../../../config/timeouts";
 import type { ProxyRequestState } from "../../request/state";
 import type { PreparedProxyRequest } from "../../request/preparer";
@@ -89,7 +88,6 @@ interface StreamingDispatchInput {
   /** Ownership of this attempt's account/network-pool release, when one was acquired. */
   readonly leaseOwnership?: AttemptLeaseOwnership | undefined;
   /** Caller identity authorizing a provider session held across requests. */
-  readonly continuationScope?: ProviderContinuationScope | undefined;
   /** Hands lease ownership to the returned `Response`'s async lifetime. */
   retainLeases: () => void;
   /** First-token latency in the spread shape `completeAttempt` accepts. */
@@ -161,7 +159,6 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
     retainLeases,
     ttfbFields,
     leaseOwnership,
-    continuationScope,
   } = input;
 
   const bindings = await buildDispatchNetworkBindings({
@@ -220,7 +217,6 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
     ...(candidate.user_agent === undefined ? {} : { userAgent: candidate.user_agent }),
     ...bindings,
     ...(leaseOwnership === undefined ? {} : { leaseOwnership }),
-    ...(continuationScope === undefined ? {} : { continuationScope }),
     ...(providerCapture ? { providerCapture } : {}),
   });
   // `ProviderAdapter.dispatch` is declared to return a non-nullable

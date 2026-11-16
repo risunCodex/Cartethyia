@@ -21,7 +21,7 @@ import {
 /** A canonical-codec provider with no bespoke wire. */
 const QODER = "qoder";
 /** A bespoke-wire provider, for which the grant never fires at all. */
-const CURSOR = "cursor";
+const KIRO = "kiro";
 
 describe("buildCapabilityProfile input modalities", () => {
   test("a declared text-only row is not image-capable", () => {
@@ -77,13 +77,13 @@ describe("buildCapabilityProfile input modalities", () => {
       modalities: { input: ["text", "image"], output: ["text"] },
       reasoning: false,
       toolCall: false,
-      providerId: CURSOR,
+      providerId: KIRO,
     });
     const undeclared = buildCapabilityProfile({
       modalities: { input: [], output: [] },
       reasoning: false,
       toolCall: false,
-      providerId: CURSOR,
+      providerId: KIRO,
     });
     expect(declared.bespokeWire).toBe(true);
     expect(undeclared.bespokeWire).toBe(true);

@@ -55,7 +55,7 @@ export interface RouteCandidate {
   readonly network_pool_weights?: Readonly<Record<string, number>>;
   /** Selection strategy for the tenant that owns `network_pool_ids`;
    * `tenantId` names that pool-owning tenant (settings owner and rotation
-   * cursor key). Absent = `least_loaded`. */
+   * selection key). Absent = `least_loaded`. */
   readonly network_pool_routing?: PoolRoutingSetting & { readonly tenantId: string };
   /** This provider's ceiling on *each* pool's concurrent requests, from
    * Routing Strategy. Distinct from `max_inflight` (one account) and from
@@ -223,32 +223,6 @@ export interface PoolRoutingSetting {
   /** Requests served by one pool before round robin advances. */
   readonly rotateCount: number;
 }
-
-/**
- * Exact account a request must be routed to, because a provider session is
- * already live on it.
- *
- * A tool result for a Cursor Run is only meaningful on the account whose Run
- * asked for the call. Routing it to a sibling account — even a healthy one —
- * writes the result into an unrelated upstream turn, so affinity is a hard
- * constraint on the candidate set rather than a preference: `plan` pins to this
- * account or refuses.
- */
-export interface RouteContinuationAffinity {
-  readonly providerId: string;
-  readonly providerAccountId: string;
-  /**
-   * True when the request's tool-result ids are all already answered by the
-   * conversation history (a replay), so no call is still owed to the pinned
-   * account. In that case, if the pinned account is no longer routable for
-   * the requested model, the request may safely rebase to a fresh Run on an
-   * eligible account instead of being refused — the recorded exchange travels
-   * as history. When false, the pin is a hard constraint: a live pending call
-   * must reach the exact account that owns it.
-   */
-  readonly rebaseable: boolean;
-}
-
 export interface RoutePlan {
   readonly revision: RoutingRevision;
   readonly candidates: readonly RouteCandidate[];

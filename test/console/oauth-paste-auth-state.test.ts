@@ -5,7 +5,7 @@
  * from the wrapper and silently dropped every other key — so a re-import of an
  * exported Qoder account lost `machineId` and answered 401 "missing its user
  * identity" at dispatch, buddy accounts lost their `qimei36` device binding,
- * cursor lost its login `method`, coreweave lost its project. The bag travels
+ * coreweave lost its project. The bag travels
  * wholesale now; these tests pin that, plus the alias picks older export shapes
  * rely on and the stale metadata that must NOT survive a re-import.
  */

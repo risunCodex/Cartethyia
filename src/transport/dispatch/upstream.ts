@@ -1,6 +1,6 @@
 import type { CanonicalEvent } from "../../protocol/canonical-model";
 import type { AttemptLeaseOwnership, ValidatedOutboundFetch, ValidatedOutboundHttp2Bidi } from "../../providers/provider-contracts";
-import type { ProviderCaptureExchange, ProviderContinuationScope } from "../../providers/provider-contracts";
+import type { ProviderCaptureExchange } from "../../providers/provider-contracts";
 import { GATEWAY_SECURITY_HEADERS } from "../../security/outbound-headers";
 import type { ValidatedNetworkBindingFactory } from "../../network/egress/factory";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
@@ -116,8 +116,6 @@ export function buildUpstreamDispatchContext(input: {
    * that outlives the request takes it over.
    */
   readonly leaseOwnership?: AttemptLeaseOwnership;
-  /** Caller identity authorizing a provider session held across requests. */
-  readonly continuationScope?: ProviderContinuationScope;
   /** Stable per-conversation cache affinity (preferred over random ids). */
   readonly conversationAffinity?: string;
   /**
@@ -171,7 +169,6 @@ export function buildUpstreamDispatchContext(input: {
       : {}),
     ...(input.outboundHttp2 ? { outbound_http2: input.outboundHttp2 } : {}),
     ...(input.leaseOwnership ? { lease_ownership: input.leaseOwnership } : {}),
-    ...(input.continuationScope ? { continuation_scope: input.continuationScope } : {}),
     ...(input.conversationAffinity ? { conversation_affinity: input.conversationAffinity } : {}),
     ...(input.imageClampMaxBytes === undefined
       ? {}

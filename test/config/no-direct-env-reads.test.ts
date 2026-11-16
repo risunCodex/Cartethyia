@@ -92,19 +92,6 @@ const ALLOW_LIST: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   "src/providers/integrations/qoder/qoder-umid.ts": {
     // (no environment reads — the OS identity is derived from host state)
   },
-  "src/providers/integrations/cursor/cursor.ts": {
-    // Cursor heartbeat tuning; subsystem-specific, only meaningful if the
-    // operator is debugging the cursor transport.
-  },
-  "src/providers/integrations/cursor/cursor-run-lifecycle.ts": {
-    CARTETHYIA_CURSOR_CLIENT_VERSION: "cursor client version override (wire identity)",
-  },
-  "src/providers/integrations/cursor/cursor-run-pump.ts": {
-    CARTETHYIA_CURSOR_HEARTBEAT_MS: "cursor transport heartbeat override",
-  },
-  "src/providers/integrations/cursor/cursor-hardening.ts": {
-    CARTETHYIA_CURSOR_WIRE_TRACE: "cursor wire-trace dump flag (debug only)",
-  },
   "src/console/cli-tools/cartethyia-websearch-plugin.ts": {
     // OpenCode websearch plugin generation: operator overrides for the
     // generated plugin's gateway URL/key/backend. Only read at plugin-write

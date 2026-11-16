@@ -10,7 +10,7 @@
  */
 
 import protobuf from "protobufjs";
-import { addEnum, addType } from "../../cursor/protocol/protobuf-schema";
+import { addEnum, addType } from "../../shared/protobuf-schema";
 
 // ── Enums ──
 

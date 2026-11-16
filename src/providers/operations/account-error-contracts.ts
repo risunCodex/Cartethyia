@@ -361,8 +361,8 @@ export function accountDeadlineMs(
 
 /**
  * Backoff for a model the upstream says does not exist for this account
- * (Cursor answers Connect `not_found` for a model the credential's plan does
- * not reach). Long, because the verdict is a property of the plan and will not
+ * (a Connect `not_found` names a model the credential's plan does not reach).
+ * Long, because the verdict is a property of the plan and will not
  * change on the next request — but bounded, so a plan upgrade is picked up
  * without an operator clearing it by hand.
  */

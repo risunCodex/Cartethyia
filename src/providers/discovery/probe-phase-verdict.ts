@@ -30,7 +30,7 @@ export async function recordProbeHealth(args: {
    * The probe's canonical events, when there are any.
    *
    * Needed because some adapters deliver a refusal as a terminal event rather
-   * than as a thrown error — Cursor's `resource_exhausted` is the case — so
+   * than as a thrown error — a terminal `resource_exhausted` is the case — so
    * `dispatchError` stays `undefined` for a Run the upstream refused. Without
    * the events, that account looked like a success and was recovered.
    */
@@ -180,7 +180,7 @@ export function computeProbeVerdict(args: {
     // Read the terminal's own detail before falling back to the stop reason.
     //
     // `stop_reason` is a canonical one-word label — "error" — so reporting it
-    // alone turned a Cursor quota refusal into a toast whose entire body was
+    // alone turned a quota refusal into a toast whose entire body was
     // the word "error". The upstream sentence an operator needs is in
     // `stop_details`, which is where the adapter parks it and where the live
     // dispatch path already reads it (see `terminalFailure` in

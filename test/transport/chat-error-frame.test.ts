@@ -5,7 +5,7 @@
  * quota, upstream error. The stream must emit an error object carrying the
  * failure message instead of a `finish_reason: "error"` chunk, so the client
  * sees the reason rather than a bare word. `stop_details` carries the failure
- * details when the adapter set them (Cursor sets code/status/message).
+ * details when the adapter set them (code/status/message).
  */
 import { describe, expect, test } from "bun:test";
 import type { CanonicalEvent } from "../../src/protocol/canonical-model";

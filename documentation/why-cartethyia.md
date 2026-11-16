@@ -99,7 +99,6 @@ These are implemented here from scratch, shaped by operating this gateway — no
 - **Buddy CLI identity.** Device-token identity and per-account binding for
   the Buddy family — see [Buddy CLI identity](features/06-buddy-cli-identity.md).
 - **Cursor provider.** The Run protocol adapter, entitlement, and quota — see
-  [Cursor provider](features/08-cursor-provider.md).
 - **Wire dialects.** How a request is translated per provider dialect — see
   [Wire dialects](features/09-wire-dialects.md).
 - **Thinking-effort ladder.** Effort-level translation across providers — see

@@ -53,7 +53,7 @@ async function plannedOrder(
   sessionId?: string,
 ): Promise<string[]> {
   const engine = new RoutingEngine();
-  const plan = await engine.plan(requested, snapshot, null, undefined, false, undefined, undefined, sessionId);
+  const plan = await engine.plan(requested, snapshot, null, undefined, false, undefined, sessionId);
   if (plan.candidates.length === 0) return [];
   return plan.candidates.map((candidate) => candidate.provider_account_id ?? candidate.provider_id);
 }
@@ -136,7 +136,7 @@ describe("routing sort: drain vs reserve vs hot vs sticky", () => {
     // First plan (no session id yet) records nothing sticky for a session;
     // simulate a prior session by pre-seeding the store through a plan with
     // the session id, then confirm the next plan prefers it.
-    const first = await engine.plan("qoder-model", snap, null, undefined, false, undefined, undefined, "sess-1");
+    const first = await engine.plan("qoder-model", snap, null, undefined, false, undefined, "sess-1");
     const chosenFirst = first.candidates[0]!.provider_account_id!;
     const order = await engine.plan(
       "qoder-model",
@@ -144,7 +144,6 @@ describe("routing sort: drain vs reserve vs hot vs sticky", () => {
       null,
       undefined,
       false,
-      undefined,
       undefined,
       "sess-1",
     );

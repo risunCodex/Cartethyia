@@ -63,9 +63,7 @@ describe("providers that dial direct by default", () => {
   // so the whole pool is what gets flagged rather than a single account. It
   // was in this list before, which is the behaviour that changed.
   //
-  // `cursor` is here for the opposite reason: its upstream is reached over its
-  // own HTTP/2 path that a proxy in front of it breaks.
-  const DIRECT_EGRESS = ["antigravity", "cursor", "kilo", "hermes", "github", "kiro"];
+  const DIRECT_EGRESS = ["antigravity", "kilo", "hermes", "github", "kiro"];
 
   for (const id of DIRECT_EGRESS) {
     test(`${id} skips the proxy by default`, () => {

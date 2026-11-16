@@ -35,8 +35,16 @@ import { createServer } from "node:net";
 import { readFileSync } from "node:fs";
 import { createSecureServer, type Http2SecureServer, type ServerHttp2Stream } from "node:http2";
 import { ValidatedNetworkBindingFactory } from "../../src/network/egress/factory";
-import { encodeFrame, FLAG_END_STREAM } from "../../src/providers/integrations/cursor/protocol/framing";
-import { encodeMessage } from "../../src/providers/integrations/cursor/protocol/messages";
+const FLAG_END_STREAM = 0x02;
+
+function encodeFrame(flags: number, payload: Uint8Array): Uint8Array {
+  const out = new Uint8Array(5 + payload.length);
+  out[0] = flags;
+  const view = new DataView(out.buffer);
+  view.setUint32(1, payload.length, false);
+  out.set(payload, 5);
+  return out;
+}
 
 /** One request the fake server received. */
 interface ReceivedRequest {
@@ -259,13 +267,11 @@ describe.skipIf(!BINDABLE || !TRUSTED_CA)("validated HTTP/2 bidi streaming", () 
   test("one writable request reaches the server with its headers", async () => {
     responseBytes = new Uint8Array(0);
     endResponse = false;
-    const clientMessage = encodeMessage("AgentClientMessage", {
-      run_request: { conversation_id: "c1", requested_model: { model_id: "m" } },
-    });
+        const clientMessage = new Uint8Array([0x0a, 0x00]);
     const stream = await open({
       headers: {
         "content-type": "application/connect+proto",
-        "x-cursor-client-type": "cli",
+        "x-client-type": "cli",
       },
     });
     const { promise: arrived, resolve: resolveArrival } = Promise.withResolvers<void>();
@@ -275,7 +281,7 @@ describe.skipIf(!BINDABLE || !TRUSTED_CA)("validated HTTP/2 bidi streaming", () 
     onReceived = undefined;
     const seen = received.at(-1);
     expect(seen?.path).toBe("/agent.v1.AgentService/Run");
-    expect(seen?.headers["x-cursor-client-type"]).toBe("cli");
+    expect(seen?.headers["x-client-type"]).toBe("cli");
     expect(seen?.headers["content-type"]).toBe("application/connect+proto");
     // 5-byte Connect header + the encoded protobuf payload.
     expect(seen?.bytes.byteLength).toBe(5 + clientMessage.byteLength);

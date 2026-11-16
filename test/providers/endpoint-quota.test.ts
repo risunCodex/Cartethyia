@@ -1,5 +1,5 @@
 /**
- * The three endpoint-quota collectors added for Cursor, Trae and Qoder.
+ * The endpoint-quota collectors added for Trae and Qoder.
  *
  * Each of these providers had no collector at all, so the console showed no
  * balance — and "no balance" is indistinguishable from "no quota left" to
@@ -14,12 +14,11 @@
  *    unreadable or never-provisioned account with `isQuotaExceeded` and all-zero
  *    figures. Reporting that as a balance of zero parks the account; reporting
  *    it as a read failure does not.
- * 3. **The current surface outranks the legacy one.** Cursor's `/auth/usage`
+ * 3. **The current surface outranks the legacy one.** A legacy `/auth/usage`
  *    reports a permanently-zero bucket on exactly the plans that have a dollar
  *    cap, so letting it win would publish "no usage" for a spending account.
  */
 import { describe, expect, test } from "bun:test";
-import { fetchCursorQuota } from "../../src/providers/integrations/cursor/cursor-quota";
 import { fetchQoderQuota } from "../../src/providers/integrations/qoder/qoder-quota";
 import { fetchTraeQuota } from "../../src/providers/integrations/trae/trae-quota";
 
@@ -44,100 +43,6 @@ function routedFetcher(
     return new Response("not found", { status: 404 });
   }) as unknown as typeof fetch;
 }
-
-/** An access token whose `sub` claim is a stable user id. */
-function tokenWithSubject(subject: string): string {
-  const payload = Buffer.from(JSON.stringify({ sub: subject })).toString("base64url");
-  return `eyJhbGciOiJIUzI1NiJ9.${payload}.signature`;
-}
-
-describe("Cursor quota — the summary outranks the legacy surface", () => {
-  test("a dollar cap on usage-summary beats the legacy zero bucket", async () => {
-    // `/auth/usage` answers `gpt-4: { numRequests: 0, maxRequestUsage: null }`
-    // for usage-based plans. Reading it as the balance publishes "no usage"
-    // for an account that is 500/2000 cents into its cap.
-    const fetcher = routedFetcher([
-      [
-        "usage-summary",
-        jsonResponse({
-          individualUsage: { plan: { enabled: true, limit: 200000, autoPercentUsed: 25 }, planName: "Pro" },
-          billingCycleEnd: "2026-11-01T00:00:00.000Z",
-        }),
-      ],
-      ["/auth/usage", jsonResponse({ "gpt-4": { numRequests: 0, maxRequestUsage: null } })],
-    ]);
-
-    const result = await fetchCursorQuota(
-      tokenWithSubject("auth0|user_01"),
-      fetcher,
-      { credential_kind: "oauth" },
-    );
-
-    expect(result.error).toBeNull();
-    // The `auto` rail is reported on the 100-point percentage scale, not as a
-    // dollar figure: `percentWindowFor(kind, label, percent, false)` passes
-    // `withLimit: false`, so the plan's dollar cap is deliberately not applied
-    // to it. Asserting `used === 500` here assumed the dollar reading, which is
-    // the `api` rail's scale, not this one.
-    expect(result.windows[0]?.used).toBe(25);
-    expect(result.windows[0]?.limit).toBe(100);
-    expect(result.plan).toBe("Pro");
-  });
-
-  test("the api rail uses the dollar cap, the auto rail does not", async () => {
-    // The two rails are denominated differently on purpose, and a test that
-    // only ever checked one scale could not tell them apart. `limit: 2000` is
-    // cents, so the cap is $20; the api rail spends 10% of it ($2), while the
-    // auto rail still reports its raw percentage against 100.
-    const fetcher = routedFetcher([
-      [
-        "usage-summary",
-        jsonResponse({
-          individualUsage: {
-            plan: { enabled: true, autoPercentUsed: 25, apiPercentUsed: 10, limit: 2000 },
-          },
-        }),
-      ],
-      // The legacy surface is still consulted after the summary answers, so a
-      // fixture without it fails on a 404 that has nothing to do with what
-      // this test is checking.
-      ["/auth/usage", jsonResponse({ "gpt-4": { numRequests: 0, maxRequestUsage: null } })],
-    ]);
-
-    const result = await fetchCursorQuota(
-      tokenWithSubject("auth0|user_01"),
-      fetcher,
-      { credential_kind: "oauth" },
-    );
-
-    expect(result.error).toBeNull();
-    const byLabel = new Map(result.windows.map((w) => [w.label, w]));
-    expect(byLabel.get("Cursor Models")?.used).toBe(25);
-    expect(byLabel.get("Cursor Models")?.limit).toBe(100);
-    expect(byLabel.get("Other Models")?.used).toBe(2);
-    expect(byLabel.get("Other Models")?.limit).toBe(20);
-  });
-
-  test("an api-key account falls back to the legacy surface", async () => {
-    // The summary needs a user id from the access token and only answers on the
-    // default host, so an api-key account has no summary to prefer over this.
-    const fetcher = routedFetcher([
-      [
-        "/auth/usage",
-        jsonResponse({
-          "gpt-4": { numRequests: 12, maxRequestUsage: 150 },
-          billingCycleEnd: "2026-11-01T00:00:00.000Z",
-        }),
-      ],
-    ]);
-
-    const result = await fetchCursorQuota("key-abc", fetcher, { credential_kind: "api_key" });
-
-    expect(result.windows).toHaveLength(1);
-    expect(result.windows[0]?.used).toBe(12);
-    expect(result.windows[0]?.limit).toBe(150);
-  });
-});
 
 describe("Trae quota — the two surfaces are independent", () => {
   const routes = [
@@ -567,43 +472,3 @@ describe("Qoder quota — an unreadable body is not a zero balance", () => {
   });
 });
 
-describe("Cursor — the legacy bucket and the account identity", () => {
-  test("an empty legacy bucket is not shown as a window", async () => {
-    // Usage-based plans answer `/auth/usage` with `gpt-4: {numRequests: 0,
-    // maxRequestUsage: null}` while their real spend sits on the summary. The
-    // empty row was shown above the number that mattered.
-    const fetcher = routedFetcher([
-      [
-        "usage-summary",
-        jsonResponse({
-          individualUsage: { plan: { enabled: true, autoPercentUsed: 25, apiPercentUsed: 10, limit: 2000 } },
-        }),
-      ],
-      ["/auth/usage", jsonResponse({ "gpt-4": { numRequests: 0, maxRequestUsage: null } })],
-    ]);
-
-    const result = await fetchCursorQuota(tokenWithSubject("google-oauth2|user_01ABC"), fetcher, {
-      credential_kind: "oauth",
-    });
-
-    // The named rails, not the empty legacy bucket.
-    expect(result.windows.map((w) => w.label).join(",")).toBe("Cursor Models,Other Models");
-  });
-
-  test("the account identity is reduced to an opaque tag", () => {
-    // The access token's subject is a real identity; showing it as the account
-    // label published it. The tag is derived, so one account keeps one tag.
-    const fetcher = routedFetcher([
-      [
-        "usage-summary",
-        jsonResponse({ individualUsage: { plan: { enabled: true, autoPercentUsed: 5 } } }),
-      ],
-    ]);
-    return fetchCursorQuota(tokenWithSubject("google-oauth2|user_01ABC"), fetcher, {
-      credential_kind: "oauth",
-    }).then((result) => {
-      expect(result.accountLabel).toMatch(/^cursor-[a-z0-9]+$/);
-      expect(result.accountLabel).not.toContain("google-oauth2");
-    });
-  });
-});

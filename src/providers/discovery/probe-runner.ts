@@ -359,7 +359,7 @@ export class ProbeRunner {
             deadline: startedAt + probeTimeoutMs,
             abort_signal: probeSignal,
             outbound_fetch: probeFetch,
-            // A bidi-only provider (Cursor's Connect-RPC Run) has no `fetch`
+            // A bidi-only provider (a Connect-RPC run) has no `fetch`
             // transport at all: without the HTTP/2 binding the probe fails with
             // "requires validated HTTP/2 egress" while live dispatch — which
             // always supplies it — succeeds.
@@ -424,7 +424,7 @@ export class ProbeRunner {
       accountId,
       dispatchError,
       // Passed so a refusal delivered as a terminal event — not as a thrown
-      // error — still reaches the health machine. Without it, Cursor's
+      // error — still reaches the health machine. Without it, a terminal
       // `resource_exhausted` left `dispatchError` undefined and the probe
       // recovered an exhausted account.
       ...(events === undefined ? {} : { events }),

@@ -2,7 +2,7 @@
 //
 // Device-code flows (start + poll) previously always dialed from the
 // gateway's own egress, so every code minted on one host appeared to come
-// from a single IP — which let Cursor/Grok/other device-code providers flag
+// from a single IP — which let device-code providers (Grok and others) flag
 // "multiple codes from one IP". The `device_flow_proxy` routing setting says
 // whether to route these requests through one of the tenant's active network
 // pools ("random", the default) or direct ("direct").

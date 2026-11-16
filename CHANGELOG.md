@@ -46,6 +46,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   Qoder IDE version as the international realm, so both realms present one
   build identity.
 
+### Removed
+
+- **Cursor provider.** The Cursor integration is deleted end to end: the
+  adapter and Run transport, OAuth client, model catalog, probe scripts, docs
+  page, provider icon, and the vendored proto schema. Existing database rows
+  and migration history are untouched — account data stays as is; the routes
+  simply no longer dispatch to it. The generic HTTP/2 bidi egress seam and
+  the console pagination cursors are unrelated and remain.
+
 ### Fixed
 
 - **Cross-surface hardening campaign** (surface audit, 43 findings; see
@@ -131,9 +140,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 - Cross-surface contract suite (`test/transport/surface/contract.test.ts`)
   pins one canonical event list through all five encoders with an annotated
   divergence ledger — the regression net behind the fixes above.
-
-## [2.8.2] - 2026-11-14
-
 - OAuth browser logins whose redirect port the gateway owns (DeepAI, Trae) now
   redirect to the gateway's own listener — `http://127.0.0.1:<port>/callback` —
   where root-level callback routes complete the exchange, replacing the
