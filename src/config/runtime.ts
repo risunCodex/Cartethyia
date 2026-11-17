@@ -57,6 +57,21 @@ export function resolveQoderP4WarnStreak(): number {
   return readInt("CARTETHYIA_QODER_P4_WARN_STREAK", CONFIG_SPEC.CARTETHYIA_QODER_P4_WARN_STREAK);
 }
 
+/** Resolves the operator-pinned Cursor client version, or `undefined` for the monitored one. */
+export function resolveCursorClientVersion(): string | undefined {
+  return readOptionalText("CARTETHYIA_CURSOR_CLIENT_VERSION", CONFIG_SPEC.CARTETHYIA_CURSOR_CLIENT_VERSION);
+}
+
+/** Resolves the Cursor Run heartbeat cadence (ms). */
+export function resolveCursorHeartbeatMs(): number {
+  return readInt("CARTETHYIA_CURSOR_HEARTBEAT_MS", CONFIG_SPEC.CARTETHYIA_CURSOR_HEARTBEAT_MS);
+}
+
+/** Whether the Cursor Run wire logs every decoded frame (opt-in, presence = on). */
+export function resolveCursorWireTrace(): boolean {
+  return readOptionalText("CARTETHYIA_CURSOR_WIRE_TRACE", CONFIG_SPEC.CARTETHYIA_CURSOR_WIRE_TRACE) !== undefined;
+}
+
 /** Resolves the graceful-shutdown drain window: time for in-flight requests to finish before abort. */
 export function resolveShutdownDrainWindowMs(): number {
   return readInt(

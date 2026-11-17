@@ -18,6 +18,13 @@ providers and models.
    streaming format.
 4. Update intentional dashboard mirrors, config, docs, and `.env.example`.
 5. Verify through the real composition root, not isolated stubs.
+6. **Run the provider acceptance harness** —
+   `bun run scripts/provider-harness/run.ts --provider <id> --creds <export.json> --model <included-model>`
+   — before calling the provider done. The four tasks (`text`, `single-tool`,
+   `parallel-tools`, `arg-fidelity`) go through the real registry adapter with
+   deterministic tools and live output; see `scripts/provider-harness/README.md`.
+   Record the verdict (and the plan's included-model set) in the provider's
+   feature page. A unit suite alone is not live acceptance.
 
 Do not invent capabilities, pricing, limits, or availability when upstream is
 silent. A catalog row is not proof that a model answers.

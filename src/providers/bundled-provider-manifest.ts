@@ -109,6 +109,21 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
     credentialUrl: "https://devin.ai",
     credentialHint: "Sign in with Devin, Windsurf Enterprise, or import a Devin session token / Windsurf seat key.",
   },
+  {
+    id: "cursor",
+    displayName: "Cursor",
+    baseUrl: "https://api2.cursor.sh",
+    wireFamilyDefault: "chat",
+    requiresAccount: true,
+    bespokeWire: true,
+    hasAdapterUserAgent: true,
+    // The Run wire is a Connect-RPC bidi stream on HTTP/2 with an HTTP/1
+    // fallback; an egress proxy in front of it breaks the stream shape.
+    // Direct only.
+    defaultSkipProxy: true,
+    credentialUrl: "https://cursor.com",
+    credentialHint: "Sign in with Cursor or import a Cursor API key (crsr_...).",
+  },
   { id: "kimi", displayName: "Kimi Code", baseUrl: "https://api.kimi.com/coding", credentialUrl: "https://platform.moonshot.ai/console/api-keys" },
   { id: "opencode", displayName: "OpenCode Free", baseUrl: "https://opencode.ai", requiresAccount: false, ipScopedRateLimit: true, hasAdapterUserAgent: true },
   { id: "opencode-zen", displayName: "OpenCode Zen", baseUrl: "https://opencode.ai", hasAdapterUserAgent: true, credentialUrl: "https://opencode.ai/auth" },

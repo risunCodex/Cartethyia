@@ -112,6 +112,26 @@ export function parseTrailer(payload: Uint8Array): ConnectTrailer {
   }
 }
 
+/**
+ * Strips a Connect streaming envelope from a unary body when present.
+ *
+ * Unary Connect responses are normally raw protobuf, but some endpoints
+ * answer with the 5-byte framed form (1 flag byte + 4-byte big-endian
+ * length). The envelope is unambiguous when the length prefix describes
+ * exactly the remainder, so raw payloads pass through untouched.
+ */
+export function stripConnectEnvelope(body: Uint8Array): Uint8Array {
+  if (body.byteLength < 5) return body;
+  const flags = body[0] ?? 0;
+  const length =
+    ((body[1] ?? 0) << 24) | ((body[2] ?? 0) << 16) | ((body[3] ?? 0) << 8) | (body[4] ?? 0);
+  if (flags !== CONNECT_COMPRESSED_FLAG && flags !== CONNECT_END_STREAM_FLAG && flags !== 0) {
+    return body;
+  }
+  if (length !== body.byteLength - 5) return body;
+  return body.subarray(5);
+}
+
 /** Initial allocation for a frame buffer that has not received a chunk yet. */
 const FRAME_BUFFER_MIN_BYTES = 4096;
 /** Ceiling on the spare capacity kept above the live length when growing. */

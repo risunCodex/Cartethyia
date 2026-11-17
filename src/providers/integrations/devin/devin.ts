@@ -10,7 +10,7 @@
  * `ProviderAdapter` contract.
  */
 
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import type {
   CanonicalEvent,
@@ -33,6 +33,7 @@ import {
 } from "../shared/connect";
 import { DevinEnums, DevinMessageTypes, fromEnum } from "./protocol/devin-proto";
 import { callDevinUnary } from "./devin-http";
+import { DEVIN_MODELS } from "./devin-catalog";
 import {
   DEVIN_ASSIGN_MODEL_PATH,
   DEVIN_CHAT_MESSAGE_PATH,
@@ -58,6 +59,49 @@ function newExecutionId(): string {
 
 /** Cap on tool-call ids (OpenAI-routed models reject >40 chars). */
 const DEVIN_TOOL_CALL_ID_MAX_LENGTH = 40;
+
+/**
+ * The routed model's context window from the bundled catalog, or `null` when
+ * the id is unlisted (a live-discovery lane — no guard, the post-stream
+ * classification still applies).
+ */
+function contextLimitFor(modelId: string): number | null {
+  const row = DEVIN_MODELS.find((model) => model.modelId === modelId);
+  return row?.contextLimit ?? null;
+}
+
+/**
+ * Yielded when the history cannot fit the lane's window. Devin's own answer
+ * to an oversized prompt is a *silent* stream close — HTTP 200, no frames, no
+ * error trailer (live-verified 2026-11-17: ~1.1MB chars passes, ~1.3MB chars
+ * closes) — which a generic decoder reads as "ended without content" and the
+ * gateway maps to a 502. Naming the overflow here routes it through the
+ * gateway's `context_length_exceeded` handling instead: 413 to the caller,
+ * fail-over to a candidate with a larger window while one exists.
+ */
+function overflowOutcome(
+  sequence: number,
+  estimatedTokens: number,
+  contextLimit: number,
+): { error: CanonicalEvent; terminal: CanonicalEvent } {
+  const message = `Devin prompt exceeds the model's context window (estimated ~${estimatedTokens} tokens vs ${contextLimit}); the upstream closes the stream without a verdict. Trim the conversation history.`;
+  return {
+    error: {
+      type: "error",
+      sequence_number: sequence,
+      category: "upstream",
+      message,
+      retryable: false,
+    },
+    terminal: {
+      type: "terminal",
+      sequence_number: sequence + 1,
+      state: "failed",
+      stop_reason: "error",
+      stop_details: { code: "context_length_exceeded", status: 413, message },
+    },
+  };
+}
 
 interface DevinAuthResult {
   userJwt?: string;
@@ -124,11 +168,38 @@ function systemPromptFrom(request: CanonicalRequest): string {
   return parts.join("\n\n");
 }
 
+/** A uuid-shaped id derived from content, stable across history rebuilds. */
+function deterministicUuid(seed: string): string {
+  const digest = createHash("sha256").update(seed).digest();
+  const bytes = digest.subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** Rough token estimate: ~4 chars per token plus per-message framing. */
+function estimatePromptTokens(request: CanonicalRequest): number {
+  let chars = 0;
+  for (const message of request.messages) {
+    for (const part of message.content) {
+      if (part.kind === "text") chars += part.text.length;
+      else if (part.kind === "toolCall") chars += JSON.stringify(part.arguments ?? {}).length;
+      else if (part.kind === "toolResult") chars += typeof part.content === "string" ? part.content.length : JSON.stringify(part.content).length;
+      else if (part.kind === "reasoning" && typeof part.payload === "string") chars += part.payload.length;
+    }
+  }
+  return Math.ceil(chars / 4) + request.messages.length * 8;
+}
+
 function chatMessagePrompts(request: CanonicalRequest, cascadeId: string): object[] {
   const out: object[] = [];
   let index = 0;
-  const seedFor = (role: string, toolCallId?: string): string =>
-    toolCallId ? `${cascadeId}\0${index}\0${role}\0${toolCallId}` : `${cascadeId}\0${index}\0${role}`;
+  // Message ids are proper UUIDs derived from the position in the history
+  // ("bare UUIDs, like every other history row") — the raw seed string is not
+  // an id the upstream's rehydration treats as a message id.
+  const idFor = (role: string, toolCallId?: string): string =>
+    deterministicUuid(toolCallId ? `${cascadeId}\0${index}\0${role}\0${toolCallId}` : `${cascadeId}\0${index}\0${role}`);
 
   for (const message of request.messages) {
     index += 1;
@@ -136,7 +207,7 @@ function chatMessagePrompts(request: CanonicalRequest, cascadeId: string): objec
       const text = joinTextParts(message.content);
       if (text) {
         out.push({
-          messageId: seedFor("user"),
+          messageId: idFor(message.role),
           source: DevinEnums.ChatMessageSource.USER,
           prompt: text,
         });
@@ -148,10 +219,21 @@ function chatMessagePrompts(request: CanonicalRequest, cascadeId: string): objec
       // showed `swe-1-6-slow` answers the same "cannot see" with and without
       // an ImageData payload, and `swe-2-flash-medium` rejects it with
       // invalid_argument. Forwarding bytes would only cost tokens.
-      const text = joinTextParts(message.content);
+      let text = joinTextParts(message.content);
       const toolResults = toolResultParts(message);
+      if (toolResults.length > 0) {
+        // The Messages surface folds tool results into user turns (the
+        // Anthropic ledger): the result text lives INSIDE the toolResult
+        // part, which joinTextParts cannot see — dropping it made the model
+        // invent its own tool output (live-verified 2026-11-17).
+        const resultText = toolResults
+          .map((result) => (typeof result.content === "string" ? result.content : joinTextParts(result.content)))
+          .filter((result) => result.length > 0)
+          .join("\n");
+        text = [text, resultText].filter((part) => part.length > 0).join("\n");
+      }
       const prompt: Record<string, unknown> = {
-        messageId: seedFor("user"),
+        messageId: idFor("user"),
         source: DevinEnums.ChatMessageSource.USER,
         prompt: text,
       };
@@ -165,11 +247,21 @@ function chatMessagePrompts(request: CanonicalRequest, cascadeId: string): objec
     if (message.role === "assistant") {
       const text = joinTextParts(message.content);
       const calls = toolCallParts(message);
-      const reasoning = message.content.filter((p) => p.kind === "reasoning");
+      // Foreign reasoning replays as plain text in `thinking` WITHOUT its
+      // signature: the signature belongs to the provider that minted it, and
+      // a foreign one makes the upstream reject the whole turn. (The
+      // reference implementation carries signatures only on its own turns.)
+      const thinking = message.content
+        .filter((p): p is Extract<typeof p, { kind: "reasoning" }> => p.kind === "reasoning")
+        .map((p) => (typeof p.payload === "string" ? p.payload : ""))
+        .join("\n");
+      if (!text && !thinking && calls.length === 0) continue;
       const prompt: Record<string, unknown> = {
-        messageId: seedFor("assistant"),
+        messageId: idFor("assistant"),
         source: DevinEnums.ChatMessageSource.SYSTEM,
         prompt: text,
+        thinking,
+        signatureType: "",
       };
       if (calls.length > 0) {
         prompt.toolCalls = calls.map((call, i) => ({
@@ -177,13 +269,6 @@ function chatMessagePrompts(request: CanonicalRequest, cascadeId: string): objec
           name: call.name,
           argumentsJson: typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments ?? {}),
         }));
-      }
-      if (reasoning.length > 0) {
-        const r = reasoning[0]!;
-        if (r.kind === "reasoning") {
-          if (typeof r.payload === "string") prompt.thinking = r.payload;
-          if (r.signature) prompt.signature = r.signature;
-        }
       }
       out.push(prompt);
       continue;
@@ -193,7 +278,7 @@ function chatMessagePrompts(request: CanonicalRequest, cascadeId: string): objec
       for (const result of results) {
         const text = Array.isArray(result.content) ? joinTextParts(result.content) : String(result.content ?? "");
         out.push({
-          messageId: seedFor("tool", result.call_id),
+          messageId: idFor("tool", result.call_id),
           source: DevinEnums.ChatMessageSource.TOOL,
           prompt: text,
           toolCallId: result.call_id,
@@ -323,6 +408,17 @@ export const devinAdapter: ProviderAdapter = {
     const signal = context.abort_signal;
     let seq = 0;
     const nextSeq = (): number => ++seq;
+
+    // Context-fit guard: an oversized history is refused before the upstream
+    // call, because Devin's own answer to one is a silent stream close.
+    const estimatedTokens = estimatePromptTokens(request);
+    const contextLimit = contextLimitFor(candidate.model_id);
+    if (contextLimit !== null && estimatedTokens > Math.floor(contextLimit * 0.9)) {
+      const outcome = overflowOutcome(nextSeq(), estimatedTokens, contextLimit);
+      yield outcome.error;
+      yield outcome.terminal;
+      return;
+    }
 
     // 1. Auth: mint user JWT (and possibly a custom API server URL).
     let auth: DevinAuthResult;
@@ -531,6 +627,15 @@ export const devinAdapter: ProviderAdapter = {
     }
 
     if (!sawContent && !hasToolCalls) {
+      // A silent close on an oversized prompt (estimation missed the guard —
+      // different tokenizer, live-discovery lane) reads exactly like this:
+      // classify it as an overflow rather than a generic flake.
+      if (contextLimit !== null && estimatedTokens > Math.floor(contextLimit * 0.9)) {
+        const outcome = overflowOutcome(nextSeq(), estimatedTokens, contextLimit);
+        yield outcome.error;
+        yield outcome.terminal;
+        return;
+      }
       yield { type: "error", sequence_number: nextSeq(), category: "upstream", message: "Devin stream ended without content", retryable: true };
       return;
     }

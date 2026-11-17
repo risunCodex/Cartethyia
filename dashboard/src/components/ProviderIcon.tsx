@@ -85,6 +85,7 @@ const iconAssets: Record<string, { file: string; ext: "svg" | "webp" | "png" }> 
   kiro: { file: "kiro", ext: "webp" },
   kimchi: { file: "kimchi", ext: "webp" },
   commandcode: { file: "commandcode", ext: "webp" },
+  cursor: { file: "cursor", ext: "webp" },
   // Devin's official mark is an SVG (dark tile + white rotor); without this
   // entry the fallback would look for `devin.webp`.
   devin: { file: "devin", ext: "svg" },

@@ -138,6 +138,29 @@ async function electronUpdaterVersion(response: Response): Promise<string | null
   return match && isSemverish(match[1]) ? match[1] : null;
 }
 
+/**
+ * Newest Cursor build from the official download API, as the CLI's own header
+ * spells it.
+ *
+ * Cursor's `x-cursor-client-version` is not the IDE semver on its own: the wire
+ * value is `cli-<date>-<sha7>` (observed live as `cli-2026.11.05-86047df`).
+ * The download API is the only source that returns both halves — `version` and
+ * `commitSha` — so they are joined here rather than guessed. A semver alone
+ * would be a different identity than the one the CLI sends.
+ */
+async function cursorVersion(response: Response): Promise<string | null> {
+  try {
+    const data = (await response.json()) as { version?: unknown; commitSha?: unknown };
+    const version = data.version;
+    if (!isSemverish(version)) return null;
+    const sha = typeof data.commitSha === "string" ? data.commitSha.trim() : "";
+    const short = sha.length >= 7 ? sha.slice(0, 7) : "";
+    return short.length > 0 ? `cli-${version.trim()}-${short}` : version.trim();
+  } catch {
+    return null;
+  }
+}
+
 /** Ordered upstream sources and pinned fallbacks for every client version. */
 export const VERSION_SOURCES = {
   antigravity: {
@@ -349,6 +372,21 @@ export const VERSION_SOURCES = {
       },
     ],
   },
+  cursor: {
+    key: "cursor",
+    // Fallback = the newest stable build from the official download API at the
+    // time of wiring (cli-2026.11.05-86047df). Discovery replaces it within one
+    // monitor tick; it is only what a cold process sends before the first
+    // successful fetch. Kept equal to `CURSOR_CLIENT_VERSION` in the cursor
+    // wire module so the badge and the request header always send one identity.
+    fallback: "cli-2026.11.05-86047df",
+    sources: [
+      {
+        url: "https://cursor.com/api/download?platform=win32-x64-user&releaseTrack=stable",
+        extract: cursorVersion,
+      },
+    ],
+  },
   hermes: {
     key: "hermes",
     // Hermes DOES publish a semver: the GitHub release tag is `v0.22.2`. The
@@ -394,6 +432,7 @@ const resolvers = {
   clixad: createClientVersionResolver({ ...VERSION_SOURCES.clixad, client: "clixad" }),
   freebuff: createClientVersionResolver({ ...VERSION_SOURCES.freebuff, client: "freebuff" }),
   deepai: createClientVersionResolver({ ...VERSION_SOURCES.deepai, client: "deepai" }),
+  cursor: createClientVersionResolver({ ...VERSION_SOURCES.cursor, client: "cursor" }),
   opencode: createClientVersionResolver({ ...VERSION_SOURCES.opencode, client: "opencode" }),
   commandcode: createClientVersionResolver({ ...VERSION_SOURCES.commandcode, client: "command-code" }),
   grok: createClientVersionResolver({ ...VERSION_SOURCES.grok, client: "grok" }),
@@ -429,6 +468,7 @@ const PROVIDER_VERSION_RESOLVERS: Readonly<Record<string, ClientVersionResolver>
   cline: resolvers.clineCli,
   codex: resolvers.codex,
   qoder: resolvers.qoder,
+  cursor: resolvers.cursor,
   hermes: resolvers.hermes,
   trae: resolvers.trae,
   traecn: resolvers.trae,

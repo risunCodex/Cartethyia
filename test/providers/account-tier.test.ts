@@ -21,12 +21,19 @@ describe("mapPlanToTier", () => {
     expect(mapPlanToTier("cb", "personal_free_user")).toBe("free");
     expect(mapPlanToTier("cbcn", "personal_free_user_lite")).toBe("free");
     expect(mapPlanToTier("qoder", "free")).toBe("free");
+    expect(mapPlanToTier("cursor", "FREE")).toBe("free");
   });
 
   test("Trae paid plans map to paid", () => {
     expect(mapPlanToTier("trae", "Pro")).toBe("paid");
     expect(mapPlanToTier("trae", "Premium")).toBe("paid");
     expect(mapPlanToTier("traecn", "Pro")).toBe("paid");
+  });
+
+  test("Cursor non-free membership maps to paid", () => {
+    expect(mapPlanToTier("cursor", "Pro")).toBe("paid");
+    expect(mapPlanToTier("cursor", "Ultra")).toBe("paid");
+    expect(mapPlanToTier("cursor", "Hobby")).toBe("paid");
   });
 
   test("buddy-family paid plans map to paid; enterprise/team map to pro", () => {

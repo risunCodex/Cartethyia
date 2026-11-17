@@ -13,7 +13,8 @@ import type { EligibilityDecision, NormalizedQuotaFact, RoutedCandidate } from "
 /**
  * Filters quota windows to those relevant to the candidate model.
  * Providers like Antigravity report separate quotas for distinct model families
- * (Gemini vs Claude/GPT), and Grok reports per-product buckets.
+ * (Gemini vs Claude/GPT), Grok reports per-product buckets, and Cursor's two
+ * named rails fund disjoint families ("Cursor Models" vs "Other Models").
  * Evaluating a Claude exhaustion against a Gemini request would incorrectly
  * mark the account exhausted for Gemini when Gemini capacity is still available.
  */
@@ -51,6 +52,23 @@ export function filterCandidateQuotaWindows(
         const product = w.kind.split(":")[1]?.toLowerCase();
         return product ? modelId.includes(product) : true;
       }
+      return true;
+    });
+  }
+
+  if (providerId === "cursor") {
+    // `cursor:usd:individual-auto` is the "Cursor Models" rail (the weekly
+    // pool on X Subscription, the auto-percent rail on classic plans) and
+    // serves the Cursor-owned families (Grok, Composer, Auto). The matching
+    // `cursor:usd:individual-api` rail ("Other Models", included-$ or prepaid
+    // credit) serves everything else (Claude, GPT, Gemini, …). A spent
+    // prepaid balance must not mark a Grok request exhausted, and an empty
+    // weekly pool must not refuse a Claude request. The owned families are a
+    // closed set, so unknown ids default to the third-party side.
+    const isCursorOwned = /\bgrok|\bcomposer|\bauto\b/.test(modelId);
+    return windows.filter((w) => {
+      if (w.kind === "cursor:usd:individual-auto") return isCursorOwned;
+      if (w.kind === "cursor:usd:individual-api") return !isCursorOwned;
       return true;
     });
   }

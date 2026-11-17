@@ -4,7 +4,7 @@
 // touching the network.
 
 import { describe, expect, test } from "bun:test";
-import { gzipSync } from "node:zlib";
+import { gzipSync, gunzipSync } from "node:zlib";
 import type { CanonicalRequest } from "../../src/protocol/canonical-model";
 import type { ProviderDispatchContext, ProviderDispatchTarget } from "../../src/providers/provider-contracts";
 import { devinAdapter } from "../../src/providers/integrations/devin/devin";
@@ -89,6 +89,83 @@ const request: CanonicalRequest = {
 };
 
 describe("Devin chat adapter (fake transport)", () => {
+  test("an oversized history is refused before the upstream call as context_length_exceeded", async () => {
+    // Devin's own answer to an oversized prompt is a SILENT stream close
+    // (HTTP 200, no frames, no trailer — live-verified 2026-11-17), which the
+    // generic decoder reads as "ended without content" and the gateway maps
+    // to a 502. The pre-dispatch guard names the overflow instead.
+    const filler = Array.from({ length: 20 }, (_, i) => ({
+      role: "user" as const,
+      content: [{ kind: "text" as const, text: `Note ${i}: ${"the quick brown fox jumps over the lazy dog. ".repeat(2000)}` }],
+    }));
+    const fetcher = fakeFetch([]);
+    const events = [];
+    for await (const event of devinAdapter.dispatch(
+      { ...request, messages: [...filler, { role: "user" as const, content: [{ kind: "text" as const, text: "ready?" }] }] },
+      target,
+      context(fetcher),
+    )) {
+      events.push(event);
+    }
+    // Guard fired before any upstream call.
+    const calls = (fetcher as unknown as { calls: { url: string }[] }).calls;
+    expect(calls.length).toBe(0);
+    const terminal = events.find((e) => e.type === "terminal") as { state: string; stop_details?: Record<string, unknown> };
+    expect(terminal.state).toBe("failed");
+    expect(terminal.stop_details?.code).toBe("context_length_exceeded");
+    expect(terminal.stop_details?.status).toBe(413);
+    expect((events.find((e) => e.type === "error") as { message: string }).message).toContain("context window");
+  });
+
+  test("message ids are proper UUIDs and empty assistant turns are skipped", async () => {
+    const chunks = [frame({ deltaText: "ok" }), endStreamFrame()];
+    const fetcher = fakeFetch(chunks);
+    const events = [];
+    for await (const event of devinAdapter.dispatch(
+      {
+        ...request,
+        messages: [
+          { role: "user" as const, content: [{ kind: "text" as const, text: "hello" }] },
+          // A foreign assistant turn with reasoning + signature: the signature
+          // must NOT reach the wire (it belongs to the provider that minted it).
+          {
+            role: "assistant" as const,
+            content: [
+              { kind: "reasoning" as const, payload: "foreign thinking", signature: "foreign-signature" },
+              { kind: "text" as const, text: "hi there" },
+            ],
+          },
+          // An assistant turn with nothing at all: skipped entirely.
+          { role: "assistant" as const, content: [] },
+          { role: "user" as const, content: [{ kind: "text" as const, text: "again" }] },
+        ],
+      },
+      target,
+      context(fetcher),
+    )) {
+      events.push(event);
+    }
+    expect(events.some((e) => e.type === "terminal" && (e as { state: string }).state === "complete")).toBe(true);
+
+    const callLog = (fetcher as unknown as { calls: { url: string; body: Buffer }[] }).calls;
+    const chatCall = callLog.find((call) => call.url.includes("GetChatMessage"))!;
+    const framed = chatCall.body;
+    const gzipFlag = framed[0] === 1;
+    const body = gzipFlag ? gunzipSync(framed.subarray(5)) : framed.subarray(5);
+    const decoded = DevinMessageTypes.GetChatMessageRequest.decode(body) as {
+      chatMessagePrompts?: Array<{ messageId?: string; thinking?: string; signature?: string }>;
+    };
+    const prompts = decoded.chatMessagePrompts ?? [];
+    // user, assistant, user — the empty assistant turn is gone.
+    expect(prompts.length).toBe(3);
+    for (const prompt of prompts) {
+      expect(prompt.messageId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    }
+    const assistant = prompts[1]!;
+    expect(assistant.thinking).toBe("foreign thinking");
+    expect(assistant.signature ?? "").toBe("");
+  });
+
   test("full dispatch: auth, framed stream, canonical events", async () => {
     const chunks = [
       frame({ messageId: "m1", deltaThinking: "thinking...", deltaSignature: "sig" }),

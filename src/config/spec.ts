@@ -136,6 +136,21 @@ export const CONFIG_SPEC = {
     max: 1000,
   },
 
+  // Cursor Run wire controls (see src/providers/integrations/cursor/cursor.ts):
+  // the client version overrides the monitored `cli-<date>-<sha7>` identity the
+  // Run and unary calls present (an operator pins it while the monitor catches
+  // up); the heartbeat keeps a counted tool batch open on a parked Run; the
+  // wire trace is opt-in — set the variable (any value) to log every decoded
+  // Run frame for diagnosis.
+  CARTETHYIA_CURSOR_CLIENT_VERSION: { kind: "optional-text" },
+  CARTETHYIA_CURSOR_HEARTBEAT_MS: {
+    kind: "int",
+    default: 5_000,
+    min: 500,
+    max: 120_000,
+  },
+  CARTETHYIA_CURSOR_WIRE_TRACE: { kind: "optional-text" },
+
   // Graceful-shutdown drain: how long in-flight requests may finish naturally
   // before the drain aborts the stragglers. Sized above the common case (a
   // typical response) but below the stream stall bound so a wedged stream is

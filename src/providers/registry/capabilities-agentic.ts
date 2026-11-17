@@ -1,4 +1,4 @@
-// dynamic-import-ok: capability rows for the agent surfaces: Muse, Meta, Kiro, Kimi, Cursor, Devin.
+// dynamic-import-ok: capability rows for the agent surfaces: Muse, Meta, Kiro, Kimi, Devin, Cursor.
 // Each loader is an `async () => (await import("<integration module>"))` closure so a
 // provider pays only when the first request routes to it; a static import here would
 // drag the integration into memory at process start.
@@ -51,6 +51,22 @@ export const AGENTIC_CAPABILITIES = {
     loadModelDiscovery: discoveryCapability(
       () => import("../integrations/devin/devin-catalog"),
       (module) => module.discoverDevinModels,
+    ),
+  },
+  cursor: {
+    // The Run wire is a Connect-RPC bidirectional stream over HTTP/2 (RunSSE
+    // plus BidiAppend on the HTTP/1 fallback); the path is pinned here so a
+    // probe verifies dispatch actually calls it.
+    endpointPathsByWireFamily: { chat: "/agent.v1.AgentService/Run" },
+    loadAdapter: async () => (await import("../integrations/cursor/cursor")).cursorAdapter,
+    loadModels: async () => (await import("../integrations/cursor/cursor-catalog")).CURSOR_MODELS,
+    loadAuthentication: oauthCapability(() => import("../integrations/cursor/cursor-auth"), "cursorOAuthClient", {
+      withRefresher: true,
+    }),
+    loadQuotaCollector: quotaCapability(() => import("../integrations/cursor/cursor-quota"), "fetchCursorQuota"),
+    loadModelDiscovery: discoveryCapability(
+      () => import("../integrations/cursor/cursor-catalog"),
+      (module) => module.discoverCursorModels,
     ),
   },
 };

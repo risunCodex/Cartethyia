@@ -10,7 +10,73 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Devin no longer answers a large session switch with a 502.** Devin's own
+  answer to an oversized prompt is a silent stream close — HTTP 200, no
+  frames, no error trailer — which the decoder read as "ended without
+  content" and the gateway mapped to a 502. The adapter now refuses an
+  oversized history before the upstream call (estimated tokens vs the lane's
+  context window from the catalog) as `context_length_exceeded` (413), with
+  fail-over to a larger-window candidate while one exists. Also fixed while
+  auditing: message ids are proper UUIDs (the raw seed string was not an id
+  the upstream's rehydration treats as one), foreign reasoning signatures no
+  longer reach the wire (they belong to the provider that minted them), empty
+  assistant turns are skipped, and tool results folded into user turns by the
+  Messages surface no longer lose their text — the model was answering with
+  an invented tool output.
+
 ### Added
+
+- **The Cursor provider is back, rebuilt on the reference wire spec.** The
+  adapter speaks Cursor's Agent Run stream (`agent.v1.AgentService/Run`,
+  Connect-RPC over HTTP/2 with a `RunSSE` + `BidiAppend` HTTP/1 fallback)
+  from a codec generated off the vendored `agent.proto`; unary Connect
+  answers are unwrapped whether they arrive raw or in the 5-byte framed
+  envelope. This replaces the previous implementation outright — adapter and
+  Run transport, OAuth client, model catalog, probe scripts, docs page,
+  provider icon, and vendored proto were deleted first, then rebuilt from
+  the reference spec — and existing account rows and migration history are
+  untouched, so an installed deployment keeps its Cursor accounts and simply
+  dispatches them through the new adapter. Tool calls are relay-only:
+  Cursor's native tools are disabled server-side, the caller's tools ride
+  the `requestContext` handshake, and a held batch parks the Run open until
+  the next request's results resume it in-band (exact model + wire id +
+  conversation + coverage contract) or the turn rebuilds from history.
+  History is SHA-256 blob records served over the KV channel, with the
+  server's own checkpoint records replayed byte-for-byte under the same wire
+  route + digest. Quota pairs `usage-summary` (USD cents, cookie auth) over
+  the legacy `/auth/usage` buckets; classic plans carry percent-only rails
+  ("Cursor Models" / "Other Models"), X Subscription accounts hold one
+  weekly pool for Cursor-owned models plus prepaid credit for third-party
+  models, and the two rails gate disjoint model families — a spent prepaid
+  balance never refuses a Cursor-owned request, an empty weekly pool never
+  refuses a third-party one. A non-free membership maps to the `paid`
+  account tier. The static floor is the fixed-settings trio every plan can
+  run (`auto`, `cursor-grok-4.6-medium`, `grok-4.7-medium`); live discovery
+  advertises the account's full roster unfiltered, because the upstream
+  cannot separate models by plan — the Run's own refusal is the entitlement
+  gate. The client identity follows Cursor's download API as
+  `cli-<date>-<sha7>`. Config: `CARTETHYIA_CURSOR_CLIENT_VERSION` (pin that
+  identity), `CARTETHYIA_CURSOR_HEARTBEAT_MS` (default 5000 — the heartbeat
+  that keeps a parked Run's counted batch open), `CARTETHYIA_CURSOR_WIRE_TRACE`
+  (log one line per decoded Run frame; names only, never values).
+  Live-probed 2026-11-17 through the real adapter (quota, roster, a Run
+  turn, and the tool-relay park/resume round trip). See
+  `documentation/features/08-cursor-provider.md`.
+
+- **Provider acceptance harness** (`scripts/provider-harness/`). The
+  mandatory gate before a provider counts as done: `bun run
+  scripts/provider-harness/run.ts --provider <id> --creds <export.json>
+  --model <included-model>` drives the four core tasks — `text`,
+  `single-tool`, `parallel-tools`, `arg-fidelity` — plus `multi-account`,
+  `chat-surfaces`, and `tools-surfaces`, through the real registry adapter
+  with live output, and exits 0 only when every task passes (`--json` for a
+  machine-readable report; `--min-gap-ms` paces same-account dispatches the
+  way the gateway paces them in production). The verdict and the plan's
+  included-model set are recorded in the provider's feature page, and the
+  provider-catalog skill now requires a harness pass before a provider is
+  called complete.
 
 - `CARTETHYIA_BIND_HOST` — the address the HTTP listener binds (default
   `0.0.0.0`, unchanged). Set `127.0.0.1` for reverse-proxy deployments
@@ -45,15 +111,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   pinned fallback for a cold process. Qoder CN resolves the same discovered
   Qoder IDE version as the international realm, so both realms present one
   build identity.
-
-### Removed
-
-- **Cursor provider.** The Cursor integration is deleted end to end: the
-  adapter and Run transport, OAuth client, model catalog, probe scripts, docs
-  page, provider icon, and the vendored proto schema. Existing database rows
-  and migration history are untouched — account data stays as is; the routes
-  simply no longer dispatch to it. The generic HTTP/2 bidi egress seam and
-  the console pagination cursors are unrelated and remain.
 
 ### Fixed
 

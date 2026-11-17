@@ -59,6 +59,7 @@ export function mapPlanToTier(providerId: string, plan: string | null): AccountT
   // Trae (paid plans other than the free subscription) and Cursor (a non-free
   // `membershipType`/`planName` is a paying plan by construction).
   if (TRAE_PROVIDER_IDS.has(providerId.toLowerCase())) return "paid";
+  if (providerId.toLowerCase() === "cursor") return "paid";
 
   // Unknown provider: no claim. Legacy behavior applies.
   return null;
