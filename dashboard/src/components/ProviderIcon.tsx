@@ -2,7 +2,10 @@ import { memo, useState } from "react";
 
 const failedIcons = new Set<string>();
 
-const iconAssets: Record<string, { file: string; ext: "svg" | "webp" | "png" }> = {
+const iconAssets: Record<
+  string,
+  { file: string; ext: "svg" | "webp" | "png" | "ico" | "jpg" }
+> = {
   claude: { file: "claude-code", ext: "svg" },
   anthropic: { file: "anthropics", ext: "webp" },
   openai: { file: "openai-light", ext: "svg" },
@@ -105,15 +108,54 @@ const iconAssets: Record<string, { file: string; ext: "svg" | "webp" | "png" }> 
   // uses the same official mark as its China sibling.
   sensecn: { file: "sensecn", ext: "png" },
   senseintl: { file: "senseintl", ext: "png" },
-  // Clixad has no shipped brand mark in the asset folder; naming it here keeps
-  // the lookup deterministic and the fallback renders the "CL" initials.
+  // Clixad's official mark is its own SVG — a pixel-art duck served as
+  // favicon.svg (fetched from clixad.io).
   clixad: { file: "clixad", ext: "svg" },
-  // DeepAI has no shipped brand mark in the asset folder either; naming it
-  // here keeps the lookup deterministic and the fallback renders "DE".
-  deepai: { file: "deepai", ext: "svg" },
+  // DeepAI's official app icon from its PWA manifest (the root favicon.ico is
+  // a generic star, not the brand mark).
+  deepai: { file: "deepai", ext: "png" },
+  // Mark sources: official favicons fetched from each provider's own domain
+  // (or its CDN), plus shared marks where the brand is the same product.
+  cloudflareai: { file: "cloudflare-ai", ext: "png" },
+  groq: { file: "groq", ext: "png" },
+  minimax: { file: "minimax", ext: "png" },
+  minimaxcode: { file: "minimax", ext: "png" },
+  minimaxcodecn: { file: "minimax-cn", ext: "png" },
+  siliconflow: { file: "siliconflow", ext: "jpg" },
+  siliconflowcn: { file: "siliconflow", ext: "jpg" },
+  together: { file: "together", ext: "png" },
+  venice: { file: "venice", ext: "png" },
+  vercel: { file: "vercel", ext: "png" },
+  novita: { file: "novita", ext: "png" },
+  deepinfra: { file: "deepinfra", ext: "ico" },
+  nanogpt: { file: "nanogpt", ext: "ico" },
+  baseten: { file: "baseten", ext: "png" },
+  synthetic: { file: "synthetic", ext: "ico" },
+  stepfun: { file: "stepfun", ext: "png" },
+  sakana: { file: "sakana", ext: "ico" },
+  helmcode: { file: "helmcode", ext: "png" },
+  aiand: { file: "aiand", ext: "png" },
+  wafer: { file: "wafer", ext: "png" },
+  coreweave: { file: "coreweave", ext: "png" },
+  umans: { file: "umans", ext: "png" },
+  qianfan: { file: "qianfan", ext: "ico" },
+  larprouter: { file: "larprouter", ext: "png" },
+  freebuff: { file: "freebuff", ext: "webp" },
+  perch: { file: "perch", ext: "png" },
+  freepi: { file: "freepi", ext: "ico" },
+  factory: { file: "factory", ext: "ico" },
+  // Same Qwen brand as the qwen provider; the portal is its API-key surface.
+  "qwen-portal": { file: "qwen", ext: "png" },
+  // Fire Pass is Fireworks' subscription tier on the same host and brand.
+  firepass: { file: "fireworks", ext: "webp" },
+  // Zhipu's coding plan is bigmodel.cn's own mark (distinct from Z.AI's).
+  zhipucoding: { file: "zhipucoding", ext: "png" },
 };
 
-function assetFor(icon: string): { file: string; ext: "svg" | "webp" | "png" } {
+function assetFor(icon: string): {
+  file: string;
+  ext: "svg" | "webp" | "png" | "ico" | "jpg";
+} {
   const normalized = icon.toLowerCase().trim();
   return iconAssets[normalized] ?? { file: normalized, ext: "webp" };
 }

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" shape-rendering="crispEdges" role="img" aria-label="Clixad duck">
+  <!-- Solid silhouette first: hairline seams between the pixel rects can then
+       never reveal the page background, which showed as a dark streak by the eye. -->
+  <g fill="#f5b841">
+    <rect x="4" y="0" width="5" height="1"/>
+    <rect x="3" y="1" width="7" height="1"/>
+    <rect x="2" y="2" width="9" height="1"/>
+    <rect x="2" y="3" width="9" height="1"/>
+    <rect x="2" y="4" width="11" height="1"/>
+    <rect x="2" y="5" width="11" height="1"/>
+    <rect x="1" y="6" width="11" height="1"/>
+    <rect x="0" y="7" width="13" height="1"/>
+    <rect x="0" y="8" width="14" height="1"/>
+    <rect x="0" y="9" width="14" height="1"/>
+    <rect x="1" y="10" width="12" height="1"/>
+    <rect x="2" y="11" width="10" height="1"/>
+  </g>
+  <rect x="4" y="0" width="1" height="1" fill="#ffd273"/>
+  <rect x="3" y="1" width="1" height="1" fill="#ffd273"/>
+  <rect class="eye" x="8" y="3" width="1" height="1" fill="#1e1a28"/>
+  <rect x="11" y="4" width="2" height="1" fill="#e27e2a"/>
+  <rect x="11" y="5" width="2" height="1" fill="#e27e2a"/>
+  <rect x="3" y="12" width="2" height="1" fill="#e27e2a"/>
+  <rect x="9" y="12" width="2" height="1" fill="#e27e2a"/>
+</svg>
