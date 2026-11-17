@@ -214,8 +214,8 @@ describe("default extractor covers the consolidated sources", () => {
       name: "qoder npm",
       key: "test-qoder",
       source: VERSION_SOURCES.qoder.sources[0]!,
-      body: { version: "1.1.81" },
-      expected: "1.1.81",
+      body: { version: "1.1.89" },
+      expected: "1.1.89",
     },
     {
       name: "cline vscode extension",

@@ -75,7 +75,7 @@ const args = parseArgs({
 const USERINFO_V1 = `${QODER_OPENAPI_BASE}/api/v1/userinfo`;
 const USERINFO_V2 = `${QODER_OPENAPI_BASE}/api/v2/userinfo`;
 const QUOTA_USAGE = `${QODER_OPENAPI_BASE}/api/v2/quota/usage`;
-const ROSTER = `${QODER_OPENAPI_BASE}/algo/api/v2/model/list?Encode=1`;
+const ROSTER = `${QODER_OPENAPI_BASE}/algo/api/v2/model/list?Encode=*`;
 
 const HEADER_MODES = ["Bearer", "Cosy", "signed"] as const;
 type HeaderMode = (typeof HEADER_MODES)[number];

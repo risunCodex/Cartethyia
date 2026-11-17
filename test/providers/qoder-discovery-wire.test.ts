@@ -51,7 +51,7 @@ describe("Qoder model discovery wire", () => {
       encode: (bytes: Uint8Array) => Buffer.from(bytes).toString("latin1"),
     });
     expect(captured.method).toBe("GET");
-    expect(captured.url).toContain("/algo/api/v2/model/list?Encode=1");
+    expect(captured.url).toContain("/algo/api/v2/model/list?Encode=*");
     expect(captured.body).toBe("{}");
     expect(models.map((m) => m.modelId).sort()).toEqual(["auto", "deepseek-v4-pro"]);
   });

@@ -72,7 +72,7 @@ const DEFAULT_PROMPT = "Halo, perkenalkan dirimu singkat.";
 
 /** Resolves the COSY chat URL for a `--host` value (alias or full URL). */
 function chatUrl(host: string): string {
-  const path = "/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1";
+  const path = "/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=*";
   if (host.startsWith("http://") || host.startsWith("https://")) return `${host.replace(/\/+$/, "")}${path}`;
   if (host === "api1" || host === "api2" || host === "api3") return `https://${host}.qoder.sh${path}`;
   throw new Error(`--host must be api1|api2|api3 or a full https URL (got "${host}")`);

@@ -5,7 +5,8 @@
  * `/algo/.../agent_chat_generation` body. `callQoder` signs and sends it over
  * the COSY surface with the app/worker's headers (undici UA, machine
  * identity, business/scene app profile, `x-model-key/source`, SSE accept)
- * and a zstd-compressed body (capture 2026-11-11).
+ * and a plain scrambled body (worker-core capture 2026-11-17: `Encode=*`
+ * sends the scramble transform without a zstd layer).
  */
 import { createHash, randomUUID } from "node:crypto";
 import type {
@@ -459,11 +460,10 @@ type QoderFetcher = (url: string, init: RequestInit) => Promise<Response>;
 
 /**
  * Signs and sends one legacy COSY chat request. The body is alphabet-scrambled
- * then zstd-compressed (as the desktop worker does on the wire, capture
- * 2026-11-11) before signing; headers come from `qoderBuildCosyHeaders` plus
- * the modern `x-model-key`/`x-model-source` and SSE accepts. When the runtime
- * lacks zstd the scrambled body is sent uncompressed, matching the older CLI
- * wire.
+ * and sent as-is (worker-core capture 2026-11-17: with the `Encode=*` query
+ * the wire carries the scramble transform only — no zstd layer); headers come
+ * from `qoderBuildCosyHeaders` plus the modern `x-model-key`/`x-model-source`
+ * and SSE accepts. The COSY signature is verified over the scrambled body.
  */
 export async function callQoder(
   url: string,
@@ -477,18 +477,6 @@ export async function callQoder(
 ): Promise<Response> {
   const encoded = transformQoderBody(JSON.stringify(body));
   const modelConfig = (body["model_config"] as Record<string, unknown> | null) ?? null;
-  // The desktop worker compresses the scrambled body with zstd and stamps
-  // `Content-Encoding: zstd` (capture 2026-11-11), but the COSY signature is
-  // verified over the *scrambled* body — the server decompresses before
-  // verifying (proven live 2026-11-11: signing over the zstd bytes returns
-  // `403 Signature invalid`). The CLI sends the plain scrambled body. Fall
-  // back to the plain scrambled body (no encoding header) when the runtime
-  // lacks zstd.
-  const compressed =
-    profile === "app" && typeof Bun?.zstdCompressSync === "function"
-      ? (Bun.zstdCompressSync(Buffer.from(encoded)) as Uint8Array<ArrayBuffer>)
-      : undefined;
-  const wireBody = (compressed ?? encoded) as unknown as Uint8Array;
   return fetcher(url, {
     method: "POST",
     headers: {
@@ -498,9 +486,8 @@ export async function callQoder(
         : {}),
       Accept: "text/event-stream",
       "Cache-Control": "no-cache",
-      ...(compressed === undefined ? {} : { "Content-Encoding": "zstd" }),
     },
-    body: wireBody as unknown as BodyInit,
+    body: encoded as unknown as BodyInit,
     signal,
   });
 }

@@ -18,7 +18,9 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { QODER_REALMS, QODER_UA_CLI, type QoderRealm } from "./qoder-realm";
+import { qoderMachineOs } from "../../operations/cli-platform";
+import { getQoderVersion } from "../../operations/client-versions";
+import { QODER_REALMS, type QoderRealm } from "./qoder-realm";
 import {
   base64UrlEncode,
   nonEmptyTrimmedString,
@@ -116,31 +118,62 @@ export const QODER_DEVICE_TOKEN_URL = "https://openapi.qoder.sh/api/v1/deviceTok
 /**
  * Per-realm device endpoints, derived from `QODER_REALMS`.
  *
- * Every realm's openapi host differs, so the three URLs are built from the
+ * Every realm's openapi host differs, so the four URLs are built from the
  * table rather than hardcoded — a CN login pointed at `openapi.qoder.sh` is
  * refused before it ever reaches an approval screen.
+ *
+ * `deviceTokenUrl` (poll) and `refreshUrl` are separate upstream paths, not a
+ * suffix pair: the desktop 0.5.12 bundle carries `/api/v1/deviceToken/poll`
+ * and `/api/v1/deviceToken/refresh` as independent string-table literals
+ * (unpack evidence 2026-11-16), so appending `/refresh` to the poll path
+ * would leave the wire the client never sends.
  */
 export function qoderOAuthUrls(realm: QoderRealm): {
   readonly loginUrl: string;
   readonly deviceTokenUrl: string;
+  readonly refreshUrl: string;
   readonly userinfoUrl: string;
 } {
   const config = QODER_REALMS[realm];
   return {
     loginUrl: `${config.website}/device/selectAccounts`,
     deviceTokenUrl: `${config.openapi}/api/v1/deviceToken/poll`,
+    refreshUrl: `${config.openapi}/api/v1/deviceToken/refresh`,
     userinfoUrl: `${config.openapi}/api/v1/userinfo`,
   };
 }
 
 /** Device authorizations live 5 minutes in the dashboard before expiring. */
 const DEVICE_EXPIRY_SECONDS = 300;
-/** Dashboard poll cadence for the device authorization. */
-const DEVICE_INTERVAL_SECONDS = 5;
+/**
+ * Dashboard poll cadence for the device authorization. The worker core polls
+ * at ≈1.2 s (capture 2026-11-17); the dashboard loop floors at 1 s.
+ */
+const DEVICE_INTERVAL_SECONDS = 1;
 /** Individual poll request timeout; a stalled socket is a failed attempt, retried next tick. */
 const POLL_TIMEOUT_MS = 15_000;
 /** Token lifetime assumed when the upstream omits every expiry hint. */
 const EXPIRY_FALLBACK_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * The common core header set every openapi call sends (worker-core capture
+ * 2026-11-17): upper-case `x-request-id`, the worker version, clienttype 5,
+ * real machine OS, and the browser-like fetch triple. Surfaces differ in UA
+ * (poll: `undici`; userinfo/exchange family: `qoder/<version>`) and in
+ * `traceparent` (poll yes, the rest no).
+ */
+function qoderCoreHeaders(): Record<string, string> {
+  const version = getQoderVersion();
+  return {
+    "x-request-id": randomUUID().toUpperCase(),
+    "cosy-version": version,
+    "cosy-clienttype": "5",
+    "cosy-machineos": qoderMachineOs(),
+    "accept-language": "*",
+    "sec-fetch-mode": "cors",
+    "accept-encoding": "br, gzip, deflate",
+  };
+}
 
 /** Non-secret per-account Qoder identity persisted in `auth_state`. */
 export interface QoderOAuthState {
@@ -229,23 +262,25 @@ function parseDeviceState(value: string | undefined): QoderDeviceState | undefin
 }
 
 /**
- * Random PKCE verifier in the exact alphabet the desktop IDE uses.
+ * Random PKCE verifier in the exact alphabet the desktop client uses.
  *
- * The IDE's `startDeviceFlow` draws the verifier from
+ * The login client draws the verifier from
  * `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~`. Using
- * the same alphabet keeps the login byte-for-byte identical to the desktop
- * client, which the approval server may use to fingerprint the requesting
- * client. Length is fixed at 64 — RFC 7636 §4.1 requires [43,128]; a fixed
+ * the same alphabet keeps the login byte-for-byte identical to the client,
+ * which the approval server may use to fingerprint the requesting client.
+ * Length is 118 — the worker-core capture (2026-11-17) observed 118-character
+ * verifiers on the live poll URL (RFC 7636 §4.1 allows [43,128]); a fixed
  * length avoids a non-cryptographic length while the content comes entirely
  * from the CSPRNG (`randomBytes`) below.
  */
 function qoderIdeVerifier(): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
-  // RFC 7636 §4.1: verifier length must be within [43,128]; fixed here. Content
-  // comes from the CSPRNG (randomBytes) below. `67` (alphabet length) does not
-  // divide 256, so the `%` mapping has a negligible modulo bias (~21/256 per
-  // char) — irrelevant for a 64-char secret with ~388 bits of input entropy.
-  const length = 64;
+  // RFC 7636 §4.1: verifier length must be within [43,128]; fixed at the
+  // captured 118. Content comes from the CSPRNG (randomBytes) below. `67`
+  // (alphabet length) does not divide 256, so the `%` mapping has a negligible
+  // modulo bias (~21/256 per char) — irrelevant for a 118-char secret with
+  // ~715 bits of input entropy.
+  const length = 118;
   const bytes = randomBytes(length);
   let out = "";
   for (let i = 0; i < length; i += 1) {
@@ -391,7 +426,14 @@ export class QoderOAuthClient extends OAuthDeviceFlow {
     try {
       response = await this.fetchFor(context)(url, {
         method: "GET",
-        headers: { accept: "application/json", "user-agent": QODER_UA_CLI },
+        // Poll headers mirror the worker-core capture (2026-11-17): undici UA
+        // (the core runs under Node, not the bun-compiled CLI) plus traceparent.
+        headers: {
+          accept: "application/json",
+          ...qoderCoreHeaders(),
+          traceparent: `00-${randomBytes(16).toString("hex")}-${randomBytes(8).toString("hex")}-01`,
+          "user-agent": "undici",
+        },
         signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
       });
     } catch (error) {
@@ -471,10 +513,14 @@ export class QoderOAuthClient extends OAuthDeviceFlow {
     try {
       const response = await this.fetchFn(qoderOAuthUrls(this.realm).userinfoUrl, {
         method: "GET",
+        // Userinfo mirrors the worker-core capture (2026-11-17): the
+        // `qoder/<version>` UA (same family as the jobToken exchange), no
+        // traceparent.
         headers: {
           authorization: `Bearer ${accessToken}`,
           accept: "application/json",
-          "user-agent": QODER_UA_CLI,
+          ...qoderCoreHeaders(),
+          "user-agent": `qoder/${getQoderVersion()}`,
         },
         signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
       });
@@ -493,32 +539,36 @@ export class QoderOAuthClient extends OAuthDeviceFlow {
     context?: OAuthRefreshContext,
   ): Promise<OAuthTokenRefreshResult> {
     // The deviceToken refresh endpoint is the one working refresh grant for this
-    // flow (verified live 2026-11-02: POST /api/v1/deviceToken/refresh with
-    // `{refresh_token, machine_id, machine_token}` returns 200 with a fresh
-    // `device_token` + rotated `refresh_token`). The abstract OAuth refresh
-    // endpoint answers 403 for this flow, so we post to the deviceToken one.
+    // flow (verified live 2026-11-02; the path itself is pinned to the desktop
+    // 0.5.12 string-table literal `/api/v1/deviceToken/refresh`). It returns
+    // 200 with a fresh `device_token` + rotated `refresh_token`. The abstract
+    // OAuth refresh endpoint answers 403 for this flow, so we post to the
+    // deviceToken one. The desktop's exact refresh body is still an open wire
+    // question (the 0.5.12 main table carries no `machine_id`/`machine_token`
+    // JSON key); the capture session must settle it before this body changes.
     const authState = record(context?.auth_state);
     const machineId = authState === undefined ? undefined : nonEmptyTrimmedString(authState.machineId);
     if (machineId === undefined) {
       throw new Error("Qoder refresh requires auth_state.machineId");
     }
-    const response = await this.fetchFn(
-      `${qoderOAuthUrls(this.realm).deviceTokenUrl}/refresh`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json",
-          "user-agent": QODER_UA_CLI,
-        },
-        body: JSON.stringify({
-          refresh_token: refreshToken,
-          machine_id: machineId,
-          machine_token: machineId,
-        }),
-        ...(signal === undefined ? {} : { signal }),
+    const response = await this.fetchFn(qoderOAuthUrls(this.realm).refreshUrl, {
+      method: "POST",
+      // Same UA family as the exchange/userinfo openapi surfaces (capture
+      // 2026-11-17); the refresh request itself was not captured live — the
+      // sibling endpoints on this host all send `qoder/<version>`.
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        ...qoderCoreHeaders(),
+        "user-agent": `qoder/${getQoderVersion()}`,
       },
-    );
+      body: JSON.stringify({
+        refresh_token: refreshToken,
+        machine_id: machineId,
+        machine_token: machineId,
+      }),
+      ...(signal === undefined ? {} : { signal }),
+    });
     const raw = await response.text();
     let payload: unknown;
     try {

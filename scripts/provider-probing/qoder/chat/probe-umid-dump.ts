@@ -17,8 +17,8 @@ const UMID_CACHE = process.argv[5] ?? "C:/Users/Aria/.qoder/umid-cache.json";
 const PROMPT = "Halo, perkenalkan dirimu singkat.";
 
 const url = HOST.startsWith("http")
-  ? `${HOST.replace(/\/+$/, "")}/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`
-  : `https://${HOST}.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
+  ? `${HOST.replace(/\/+$/, "")}/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=*`
+  : `https://${HOST}.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=*`;
 
 const { auth } = loadProbeAccount({ creds: CREDS });
 try {

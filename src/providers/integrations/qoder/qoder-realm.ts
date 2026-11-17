@@ -48,25 +48,21 @@ export interface QoderRealmConfig {
 }
 
 /**
- * User agents observed in actual live captures of the real client
- * (2026-11-05, mitmproxy):
- * - CLI / legacy COSY chat + device flow: `Bun/1.4.2` (flow 218/030, v1.1.83)
- * - IDE surface `/model/v1`: `Bun/1.4.4` (flow 219)
- * - job-token exchange: `qoder/<version>` (capture, e.g. `qoder/1.1.83`)
- *
- * The desktop app (0.5.7) hosts an Electron Node worker
- * (`qoder-worker-runtime.obf.mjs --sdk`) whose fetch stack is undici; its
- * chat/worker requests carry `User-Agent: undici` (capture 2026-11-11).
- * The gateway mirrors the app wire on the COSY chat surface, so chat uses
- * `QODER_UA_APP`; the CLI/device-flow surfaces keep `QODER_UA_CLI`.
+ * User agents on the worker-core wire (capture 2026-11-17, 1.1.86-hotfix.5):
+ * every signed call the core sends — chat, poll, region, userinfo — carries
+ * `User-Agent: undici` (Electron-hosted Node fetch), except the
+ * userinfo/exchange family which sends `qoder/<version>`. The `Bun/1.4.2`
+ * UA observed on 2026-11-05 belongs to the separate bun-compiled `qodercli`
+ * binary, not to this wire.
  */
-export const QODER_UA_CLI = "Bun/1.4.2";
 export const QODER_UA_APP = "undici";
 
-/** Chat + model-list paths, identical across realms. */
+/** Chat + model-list paths, identical across realms. `Encode=*` per the
+ * worker-core capture (2026-11-17): the `*` encoding sends the scramble
+ * transform only, without the zstd layer `Encode=1` used on 0.5.7. */
 export const QODER_CHAT_PATH =
-  "/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1";
-export const QODER_MODELS_PATH = "/algo/api/v2/model/list?Encode=1";
+  "/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=*";
+export const QODER_MODELS_PATH = "/algo/api/v2/model/list?Encode=*";
 
 /** The model-server host for one realm (intl: `api1`, cn: gateway). */
 /**

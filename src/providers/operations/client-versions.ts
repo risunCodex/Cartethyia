@@ -175,12 +175,15 @@ export const VERSION_SOURCES = {
   },
   qoder: {
     key: "qoder",
-    // The desktop IDE hardcodes its COSY_VERSION as "1.1.80" (`S9` in the
-    // unpacked worker bundle); the model-server surface sees this value, so
-    // the gateway presents the same build the IDE ships. Discovery (npm
-    // `@qoder-ai/qodercli/latest`) may report a newer CLI, but the CLI and
-    // IDE are different products — the chat surface identity is the IDE's.
-    fallback: "1.1.80",
+    // The chat surface identity is the worker-core build line: the desktop
+    // 0.5.12 core sends `cosy-version: 1.1.86-hotfix.5` (capture 2026-11-17)
+    // and its runtime-info names the product `qodercli` — the npm
+    // `@qoder-ai/qodercli` package ships that same runtime, so its latest tag
+    // is the freshest build of the family. The fallback is the version the
+    // real desktop core sends today; the resolver only ever adopts a
+    // *newer* discovered value, so discovery lifts the pin without ever
+    // presenting a build older than the captured core.
+    fallback: "1.1.86-hotfix.5",
     sources: [{ url: "https://registry.npmjs.org/@qoder-ai/qodercli/latest" }],
   },
   opencode: {

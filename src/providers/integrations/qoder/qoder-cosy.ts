@@ -4,20 +4,20 @@
  * the WASM `prepareInferRequest` output of the real client, and the only chat
  * surface a free/lite account can use.
  *
- * Header values mirror live captures of the real client (v1.1.83,
- * 2026-11-05): `User-Agent: Bun/1.4.2`, machine identity headers from the
- * UMID (`cosy-machineid/token/type/code/os/hostname`), business headers,
- * and the static `signature` md5 chain. The business/scene/clienttype values
- * were updated to the desktop-worker capture (2026-11-11, v0.5.7 /
- * 1.1.79-hotfix.19): `cosy-clienttype: 10`, `cosy-business-product: app`,
- * `cosy-scene: app`, plus `traceparent`, `sec-fetch-mode: cors`, and
- * `accept-language: *`. The `profile` switch selects the identity: `app`
- * (default, desktop worker) or `cli` (qodercli).
+ * Header values mirror live captures of the real client (worker-core
+ * 1.1.86-hotfix.5, 2026-11-17): machine identity headers from the UMID
+ * (`cosy-machineid/token/type/code/os/hostname`), business headers, and the
+ * static `signature` md5 chain. `cosy-clienttype: 10`, `cosy-business-product:
+ * app`, `cosy-scene: app` for the app surface; the CLI core sends `5`/`cli`/
+ * `assistant`. Both profiles carry `traceparent`, `sec-fetch-mode: cors`,
+ * `accept-language: *`, and `accept-encoding: br, gzip, deflate`. The
+ * `profile` switch selects the identity: `app` (default, desktop worker) or
+ * `cli` (qodercli).
  */
 import { constants, createCipheriv, createHash, publicEncrypt, randomBytes, randomUUID } from "node:crypto";
 import { getQoderVersion } from "../../operations/client-versions";
 import { qoderMachineHostname, qoderMachineOs } from "../../operations/cli-platform";
-import { QODER_UA_APP, QODER_UA_CLI } from "./qoder-realm";
+import { QODER_UA_APP } from "./qoder-realm";
 import type { QoderAuth } from "./qoder-types";
 
 /** Which Qoder client identity a COSY request presents. */
@@ -81,10 +81,11 @@ export function transformQoderBody(plaintext: string): Uint8Array {
  * PKCS1-encrypted, and the signature is md5 over
  * `payload\ncosyKey\ndate\nbody\nsigPath`.
  *
- * Machine identity headers mirror the live 1.1.83 capture: `cosy-machineid`
- * (the account's machine id), `cosy-machinetoken/type/code` when a native
- * UMID identity is bound (otherwise they fall back to the machine id / `5`),
- * real `cosy-machineos`, and the sanitized hostname.
+ * Machine identity headers mirror the worker-core capture (2026-11-17):
+ * `cosy-machineid` (the account's machine id), `cosy-machinetoken/type/code`
+ * when a native UMID identity is bound (otherwise they fall back to the
+ * machine id / `5`), real `cosy-machineos`, and the hostname. Header order is
+ * not observable at this layer (fetch normalizes), only presence.
  */
 export function qoderBuildCosyHeaders(
   body: Uint8Array,
@@ -121,48 +122,43 @@ export function qoderBuildCosyHeaders(
     "cosy-data-policy": "agree",
     "cosy-machinetype": auth.machineType ?? "5",
     "cosy-machineos": qoderMachineOs(),
-    // Desktop-worker capture (2026-11-11): `cosy-clienttype: 10` identifies
-    // the app/worker client; the CLI used `5`.
+    // Worker-core capture (2026-11-17): `cosy-clienttype: 10` identifies the
+    // app/worker client; the CLI core sends `5`.
     "cosy-clienttype": app ? "10" : "5",
     "cosy-date": date,
     "cosy-user": auth.userId,
     "cosy-key": cosyKey,
-    "cosy-bodyhash": qoderMd5(body),
-    "cosy-bodylength": String(body.byteLength),
-    "cosy-sigpath": qoderPathSignature(url),
     "cosy-machineid": auth.machineId,
     ...(auth.machineToken !== undefined && auth.machineToken.length > 0 ? { "cosy-machinetoken": auth.machineToken } : {}),
     ...(auth.machineCode !== undefined && auth.machineCode.length > 0 ? { "cosy-machinecode": auth.machineCode } : {}),
     "cosy-machinehostname": qoderMachineHostname(),
-    "cosy-organization-id": "",
-    "cosy-organization-tags": "",
     "x-request-id": randomUUID(),
     ...(auth.httpDnsIp !== undefined && auth.httpDnsIp.length > 0
       ? { "X-Qoder-HTTPDNS-IP": auth.httpDnsIp }
       : {}),
-    // Desktop-worker capture (2026-11-11): `cosy-business-product: app` and
-    // `cosy-scene: app` mirror the app/worker surface; the CLI used
-    // `cli`/`assistant`.
+    // Worker-core capture (2026-11-17): the CLI core sends `cli`/`assistant`
+    // and the app/worker surface sends `app`/`app`.
     "cosy-business-product": app ? "app" : "cli",
     "cosy-business-type": "agent",
-    "cosy-business-version": version,
     "cosy-scene": app ? "app" : "assistant",
     "cosy-version": version,
     "login-version": "v2",
     appcode: QODER_APPCODE,
     accept: "application/json",
-    // Desktop-worker capture (2026-11-11): `br, gzip, deflate`. The CLI
-    // sends `identity`.
-    "accept-encoding": app ? "br, gzip, deflate" : "identity",
-    "accept-language": app ? "*" : "",
-    "sec-fetch-mode": app ? "cors" : "",
-    // W3C trace context, as the worker's undici fetch emits it (capture
-    // 2026-11-11): `00-<traceid>-<spanid>-01`.
-    ...(app ? { traceparent: `00-${traceId}-${spanId}-01` } : {}),
+    // Worker-core capture (2026-11-17): `br, gzip, deflate` on every signed
+    // call, on both profiles (undici's own default).
+    "accept-encoding": "br, gzip, deflate",
+    "accept-language": "*",
+    "sec-fetch-mode": "cors",
+    // W3C trace context, as the worker's undici fetch emits it: `00-<traceid>-<spanid>-01`.
+    traceparent: `00-${traceId}-${spanId}-01`,
     date: new Date().toUTCString(),
     signature: qoderMd5(`${QODER_APPCODE}&${QODER_SIG_SECRET}&${new Date().toUTCString()}`),
     "content-type": "application/json",
-    "user-agent": app ? QODER_UA_APP : QODER_UA_CLI,
+    // Worker-core capture (2026-11-17): every signed call sends `undici` —
+    // the core runs under Node; the `Bun/1.4.2` UA belongs to the separate
+    // bun-compiled CLI product, not this wire.
+    "user-agent": QODER_UA_APP,
   };
 }
 

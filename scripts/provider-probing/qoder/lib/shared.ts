@@ -42,11 +42,11 @@ export type QoderProbeAuth = QoderAuth;
 export const QODER_VERSION = "1.1.79-hotfix.19";
 
 export const QODER_LEGACY_CHAT_URL =
-  "https://api2.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1";
+  "https://api2.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=*";
 // Model list: the gateway's canonical path (`/algo/api/v2/model/list`) — the
 // same one discovery uses and the only one verified alive (2026-11-11; the
 // non-prefixed `/api/v2/model/list` answers 404 on api2).
-export const QODER_MODEL_LIST_URL = "https://api2.qoder.sh/algo/api/v2/model/list?Encode=1";
+export const QODER_MODEL_LIST_URL = "https://api2.qoder.sh/algo/api/v2/model/list?Encode=*";
 export const QODER_OPENAPI_BASE = "https://openapi.qoder.sh";
 
 /** Machine OS token as the upstream expects it (`aarch64_macos`, `x86_64_linux`, …). */
