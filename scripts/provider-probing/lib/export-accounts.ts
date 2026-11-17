@@ -1,7 +1,7 @@
 /**
  * Exports provider accounts from a Lite SQLite store into the probe accounts
  * JSON format. Shared by the per-provider export wrappers
- * (`auth/<provider>-export-accounts.ts`, …). Not for production; probe helper.
+ * (`auth/qoder-export-accounts.ts`, …). Not for production; probe helper.
  *
  * Usage (from repo root, with CARTETHYIA_ENCRYPTION_KEY set):
  *

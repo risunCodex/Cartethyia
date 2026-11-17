@@ -21,7 +21,7 @@ import {
   finishDetachedUpdate,
 } from "../../src/console/updates/apply-update";
 import { createUpdateRoutes } from "../../src/console/updates/routes";
-import { ConsoleDomainError } from "../../src/console/shared/errors";
+import { ConsoleDomainError, errorResponse } from "../../src/console/shared/errors";
 
 describe("update status file round-trip", () => {
   const dirs: string[] = [];
@@ -140,8 +140,12 @@ describe("/console/api/updates/apply", () => {
     return dir;
   };
 
-  /** A signed-in tenant writer, as the console grants an owner. */
-  const owner = { tenantId: "t-1", scopes: ["dashboard:write"] } as never;
+  /**
+   * A signed-in platform admin. Applying an update is a process-wide operator
+   * action (spawns the installer and terminates the gateway), so it requires
+   * platform:admin rather than a tenant-scoped dashboard:write key.
+   */
+  const admin = { tenantId: null, scopes: ["platform:admin"] } as never;
 
   function build(options: {
     readonly begin?: () => Promise<void>;
@@ -167,7 +171,7 @@ describe("/console/api/updates/apply", () => {
     const begun = { current: [] as string[] };
     const exits = { current: [] as number[] };
     const routes = createUpdateRoutes({
-      accessResolver: () => owner,
+      accessResolver: () => admin,
       observabilityStore: {} as never,
       fetchRelease: async () => null,
       configDir,
@@ -260,7 +264,7 @@ describe("/console/api/updates/apply", () => {
   test("a composition without a coordinator answers 503 rather than exiting undrained", async () => {
     const configDir = tmp();
     const routes = createUpdateRoutes({
-      accessResolver: () => owner,
+      accessResolver: () => admin,
       observabilityStore: {} as never,
       fetchRelease: async () => null,
       configDir,
@@ -279,7 +283,7 @@ describe("/console/api/updates/apply", () => {
     const configDir = tmp();
     const begun: string[] = [];
     const routes = createUpdateRoutes({
-      accessResolver: () => owner,
+      accessResolver: () => admin,
       observabilityStore: {} as never,
       fetchRelease: async () => null,
       configDir,

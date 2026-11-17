@@ -1,5 +1,5 @@
 import { Elysia, type AnyElysia } from "elysia";
-import { consoleErrorHandler, requireTenantScope, ConsoleDomainError } from "../shared/errors";
+import { consoleErrorHandler, requireGlobalAdmin, requireTenantScope, ConsoleDomainError } from "../shared/errors";
 import { consoleSseResponse, createConsoleSseStream } from "../observability/sse";
 import type { ObservabilityStore } from "../observability/contracts";
 import type { ConsoleAccessResolver } from "../auth/access";
@@ -281,7 +281,7 @@ export function createUpdateRoutes(config: {
     // credentials and no tenant data, only whether the last install landed.
     .get("/updates/status", () => readUpdateStatus(configDir) ?? { status: "idle", startedAt: new Date(0).toISOString() })
     .post("/updates/apply", async ({ request }) => {
-      requireTenantScope(config.accessResolver(request), "dashboard:write");
+      requireGlobalAdmin(config.accessResolver(request));
       if (config.shutdownCoordinator === undefined) {
         throw new ConsoleDomainError(
           "update_unavailable",

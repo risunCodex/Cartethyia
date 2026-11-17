@@ -8,6 +8,12 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Console update apply restricted to platform admins.** `POST /console/api/updates/apply` now requires `platform:admin` scope instead of tenant-scoped `dashboard:write`, preventing tenant API keys from triggering a gateway-wide package update and process restart.
+
 ## [2.8.3] - 2026-11-17 · Codename Arc-en-ciel
 
 ### Changed
