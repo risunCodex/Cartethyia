@@ -32,7 +32,6 @@ export const SPEC_ONLY_ENV_EXAMPLE_KEYS: Readonly<Record<string, true>> = {
   CARTETHYIA_CURSOR_HEARTBEAT_MS: true,
   CARTETHYIA_CURSOR_WIRE_TRACE: true,
   CARTETHYIA_ZCODE_AUTO_CLAIM: true,
-  CARTETHYIA_GITHUB_COPILOT_MODE: true,
   // Telemetry retention is deployment-level and documented in the reference.
   CARTETHYIA_TELEMETRY_RETENTION_DAYS: true,
   CARTETHYIA_TELEMETRY_PAYLOAD_MAX_BYTES: true,
