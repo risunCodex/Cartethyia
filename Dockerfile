@@ -112,7 +112,10 @@ STOPSIGNAL SIGTERM
 # /health/ready, not /health: ready reports the dependency state an orchestrator
 # should act on, so a container that is up but not yet serving is not killed.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f "http://localhost:${PORT:-12800}/health/ready" || exit 1
+    # 127.0.0.1, not `localhost`: on hosts where localhost resolves to ::1
+    # first, an IPv4-only bind makes the check dial a dead address (live
+    # 2026-11-16: cloudflared's `http://localhost` origin hit exactly this).
+    CMD curl -f "http://127.0.0.1:${PORT:-12800}/health/ready" || exit 1
 
 # Starts as root so a mounted volume's ownership can be repaired, then drops to
 # uid 10001 via setpriv. See docker-entrypoint.sh.

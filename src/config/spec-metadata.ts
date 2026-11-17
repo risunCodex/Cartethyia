@@ -24,6 +24,15 @@ export const SPEC_ONLY_ENV_EXAMPLE_KEYS: Readonly<Record<string, true>> = {
   CARTETHYIA_KIMI_QUOTA_BASE_URL: true,
   CARTETHYIA_GITHUB_ENTERPRISE_DOMAIN: true,
   CARTETHYIA_OPENCODE_UNAVAILABLE_FREE: true,
+  // Same doctrine: provider-specific tuning knobs, documented in the generated
+  // configuration reference rather than sampled for every install.
+  CARTETHYIA_QODER_MIN_GAP_MS: true,
+  CARTETHYIA_QODER_P4_WARN_STREAK: true,
+  CARTETHYIA_CURSOR_CLIENT_VERSION: true,
+  CARTETHYIA_CURSOR_HEARTBEAT_MS: true,
+  CARTETHYIA_CURSOR_WIRE_TRACE: true,
+  CARTETHYIA_ZCODE_AUTO_CLAIM: true,
+  CARTETHYIA_GITHUB_COPILOT_MODE: true,
   // Telemetry retention is deployment-level and documented in the reference.
   CARTETHYIA_TELEMETRY_RETENTION_DAYS: true,
   CARTETHYIA_TELEMETRY_PAYLOAD_MAX_BYTES: true,

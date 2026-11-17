@@ -10,6 +10,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Docker defaults close the 2026-11-16 origin-misconfig class.** The image's
+  `HEALTHCHECK` dials `127.0.0.1` instead of `localhost` (which can resolve to
+  `::1` first and dead-dial an IPv4-only bind — the exact shape of the
+  cloudflared `http://localhost:8080` origin outage); compose publishes the
+  gateway port on host loopback by default (`127.0.0.1:<PORT>`, overridable
+  with `CARTETHYIA_PUBLISH_HOST`), pins the in-container
+  `CARTETHYIA_BIND_HOST` to `0.0.0.0` in `environment:` (docker-proxy needs
+  the all-interface bind, and `environment:` overrides a mounted `.env` that
+  carries a loopback value), and the deployment guide now instructs
+  `http://127.0.0.1:<PORT>` for tunnel origins with the `localhost`→`::1`
+  warning.
+
 ### Fixed
 
 - **A dead proxy pool is flagged instead of looped on.** A mid-response socket

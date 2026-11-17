@@ -471,8 +471,15 @@ cloudflared tunnel --token <TUNNEL_TOKEN> run
 ```
 
 - Remote-managed tunnel: create it in the Cloudflare dashboard, map the
-  public hostname to `http://localhost:<PORT>`, install the token as
+  public hostname to `http://127.0.0.1:<PORT>`, install the token as
   `/etc/cloudflared/token` (mode 600), and run it as a systemd service.
+  **Never write `http://localhost:<PORT>`**: on hosts where `localhost`
+  resolves to `::1` first (Debian's `getent hosts localhost` does), an
+  IPv4-only loopback bind makes cloudflared dial `[::1]:<PORT>` and every
+  request dies with "Unable to reach origin [::1]" (live 2026-11-16).
+  Also note the remote dashboard origin wins over a local
+  `/etc/cloudflared/config.yml` — fixing only the local config does not
+  fix the tunnel.
 - TLS terminates at Cloudflare; the origin IP stays hidden; WAF and rate
   limiting are configured at the edge (see
   [DDoS hardening](#ddos-hardening)).
@@ -516,7 +523,7 @@ curl -sS http://127.0.0.1:12800/health/ready
 | `health/ready` not `ready` | database reachable? (Lite: data dir writable; Full: `DATABASE_URL`/port, tunnel listeners up in topologies 3–4) |
 | Gateway restarting in a loop | `journalctl -u cartethyia -e`; often a missing/mismatched env or failed migration assertion |
 | Port not listening | bind failed (another process, or `CARTETHYIA_BIND_HOST` mismatch) |
-| 502 from tunnel | cloudflared down, or gateway not on loopback |
+| 502 from tunnel | cloudflared down, gateway not on loopback, or the tunnel origin says `localhost` while the gateway binds `127.0.0.1` (localhost may resolve to `::1` — use `127.0.0.1` in the Cloudflare dashboard origin) |
 | Console/auth issues | `CARTETHYIA_PUBLIC_ORIGIN` mismatch; cookie not valid behind proxy |
 | Tunnel listeners missing (topology 4) | data box unit active? `journalctl -u cartethyia-db-tunnel`; key options quoted? |
 
@@ -757,7 +764,9 @@ The repository ships a `Dockerfile`:
 - **Builder:** `oven/bun:1.4.2-debian` (pinned to `.bun-version`), runs
   `bun install --frozen-lockfile`, dashboard build, then AOT + standalone binary.
 - **Runtime:** `debian:12-slim`, runs as non-root `uid 10001`
-  (dropped via `setpriv`), with `HEALTHCHECK` on `/health/ready`.
+  (dropped via `setpriv`), with `HEALTHCHECK` on `/health/ready` dialed via
+  `127.0.0.1` — not `localhost`, which can resolve to `::1` first and
+  dead-dial an IPv4-only bind.
 - **Exposes** `12800`, `STOPSIGNAL SIGTERM`, entrypoint repairs volume ownership
   then drops privileges.
 
@@ -767,6 +776,13 @@ The repository ships a `Dockerfile`:
 
 - `app` service: builds the image, `env_file` from `.env`, persistent volume
   `cartethyia-data:/app/data`, depends on `redis`, `restart: unless-stopped`.
+  The gateway port publishes on **host loopback by default**
+  (`127.0.0.1:<PORT>`); set `CARTETHYIA_PUBLISH_HOST` to widen it only when
+  the host is not already fronted by a tunnel or reverse proxy. The app's
+  in-container bind is pinned to `0.0.0.0` in `environment:` — docker-proxy
+  reaches the container over its own IP, and `environment:` overrides
+  `env_file:`, so a host `.env` carrying `CARTETHYIA_BIND_HOST=127.0.0.1`
+  cannot silently break the published port.
 - `redis` service: `redis:7.4.2-alpine`, **bound to `127.0.0.1:6379`** on the
   host, with a healthcheck.
 - `pgbouncer` service: opt-in under the `full` profile
@@ -779,7 +795,8 @@ The repository ships a `Dockerfile`:
 ```yaml
 services:
   app:
-    # Keep the port loopback-only when a tunnel/proxy on the same host fronts it
+    # Loopback publish is already the default; shown for emphasis. Override
+    # with CARTETHYIA_PUBLISH_HOST only when no tunnel/proxy fronts the host.
     ports:
       - "127.0.0.1:12800:12800"
     security_opt:
