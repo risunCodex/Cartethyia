@@ -240,17 +240,42 @@ function publishPoolHealth(snapshot: PoolHealthSnapshot): void {
   for (const listener of subscribers) listener(snapshot);
 }
 
+/**
+ * Which fault one failed pool-bound attempt blames on the pool.
+ *
+ * The `origin` gate keeps upstream *conditions* (a verdict the upstream
+ * expressed — a refusal, a content policy) from degrading the pool. It must
+ * not swallow `transport_unavailable`, though: a raw socket drop closes OUR
+ * socket, and when a pool carried the attempt our TCP peer is the proxy —
+ * the upstream's close is only relayed through it. Blaming "upstream" there
+ * is how a dead proxy stayed `active` in rotation and every request looped
+ * back onto it (live 2026-11-17: one dead pool rode every dispatch,
+ * `recordPoolDispatchOutcome` early-returned each time, and only the pool
+ * row's status was ever asked). The state machine's own model absorbs the
+ * ambiguity: one strike parks the pool, the cooldown sweep brings it back,
+ * and one completed dispatch clears it — a genuinely dead proxy stays parked
+ * while a transient upstream reset heals within the request's own retry.
+ */
 function poolFaultCategory(error: unknown, origin: string | undefined): string | undefined {
-  if (origin === "upstream") return undefined;
-  if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
-    const code = error.code;
-    if (["proxy_unreachable", "tunnel_setup_failed", "proxy_auth_required", "tls_rejected", "transport_unavailable", "deadline_exceeded"].includes(code)) return code;
+  const code =
+    error && typeof error === "object" && "code" in error && typeof error.code === "string"
+      ? error.code
+      : "";
+  if (origin === "upstream") {
+    return code === "transport_unavailable" ? code : undefined;
   }
+  if (["proxy_unreachable", "tunnel_setup_failed", "proxy_auth_required", "tls_rejected", "transport_unavailable", "deadline_exceeded"].includes(code)) return code;
   if (origin === "network") return "proxy_unreachable";
   return undefined;
 }
 
-/** Record a pool-bound attempt. Only failures produced by the proxy/network boundary degrade the pool. */
+/**
+ * Record a pool-bound attempt. Only failures the pool's own socket caused
+ * degrade it: proxy/network-boundary faults, and a `transport_unavailable`
+ * socket drop (the proxied peer closed — see `poolFaultCategory` for why an
+ * upstream-origin drop still counts here). An upstream verdict that rode a
+ * working transport (a refusal, a content policy) never does.
+ */
 export async function recordPoolDispatchOutcome(
   db: CartethyiaDatabase,
   poolId: string,

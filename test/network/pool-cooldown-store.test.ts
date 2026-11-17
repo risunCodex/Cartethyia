@@ -422,3 +422,117 @@ describe("dispatch success clears the provider cooldown marker", () => {
     }
   });
 });
+
+describe("a pool-carried socket drop degrades the pool", () => {
+  test("transport_unavailable with upstream origin parks the pool (dead-proxy loop regression)", async () => {
+    // Telemetry 46a6d160 (2026-11-17): a dead proxy rode every dispatch while
+    // `poolFaultCategory` early-returned on origin "upstream", so the pool
+    // stayed `active` and routing kept looping back onto it. The socket that
+    // died is the pool's own — the shape below is exactly what
+    // `normalizeEscapeError` produces for a raw socket drop on a proxied
+    // attempt — and the state machine's strike model is what absorbs the
+    // remaining ambiguity (park now, sweep later, clear on success).
+    const { db, close } = await bootedSqlite();
+    try {
+      const poolId = randomUUID();
+      await insertPool(db, poolId);
+
+      await recordPoolDispatchOutcome(db, poolId, {
+        succeeded: false,
+        providerId: "deepai",
+        error: new GatewayError(
+          "transport_unavailable",
+          502,
+          "The upstream closed the connection mid-response",
+          {},
+          "upstream",
+        ),
+        errorOrigin: "upstream",
+      });
+
+      const [row] = await db
+        .select({
+          status: networkPools.status,
+          consecutiveFailures: networkPools.consecutiveFailures,
+          lastErrorCategory: networkPools.lastErrorCategory,
+          cooldownUntil: networkPools.cooldownUntil,
+        })
+        .from(networkPools);
+      expect(row?.status).toBe("cooldown");
+      expect(row?.consecutiveFailures).toBe(1);
+      expect(row?.lastErrorCategory).toBe("transport_unavailable");
+      expect(row?.cooldownUntil).not.toBeNull();
+    } finally {
+      close();
+    }
+  });
+
+  test("an upstream verdict on a working transport still leaves the pool alone", async () => {
+    // The doctrine half of the same rule: an upstream *condition* (a refusal,
+    // an overload verdict) rode a healthy socket and must not park the pool.
+    const { db, close } = await bootedSqlite();
+    try {
+      const poolId = randomUUID();
+      await insertPool(db, poolId);
+
+      await recordPoolDispatchOutcome(db, poolId, {
+        succeeded: false,
+        providerId: "deepai",
+        error: new GatewayError("upstream_overloaded", 529, "upstream said no", {}, "upstream"),
+        errorOrigin: "upstream",
+      });
+
+      const [row] = await db
+        .select({
+          status: networkPools.status,
+          consecutiveFailures: networkPools.consecutiveFailures,
+        })
+        .from(networkPools);
+      expect(row?.status).toBe("active");
+      expect(row?.consecutiveFailures).toBe(0);
+    } finally {
+      close();
+    }
+  });
+
+  test("one completed dispatch clears the strike", async () => {
+    // The transient-upstream-reset half (Trae's edge resets recovered by a
+    // fresh dial): when the same request's retry succeeds, the pool is proven
+    // serving again and must not stay parked.
+    const { db, close } = await bootedSqlite();
+    try {
+      const poolId = randomUUID();
+      await insertPool(db, poolId);
+
+      await recordPoolDispatchOutcome(db, poolId, {
+        succeeded: false,
+        providerId: "deepai",
+        error: new GatewayError(
+          "transport_unavailable",
+          502,
+          "The upstream closed the connection mid-response",
+          {},
+          "upstream",
+        ),
+        errorOrigin: "upstream",
+      });
+      await recordPoolDispatchOutcome(db, poolId, {
+        succeeded: true,
+        providerId: "deepai",
+      });
+
+      const [row] = await db
+        .select({
+          status: networkPools.status,
+          consecutiveFailures: networkPools.consecutiveFailures,
+          lastErrorCategory: networkPools.lastErrorCategory,
+        })
+        .from(networkPools);
+      expect(row?.status).toBe("active");
+      expect(row?.consecutiveFailures).toBe(0);
+      expect(row?.lastErrorCategory).toBeNull();
+    } finally {
+      close();
+    }
+  });
+});

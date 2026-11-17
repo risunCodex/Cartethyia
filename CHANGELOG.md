@@ -12,6 +12,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **A dead proxy pool is flagged instead of looped on.** A mid-response socket
+  drop (`transport_unavailable`) carried by a network pool was blamed on the
+  upstream — the classifier's origin stamp is written for direct egress — so
+  the pool health machine early-returned on every failure, the pool stayed
+  `active`, and every request kept selecting the same unusable proxy (live
+  2026-11-17: one dead pool rode every dispatch until the route was edited by
+  hand). A socket drop on a pool-carried attempt is now recorded as a pool
+  fault: the pool parks (`cooldown`), routing drops it from the snapshot
+  until the cooldown sweep brings it back, and one completed dispatch clears
+  the strike — so a genuinely dead proxy stops receiving traffic while a
+  transient upstream reset (the Trae-style edge reset a fresh dial recovers)
+  heals within the request's own retry.
+
 - **Devin no longer answers a large session switch with a 502.** Devin's own
   answer to an oversized prompt is a silent stream close — HTTP 200, no
   frames, no error trailer — which the decoder read as "ended without
