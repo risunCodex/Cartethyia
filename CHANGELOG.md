@@ -23,6 +23,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   carries a loopback value), and the deployment guide now instructs
   `http://127.0.0.1:<PORT>` for tunnel origins with the `localhost`→`::1`
   warning.
+- **Repo-wide cleanup pass.** A full read-only audit (80 findings) removed
+  ~50 dead exports across the gateway, scripts, and dashboard (each
+  re-verified to have zero callers), deleted five unreferenced `test/tools`
+  one-offs that defaulted to reading the operator's real local database,
+  translated the six remaining Indonesian documents to English, fixed the
+  stale research index and broken documentation links, and aligned
+  `packageManager` with `.bun-version`.
+- **Every provider in the console list shows its brand mark.** Thirty
+  provider ids that fell through to the two-letter initials placeholder now
+  have their real logos, fetched from each provider's own domain, PWA
+  manifest, or CDN. `coralbricks` keeps the placeholder (no reachable
+  mark).
 
 ### Fixed
 
