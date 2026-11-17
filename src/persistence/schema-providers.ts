@@ -263,12 +263,17 @@ export const providerAccounts = pgTable("provider_accounts", {
     // which is what makes the daily 100-credit grant reusable per account
     // instead of colliding on a device identity. `NULL` rows (unbound
     // accounts) are excluded so the uniqueness only applies to bound
-    // identities. The Postgres migration spells the expression
+    // identities. Migration 0049 additionally excludes `runtime-info`
+    // identities: that bridge is machine-scoped (one token shared by every
+    // account on one host), so uniqueness would flag legitimate sharing as a
+    // spoof. The Postgres migration spells the expression
     // `(native_identity ->> 'machineToken')`; the SQLite migration spells it
     // `json_extract(native_identity, '$.machineToken')`.
     uniqueIndex("provider_accounts_native_identity_token_uidx")
       .on(sql`(${table.nativeIdentity} ->> 'machineToken')`)
-      .where(sql`${table.nativeIdentity} IS NOT NULL`),
+      .where(
+        sql`${table.nativeIdentity} IS NOT NULL AND ${table.nativeIdentity} ->> 'source' <> 'runtime-info'`,
+      ),
   ],
 );
 
