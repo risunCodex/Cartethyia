@@ -9,7 +9,7 @@
 import { GatewayError } from "../../../protocol/gateway-error";
 import { resolveImageSource, splitDataUrl } from "../../../protocol/codecs";
 import { IMAGE_CLAMP_MAX_BYTES } from "../../../protocol/image-clamp";
-import type { CanonicalRequest, ContentPart } from "../../../protocol/canonical-model";
+import type { ContentPart } from "../../../protocol/canonical-model";
 import type { ProviderDispatchContext } from "../../provider-contracts";
 
 /** Image MIME types Cursor accepts in `selected_images`. */
@@ -162,44 +162,8 @@ export async function resolveCursorImageInput(
   return finishImage(body);
 }
 
-/** Collects every canonical image part of a request into Cursor images. */
-export async function collectImages(
-  request: CanonicalRequest,
-  context: ProviderDispatchContext,
-): Promise<CursorImageInput[]> {
-  const images: CursorImageInput[] = [];
-  for (const message of request.messages) {
-    for (const part of message.content) {
-      if (part.kind !== "image") continue;
-      images.push(await resolveCursorImageInput(part, context));
-    }
-  }
-  return images;
-}
-
 /** One image-bearing block of a tool result, ready for `McpToolResultContentItem`. */
 export interface ResultImage {
   readonly data: Uint8Array;
   readonly mimeType: string;
-}
-
-/** Reads the images out of one canonical tool result. */
-export function resultImages(part: Extract<ContentPart, { kind: "toolResult" }>): ResultImage[] {
-  if (typeof part.content === "string") return [];
-  const images: ResultImage[] = [];
-  for (const child of part.content) {
-    if (child.kind !== "image") continue;
-    const source = resolveImageSource(child.payload);
-    const url = source?.url;
-    if (url === undefined) continue;
-    const dataUrl = splitDataUrl(url);
-    if (dataUrl === undefined) continue;
-    const bytes = base64ToBytes(dataUrl.data);
-    if (bytes === undefined) continue;
-    const mimeType = sniffImageMime(bytes) ?? dataUrl.mediaType;
-    if (ALLOWED_IMAGE_MIME_TYPES[mimeType] !== true) continue;
-    if (bytes.byteLength > MAX_IMAGE_BYTES) continue;
-    images.push({ data: bytes, mimeType });
-  }
-  return images;
 }

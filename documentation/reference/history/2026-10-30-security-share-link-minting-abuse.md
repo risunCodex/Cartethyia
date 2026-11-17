@@ -9,131 +9,131 @@ status: mitigated
 
 # Share-link minting abuse — incident analysis & prevention
 
-> Status: research/incident record (2026-10-30). Data diambil live dari
-> deployment dev sebelum & sesudah pembersihan. File ini adalah **catatan
-> sejarah** — disimpan di `reference/history/`, tidak ditautkan dari dokumen
-> referensi aktif.
+> Status: research/incident record (2026-10-30). Data captured live from the
+> dev deployment before & after the cleanup. This file is a **historical
+> record** — kept in `reference/history/`, not linked from active reference
+> documents.
 
-## 1. Ringkasan insiden
+## 1. Incident summary
 
-Satu template share ("One step at a time", `e58be58d-…`) dipakai untuk
-**minting massal child key** oleh skrip bot:
-
-
-| Fase                     | Jumlah dihapus | Keterangan                                                                    |
-| ------------------------ | -------------- | ----------------------------------------------------------------------------- |
-| 2 IP Google Cloud (edge) | **319.395**    | `35.247.128.192` (287.675) + `35.194.181.114` (31.720), dibuat dalam \~3 hari |
-| Sisa (12.327)            | **12.327**     | 12.204 zero-usage (99%), 123 pernah dipakai, 54 hit hari ini                  |
-| **Total**                | **331.722**    | \~99,9% tidak pernah dipakai                                                  |
+A single share template ("One step at a time", `e58be58d-…`) was used to
+**bulk-mint child keys** by a bot script:
 
 
-Kedua gelombang menampilkan pola bot yang sama:
+| Phase                      | Removed count | Notes                                                                          |
+| -------------------------- | ------------- | ------------------------------------------------------------------------------ |
+| 2 Google Cloud IPs (edge)  | **319,395**   | `35.247.128.192` (287,675) + `35.194.181.114` (31,720), created within \~3 days |
+| Remainder (12,327)         | **12,327**    | 12,204 zero-usage (99%), 123 previously used, 54 hits today                     |
+| **Total**                  | **331,722**   | \~99.9% never used                                                             |
 
-- **Burst milidetik**: ratusan key dibuat pada detik yang sama (mis. `05:56:41.396–419`).
-- **Label sintetis**: `omp-<random>` (dan varian lain) — bukan nama hint dari manusia.
-- **IP edge/rotasi**: di belakang CDN/cloud edge (IPv4 &amp; IPv6) dan proxy/residential; per-IP dedupe tidak mempan karena tiap permintaan datang dari IP edge/rotasi berbeda.
-- **Zero usage**: 99%+ tidak pernah mengeluarkan satu permintaan pun.
-- Distribusi IP sisa (12.327): `126.209.124.215` (4.407) &amp; `126.209.124.217`
-(1.499) — rentang ISP Indonesia; `104.28.194.105` (3.175) — Cloudflare IPv4
-edge; `2a09:bac5:…:247:aa` (3.110) — Cloudflare IPv6 edge; ±105 IP lain
-1–6 key (total ~136). Pola sama: burst milidetik + label `omp-*`.
 
-Konsekuensi:
+Both waves displayed the same bot pattern:
 
-- `api_keys` membengkak 330k+ baris → bloat storage/backup (367 MB raw), autentikasi baca lebar, list console sempat hilang/error (mis. `IN (...)` melewati batas 65.535 bind params PG).
-- Risiko drift policy &amp; noise administratif.
+- **Millisecond bursts**: hundreds of keys created in the same second (e.g. `05:56:41.396–419`).
+- **Synthetic labels**: `omp-<random>` (and other variants) — not human-written hint names.
+- **Edge/rotating IPs**: behind CDN/cloud edge (IPv4 &amp; IPv6) and proxy/residential; per-IP dedupe does not hold because every request arrives from a different edge/rotating IP.
+- **Zero usage**: 99%+ never issued a single request.
+- IP distribution of the remainder (12,327): `126.209.124.215` (4,407) &amp; `126.209.124.217`
+(1,499) — Indonesian ISP range; `104.28.194.105` (3,175) — Cloudflare IPv4
+edge; `2a09:bac5:…:247:aa` (3,110) — Cloudflare IPv6 edge; ~105 other IPs
+with 1–6 keys each (total ~136). Same pattern: millisecond bursts + `omp-*` labels.
+
+Consequences:
+
+- `api_keys` swelled by 330k+ rows → storage/backup bloat (367 MB raw), broad authentication reads, the console list briefly went missing/erroring (e.g. `IN (...)` passing PG's 65,535 bind-param limit).
+- Policy drift risk &amp; administrative noise.
 
 ## 2. Attack surface
 
 Route `POST /share/:token/issue` (`src/console/share/share-router.ts:358`)
-membuat child dengan **satu kunci dedupe**: 1 child per canonical client IP
-(`canonicalClientIpKey`). Itu cukup untuk manusia biasa, tapi **gagal
-melawan**:
+creates a child with a **single dedupe key**: 1 child per canonical client IP
+(`canonicalClientIpKey`). That is enough for an ordinary human, but it **fails
+against**:
 
-1. **Rotasi IP / proxy / CDN masking** — attacker memakai banyak IP edge
- (GCP, Cloudflare, dsb.), tiap IP dapat 1 child → tanpa batas total.
-2. **Tidak ada batas total per template** — tanpa cap, jumlah child tak
- terikat.
-3. **Tidak ada bukti-manusia** — `issue` adalah endpoint publik tanpa CAPTCHA
- / challenge / token sesi.
-4. **Tidak ada rate-limit global per link** — throttle hanya per-IP.
-5. **Tidak ada anomali/alerting** — lonjakan 330k mint tidak terdeteksi
- otomatis.
-6. **Tidak ada hygiene** — child yang tidak pernah dipakai tidak pernah di-daur
- ulang.
+1. **IP rotation / proxy / CDN masking** — the attacker uses many edge IPs
+ (GCP, Cloudflare, etc.); each IP gets 1 child → no total limit.
+2. **No total limit per template** — without a cap, the child count is
+ unbounded.
+3. **No proof-of-humanity** — `issue` is a public endpoint with no CAPTCHA
+ / challenge / session token.
+4. **No global rate limit per link** — throttling is per-IP only.
+5. **No anomaly/alerting** — a 330k mint spike is not detected
+ automatically.
+6. **No hygiene** — children that are never used are never
+ recycled.
 
-## 3. Rekomendasi pencegahan (urut prioritas)
+## 3. Prevention recommendations (in priority order)
 
-### Fase 1 — cepat, dampak besar, low risk
+### Phase 1 — fast, high impact, low risk
 
-1. **Hard cap jumlah child per template** (default mis. 200–500, configurable
- per tenant). Di `issueSharedApiKey`, hitung child aktif template; jika
- `>= cap` → tolak dengan `429`/`conflict` + tandai template di console.
- Ini menutup akar masalah (unbounded) seketika.
-2. **Rate-limit per template + window** (Redis counter, mirror pola
- `pruneTelemetry`/admission): mis. ≤30 mint/menit per link; batas kedua
- per-IP. Anti-burst bahkan sebelum cap tercapai.
-3. **Hygiene worker**: purge child yang `created_at < now() - interval '30  days'` **dan** `lifetime_tokens_consumed = 0` **dan** tidak ada telemetry
- (batch 5000, mirror `deleteExpiredEvents`). Memastikan kebocoran kecil pun
- tidak menumpuk.
+1. **Hard cap on children per template** (default e.g. 200–500, configurable
+ per tenant). In `issueSharedApiKey`, count the template's active children; if
+ `>= cap` → reject with `429`/`conflict` + flag the template in the console.
+ This closes the root cause (unbounded) immediately.
+2. **Rate limit per template + window** (Redis counter, mirroring the
+ `pruneTelemetry`/admission pattern): e.g. ≤30 mints/minute per link; a second
+ limit per IP. Anti-burst even before the cap is reached.
+3. **Hygiene worker**: purge children where `created_at < now() - interval '30  days'` **and** `lifetime_tokens_consumed = 0` **and** there is no telemetry
+ (batch 5000, mirroring `deleteExpiredEvents`). Ensures even small leaks do
+ not pile up.
 
-### Fase 2 — hardening lebih dalam
+### Phase 2 — deeper hardening
 
-4. **Trust Cloudflare true client IP**: tambahkan CIDR Cloudflare ke
- `TRUSTED_PROXY_CIDRS` dan baca `CF-Connecting-IP` → per-IP dedupe
- kembali efektif walau via CDN (perketat agar hanya dari CF yang
- dipercaya). Jangan lakukan tanpa verifikasi keamanan proxy trust.
-5. **Challenge ringan di halaman share** (honeypot field + minimum time +
- token sesi HMAC sekali pakai yang ditandatangani saat render page; `issue`
- menolak tanpa token). Memblokir skrip tanpa browser interaksi.
-6. **Anomali &amp; alerting**: metrik `mint rate per template/menit`; alert pada
- ambang (mis. &gt;50/menit); opsi auto-pause link (`share_links.active=false`)
- saat terdeteksi, dengan notifikasi console.
-7. **Audit &amp; visibilitas**: hitung child per template di console + log
- `api_key.share_minted` (sudah ada audit sink; pastikan bulk mint tercatat),
- dan tampilkan jumlah mint per jam di halaman share.
+4. **Trust Cloudflare true client IP**: add Cloudflare CIDRs to
+ `TRUSTED_PROXY_CIDRS` and read `CF-Connecting-IP` → per-IP dedupe
+ becomes effective again even via CDN (tighten so only trusted CF
+ sources are accepted). Do not do this without verifying proxy-trust security.
+5. **Light challenge on the share page** (honeypot field + minimum time +
+ one-time HMAC session token signed when the page renders; `issue`
+ rejects without the token). Blocks scripts without browser interaction.
+6. **Anomaly &amp; alerting**: metric `mint rate per template/minute`; alert at a
+ threshold (e.g. &gt;50/minute); optional auto-pause of the link (`share_links.active=false`)
+ when detected, with a console notification.
+7. **Audit &amp; visibility**: count children per template in the console + log
+ `api_key.share_minted` (an audit sink already exists; make sure bulk mints are recorded),
+ and show mints per hour on the share page.
 
-### Catatan desain
+### Design notes
 
-- Cap &amp; rate-limit harus berada di **store/route layer** (bukan hanya UI).
-- Dengan cap, beban `listChildrenPage` juga terbatas otomatis; namun tetap
-pertahankan pagination yang baru dibangun (tabel recipients).
-- Backup/restore: template dengan child sedikit → export jauh lebih kecil;
-pastikan cap tidak menghalangi restore backup lama (restore tidak menjalankan
-cap — cap hanya berlaku untuk minting baru).
+- The cap &amp; rate limit must live in the **store/route layer** (not just the UI).
+- With a cap, the load on `listChildrenPage` is automatically bounded as well; however, keep
+ the pagination that was just built (recipients table).
+- Backup/restore: templates with few children → exports are far smaller;
+ make sure the cap does not block restoring old backups (restore does not run
+ the cap — the cap only applies to new mints).
 
-## 4. Referensi kode
+## 4. Code references
 
 - Mint child: `src/persistence/stores/share-store.ts` (`issueSharedApiKey`).
-- Route publik: `src/console/share/share-router.ts:358` (`POST /share/:token/issue`).
-- Dedupe per-IP: `canonicalClientIpKey` (share-store / share-router).
-- Batching preceden: `src/persistence/stores/telemetry-store.ts:316` (`deleteExpiredEvents`).
-- Pagination list child: `src/persistence/stores/api-key-store.ts` (`listChildrenPage`).
+- Public route: `src/console/share/share-router.ts:358` (`POST /share/:token/issue`).
+- Per-IP dedupe: `canonicalClientIpKey` (share-store / share-router).
+- Precedent batching: `src/persistence/stores/telemetry-store.ts:316` (`deleteExpiredEvents`).
+- Child list pagination: `src/persistence/stores/api-key-store.ts` (`listChildrenPage`).
 - Readiness/ledger: `src/persistence/migrate.ts`.
 
-## 4b. Temuan lanjutan: inkonsistensi total usage
+## 4b. Follow-up finding: total usage inconsistency
 
-Setelah pembersihan, angka usage family tidak konsisten antarpermukaan:
-
-
-| Permukaan                      | Sumber                                                              | Nilai (untuk template One step at a time) |
-| ------------------------------ | ------------------------------------------------------------------- | ----------------------------------------- |
-| Overview / daftar key          | kolom `api_keys.lifetime_tokens_consumed` **pada template**         | **400.000.000.000 (400B)**                |
-| Share page `/stats`            | `telemetry_usage_totals` family (termasuk child yang sudah dihapus) | \~15,6B                                   |
-| Share dialog / recipient table | kolom `lifetime_tokens_consumed` pada **child yang masih ada** (3)  | \~1,8M                                    |
+After the cleanup, the family usage numbers were inconsistent across surfaces:
 
 
-Akar: (1) kolom counter template berisi nilai 400B (seeded/manual, bukan
-hasilkan traffic), dan (2) `telemetry_usage_totals` menyimpan row per child
-yang tidak ikut terhapus saat child di-delete → total telemetry masih
-mencakup bot yang sudah dibersihkan. Ketiga sumber membaca kolom/tabel yang
-berbeda sehingga selalu tampak kontradiktif.
+| Surface                        | Source                                                                 | Value (for the One step at a time template) |
+| ------------------------------ | ---------------------------------------------------------------------- | ------------------------------------------- |
+| Overview / key list            | the `api_keys.lifetime_tokens_consumed` column **on the template**     | **400,000,000,000 (400B)**                  |
+| Share page `/stats`            | `telemetry_usage_totals` family (including deleted children)           | \~15.6B                                     |
+| Share dialog / recipient table | the `lifetime_tokens_consumed` column on the **remaining children** (3) | \~1.8M                                      |
 
-Rekomendasi: satukan definisi "total family usage" pada satu sumber (mis.
-`telemetry_usage_totals` untuk family yang masih ada, dengan prune row child
-yang dihapus, atau jumlahkan kolom child yang masih ada), dan klarifikasi
-kolom counter template sebagai limit seed — bukan hasil pakai.
 
-## 5. Status aksi
+Root cause: (1) the template counter column holds a 400B value (seeded/manual, not
+produced by traffic), and (2) `telemetry_usage_totals` stores a row per child
+that is not deleted when the child is removed → the telemetry total still
+covers the cleaned-up bots. The three sources read different columns/tables,
+so they always appear contradictory.
+
+Recommendation: unify the definition of "total family usage" in a single source (e.g.
+`telemetry_usage_totals` for the surviving family, pruning rows of deleted
+children, or summing the columns of the remaining children), and clarify
+the template counter column as a seed limit — not usage output.
+
+## 5. Action status
 
 - [x] Done and all Mitigated!

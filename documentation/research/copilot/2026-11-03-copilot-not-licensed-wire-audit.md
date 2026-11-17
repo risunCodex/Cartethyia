@@ -1,124 +1,126 @@
 # Copilot Wire Audit — reference VS Code 1.144 vs Cartethyia github adapter
 
-Tanggal: 2026-11-03
-Referensi: VSCodeUserSetup-x64-1.144.0-unpacked (extension copilot-chat 0.72.0)
-Trigger: akun `gpt-6-luna` masuk COOLDOWN auth_invalidated dengan
-`unauthorized: not licensed to use Copilot` / `forbidden` berulang.
+Date: 2026-11-03
+Reference: VSCodeUserSetup-x64-1.144.0-unpacked (extension copilot-chat 0.72.0)
+Trigger: account `gpt-6-luna` entered COOLDOWN auth_invalidated with
+repeated `unauthorized: not licensed to use Copilot` / `forbidden`.
 
 ---
 
-## 1. Ringkasan
+## 1. Summary
 
-Kesimpulan awal: adapter sudah mengirim hampir semua header yang reference kirim,
-tapi ada **dua header identitas device yang hilang** (`VScode-SessionId`,
-`VScode-MachineId`) dan **satu header organisasi** (`Openai-Organization`) yang
-reference kirim pada request chat — plus `X-Interaction-Id` yang nilainya beda.
-Belum terbukti mana yang memicu "not licensed" sampai ada cred live untuk test.
+Preliminary conclusion: the adapter already sends almost all the headers the
+reference sends, but **two device identity headers are missing**
+(`VScode-SessionId`, `VScode-MachineId`) and **one organization header**
+(`Openai-Organization`) that the reference sends on chat requests — plus an
+`X-Interaction-Id` whose value differs. It is not yet proven which one triggers
+"not licensed" until there is a live credential to test with.
 
-## 2. Header request chat — reference vs adapter
+## 2. Chat request headers — reference vs adapter
 
-Sumber reference: `extensions/copilot/dist/extension.js` (minified).
+Reference source: `extensions/copilot/dist/extension.js` (minified).
 
-| Header | Reference (VS Code 1.144) | Adapter (github.ts prepareHeaders + GITHUB_REQUEST_HEADERS) | Bedanya |
+| Header | Reference (VS Code 1.144) | Adapter (github.ts prepareHeaders + GITHUB_REQUEST_HEADERS) | Difference |
 | --- | --- | --- | --- |
-| `User-Agent` | `GitHubCopilotChat/0.72.0` (fetch wrapper) | `user-agent: GitHubCopilotChat/0.72.0` | ✅ sama |
-| `X-VSCode-User-Agent-Library-Version` | `node-http`/`node-fetch`/`electron-fetch` (`sH` = library ID) | `x-vscode-user-agent-library-version: vscode-chat/0.72.0` | ⚠️ **nilai beda** (library vs versi extension) |
-| `Editor-Version` | `vscode/1.144.0` | `editor-version: vscode/1.144.0` | ✅ sama |
-| `Editor-Plugin-Version` | `copilot-chat/0.72.0` | `editor-plugin-version: copilot-chat/0.72.0` | ✅ sama |
-| `Editor-Device-Id` | `this._extensionInfo.deviceId` (UUID persistent) | `editor-device-id: <install-id github>` | ✅ sama nilai |
-| `Copilot-Integration-Id` | `vscode-chat` (di-set di `_mixinHeaders`, hanya jika `BFi(type)` true) | `copilot-integration-id: vscode-chat` | ✅ sama (case-insensitive) |
-| `X-GitHub-Api-Version` | `2026-08-01` | `x-github-api-version: 2026-08-01` | ✅ sama |
-| `VScode-SessionId` | `this._extensionInfo.sessionId` | **tidak ada** | ❌ **hilang** |
-| `VScode-MachineId` | `this._extensionInfo.machineId` | **tidak ada** | ❌ **hilang** |
-| `OpenAI-Intent` | `conversation-agent` / `conversation` (dari request) | `openai-intent: conversation-agent` | ✅ sama (untuk chat biasa) |
-| `X-Request-Id` | UUID (per request) | `x-request-id: requestId` | ✅ sama |
-| `X-Interaction-Id` | `interactionService.interactionId` (beda dari request id) | `x-interaction-id: requestId` | ⚠️ **nilai beda** |
-| `X-Agent-Task-Id` | UUID = request id | `x-agent-task-id: requestId` | ✅ sama |
-| `X-Initiator` | `user` / `agent` | `x-initiator: user/agent` | ✅ sama |
-| `X-Interaction-Type` | `conversation-agent` (dari interaction type) | `x-interaction-type: conversation-agent` | ✅ sama |
-| `Openai-Organization` | `github-copilot` (di request chat stream) | **tidak ada** | ❌ **hilang** |
-| `x-policy-id` | `nil` (di endpoint tertentu) | **tidak ada** | ⚠️ hanya untuk endpoint tertentu |
+| `User-Agent` | `GitHubCopilotChat/0.72.0` (fetch wrapper) | `user-agent: GitHubCopilotChat/0.72.0` | ✅ same |
+| `X-VSCode-User-Agent-Library-Version` | `node-http`/`node-fetch`/`electron-fetch` (`sH` = library ID) | `x-vscode-user-agent-library-version: vscode-chat/0.72.0` | ⚠️ **different value** (library vs extension version) |
+| `Editor-Version` | `vscode/1.144.0` | `editor-version: vscode/1.144.0` | ✅ same |
+| `Editor-Plugin-Version` | `copilot-chat/0.72.0` | `editor-plugin-version: copilot-chat/0.72.0` | ✅ same |
+| `Editor-Device-Id` | `this._extensionInfo.deviceId` (persistent UUID) | `editor-device-id: <github install-id>` | ✅ same value |
+| `Copilot-Integration-Id` | `vscode-chat` (set in `_mixinHeaders`, only if `BFi(type)` is true) | `copilot-integration-id: vscode-chat` | ✅ same (case-insensitive) |
+| `X-GitHub-Api-Version` | `2026-08-01` | `x-github-api-version: 2026-08-01` | ✅ same |
+| `VScode-SessionId` | `this._extensionInfo.sessionId` | **absent** | ❌ **missing** |
+| `VScode-MachineId` | `this._extensionInfo.machineId` | **absent** | ❌ **missing** |
+| `OpenAI-Intent` | `conversation-agent` / `conversation` (from the request) | `openai-intent: conversation-agent` | ✅ same (for regular chat) |
+| `X-Request-Id` | UUID (per request) | `x-request-id: requestId` | ✅ same |
+| `X-Interaction-Id` | `interactionService.interactionId` (differs from the request id) | `x-interaction-id: requestId` | ⚠️ **different value** |
+| `X-Agent-Task-Id` | UUID = request id | `x-agent-task-id: requestId` | ✅ same |
+| `X-Initiator` | `user` / `agent` | `x-initiator: user/agent` | ✅ same |
+| `X-Interaction-Type` | `conversation-agent` (from the interaction type) | `x-interaction-type: conversation-agent` | ✅ same |
+| `Openai-Organization` | `github-copilot` (on the chat stream request) | **absent** | ❌ **missing** |
+| `x-policy-id` | `nil` (on certain endpoints) | **absent** | ⚠️ only on certain endpoints |
 
 ## 3. Token minting (`/copilot_internal/v2/token`)
 
-Reference (`makeRequest` type `CopilotToken`): hanya `fetch(tokenURL, r)` —
-**TANPA `_mixinHeaders`** karena `BFi("CopilotToken")` = false. Jadi token
-minting di reference hanya membawa `User-Agent` + `X-VSCode-User-Agent-Library-Version`
-dari fetch wrapper, plus `Authorization`.
+Reference (`makeRequest` type `CopilotToken`): only `fetch(tokenURL, r)` —
+**WITHOUT `_mixinHeaders`** because `BFi("CopilotToken")` = false. So token
+minting in the reference only carries `User-Agent` + `X-VSCode-User-Agent-Library-Version`
+from the fetch wrapper, plus `Authorization`.
 
-Adapter (`mintGithubToken`): mengirim `GITHUB_REQUEST_HEADERS` lengkap
-(termasuk `copilot-integration-id`, `editor-version`, dll). Ini **lebih banyak**
-dari reference tapi bukan penyebab "not licensed" — token minting menerima header
-ekstra dengan baik (verifikasi live 200 sebelumnya).
+Adapter (`mintGithubToken`): sends the full `GITHUB_REQUEST_HEADERS`
+(including `copilot-integration-id`, `editor-version`, etc.). This is **more**
+than the reference but is not the cause of "not licensed" — token minting
+accepts extra headers just fine (previously verified live with 200).
 
 ## 4. Discovery (`/models`)
 
-Reference (`Models` ada di `BFi` set): dapat `_mixinHeaders` → `Copilot-Integration-Id`
-+ `VScode-SessionId/MachineId` + `Editor-*`.
+Reference (`Models` is in the `BFi` set): gets `_mixinHeaders` →
+`Copilot-Integration-Id` + `VScode-SessionId/MachineId` + `Editor-*`.
 
-Adapter (`discoverGithubModels`): mengirim `accept` + `authorization` +
-`GITHUB_REQUEST_HEADERS`. **Kurang `VScode-SessionId`/`VScode-MachineId`**
-(sama seperti chat). `/models` adalah endpoint yang kemungkinan besar menegakkan
-policy/license (di sini "not licensed" bisa muncul), jadi ini kandidat kuat.
+Adapter (`discoverGithubModels`): sends `accept` + `authorization` +
+`GITHUB_REQUEST_HEADERS`. **Missing `VScode-SessionId`/`VScode-MachineId`**
+(same as chat). `/models` is the endpoint most likely to enforce
+policy/license (where "not licensed" can appear), so this is a strong
+candidate.
 
 ## 5. Auto model (gpt-6-luna)
 
-`gpt-6-luna` adalah **Auto model**: dispatch memanggil `POST /auto`
-(`#selectAutoModel`) dengan `{ prompt, tier, has_image? }`.
+`gpt-6-luna` is an **Auto model**: dispatch calls `POST /auto`
+(`#selectAutoModel`) with `{ prompt, tier, has_image? }`.
 
-Reference (`Auto` ada di `BFi` set): dapat `_mixinHeaders` penuh.
+Reference (`Auto` is in the `BFi` set): gets full `_mixinHeaders`.
 
-Adapter (`#selectAutoModel`): memakai `prepareHeaders` → sudah dapat
+Adapter (`#selectAutoModel`): uses `prepareHeaders` → already gets
 `GITHUB_REQUEST_HEADERS` + `x-*` + `x-vscode-user-agent-library-version`,
-tapi **tetap kurang `VScode-SessionId`/`VScode-MachineId`** dan
+but **still lacks `VScode-SessionId`/`VScode-MachineId`** and
 `Openai-Organization`.
 
-Karena error "not licensed" muncul pada model `gpt-6-luna`, dan model ini
-berarti lewat `POST /auto` dulu, header auto-request adalah tempat paling mungkin
-evaluasi license terjadi.
+Because the "not licensed" error appears on model `gpt-6-luna`, and that model
+therefore goes through `POST /auto` first, the auto-request headers are the
+most likely place the license evaluation happens.
 
-## 6. Kandidat penyebab "not licensed"
+## 6. Candidates for the cause of "not licensed"
 
-1. **`VScode-SessionId` + `VScode-MachineId` hilang** — server mungkin
-   menganggap request bukan dari client sah (perlu identitas device untuk
-   license check).
-2. **`X-VSCode-User-Agent-Library-Version` nilai beda** — reference mengirim
-   library ID (`node-http` dll), adapter mengirim `vscode-chat/0.72.0`.
-   Nilai ini mungkin dicek server (mengindikasikan client "asli").
-3. **`Openai-Organization: github-copilot` hilang** — hanya di request chat
-   stream; mungkin tidak wajib.
-4. **`X-Interaction-Id` beda** — nilainya harus dari interaction service,
-   bukan request id; kecil kemungkinan memicu license check.
+1. **`VScode-SessionId` + `VScode-MachineId` missing** — the server may
+   consider the request not to come from a legitimate client (device identity
+   needed for the license check).
+2. **`X-VSCode-User-Agent-Library-Version` different value** — the reference sends
+   a library ID (`node-http` etc.), the adapter sends `vscode-chat/0.72.0`.
+   This value may be checked by the server (indicating an "authentic" client).
+3. **`Openai-Organization: github-copilot` missing** — only on the chat stream
+   request; possibly not required.
+4. **`X-Interaction-Id` differs** — the value must come from the interaction
+   service, not the request id; unlikely to trigger the license check.
 
-## 7. Yang BELUM terbukti
+## 7. What is NOT yet proven
 
-- Header mana yang benar-benar dicek server untuk "not licensed". Perlu probe:
-  1. Request dengan header reference **persis** (termasuk `VScode-SessionId`/
+- Which header the server actually checks for "not licensed". Needs probing:
+  1. Request with the reference headers **exactly** (including `VScode-SessionId`/
      `VScode-MachineId` + `X-VSCode-User-Agent-Library-Version: node-http`)
-     → apakah tetap 403?
-  2. Request tanpa header itu → apakah berubah?
-  3. Bandingkan juga `/auto` vs `/chat/completions` vs `/models`.
-- Kredensial live baru diperlukan (akun sekarang cooldown/auth_invalidated).
+     → does it stay 403?
+  2. Request without those headers → does it change?
+  3. Also compare `/auto` vs `/chat/completions` vs `/models`.
+- New live credentials are required (the account is now cooldown/auth_invalidated).
 
-## 8. Rekomendasi perubahan (menunggu verifikasi live)
+## 8. Recommended changes (awaiting live verification)
 
-A. Tambahkan `VScode-SessionId` dan `VScode-MachineId` ke header chat + auto +
-   discovery. Dari mana nilainya?
-   - `VScode-MachineId`: bisa = `getOrCreateInstallId("github")` (sudah ada,
-     persistent). Percobaan pertama pakai ini.
-   - `VScode-SessionId`: belum ada padanan. Opsi: derive dari install id +
-     hash credential (per-account), atau `randomUUID()` per proses. Reference
-     memakai session per-window VS Code, jadi nilai persisten-account lebih
-     mendekati.
-B. Ubah `x-vscode-user-agent-library-version` dari `vscode-chat/0.72.0`
-   menjadi `node-http` (atau `node-fetch`), menyamakan reference. **Catatan:**
-   test `github-request-context.test.ts` saat ini mengekspektasikan
-   `vscode-chat/0.72.0`, jadi perubahan ini harus dibarengi update test.
-C. Tambahkan `Openai-Organization: github-copilot` di request chat (opsional,
-   hanya jika A/B belum cukup).
-D. Pertimbangkan `X-Interaction-Id` terpisah dari `X-Request-Id`.
+A. Add `VScode-SessionId` and `VScode-MachineId` to the chat + auto +
+   discovery headers. Where do the values come from?
+   - `VScode-MachineId`: could be `getOrCreateInstallId("github")` (already
+     exists, persistent). Try this first.
+   - `VScode-SessionId`: no equivalent yet. Options: derive from the install id +
+     a per-account credential hash, or `randomUUID()` per process. The reference
+     uses a per-VS-Code-window session, so a persistent-per-account value is
+     closer.
+B. Change `x-vscode-user-agent-library-version` from `vscode-chat/0.72.0`
+   to `node-http` (or `node-fetch`), matching the reference. **Note:** the
+   current `github-request-context.test.ts` test expects
+   `vscode-chat/0.72.0`, so this change must be accompanied by a test update.
+C. Add `Openai-Organization: github-copilot` on chat requests (optional,
+   only if A/B is not enough).
+D. Consider separating `X-Interaction-Id` from `X-Request-Id`.
 
-## 9. File terkait
+## 9. Related files
 
 - Adapter: `src/providers/integrations/github/github.ts` (`prepareHeaders`,
   `#selectAutoModel`)
@@ -129,37 +131,41 @@ D. Pertimbangkan `X-Interaction-Id` terpisah dari `X-Request-Id`.
 - Test: `test/providers/github-request-context.test.ts`
 - Reference: `D:\tmp\unpacked\vs-code\{code_GetDestDir}\2c33b50b16\resources\app\extensions\copilot\dist\extension.js`
 
-## 10. Hasil probe live (2026-11-03)
+## 10. Live probe results (2026-11-03)
 
-Cred: `github-accounts-2026-11-03T12-57-28-223Z.json` — account
+Credential: `github-accounts-2026-11-03T12-57-28-223Z.json` — account
 `jinhsera-design` (`access_type_sku: free_limited_copilot`, plan `individual`,
 `chat_enabled: true`).
 
-Semua varian header → **200** di host `api.individual.githubcopilot.com`:
+All header variants → **200** on host `api.individual.githubcopilot.com`:
 
-| Varian | `/auto` (gpt-6-luna) | `/models` | `/chat/completions` |
+
+| Variant | `/auto` (gpt-6-luna) | `/models` | `/chat/completions` |
 | --- | --- | --- | --- |
-| 0-baseline (adapter lama) | 200 | 200 | 200 |
+| 0-baseline (old adapter) | 200 | 200 | 200 |
 | 1 +VScode-ids | 200 | 200 | 200 |
 | 2 library-ref (node-http) | 200 | 200 | 200 |
 | 3 reference-full | 200 | 200 | 200 |
-| adapter 1:1 baru (setelah update) | 200 | 200 | 200 |
+| new 1:1 adapter (after update) | 200 | 200 | 200 |
 
-**Kesimpulan penting:** header **bukan** penyebab "not licensed". Account
-`jinhsera-design` **free limited** tetap bisa pakai `gpt-6-luna`
-(`restricted_to` mencakup `free`), dan semua permutasi header diterima 200.
-Penyebab sesungguhnya di akun lama (`thehertaborneo@gmail.com`) kemungkinan
-**entitlement/plan akun** — bukan wire request. Perubahan 1:1 dilakukan tetap
-karena diminta dan memperketat identitas client (konsisten dengan reference),
-tapi tidak serta-merta menyembuhkan "not licensed" pada akun tanpa entitlement.
+**Key conclusion:** headers are **not** the cause of "not licensed". Account
+`jinhsera-design` is **free limited** and can still use `gpt-6-luna`
+(`restricted_to` includes `free`), and every header permutation is accepted
+with 200. The real cause on the old account (`thehertaborneo@gmail.com`) is
+most likely the **account entitlement/plan** — not the request wire. The 1:1
+change was still made because it was requested and tightens client identity
+(consistent with the reference), but it does not by itself cure "not licensed"
+on an account without entitlement.
 
-## 11. Langkah berikutnya
+## 11. Next steps
 
-1. Dapatkan cred live baru (akun sehat).
-2. Probe `POST /auto` + `/models` + `/chat/completions` dengan:
-   - (a) header adapter sekarang (baseline) → harapkan 403 "not licensed";
-   - (b) header reference persis (tambah `VScode-SessionId`/`VScode-MachineId`,
-         `Openai-Organization`, ubah library-version) → cek apakah jadi 200;
-   - (c) hanya tambah `VScode-*` (tanpa ubah library-version) → isolasi variabel.
-3. Terapkan perubahan minimal berdasarkan hasil probe.
-4. Update test `github-request-context` bila nilai header berubah.
+1. Get new live credentials (healthy account).
+2. Probe `POST /auto` + `/models` + `/chat/completions` with:
+   - (a) current adapter headers (baseline) → expect 403 "not licensed";
+   - (b) exact reference headers (add `VScode-SessionId`/`VScode-MachineId`,
+         `Openai-Organization`, change library-version) → check whether it
+         becomes 200;
+   - (c) only add `VScode-*` (without changing library-version) → isolate the
+         variable.
+3. Apply the minimal change based on the probe results.
+4. Update the `github-request-context` test when header values change.

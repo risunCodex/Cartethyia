@@ -82,11 +82,6 @@ export function getCachedModels(
   return task;
 }
 
-/** Drops all cached catalogs. Test-only: keeps isolated tests from sharing state. */
-export function resetModelCatalogCacheForTesting(): void {
-  catalogCache.clear();
-}
-
 /** Live entry count, for the `/metrics` gauge. */
 export function modelCatalogCacheSize(): number {
   return catalogCache.size;
@@ -115,11 +110,6 @@ export async function getCachedModelDiscovery(
     namespace: "model-discovery",
     shouldCache: (models) => models.length > 0,
   });
-}
-
-/** Drops all cached discoveries. Test-only. */
-export function resetModelDiscoveryCacheForTesting(): void {
-  discoveryCaches.clear();
 }
 
 /* -------------------------------------------------------------------------- */

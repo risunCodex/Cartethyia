@@ -16,7 +16,6 @@ import { usageFromProvider } from "../../provider-usage";
 import { readCredentialSecret, type ProviderDispatchTarget, type ProviderAdapter, type ProviderDispatchContext } from "../../provider-contracts";
 import { abortGatewayError } from "../../operations/upstream-deadline";
 import { resolveInboundSessionId } from "../../operations/session-resolution";
-import { providerBaseUrl } from "../../provider-metadata";
 import { defineModel } from "../../provider-model-definition";
 import type { ModelDefinition } from "../../provider-model-definition";
 import {
@@ -24,7 +23,6 @@ import {
 } from "../../operations/client-versions";
 import { ThinkSplitter } from "../../../protocol/think-split";
 export const COMMANDCODE_PROVIDER_ID = "commandcode" as const;
-export const COMMANDCODE_BASE_URL = providerBaseUrl("commandcode");
 /**
  * The host alone. `/provider/v1` (the catalog base) is a sibling of the
  * generate surface, so dispatch resolves paths against the host instead:

@@ -1,35 +1,35 @@
-# Qoder — Model Matrix & Roster Metadata (konsolidasi 2026-11-05)
+# Qoder — Model Matrix & Roster Metadata (consolidated 2026-11-05)
 
-**Konsolidasi dari** (file sumber dihapus saat merge; data final ada di bawah):
-- Run `model-matrix.ts` 150/150 (final) & snapshot 139/150 (awal) — hasil di `D:\tmp\qoder-sandbox\results\`.
+**Consolidated from** (source files removed during the merge; final data is below):
+- Run `model-matrix.ts` 150/150 (final) & snapshot 139/150 (initial) — results in `D:\tmp\qoder-sandbox\results\`.
 - Roster metadata `raw_usage` (2026-11-04) — via console probe `POST /console/api/providers/qoder/models/probe` + dashboard model cards.
 
-> Konteks dari riset Qoder 2026-11-04 s/d 2026-11-05. Tanggal sumber
-> dipertahankan per section. Tabel & blok kode dijaga verbatim.
+> Context from the Qoder research 2026-11-04 through 2026-11-05. Source dates
+> are preserved per section. Tables & code blocks are kept verbatim.
 
-## Daftar Isi
-- [1. Hasil Final — 150/150](#1-hasil-final--150150)
-- [2. Snapshot Awal — 139/150 (sebelum fix)](#2-snapshot-awal--139150-sebelum-fix)
-- [3. Per Model — 15 roster key](#3-per-model--15-roster-key)
+## Table of Contents
+- [1. Final Results — 150/150](#1-final-results--150150)
+- [2. Initial Snapshot — 139/150 (before the fix)](#2-initial-snapshot--139150-before-the-fix)
+- [3. Per Model — 15 roster keys](#3-per-model--15-roster-keys)
 - [4. Per Surface & Per Case](#4-per-surface--per-case)
-- [5. Error Patterns & Ukuran/Speed](#5-error-patterns--ukuran-speed)
-- [6. Temuan Tool Calling](#6-temuan-tool-calling)
+- [5. Error Patterns & Size/Speed](#5-error-patterns--size-speed)
+- [6. Tool Calling Findings](#6-tool-calling-findings)
 - [7. Roster Metadata — `raw_usage` (supply model / region / target)](#7-roster-metadata--raw_usage-supply-model--region--target)
-- [8. Kesimpulan untuk Adapter](#8-kesimpulan-untuk-adapter)
+- [8. Conclusions for the Adapter](#8-conclusions-for-the-adapter)
 
 ---
 
-## 1. Hasil Final — 150/150
+## 1. Final Results — 150/150
 
-_Run final `model-matrix.ts` (2026-11-05)._
+_Final run of `model-matrix.ts` (2026-11-05)._
 
-**Metode:** `model-matrix.ts` — 15 model × 2 surface (ide, grpc) × 5 case
-= 150 run. OAuth `dt-`. Concurrency 5, timeout 120s.
-**Hasil (final):** `D:\tmp\qoder-sandbox\results\matrix-full-150-120s-2026-11-04T22-12-43-176Z.jsonl`
+**Method:** `model-matrix.ts` — 15 models × 2 surfaces (ide, grpc) × 5 cases
+= 150 runs. OAuth `dt-`. Concurrency 5, timeout 120s.
+**Results (final):** `D:\tmp\qoder-sandbox\results\matrix-full-150-120s-2026-11-04T22-12-43-176Z.jsonl`
 
-### 1.1 Ringkasan (150/150, IDE 75/75, gRPC 75/75)
+### 1.1 Summary (150/150, IDE 75/75, gRPC 75/75)
 
-| | Jumlah |
+| | Count |
 |---|---|
 | **OK** | **150 / 150 (100%)** |
 | Fail | 0 |
@@ -48,41 +48,41 @@ _Run final `model-matrix.ts` (2026-11-05)._
 
 ### 1.3 Per Model (final)
 
-**Semua 15 model: 10/10** — termasuk `cmodel`, `mmodel`, `smodel`,
-`gmodel`, `qfmodel`, `qmodel_38max`, `dmodel`, `dfmodel` yang sempat gagal di
+**All 15 models: 10/10** — including `cmodel`, `mmodel`, `smodel`,
+`gmodel`, `qfmodel`, `qmodel_38max`, `dmodel`, `dfmodel`, which had failed on
 gRPC tools.
 
-### 1.4 Perjalanan Fix (dari worker unpacked + live tests)
+### 1.4 Fix Journey (from the unpacked worker + live tests)
 
-| Masalah | Sebelum | Sesudah | Sumber |
-|---|---|---|
-| gRPC tools `parameters` | `{fields:{}}` kosong | full Struct (`structOf`/`SBA`/`Lat`) | worker `byl`/`SBA` |
-| gRPC tool `description` | tidak ada | `{value: desc}` (StringValue) | worker `xG` |
-| gRPC tool `strict` | tidak ada | `{value: bool}` (BoolValue) | worker `Uat` |
+| Problem | Before | After | Source |
+|---|---|---|---|
+| gRPC tools `parameters` | `{fields:{}}` empty | full Struct (`structOf`/`SBA`/`Lat`) | worker `byl`/`SBA` |
+| gRPC tool `description` | absent | `{value: desc}` (StringValue) | worker `xG` |
+| gRPC tool `strict` | absent | `{value: bool}` (BoolValue) | worker `Uat` |
 | gRPC `tool_choice` | `{structValue:{fields:{type}}}` | `{stringValue:"auto"}` | worker `Lat` |
-| gRPC `tool_choice=required` | `{stringValue:"required"}` / Struct | di-omit (gRPC tolak required) | upstream reject 400/406/422 |
-| `cmodel` (Cantus) required | prompt koersif ("WAJIB…") → 406 `intention_rejected` | prompt netral non-koersif → tool dipanggil | guardrail model (safety) |
-| flaky timeout (qmodel_38max/grpc/plain) | timeout 60s → `Cancelled on client` | timeout 120s → pass | stream lambat saat concurrency |
+| gRPC `tool_choice=required` | `{stringValue:"required"}` / Struct | omitted (gRPC rejects required) | upstream reject 400/406/422 |
+| `cmodel` (Cantus) required | coercive prompt ("WAJIB…") → 406 `intention_rejected` | neutral non-coercive prompt → tool called | model guardrail (safety) |
+| flaky timeout (qmodel_38max/grpc/plain) | timeout 60s → `Cancelled on client` | timeout 120s → pass | slow streams under concurrency |
 
-Catatan penting: 406 pada `cmodel` **bukan** ketidakmampuan model memakai
-tools (tools biasa jalan) — melainkan guardrail menolak prompt yang bersifat
-paksaan/koersif. Prompt netral menyelesaikannya.
+Important note: the 406 on `cmodel` is **not** the model's inability to use
+tools (regular tools work) — it is the guardrail rejecting prompts that are
+coercive. A neutral prompt resolves it.
 
 ---
 
-## 2. Snapshot Awal — 139/150 (sebelum fix)
+## 2. Initial Snapshot — 139/150 (before the fix)
 
-_Snapshot pra-fix `model-matrix.ts` (2026-11-05); riwayat kegagalan._
+_Pre-fix snapshot of `model-matrix.ts` (2026-11-05); failure history._
 
-**Metode:** `model-matrix.ts` — 15 model roster (1.1.83) × 2 surface (IDE/HTTP
-`/model/v1`, gRPC `ChatService`) × 5 case (plain, tools, tools_none,
-tools_required, parallel) = **150 run**. OAuth `dt-`, concurrency 5,
+**Method:** `model-matrix.ts` — 15 roster models (1.1.83) × 2 surfaces (IDE/HTTP
+`/model/v1`, gRPC `ChatService`) × 5 cases (plain, tools, tools_none,
+tools_required, parallel) = **150 runs**. OAuth `dt-`, concurrency 5,
 timeout 60s, non-blocking.
-**Hasil:** `D:\tmp\qoder-sandbox\results\matrix-full-2026-11-04T21-54-29-466Z.jsonl`
+**Results:** `D:\tmp\qoder-sandbox\results\matrix-full-2026-11-04T21-54-29-466Z.jsonl`
 
-### 2.1 Ringkasan snapshot (139/150; IDE 75/75; gRPC 64/75)
+### 2.1 Snapshot summary (139/150; IDE 75/75; gRPC 64/75)
 
-| | Jumlah |
+| | Count |
 |---|---|
 | Total | 150 |
 | OK | **139 (92.7%)** |
@@ -90,7 +90,7 @@ timeout 60s, non-blocking.
 | IDE/HTTP | 75/75 OK (**100%**) |
 | gRPC | 64/75 OK (85.3%) |
 
-### 2.2 Per Model (awal)
+### 2.2 Per Model (initial)
 
 | Model | OK | Fail | toolsCalled | toolsOK | finishTool |
 |---|---|---|---|---|---|
@@ -110,101 +110,101 @@ timeout 60s, non-blocking.
 | dfmodel | 9 | 1 | 4 | 4 | 2 |
 | **mmodel** | 6 | **4** | 3 | 3 | 3 |
 
-Model bermasalah: **cmodel** (4 fail) & **mmodel** (4 fail) — semua di gRPC tools.
+Problematic models: **cmodel** (4 fails) & **mmodel** (4 fails) — all in gRPC tools.
 
 ### 2.3 Per Surface
 
 | Surface | OK | toolsCalled |
-|---|---|
+|---|---|---|
 | ide | 75/75 | 42 |
 | grpc | 64/75 | 34 |
 
-**IDE/HTTP = 100% stabil.** gRPC gagal khusus di case tools tertentu.
+**IDE/HTTP = 100% stable.** gRPC fails only in specific tool cases.
 
 ### 2.4 Per Case
 
-| Case | OK | toolsCalled | Catatan |
-|---|---|---|
-| plain | 30/30 | 0 | ✅ semua |
+| Case | OK | toolsCalled | Notes |
+|---|---|---|---|
+| plain | 30/30 | 0 | ✅ all |
 | tools | 28/30 | 26 | 2 fail (gRPC: cmodel, mmodel) |
 | parallel | 28/30 | 28 | 2 fail (gRPC: cmodel, mmodel) |
-| tools_none | 28/30 | **2** | 2 fail; hanya 2 model tetap panggil tools walau none |
-| tools_required | 25/30 | 20 | **5 fail** — paling bermasalah |
+| tools_none | 28/30 | **2** | 2 fail; only 2 models keep calling tools despite none |
+| tools_required | 25/30 | 20 | **5 fail** — most problematic |
 
 ### 2.5 Error Patterns
 
-| Error | Jumlah | Terjadi di |
+| Error | Count | Occurs in |
 |---|---|---|
 | `grpc-status=13 Stream error: 400` | 10 | gRPC tools: cmodel (tools/none/parallel), mmodel (tools/none/parallel/required), dmodel/dfmodel/qmodel_38max (required) |
 | `grpc-status=13 Stream error: 406` | 1 | cmodel/grpc/tools_required |
 
-**Insight:**
-- gRPC **menolak `tool_choice=required`** (400) untuk sebagian besar model
-  (dmodel, dfmodel, qmodel_38max, mmodel, cmodel). `cmodel` dapat 406.
-- gRPC menolak **tools biasa** untuk `cmodel` & `mmodel` (400) — model ini
-  tidak kompatibel dengan tool-call di gRPC.
-- **IDE menerima semua** — tidak ada satu pun fail di surface IDE.
+**Insights:**
+- gRPC **rejects `tool_choice=required`** (400) for most models
+  (dmodel, dfmodel, qmodel_38max, mmodel, cmodel). `cmodel` gets a 406.
+- gRPC rejects **regular tools** for `cmodel` & `mmodel` (400) — these models
+  are not compatible with tool-calls over gRPC.
+- **IDE accepts everything** — not a single failure on the IDE surface.
 
-### 2.6 Temuan Tool Calling (awal)
+### 2.6 Tool Calling Findings (initial)
 
-- `tools_none`: hanya **2/30** model yang tetap memanggil tool (kemungkinan
-  `qfmodel`/`gfmodel`) — sisanya patuh pada `none`.
-- `parallel`: 28/30 memanggil 2-4 tools (paralel berhasil).
-- `tools_required`: 20/30 benar-benar memanggil tool; 5 gagal (gRPC), sisanya
-  menjawab teks tanpa tool (intention rejected).
+- `tools_none`: only **2/30** models keep calling tools (probably
+  `qfmodel`/`gfmodel`) — the rest obey `none`.
+- `parallel`: 28/30 called 2-4 tools (parallel works).
+- `tools_required`: 20/30 actually called a tool; 5 failed (gRPC), the rest
+  answered with text without a tool (intention rejected).
 
-### 2.7 Ukuran/speed (sample)
+### 2.7 Size/speed (sample)
 
 | Model | Surface ms (median-ish) |
 |---|---|
-| dfmodel/ide | 1-2s (cepat) |
+| dfmodel/ide | 1-2s (fast) |
 | dfmodel/grpc | 2-4s |
-| kmodel_latest/grpc | 9-13s (lambat) |
-| gfmodel/grpc/tools_none | 18s (paling lambat) |
+| kmodel_latest/grpc | 9-13s (slow) |
+| gfmodel/grpc/tools_none | 18s (slowest) |
 
 ---
 
-## 3. Per Model — 15 roster key
+## 3. Per Model — 15 roster keys
 
-_Sintesis [20] §3 vs [19] §2 (2026-11-05)._
+_Synthesis of [20] §3 vs [19] §2 (2026-11-05)._
 
-Semua 15 roster key lulus **10/10** setelah fix (final). Perbandingan snapshot
-awal vs final:
+All 15 roster keys pass **10/10** after the fix (final). Initial vs final
+snapshot comparison:
 
-| Model | Awal OK | Final OK | Catatan |
+| Model | Initial OK | Final OK | Notes |
 |---|---|---|---|
 | auto | 10/10 | 10/10 | — |
 | ultimate | 10/10 | 10/10 | — |
 | fast | 10/10 | 10/10 | — |
 | efficient | 10/10 | 10/10 | — |
 | smodel | 10/10 | 10/10 | — |
-| **cmodel** | 6/10 | 10/10 | 4 fail awal (gRPC tools) + 406 guardrail |
-| qmodel_38max | 9/10 | 10/10 | 1 fail awal (tools_required) |
+| **cmodel** | 6/10 | 10/10 | 4 initial fails (gRPC tools) + 406 guardrail |
+| qmodel_38max | 9/10 | 10/10 | 1 initial fail (tools_required) |
 | qfmodel | 10/10 | 10/10 | — |
 | kmodel_latest | 10/10 | 10/10 | — |
 | kmodel | 10/10 | 10/10 | — |
 | gmodel | 10/10 | 10/10 | — |
 | gfmodel | 10/10 | 10/10 | — |
-| dmodel | 9/10 | 10/10 | 1 fail awal (tools_required) |
-| dfmodel | 9/10 | 10/10 | 1 fail awal (tools_required) |
-| **mmodel** | 6/10 | 10/10 | 4 fail awal (gRPC tools) |
+| dmodel | 9/10 | 10/10 | 1 initial fail (tools_required) |
+| dfmodel | 9/10 | 10/10 | 1 initial fail (tools_required) |
+| **mmodel** | 6/10 | 10/10 | 4 initial fails (gRPC tools) |
 
 ---
 
 ## 4. Per Surface & Per Case
 
-_Sintesis [20] vs [19] (2026-11-05)._
+_Synthesis of [20] vs [19] (2026-11-05)._
 
 **Per surface:**
 
-| Surface | Awal OK | Final OK |
+| Surface | Initial OK | Final OK |
 |---|---|---|
 | ide | 75/75 | 75/75 |
 | grpc | 64/75 | 75/75 |
 
 **Per case:**
 
-| Case | Awal OK | Final OK | toolsCalled (final) |
+| Case | Initial OK | Final OK | toolsCalled (final) |
 |---|---|---|---|
 | plain | 30/30 | 30/30 | 0 |
 | tools | 28/30 | 30/30 | 29 |
@@ -214,51 +214,51 @@ _Sintesis [20] vs [19] (2026-11-05)._
 
 ---
 
-## 5. Error Patterns & Ukuran/Speed
+## 5. Error Patterns & Size/Speed
 
-_Riwayat snapshot [19] §5 + §7 (2026-11-05); final sudah 0 fail._
+_Snapshot history from [19] §5 + §7 (2026-11-05); the final run has 0 fails._
 
-**Error patterns (awal):**
+**Error patterns (initial):**
 
-| Error | Jumlah | Terjadi di |
+| Error | Count | Occurs in |
 |---|---|---|
 | `grpc-status=13 Stream error: 400` | 10 | gRPC tools: cmodel (tools/none/parallel), mmodel (tools/none/parallel/required), dmodel/dfmodel/qmodel_38max (required) |
 | `grpc-status=13 Stream error: 406` | 1 | cmodel/grpc/tools_required |
 
-**Ukuran/speed (sample, awal):**
+**Size/speed (sample, initial):**
 
 | Model | Surface ms (median-ish) |
 |---|---|
-| dfmodel/ide | 1-2s (cepat) |
+| dfmodel/ide | 1-2s (fast) |
 | dfmodel/grpc | 2-4s |
-| kmodel_latest/grpc | 9-13s (lambat) |
-| gfmodel/grpc/tools_none | 18s (paling lambat) |
+| kmodel_latest/grpc | 9-13s (slow) |
+| gfmodel/grpc/tools_none | 18s (slowest) |
 
-> Setelah fix: **0 fail** di semua surface/case — error gRPC 400/406 tidak
-> lagi muncul; timeout naik 60s → 120s untuk stream besar/lambat.
+> After the fix: **0 fails** across every surface/case — gRPC 400/406 errors no
+> longer appear; timeout raised 60s → 120s for large/slow streams.
 
 ---
 
-## 6. Temuan Tool Calling
+## 6. Tool Calling Findings
 
-_Sintesis [19] §6 (awal) + [20] §2/§3 (final) — 2026-11-05._
+_Synthesis of [19] §6 (initial) + [20] §2/§3 (final) — 2026-11-05._
 
-- `tools_none`: awal hanya **2/30** yang tetap memanggil tool; final
-  **5/30** (`toolsCalled=5`) — mayoritas patuh pada `none`.
-- `parallel`: awal 28/30 → final **30/30**; 2-4 tools dipanggil paralel.
-- `tools_required`: awal 20/30 benar-benar memanggil tool (5 gagal di gRPC,
-  sisanya menjawab teks tanpa tool); final **26/30** memanggil tool.
-- Pola delta tool-call sama di IDE & gRPC (setelah unwrap
+- `tools_none`: initially only **2/30** kept calling tools; final
+  **5/30** (`toolsCalled=5`) — the majority obey `none`.
+- `parallel`: initially 28/30 → final **30/30**; 2-4 tools called in parallel.
+- `tools_required`: initially 20/30 actually called a tool (5 failed on gRPC,
+  the rest answered with text without a tool); final **26/30** called a tool.
+- The tool-call delta pattern is the same on IDE & gRPC (after unwrapping
   `fromProtoStruct`).
-- Fix gRPC tools: `parameters` Struct penuh (`structOf`/`SBA`/`Lat`),
-  `description`/`strict` wrapper (`StringValue`/`BoolValue`),
-  `tool_choice` `{stringValue:"auto"}`; omit `required` (gRPC tolak).
+- gRPC tools fix: full `parameters` Struct (`structOf`/`SBA`/`Lat`),
+  `description`/`strict` wrappers (`StringValue`/`BoolValue`),
+  `tool_choice` `{stringValue:"auto"}`; `required` omitted (gRPC rejects it).
 
 ---
 
 ## 7. Roster Metadata — `raw_usage` (supply model / region / target)
 
-_Capture console probe (2026-11-04); format `raw_usage` terminal — lihat juga `documentation/research/qoder/archive/qoder-research-archive-2026-11-11.zip` (`2026-11-05-qoder-wire-reference-adapter-alignment.md`) §5–6._
+_Capture console probe (2026-11-04); terminal `raw_usage` format — see also `documentation/research/qoder/archive/qoder-research-archive-2026-11-11.zip` (`2026-11-05-qoder-wire-reference-adapter-alignment.md`) §5–6._
 
 Live capture of the provider metadata the IDE surface (`/model/v1`) echoes in
 its terminal `raw_usage` frame for every Qoder roster key. This is the trusted
@@ -372,22 +372,22 @@ The `target` string is the upstream routing profile behind the roster key — th
   comes back empty. On gRPC it hard-fails with 406; on the IDE surface the
   upstream *swallows* the model's answer — the response has `ok: true` but
   no sample text. Both are the same upstream guardrail in two modes.
-- A **sapaan yang meng-assert identitas salah** — `"halo gpt"` — works on both
+- A **greeting that asserts a wrong identity** — `"halo gpt"` — works on both
   surfaces and returns a sample **and** the model corrects us on its own
-  (*"saya Claude, asisten AI buatan Anthropic—bukan GPT"*). Verified
-  **3/3 runs** (2026-11-04). This is the probe's replacement prompt for
-  `cmodel`.
+  (*"saya Claude, asisten AI buatan Anthropic—bukan GPT"* — "I'm Claude, an AI
+  assistant made by Anthropic — not GPT", the model's verbatim reply). Verified **3/3 runs** (2026-11-04). This is the probe's replacement
+  prompt for `cmodel`.
 - **No phrasing trick that *asks* an identity question unlocks the answer**
   (verified live 2026-11-04, 20+ variants on the IDE surface). Literal
   questions (`What model are you?`), knowledge-cutoff, and every indirect
   self-claim phrasing tried — job-interview framing, "what would you call
   yourself", "what family/version are you", "what distinguishes you from
   your predecessor", Indonesian interrogatives (`kamu gpt kan?`,
-  `perkenalkan dirimu`, `gimana ceritanya?`) — all return HTTP 200 with an
-  **empty sample**. Only prompts that *assert* (never ask) identity return
-  text. The upstream guardrail is content-based (any identity *request*
-  triggers it), not prompt shape — but it does not block identity
-  *assertions*.
+  `perkenalkan dirimu`, `gimana ceritanya?`, quoted test prompts kept verbatim)
+  — all return HTTP 200 with an **empty sample**. Only prompts that *assert*
+  (never ask) identity return text. The upstream guardrail is content-based
+  (any identity *request* triggers it), not prompt shape — but it does not
+  block identity *assertions*.
 - Other models accept the identity prompt on gRPC fine — only `cmodel`
   refuses it. Upstream-side guardrail, not a gateway bug. Workaround:
   `qoderCmodelProbePrompt` (assertion prompt `halo gpt`) in
@@ -410,37 +410,37 @@ The `target` string is the upstream routing profile behind the roster key — th
 
 ---
 
-## 8. Kesimpulan untuk Adapter
+## 8. Conclusions for the Adapter
 
-_Sintesis [20] §5 (2026-11-05) + [7] §4 (2026-11-04)._
+_Synthesis of [20] §5 (2026-11-05) + [7] §4 (2026-11-04)._
 
-1. **IDE/HTTP = surface paling aman untuk PROBE** — 100% stabil untuk semua
-   model & case, termasuk `tool_choice=required` (didukung penuh). Ini adalah
-   alasan probe sebelum Provider Detail memakai IDE — **bukan** transport
-   production (production: gRPC default, COSY free/lite).
-2. **gRPC tools butuh bentuk proto presisi** — `parameters` Struct penuh,
-   `description`/`strict` wrapper, `tool_choice` `{stringValue}`.
-3. **`tool_choice=required` tidak didukung gRPC** → omit field (sudah
-   diterapkan), andalkan prompt netral. Jangan fallback ke IDE untuk ini —
-   IDE bukan transport production.
-4. **Jangan hard-code slot → model** — slots rotate backing-nya (mis. `fast`
-   ganti dari `deepseek-v4-flash` ke `kimi-k2.7-code-highspeed`) dan
-   `raw_usage` intermittent; `provider_metadata` adalah sumber identitas
-   terpercaya, bukan teks model.
-5. **Model reasoning (mis. `cmodel`) sensitif terhadap prompt paksaan** →
-   hindari kata "WAJIB"/"jangan jawab teks"; pakai permintaan netral
-   (`qoderCmodelProbePrompt` untuk probe identity).
-6. **Timeout gRPC ≥120s** untuk stream besar/lambat (60s → `Cancelled on client`).
-7. **Pola delta tool-call sama di IDE & gRPC** (setelah unwrap `fromProtoStruct`).
-8. **Tidak ada fallback gRPC → IDE.** IDE adalah probe-only. Saat gRPC
-   menolak tools (400/406, mis. `cmodel`/`mmodel`/`tools_required`), satu-satunya
-   jalur alternatif adalah COSY untuk row free-tier — billed rows tanpa
-   workaround selain prompt netral.
+1. **IDE/HTTP = the safest surface for PROBES** — 100% stable for all
+   models & cases, including `tool_choice=required` (fully supported). This is
+   why probes before Provider Detail use IDE — **not** the production
+   transport (production: gRPC default, COSY free/lite).
+2. **gRPC tools need precise proto shapes** — full `parameters` Struct,
+   `description`/`strict` wrappers, `tool_choice` `{stringValue}`.
+3. **gRPC does not support `tool_choice=required`** → omit the field (already
+   implemented), rely on a neutral prompt. Do not fall back to IDE for this —
+   IDE is not the production transport.
+4. **Do not hard-code slot → model** — slots rotate their backing (e.g. `fast`
+   changed from `deepseek-v4-flash` to `kimi-k2.7-code-highspeed`) and
+   `raw_usage` is intermittent; `provider_metadata` is the trusted identity
+   source, not the model's text.
+5. **Reasoning models (e.g. `cmodel`) are sensitive to coercive prompts** →
+   avoid words like "WAJIB" ("MANDATORY") / "don't answer in text"; use a
+   neutral request (`qoderCmodelProbePrompt` for the identity probe).
+6. **gRPC timeout ≥120s** for large/slow streams (60s → `Cancelled on client`).
+7. **The tool-call delta pattern is the same on IDE & gRPC** (after unwrapping `fromProtoStruct`).
+8. **No gRPC → IDE fallback.** IDE is probe-only. When gRPC rejects tools
+   (400/406, e.g. `cmodel`/`mmodel`/`tools_required`), the only alternative
+   path is COSY for free-tier rows — billed rows have no workaround other than
+   a neutral prompt.
 
 ---
 
 *Script: `model-matrix.ts` / `matrix-summary.ts`. Sandbox:
-`D:\tmp\qoder-sandbox\results\` (`matrix-full-150-120s-…jsonl` final; run
-sebelumnya tetap tersimpan untuk perbandingan). Roster metadata via console
+`D:\tmp\qoder-sandbox\results\` (`matrix-full-150-120s-…jsonl` final; earlier
+runs are kept for comparison). Roster metadata via console
 probe `POST /console/api/providers/qoder/models/probe` + dashboard model cards,
 2026-11-04.*

@@ -6,14 +6,13 @@
 // The deps are the minimal write surface each buffer exposes: a `flush()` that
 // resolves when the buffer is drained. The concrete buffers satisfy it, and a
 // test can substitute stubs without casting.
-export interface FlushAllBuffersDeps {
+
+/** Drains every buffered writer, in the canonical order. */
+export async function flushAllBuffers(deps: {
   readonly telemetryBuffer: { flush(): Promise<void> };
   readonly usageFlush: { flush(): Promise<void> };
   readonly healthEventFlush: { flush(): Promise<void> };
-}
-
-/** Drains every buffered writer, in the canonical order. */
-export async function flushAllBuffers(deps: FlushAllBuffersDeps): Promise<void> {
+}): Promise<void> {
   await deps.telemetryBuffer.flush();
   await deps.usageFlush.flush();
   await deps.healthEventFlush.flush();

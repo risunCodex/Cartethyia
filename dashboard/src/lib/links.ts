@@ -43,8 +43,6 @@ export const NPM_PACKAGE_URL = `https://www.npmjs.com/package/${NPM_PACKAGE}`;
  * one is what people copy by hand.
  */
 export const NPM_UPDATE_COMMAND = `npm update -g ${NPM_PACKAGE}`;
-/** Removing a global install, offered beside the upgrade in the update dialog. */
-export const NPM_UNINSTALL_COMMAND = `npm uninstall -g ${NPM_PACKAGE}`;
 
 /** One place a reader can obtain the project. */
 export interface SourceLink {

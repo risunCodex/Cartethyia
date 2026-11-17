@@ -82,11 +82,6 @@ export const CURSOR_NATIVE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "todo",
 ]);
 
-/** Handoff sentence answered when a call must not wait for the caller. */
-export const CURSOR_RELAY_HANDOFF_TEXT =
-  "Tool call received and handed off to the external client for execution. " +
-  "Do not retry or call it again; end the turn. The result will be provided in the next request.";
-
 /** How long held calls may sit unanswered before handoff (Cursor going quiet). */
 export const CURSOR_RELAY_QUIET_MS = 1_000;
 

@@ -21,7 +21,7 @@ or foundational notes stay at this root.
 
 | Folder      | Topic                                                                                                                                                      | Notes      |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| `qoder/`    | Qoder research — model matrix, COSY identity runs, Desktop 0.5.7 chat-surface evidence; older notes consolidated in `archive/qoder-research-archive-2026-11-11.zip` | 5 files + 1 zip |
+| `qoder/`    | Qoder research — Desktop 0.5.12 unpack + native-identity pipeline at root; model matrix, COSY identity runs and Desktop 0.5.7 chat-surface evidence consolidated into `archive/`; earlier notes also in `archive/qoder-research-archive-2026-11-11.zip` | 3 files + `archive/` (5 notes + 1 zip) |
 | `copilot/`  | Copilot capability/context/auto routing + wire audits                                                                                                       | 6 findings |
 | `kiro/`     | Kiro 1.4.62 wire protocol + live verification + IDE/CLI unpack                                                                                             | 3 files    |
 | `opencode/` | OpenCode free-tier wire/gate/sentinel + egress/TLS measurements (merged), desktop 2.2.5 binary evidence, vision handoff                                     | 3 files    |
@@ -55,11 +55,14 @@ or foundational notes stay at this root.
 
 | Date       | Note                                                                                                        |
 | ---------- | ----------------------------------------------------------------------------------------------------------- |
-| 2026-11-05 | [Model Matrix &amp; Roster Metadata](qoder/2026-11-05-qoder-model-matrix.md) — consolidated roster and metadata reference |
-| 2026-11-11 | [All-models COSY identity run (19/19)](qoder/2026-11-11-qoder-cosy-all-models-identity.md) |
-| 2026-11-11 | [Identity distill (19/19, response self-claims)](qoder/2026-11-11-qoder-identity-distill.md) |
-| 2026-11-11 | [Desktop 0.5.7 — chat surface evidence (live)](qoder/2026-11-11-qoder-desktop-0.5.7-chat-surface-evidence.md) |
-| 2026-11-11 | [App 0.5.7 — Chat wire capture (worker, live)](qoder/2026-11-11-qoder-worker-chat-wire-capture.md) |
+| 2026-11-05 | [Model Matrix &amp; Roster Metadata](qoder/archive/2026-11-05-qoder-model-matrix.md) — consolidated roster and metadata reference |
+| 2026-11-11 | [All-models COSY identity run (19/19)](qoder/archive/2026-11-11-qoder-cosy-all-models-identity.md) |
+| 2026-11-11 | [Identity distill (19/19, response self-claims)](qoder/archive/2026-11-11-qoder-identity-distill.md) |
+| 2026-11-11 | [Desktop 0.5.7 — chat surface evidence (live)](qoder/archive/2026-11-11-qoder-desktop-0.5.7-chat-surface-evidence.md) |
+| 2026-11-11 | [App 0.5.7 — Chat wire capture (worker, live)](qoder/archive/2026-11-11-qoder-worker-chat-wire-capture.md) |
+| 2026-11-16 | [Desktop 0.5.12 — unpack evidence (Windows x64)](qoder/2026-11-16-qoder-desktop-0.5.12-unpack.md) — NSIS/electron-builder packaging change, two-layer 7z extract recipe, asar inventory |
+| 2026-11-16 | [Native-identity pipeline + risk controls](qoder/2026-11-16-qoder-native-identity-pipeline.md) — machine-scoped vendor-bridge identity as the egress/machine risk lever, binding order, p4 pin (donor #158) |
+| 2026-11-17 | [Worker core 1.1.86-hotfix.5 — live wire capture](qoder/2026-11-17-qoder-core-wire-capture-0.5.12.md) — mitmproxy capture of the spawned worker core (device-flow auth, PAT exchange), plus 0.5.12 unpack findings: env knobs and host tables |
 
 Older Qoder notes (wire reference alignment, payload limits, tool-calling,
 credits/claims, IDE/CLI/NSIS audits) were consolidated into
@@ -135,3 +138,56 @@ credits/claims, IDE/CLI/NSIS audits) were consolidated into
 | ---------- | ---------------------------------------------------------------------------------------------------------------------- |
 | 2026-11-06 | [IDE 3.6.13 unpack + wire audit](trae/2026-11-06-trae-3.6.13-unpack-wire-audit.md) — endpoint inventory (chat/agent/commercial), auth headers, live wire verification vs adapter |
 | 2026-11-06 | [Header & payload builder audit](trae/2026-11-06-trae-header-payload-builder-audit.md) — harness header inventory, gap audit vs `buildTraeHeaders` (24 gaps), payload shapes |
+
+
+## Freebuff findings (`freebuff/`)
+
+
+| Date       | Note                                                                                                                                                                  |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-09 | [Desktop 0.0.201 wire audit + live probe](freebuff/2026-11-09-freebuff-desktop-wire-audit.md) — OAuth code flow, session admission/catalog, chat via `POST /api/v1/chat/completions` (desktop-identity gate), ads surface (ID region ineligible), device-signature spoofing |
+
+
+## DeepAI findings (`deepai/`)
+
+
+| Date       | Note                                                                                                                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-11-11 | [Desktop 0.3.35 unpack + wire audit](deepai/2026-11-11-deepai-code-desktop-0.3.35-unpack-wire-audit.md) — installer/layout, domains, DeepAI sign-in, T3 Connect Clerk OAuth, relay `/v1` control plane, provider integrations          |
+| 2026-11-11 | [Live wire verification (probe)](deepai/2026-11-11-deepai-code-live-wire-verification.md) — loopback sign-in exchange → `api_key`, model list (22), quota, chat non-stream + SSE                                                        |
+
+
+## Antigravity findings (`antigravity/`)
+
+
+| Date       | Note                                                                                                                                                                                    |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-03 | [Live wire verification (probes)](antigravity/2026-11-03-wire-verification.md) — `loadCodeAssist`/`fetchAvailableModels` control plane, mandatory project resolution, SSE chat surface, adapter takeaways |
+
+
+## Clixad findings (`clixad/`)
+
+
+| Date       | Note                                                                                                                                                                                   |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-11 | [Live verification ledger](clixad/2026-11-11-clixad-wire.md) — GitHub device-flow account, wallet, models, chat, referral/billing/streak surfaces observed live                          |
+
+
+## Devin findings (`devin/`)
+
+
+| Date       | Note                                                                                                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-06 | [Desktop 3.11.238 audit](devin/2026-11-06-devin-desktop-audit.md) — wire protocol, identity (Devin = Windsurf rebrand), device telemetry, installer, live OAuth capture                                 |
+| 2026-11-07 | [Adapter proposal — oh-my-pi donor audit](devin/2026-11-07-oh-my-pi-devin-adapter-proposal.md) — ConnectRPC/protobuf at `server.codeium.com`, wire contract, phasing, test plan                          |
+| 2026-11-07 | [Adapter proposal — final](devin/2026-11-07-devin-adapter-proposal-final.md) — full implementation flow, target structure, wire contract verified across 4 donors, phases, test plan                      |
+| 2026-11-07 | [Inline-image wire debug](devin/2026-11-07-devin-image-wire-debug.md) — final paired-control verdict: neither model supports inline images; image code removed from the adapter                          |
+| 2026-11-07 | [Live upstream verification](devin/2026-11-07-devin-live-upstream-verification.md) — first end-to-end proof against the real Cascade backend with a seat key; live-only bugs found and fixed             |
+
+
+## Perch findings (`perch/`)
+
+
+| Date       | Note                                                                                                                                                                                  |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-08 | [Research ledger](perch/README.md) — Perch Terminal identity, Roost hosted tiers (only `standard` servable on Starter), Supabase GoTrue PKCE OAuth, turn tickets, pure-HTTP adapter notes |

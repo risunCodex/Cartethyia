@@ -7,7 +7,7 @@
 // When to compress a body (the size threshold) is a per-surface policy and
 // stays at the call sites; `encodeFrame` compresses exactly when asked.
 
-import { gzipSync, gunzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
 
 export const CONNECT_COMPRESSED_FLAG = 0x01;
 export const CONNECT_END_STREAM_FLAG = 0x02;
@@ -54,11 +54,6 @@ export function decodeFrame(buf: Buffer): ConnectFrame {
     payload,
     compressed: (flags & CONNECT_COMPRESSED_FLAG) !== 0,
   };
-}
-
-/** Decompresses a frame payload if its compressed flag is set. */
-export function deframe(payload: Uint8Array, compressed: boolean): Buffer {
-  return compressed ? gunzipSync(payload) : Buffer.from(payload);
 }
 
 /**

@@ -14,8 +14,8 @@
  * inference key here would be able to do both. The write path rejects a value
  * already stored as an account credential so the two cannot be conflated.
  */
-import { and, eq } from "drizzle-orm";
-import { inferhubConfigKeys, providerAccounts } from "../../persistence/schema";
+import { eq } from "drizzle-orm";
+import { inferhubConfigKeys } from "../../persistence/schema";
 import { decryptCredentialToString, encryptCredential, hashSecret } from "../../security/crypto";
 import type { CartethyiaDatabase } from "../../persistence/db-handle";
 
@@ -104,19 +104,6 @@ export async function keyStatus(db: CartethyiaDatabase): Promise<InferhubKeyStat
  * credential, not a per-account one.
  */
 const SINGLETON_ID = "default";
-
-/** Re-exported so routes can assert a key is not also an account credential. */
-export async function isAlsoAccountCredential(
-  db: CartethyiaDatabase,
-  providerId: string,
-): Promise<boolean> {
-  const rows = await db
-    .select({ id: providerAccounts.id })
-    .from(providerAccounts)
-    .where(and(eq(providerAccounts.providerId, providerId)))
-    .limit(1);
-  return rows.length > 0;
-}
 
 /** Builds the key store the InferHub routes take. */
 export function createInferhubKeyStore(db: CartethyiaDatabase) {

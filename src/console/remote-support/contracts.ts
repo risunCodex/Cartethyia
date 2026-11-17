@@ -40,12 +40,6 @@ export interface RemoteSupportStatus {
   readonly installed: Readonly<Record<RemoteSupportTool, boolean>>;
 }
 
-export interface RemoteSupportStartRequest {
-  readonly tool: RemoteSupportTool;
-  /** Defaults to the gateway's own port when omitted. */
-  readonly port?: number;
-}
-
 export interface RemoteSupportStartResponse extends RemoteSupportStatus {
   readonly started: boolean;
 }
@@ -62,8 +56,4 @@ export function remoteSupportInstallHint(tool: RemoteSupportTool): string {
     return `cloudflared is not installed. Install it yourself (${installCommand("cloudflared")}) and try again.`;
   }
   return `tailscale is not installed. Install it yourself (${installCommand("tailscale")}), run \`tailscale up\` once, then try again.`;
-}
-
-export function isRemoteSupportTool(value: unknown): value is RemoteSupportTool {
-  return typeof value === "string" && (REMOTE_SUPPORT_TOOLS as readonly string[]).includes(value);
 }

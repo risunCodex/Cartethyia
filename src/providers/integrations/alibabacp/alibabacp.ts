@@ -105,8 +105,4 @@ class AlibabaCodingPlanAdapter implements ProviderAdapter {
   }
 }
 
-export function createAlibabaCodingPlanAdapter(fetchImpl?: typeof fetch): ProviderAdapter {
-  return new AlibabaCodingPlanAdapter(fetchImpl);
-}
-
 export const alibabacpAdapter: ProviderAdapter = new AlibabaCodingPlanAdapter();

@@ -21,13 +21,3 @@ export function probeFailureToast(
     detail: detail.length > 0 ? detail : "Unknown error",
   };
 }
-
-/** `toast.error` takes the two lines as separate arguments. */
-export function probeFailureToastArgs(
-  providerId: string,
-  modelId: string,
-  error: string | null | undefined,
-): [string, string] {
-  const { title, detail } = probeFailureToast(providerId, modelId, error);
-  return [title, detail];
-}

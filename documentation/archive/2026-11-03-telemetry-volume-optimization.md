@@ -1,168 +1,174 @@
 # Research: Telemetry volume & footprint — dev instance (2026-11-03)
 
-Status: **research** — data riil dari instance dev, referensi kode/docs repo.
-Tujuan: menurunkan volume & jejak telemetry ("lower and lower") tanpa merusak
-kontrak dashboard/analisis.
+Status: **research** — real data from the dev instance, repo code/docs as reference.
+Goal: lower telemetry volume & footprint ("lower and lower") without breaking the
+dashboard/analysis contracts.
 
 ---
 
-## 0. Brief untuk agent analisis lain (handoff)
+## 0. Brief for the next analysis agent (handoff)
 
-Tugas: analisis & usulkan optimasi **brutal** untuk area telemetry agar volume
-tidak tumbuh tak terkendali (read/write paling berpengaruh). Data tumbuh
-±49k baris/hari; target: minimumkan write path, storage, dan query load tanpa
-memutus kontrak dashboard.
+Task: analyze and propose **brutal** optimizations for the telemetry area so
+volume does not grow uncontrollably (read/write are the most impactful). Data
+grows ~49k rows/day; target: minimize the write path, storage, and query load
+without breaking the dashboard contract.
 
-Batasan:
-- Repo aplikasi **harus tetap 100% sinkron upstream** — dilarang patch lokal.
-  Perubahan kode hanya sah lewat **proposal/PR upstream**.
-- Yang boleh dieksekusi langsung di instance dev: konfigurasi env, pengaturan
-  tenant (Settings → Privacy), penjadwalan/retensi, dan keputusan operasional.
-- Dilarang menuliskan secret (password/token) dan alamat IP/host riil di
-  dokumen.
+Constraints:
+- The application repo **must stay 100% in sync with upstream** — local
+  patches are forbidden. Code changes are only legitimate through an
+  **upstream proposal/PR**.
+- What may be executed directly on the dev instance: env configuration, tenant
+  settings (Settings → Privacy), scheduling/retention, and operational
+  decisions.
+- Secrets (passwords/tokens) and real IP/host addresses must not be written
+  into documents.
 
-File sumber utama untuk dibedah (path relatif repo):
+Main source files to dissect (repo-relative paths):
 - `src/observability/telemetry-buffer.ts` — batch/queue: flush 500ms,
-  maxBatch 500, maxItems 10.000, maxBytes queue, adaptive flush (floor 50ms).
+  maxBatch 500, maxItems 10,000, maxBytes queue, adaptive flush (floor 50ms).
 - `src/observability/raw-event-writer.ts` — dual-write JSONL + SQL.
-- `src/observability/event-log.ts` — `TELEMETRY_EVENT_DIR`, format baris.
-- `src/observability/payload-store.ts` — frame payload, backlog bounds
-  (max 32 item / 64 MiB), default dir `./data/telemetry-payloads`.
+- `src/observability/event-log.ts` — `TELEMETRY_EVENT_DIR`, line format.
+- `src/observability/payload-store.ts` — frame payloads, backlog bounds
+  (max 32 items / 64 MiB), default dir `./data/telemetry-payloads`.
 - `src/observability/payload-capture.ts` — mode `none|metadata|full`, depth,
-  retention payload (default 1 jam), state `captured` vs `captured_metadata`
+  payload retention (default 1 hour), state `captured` vs `captured_metadata`
   vs `skipped_*`.
-- `src/observability/redaction.ts` — redaksi body.
-- `src/persistence/stores/telemetry-store.ts` — prune per jam, batch 5.000,
+- `src/observability/redaction.ts` — body redaction.
+- `src/persistence/stores/telemetry-store.ts` — hourly prune, batch 5,000,
   `deleteExpiredEvents`, lifetime totals.
-- `src/observability/event-query.ts` — query analytics (summary/percentile).
+- `src/observability/event-query.ts` — analytics queries (summary/percentile).
 - `src/console/observability/store.ts` + `src/console/settings/contracts.ts`
-  — endpoint dashboard & preferensi tenant `telemetryPayloads*`.
-- `src/config/telemetry.ts` — resolusi env retention/payload.
-- `documentation/reference/configuration.md` — daftar env.
+  — dashboard endpoints & tenant preferences `telemetryPayloads*`.
+- `src/config/telemetry.ts` — env retention/payload resolution.
+- `documentation/reference/configuration.md` — env list.
 - `documentation/archive/proposals/persistence-console-optimization.md` —
-  optimasi query yang sudah diimplementasikan (jangan diregresi).
+  query optimizations already implemented (do not regress).
 - `documentation/proposals/performance-resource-guard-proposal.md` —
-  catatan beban event-loop & floor telemetry buffer.
-- `documentation/architecture.md` (bagian Data) — diagram write path.
+  event-loop load & telemetry buffer floor notes.
+- `documentation/architecture.md` (Data section) — write path diagram.
 
-Data ekspor untuk analisis sempat dibuat (lokal, non-secret): CSV gzip
-391.955 events; sudah dihapus setelah selesai dipakai. Data mentah masih
-utuh di PostgreSQL instance dev bila perlu di-ekspor ulang.
+An export for analysis was created at one point (local, non-secret): gzip CSV
+of 391,955 events; deleted after use. The raw data is still intact in the dev
+instance's PostgreSQL if it needs to be re-exported.
 
 ---
 
-## 1. Konteks
+## 1. Context
 
-Instance dev baru saja dimigrasikan dari Lite (SQLite) ke Full (PostgreSQL).
-Pasca-migrasi & pembersihan tenant test, data telemetry aktif:
+The dev instance was just migrated from Lite (SQLite) to Full (PostgreSQL).
+After the migration & test-tenant cleanup, the active telemetry data:
 
-| Data | Jumlah |
+
+| Data | Count |
 | --- | --- |
-| `telemetry_events` | 391.955 baris (7 hari: 27 Okt–3 Nov) ≈ **49k/hari** |
-| `telemetry_usage_totals` | 1.186 baris (lifetime) |
-| `telemetry_payloads` | 299 baris (indeks frame yang masih dalam retensi) |
-| Rata-rata ukuran baris events | ±367 byte (raw ±144 MB) |
+| `telemetry_events` | 391,955 rows (7 days: Oct 27 – Nov 3) ≈ **49k/day** |
+| `telemetry_usage_totals` | 1,186 rows (lifetime) |
+| `telemetry_payloads` | 299 rows (frame index still within retention) |
+| Average event row size | ~367 bytes (raw ~144 MB) |
 
-## 2. Bentuk isi events (rata-rata)
+## 2. Event content shape (averages)
 
-- **Surface:** 97% `chat`, 3% `messages`/`responses`; endpoint ±96% di
+- **Surface:** 97% `chat`, 3% `messages`/`responses`; ~96% of endpoints on
   `/v1/chat/completions`.
-- **Status:** 94,6% `completed`; 4,4% `failed`; ±1,2% `cancelled`.
-- **Error:** 94,6% baris tanpa `error_category` (sukses). Error teratas:
+- **Status:** 94.6% `completed`; 4.4% `failed`; ~1.2% `cancelled`.
+- **Error:** 94.6% of rows have no `error_category` (success). Top errors:
   `accounts_rate_limited`, `transport_closed`, `authentication_failed`,
   `platform_unavailable`.
-- **Payload capture:** 70% `captured` (penuh), 27% `captured_metadata`,
-  ±3% tanpa state. **Tidak ada** `skipped_mode_none` → tenant aktif memakai
-  mode capture penuh.
-- **Latensi:** median ±4,5 dtk; rata-rata ±8,9 dtk; ekor sampai ±15 menit
-  (investigasi: `transport_closed` / timeout upstream).
-- **Token:** input rata-rata ±122.938, output ±753 (dominasi konteks besar,
+- **Payload capture:** 70% `captured` (full), 27% `captured_metadata`,
+  ~3% with no state. **No** `skipped_mode_none` → the active tenant uses full
+  capture mode.
+- **Latency:** median ~4.5s; mean ~8.9s; tail up to ~15 minutes
+  (investigation: `transport_closed` / upstream timeout).
+- **Tokens:** input average ~122,938, output ~753 (large-context dominance,
   code-completion style).
-- **Cost terakumulasi:** ±US$2.942 (7 hari).
+- **Accumulated cost:** ~US$2,942 (7 days).
 
-## 3. Arsitektur write path (ringkas, dari docs + kode)
+## 3. Write path architecture (summary, from docs + code)
 
 ```
 per-request event ──► hourly JSONL file (data/telemetry-events/<hour>-<writer>.jsonl)
-                ──► telemetry_events (SQL row)          — sumber analytics
+                ──► telemetry_events (SQL row)          — analytics source
                 ──► telemetry_usage_totals (lifetime)
-payload (jika full/metadata) ──► frame file + indeks telemetry_payloads
+payload (if full/metadata) ──► frame file + telemetry_payloads index
 ```
 
-- `TelemetryBatchBuffer`: batch multi-row insert, flush interval default
-  **500 ms**, `maxBatch` 500, `maxItems` 10.000, `maxBytes` per bounded queue;
-  flush adaptif (floor 50 ms saat antre penuh).
-- **Retensi:** prune per jam (`telemetry-store.ts`): hapus file JSONL & row SQL
-  yang jam-nya lebih tua dari retention (jam berjalan + sebelumnya tidak
-  disentuh). `deleteExpiredEvents` batch 5.000.
-- **Payload:** frame hidup default **1 jam** (`payloadRetentionMs`), di-rewrite
-  oleh config `CARTETHYIA_TELEMETRY_PAYLOAD_MAX_BYTES` (default 16 MB).
-  Indeks `telemetry_payloads` hanya memegang frame yang masih dalam window.
+- `TelemetryBatchBuffer`: multi-row batch insert, default flush interval
+  **500 ms**, `maxBatch` 500, `maxItems` 10,000, `maxBytes` per bounded queue;
+  adaptive flush (floor 50 ms when the queue is full).
+- **Retention:** hourly prune (`telemetry-store.ts`): deletes JSONL files & SQL
+  rows whose hour is older than the retention (the current hour + previous one
+  are untouched). `deleteExpiredEvents` in batches of 5,000.
+- **Payload:** live frames default to **1 hour** (`payloadRetentionMs`),
+  overridden by the `CARTETHYIA_TELEMETRY_PAYLOAD_MAX_BYTES` config
+  (default 16 MB). The `telemetry_payloads` index only holds frames still
+  within the window.
 
-## 4. Konfigurasi yang tersedia (docs configuration.md)
+## 4. Available configuration (docs configuration.md)
 
-| Variabel | Default | Rentang |
+
+| Variable | Default | Range |
 | --- | --- | --- |
 | `CARTETHYIA_TELEMETRY_RETENTION_DAYS` | 30 | 3–365 |
-| `CARTETHYIA_TELEMETRY_PAYLOAD_MAX_BYTES` | 16.777.216 | 1.048.576–16.777.216 |
-| `CARTETHYIA_TELEMETRY_PAYLOAD_RETENTION_MS` | 3.600.000 | 1.000–604.800.000 |
-| `CARTETHYIA_TELEMETRY_PAYLOAD_DIR` | (di luar spec) | — |
+| `CARTETHYIA_TELEMETRY_PAYLOAD_MAX_BYTES` | 16,777,216 | 1,048,576–16,777,216 |
+| `CARTETHYIA_TELEMETRY_PAYLOAD_RETENTION_MS` | 3,600,000 | 1,000–604,800,000 |
+| `CARTETHYIA_TELEMETRY_PAYLOAD_DIR` | (outside the spec) | — |
 
-Config mode/depth capture **tidak** lewat env; lewat **Settings → Privacy**
-per tenant (`telemetryPayloads`: `none` | `metadata` | `full`;
-`telemetryPayloadDepth`: minimum/moderate/maximum; `telemetryWindowMinutes`).
+Capture mode/depth config does **not** go through env; it goes through
+**Settings → Privacy** per tenant (`telemetryPayloads`: `none` | `metadata` |
+`full`; `telemetryPayloadDepth`: minimum/moderate/maximum;
+`telemetryWindowMinutes`).
 
-## 5. Temuan & peluang penghematan
+## 5. Findings & savings opportunities
 
-### P-1 (terbesar): mode capture penuh → metadata/none
-- 274k baris `captured` = frame berisi body request & response (redacted) yang
-  ditulis ke disk + I/O per request.
-- Switch tenant ke `metadata` (simpan hanya baris Proxy→Provider) atau `none`
-  menghilangkan body frames sepenuhnya; **event row tetap utuh** di SQL.
-- Ini pemangkasan disk/I-O terbesar, tanpa dampak ke analytics.
-- Implementasi: langsung lewat dashboard Settings → Privacy (config tenant,
-  bukan env).
+### P-1 (biggest): full capture mode → metadata/none
+- 274k `captured` rows = frames containing the (redacted) request & response
+  bodies written to disk + per-request I/O.
+- Switching the tenant to `metadata` (keeping only Proxy→Provider rows) or
+  `none` removes body frames entirely; **event rows remain intact** in SQL.
+- This is the biggest disk/I-O cut, with no impact on analytics.
+- Implementation: directly through the dashboard Settings → Privacy (tenant
+  config, not env).
 
-### P-2: retention diperpendek untuk dev
-- Default 30 hari. Untuk dev, `CARTETHYIA_TELEMETRY_RETENTION_DAYS=7` cukup;
-  riwayat lifetime tetap aman di `telemetry_usage_totals`.
-- Efek: prune otomatis per jam membersihkan SQL + file lebih agresif.
+### P-2: shorten retention for dev
+- Default 30 days. For dev, `CARTETHYIA_TELEMETRY_RETENTION_DAYS=7` is enough;
+  lifetime history stays safe in `telemetry_usage_totals`.
+- Effect: automatic hourly prune cleans SQL + files more aggressively.
 
-### P-3: batas payload diturunkan
-- `CARTETHYIA_TELEMETRY_PAYLOAD_MAX_BYTES=1048576` (1 MB) → frame lebih kecil,
-  lebih sedikit disk per capture.
-- Kombinasikan dengan P-1 bila capture penuh masih dibutuhkan sesekali.
+### P-3: lower the payload cap
+- `CARTETHYIA_TELEMETRY_PAYLOAD_MAX_BYTES=1048576` (1 MB) → smaller frames,
+  less disk per capture.
+- Combine with P-1 if full capture is still occasionally needed.
 
-### P-4: evaluasi JSONL double-write
-- Setiap event ditulis **dua kali** (SQL + JSONL). JSONL adalah audit/retensi
-  kasar; analytics membaca SQL. Jika audit file tidak diperlukan untuk dev,
-  bisa dipertimbangkan proposal mematikan raw JSONL (perlu perubahan kode;
-  belum ada env toggle).
+### P-4: evaluate the JSONL double-write
+- Every event is written **twice** (SQL + JSONL). JSONL is rough audit/retention;
+  analytics reads SQL. If the file audit is not needed for dev,
+  disabling raw JSONL could be proposed (requires a code change;
+  no env toggle yet).
 
-### P-5: agregasi & arsip dari
-- Kunci `telemetry_usage_totals` sudah memegang angka lifetime. Untuk dev,
-  raw events > retensi sudah dipangkas otomatis — cukup pastikan retention
-  diset sesuai kebutuhan (P-2).
+### P-5: aggregation & archive instead
+- The `telemetry_usage_totals` key already holds lifetime numbers. For dev,
+  raw events past retention are already trimmed automatically — just make sure
+  retention is set to the required value (P-2).
 
-### P-6: bukan target penghematan
-- `client_ip`/`user_agent` tidak dominan di ukuran baris (367 B/baris sudah
-  ringan). Don't-touch.
+### P-6: not a savings target
+- `client_ip`/`user_agent` are not dominant in row size (367 B/row is already
+  light). Don't-touch.
 
-## 6. Catatan risiko
+## 6. Risk notes
 
-- Dashboard request-list & detail drawer membaca JSONL frames; mematikan
-  capture penuh menurunkan detail drawer ke "metadata only" (per desain).
-- Retensi memangkas berdasarkan **jam**, bukan hari penuh; setup `RETENTION_DAYS`
-  diinterpretasikan sebagai batas umur, aman untuk konsistensi.
-- Jangan ubah kontrak `telemetry_events`/`telemetry_usage_totals` — dipakai
-  `event-query.ts` + `usageSummary`/`health` dashboard.
+- The dashboard request-list & detail drawer read JSONL frames; disabling full
+  capture degrades the detail drawer to "metadata only" (by design).
+- Retention trims by **hour**, not full days; a `RETENTION_DAYS` setup
+  is interpreted as an age limit, safe for consistency.
+- Do not change the `telemetry_events`/`telemetry_usage_totals` contract — it is
+  used by `event-query.ts` + the dashboard `usageSummary`/`health`.
 
-## 7. Rekomendasi eksekusi (dev)
+## 7. Execution recommendations (dev)
 
-1. **Segera:** di Console → Settings → Privacy, set tenant aktif → capture
-   `metadata` (atau `none`), depth `minimum`, window 60 menit.
-2. **Segera:** `.env` dev → `CARTETHYIA_TELEMETRY_RETENTION_DAYS=7` +
-   `CARTETHYIA_TELEMETRY_PAYLOAD_MAX_BYTES=1048576`, restart app.
-3. Ukur ulang setelah 24–48 jam: jumlah event/hari, ukuran DB, disk PakaiCloud.
-4. (Opsional proposal kode) sampling capture, disable raw JSONL, dan rollup
-   harian bila target volume tetap perlu diturunkan.
+1. **Immediately:** in Console → Settings → Privacy, set the active tenant →
+   capture `metadata` (or `none`), depth `minimum`, window 60 minutes.
+2. **Immediately:** dev `.env` → `CARTETHYIA_TELEMETRY_RETENTION_DAYS=7` +
+   `CARTETHYIA_TELEMETRY_PAYLOAD_MAX_BYTES=1048576`, restart the app.
+3. Re-measure after 24–48 hours: events/day, DB size, PakaiCloud disk.
+4. (Optional code proposal) capture sampling, disabling raw JSONL, and daily
+   rollups if the volume target still needs to be lowered.

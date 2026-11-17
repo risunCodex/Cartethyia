@@ -37,9 +37,6 @@ export const PERCH_SUPABASE_PUBLISHABLE_KEY =
 /** Hosted app origin the CLI writes into its session file. */
 export const PERCH_APP_URL = process.env.PERCH_APP_URL?.trim() ?? "https://app.perchai.app";
 
-/** CLI version the probes speak (npm latest as of capture). */
-export const PERCH_CLI_VERSION = "2.4.125";
-
 /** Starter notice version required to select the free plan (captured). */
 export const PERCH_STARTER_NOTICE_VERSION = "2026-09-13";
 
@@ -50,9 +47,6 @@ export const PERCH_TIERS = {
   pro: "pro",
   pro1m: "pro 1m",
 } as const;
-
-export const PERCH_FREE_TIERS = [PERCH_TIERS.standard, PERCH_TIERS.standard1m] as const;
-export const PERCH_PRO_TIERS = [PERCH_TIERS.pro, PERCH_TIERS.pro1m] as const;
 
 /**
  * Supabase authorize path. Google validates the requested scopes for
@@ -99,30 +93,6 @@ export async function perchExchangeCode(
   }
 }
 
-/** Refresh a session. */
-export async function perchRefreshToken(
-  refreshToken: string,
-  fetcher: typeof fetch = fetch,
-): Promise<Record<string, unknown> | null> {
-  const url = new URL(`https://${PERCH_SUPABASE_HOST}/auth/v1/token`);
-  url.searchParams.set("grant_type", "refresh_token");
-  const res = await fetcher(url.toString(), {
-    method: "POST",
-    headers: {
-      apikey: PERCH_SUPABASE_PUBLISHABLE_KEY,
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
-  if (!res.ok) return null;
-  try {
-    return (await res.json()) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
 /** Reads plan status; `chooseStarter` selects the free plan. */
 export async function perchPlanStatus(
   accessToken: string,
@@ -152,22 +122,6 @@ export async function perchChooseStarter(
       accept: "application/json",
     },
     body: JSON.stringify({ plan: "starter", noticeVersion }),
-  });
-  if (!res.ok) return null;
-  try {
-    return (await res.json()) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-/** Reads account/quota envelope (Bearer). */
-export async function perchAccount(
-  accessToken: string,
-  fetcher: typeof fetch = fetch,
-): Promise<Record<string, unknown> | null> {
-  const res = await fetcher(`${PERCH_APP_URL}/api/perchai/account`, {
-    headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
   });
   if (!res.ok) return null;
   try {

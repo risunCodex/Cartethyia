@@ -111,14 +111,6 @@ export function useDeployRelay() {
     },
   });
 }
-export function useProbeAdHocNetworkPool() {  return useMutation<HealthCheckResult, ApiErrorShape, CreateNetworkPoolRequest>({
-    mutationFn: (request) =>
-      consoleRequest<HealthCheckResult>("/network/pools/test", {
-        method: "POST",
-        body: JSON.stringify(request),
-      }),
-  });
-}
 /**
  * Probes many unsaved pool definitions in one request.
  *

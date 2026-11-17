@@ -1,113 +1,113 @@
-# Proposal Final: Cartethyia Devin adapter — flow implementasi lengkap
+# Final Proposal: Cartethyia Devin adapter — full implementation flow
 
 - **Date:** 2026-11-07 (updated)
-- **Status:** proposal — uncommitted, awaiting Rover review
-- **Basis:** audit 4 donor (oh-my-pi, opencode-devin-provider, devin-proxy, devin2api) + reverse engineering bundle Devin desktop
-- **Keputusan inti:** **oh-my-pi adalah sumber utama**; opencode/proxy/devin2api = referensi pelengkap. Proto asli masuk ke `vendor/`, generated masuk langsung ke `src/providers/integrations/devin/`. Tidak ada codegen penuh 69K/236K baris.
+- **Status:** historical research note — retained for reference; not a pending proposal
+- **Basis:** audit of 4 donors (oh-my-pi, opencode-devin-provider, devin-proxy, devin2api) + reverse engineering of the Devin desktop bundle
+- **Core decision:** **oh-my-pi is the primary source**; opencode/proxy/devin2api = supporting references. The original proto goes into `vendor/`, generated code goes directly into `src/providers/integrations/devin/`. No full 69K/236K-line codegen.
 
 ---
 
 ## 0. TL;DR
 
-| Pertanyaan | Jawaban |
+| Question | Answer |
 |---|---|
-| Sumber utama? | **oh-my-pi** (TS/Bun, paling kecil + paling matang + 12 test jalan) |
-| Proto ditaruh mana? | `.proto` asli → `vendor/proto/devin/` (pola Qoder yang sudah ada) |
-| Generated ditaruh mana? | **Langsung ke `src/providers/integrations/devin/`** (pola Cursor: `protobufjs` + header license vendored) |
-| Ukuran generated? | ±2.678 baris schema (+1.082 codec) — BUKAN 69K/236K |
+| Primary source? | **oh-my-pi** (TS/Bun, smallest + most mature + 12 tests passing) |
+| Where do the .proto files go? | The original `.proto` → `vendor/proto/devin/` (existing Qoder pattern) |
+| Where does generated code go? | **Directly into `src/providers/integrations/devin/`** (Cursor pattern: `protobufjs` + vendored license header) |
+| Generated size? | ±2,678 schema lines (+1,082 codec) — NOT 69K/236K |
 | Base URL? | `https://server.codeium.com` (ConnectRPC protobuf) |
 | Identity chat? | `devin-cli`/`chisel`/`3000.11.205` |
 | Identity discovery? | `chisel`/`0.0.0-dev` + `supportedModelDisplays=[3,4,6,7,8]` |
 
 ---
 
-## 1. Keputusan arsitektur (kenapa begini)
+## 1. Architecture decisions (and why)
 
-### 1.1 Kenapa oh-my-pi, bukan opencode
+### 1.1 Why oh-my-pi, not opencode
 
-| Metrik | oh-my-pi | opencode | proxy (Py) | devin2api (Go) |
+| Metric | oh-my-pi | opencode | proxy (Py) | devin2api (Go) |
 |---|---|---|---|---|
-| Baris proto | 2.678 (trimmed) | **69.379** (codegen penuh) | 236 (manual) | **236.771** (.pb.go) |
-| Baris hand-written | 2.008 | 1.158 | 6.250 | ~18.900 |
-| Total non-test | **5.798** | 70.537 | 6.486 | ~255.700 |
-| Chat streaming | ✅ 893 baris | ✅ 686 | ✅ 551 | ✅ 2.439 |
-| Discovery + family collapse | ✅ 548 | ⚠️ dangkal (cost 0) | ✅ 634 | ✅ |
-| OAuth (2 flow) | ✅ 184 | ⚠️ helper saja | ✅ 632 | ❌ |
+| Proto lines | 2,678 (trimmed) | **69,379** (full codegen) | 236 (manual) | **236,771** (.pb.go) |
+| Hand-written lines | 2,008 | 1,158 | 6,250 | ~18,900 |
+| Total non-test | **5,798** | 70,537 | 6,486 | ~255,700 |
+| Chat streaming | ✅ 893 lines | ✅ 686 | ✅ 551 | ✅ 2,439 |
+| Discovery + family collapse | ✅ 548 | ⚠️ shallow (cost 0) | ✅ 634 | ✅ |
+| OAuth (2 flows) | ✅ 184 | ⚠️ helpers only | ✅ 632 | ❌ |
 | Quota/usage | ✅ 311 | ❌ | ✅ | ⚠️ |
 | Error taxonomy | ✅ | ⚠️ boolean | ✅ scoped | ✅⭐ |
-| Test | ✅ 12 file jalan | ⚠️ 6 file, **gagal** | ✅ script | ✅⭐ golden |
-| Lisensi | ✅ MIT | ✅ MIT | ❌ tanpa LICENSE | ✅ MIT |
+| Tests | ✅ 12 files passing | ⚠️ 6 files, **failing** | ✅ script | ✅⭐ golden |
+| License | ✅ MIT | ✅ MIT | ❌ no LICENSE | ✅ MIT |
 | Stack match | ✅ TS/Bun | ✅ TS/Bun | ❌ | ❌ |
 
-- **opencode** kalah karena proto-nya 69K baris generated dan mustahil diambil setengah (semua saling terkait) — sedangkan oh-my-pi **sudah membuktikan** subset 2.678 baris cukup (header `devin-proto.ts`: *"retains only fields consumed by the client or its protocol tests"*).
-- **devin2api** paling matang engineering (pool/congest/demote/detached/warm + golden wire tests) tapi Go → TS = reimplementasi arsitektur, bukan port. Yang diserap: **behavior requirements** (golden fixtures, tool_choice=none, call→result re-pairing, error→HTTP mapping).
-- **devin-proxy** nilai utamanya di error scoping account/soft/transient + OAuth fallback `ExchangePKCEAuthorizationCode` + kombo identity `devin-cli`/`chisel` (chat) vs `windsurf` (discovery).
+- **opencode** loses because its proto is 69K generated lines and impossible to take half of (everything is interrelated) — whereas oh-my-pi **has already proven** that a 2,678-line subset is enough (`devin-proto.ts` header: *"retains only fields consumed by the client or its protocol tests"*).
+- **devin2api** has the most mature engineering (pool/congest/demote/detached/warm + golden wire tests) but Go → TS = architectural reimplementation, not a port. What to absorb: **behavior requirements** (golden fixtures, tool_choice=none, call→result re-pairing, error→HTTP mapping).
+- **devin-proxy**'s main value is account/soft/transient error scoping + the OAuth fallback `ExchangePKCEAuthorizationCode` + the identity combo `devin-cli`/`chisel` (chat) vs `windsurf` (discovery).
 
-### 1.2 Kenapa vendor/ + generated ke integration
+### 1.2 Why vendor/ + generated code goes into the integration
 
-Pola yang sudah ada di Cartethyia:
-
-```
-vendor/proto/qoder/chat.proto        ← .proto ASLI (322 baris)
-vendor/qoder-umid/…                  ← artefak binary/non-TS
-src/providers/integrations/cursor/protocol/messages.ts   ← generated/vendored code (99K baris) masukkan ke integration, pakai protobufjs + header license
-vendor/turing-sdk/…                  ← SDK native
-```
-
-Jadi Devin mengikuti pola yang sama:
+The pattern already present in Cartethyia:
 
 ```
-vendor/proto/devin/…                 ← .proto asli (52 file, 23.276 baris) dari oh-my-pi
-src/providers/integrations/devin/protocol/devin-proto.ts  ← generated (protobufjs, trimmed ±2.678 baris)
-src/providers/integrations/devin/protocol/protobuf.ts     ← codec (bisa diganti protobufjs)
+vendor/proto/qoder/chat.proto        ← ORIGINAL .proto (322 lines)
+vendor/qoder-umid/…                  ← binary/non-TS artifacts
+src/providers/integrations/cursor/protocol/messages.ts   ← generated/vendored code (99K lines) placed in the integration, uses protobufjs + license header
+vendor/turing-sdk/…                  ← native SDK
 ```
 
-**Kenapa generated (bukan .proto) langsung di integration:** runtime tidak pernah membaca `.proto` — yang dicerna adalah schema TS. `.proto` asli disimpan di `vendor/` sebagai **sumber kebenaran + provenance** (untuk regenerasi, audit drift, dan lisensi), persis peran `vendor/proto/qoder/chat.proto`. `.proto` hasil `proto-parser` (trimmed) tetap dipertahankan sebagai `devin.proto.trimmed` di vendor untuk dokumentasi subset.
+So Devin follows the same pattern:
 
-**Kenapa protobufjs, bukan codec custom oh-my-pi:** Cartethyia sudah punya `protobufjs` sebagai dependensi (dipakai Cursor). Codec custom oh-my-pi (`protobuf.ts`, 1.082 baris) bisa dipakai, tapi menambah dua implementasi protobuf berbeda di satu repo. Keputusan: **pakai protobufjs** untuk runtime (konsisten dengan Cursor), dan definsikan schema sebagai `protobuf.js` Root (pola `cursor/protocol/messages.ts`). Kalau mau minimal-diff, port codec custom jadi opsi cadangan — tapi rekomendasi utama protobufjs.
+```
+vendor/proto/devin/…                 ← original .proto (52 files, 23,276 lines) from oh-my-pi
+src/providers/integrations/devin/protocol/devin-proto.ts  ← generated (protobufjs, trimmed ±2,678 lines)
+src/providers/integrations/devin/protocol/protobuf.ts     ← codec (can be replaced with protobufjs)
+```
+
+**Why generated code (not `.proto`) goes straight into the integration:** the runtime never reads `.proto` — what it consumes is the TS schema. The original `.proto` is kept in `vendor/` as the **source of truth + provenance** (for regeneration, drift auditing, and licensing), exactly the role of `vendor/proto/qoder/chat.proto`. The `proto-parser` output (trimmed `.proto`) is also kept as `devin.proto.trimmed` in vendor for subset documentation.
+
+**Why protobufjs, not oh-my-pi's custom codec:** Cartethyia already has `protobufjs` as a dependency (used by Cursor). oh-my-pi's custom codec (`protobuf.ts`, 1,082 lines) could be used, but it would add two different protobuf implementations to one repo. Decision: **use protobufjs** for the runtime (consistent with Cursor), and define the schema as a `protobuf.js` Root (the `cursor/protocol/messages.ts` pattern). For a minimal diff, porting the custom codec is a backup option — but protobufjs is the primary recommendation.
 
 ---
 
-## 2. Struktur target
+## 2. Target structure
 
 ```
 src/providers/integrations/devin/
 ├── protocol/
-│   ├── devin-proto.ts        # generated schema (protobufjs Root, trimmed ±2.678 baris)
-│   └── framing.ts            # Connect frame encode/decode + gzip + 16MiB cap (dari oh-my-pi/opencode)
+│   ├── devin-proto.ts        # generated schema (protobufjs Root, trimmed ±2,678 lines)
+│   └── framing.ts            # Connect frame encode/decode + gzip + 16MiB cap (from oh-my-pi/opencode)
 ├── devin-shared.ts           # constants + metadata identity + encodeDevinCredential + UA
 ├── devin-http.ts             # unary RPC client (application/proto) + gzip-fallback decode
 ├── devin.ts                  # chat adapter (streamDevin equivalent) — implements ProviderAdapter
 ├── devin-auth.ts             # login hooks (opencode app.devin.ai + oh-my-pi windsurf + cli)
-├── devin-catalog.ts          # discovery (GetCliModelConfigs) + normalisasi + seed
+├── devin-catalog.ts          # discovery (GetCliModelConfigs) + normalization + seed
 ├── devin-quota.ts            # usage (GetUserStatus) → quota windows
 └── devin.test.ts             # fake-transport tests
 
 vendor/proto/devin/
-├── exa/api_server_pb/api_server.proto          # + semua .proto asli (52 file)
+├── exa/api_server_pb/api_server.proto          # + all original .proto files (52 files)
 ├── exa/codeium_common_pb/codeium_common.proto
 ├── exa/chat_pb/chat.proto
 ├── exa/auth_pb/auth.proto
 ├── exa/seat_management_pb/seat_management.proto
-└── README.md                # provenance: sumber (oh-my-pi commit), lisensi MIT, cara regenerasi
+└── README.md                # provenance: source (oh-my-pi commit), MIT license, how to regenerate
 ```
 
-### Failed.1 Sumber per file
+### Failed.1 Source per file
 
-| File target | Sumber utama | Asal |
+| Target file | Primary source | Origin |
 |---|---|---|
-| `protocol/devin-proto.ts` | oh-my-pi `discovery/devin-proto.ts` | trimmed schema (2.678 baris) — konversi ke protobufjs |
-| `protocol/framing.ts` | oh-my-pi/opencode `cascade.ts` | Connect frame + gzip + trailer + cap 16MiB |
+| `protocol/devin-proto.ts` | oh-my-pi `discovery/devin-proto.ts` | trimmed schema (2,678 lines) — converted to protobufjs |
+| `protocol/framing.ts` | oh-my-pi/opencode `cascade.ts` | Connect frame + gzip + trailer + 16MiB cap |
 | `devin-shared.ts` | oh-my-pi `wire/devin.ts` | constants + identity + encodeDevinCredential |
 | `devin-http.ts` | oh-my-pi `wire/devin-proto.ts` + `devin.ts` | unary client + gzip fallback |
-| `devin.ts` | oh-my-pi `providers/devin.ts` | streamDevin (893 baris) — adapter-ulang |
-| `devin-auth.ts` | oh-my-pi `oauth/devin-windsurf.ts` + `devin-cli.ts` + opencode `oauth.ts` | 2 flow OAuth + CLI adopt |
+| `devin.ts` | oh-my-pi `providers/devin.ts` | streamDevin (893 lines) — re-adapted |
+| `devin-auth.ts` | oh-my-pi `oauth/devin-windsurf.ts` + `devin-cli.ts` + opencode `oauth.ts` | 2 OAuth flows + CLI adopt |
 | `devin-catalog.ts` | oh-my-pi `discovery/devin.ts` + `providers/devin.kdl` | discovery + seed + cost rules |
 | `devin-quota.ts` | oh-my-pi `usage/devin.ts` | GetUserStatus → buckets + windows |
 
 ---
 
-## 3. Wire contract (verifikasi lintas 4 donor)
+## 3. Wire contract (verified across the 4 donors)
 
 ### 3.1 Constants
 
@@ -125,9 +125,9 @@ EXCHANGE_PATH   = /exa.seat_management_pb.SeatManagementService/ExchangePKCEAuth
 
 ### 3.2 Transport
 
-**Unary** (auth, AssignModel, discovery, exchange, status): `POST`, `content-type: application/proto`, `connect-protocol-version: 1`, `accept: */*`; body = raw protobuf; response bisa protobuf polos ATAU gzipped (decode fallback).
+**Unary** (auth, AssignModel, discovery, exchange, status): `POST`, `content-type: application/proto`, `connect-protocol-version: 1`, `accept: */*`; body = raw protobuf; the response can be plain protobuf OR gzipped (decode fallback).
 
-**Chat** (GetChatMessage): `POST`, `content-type: application/connect+proto`, `connect-protocol-version: 1`, `accept-encoding: identity`, `connect-accept-encoding: gzip`, `user-agent: connect-go/1.18.1 (go1.26.3)`; body = Connect frame (`[flags 1B][len BE32][payload]`, flag 0x01 gzip, 0x02 end-stream/trailer JSON); request dikompresi bila ≥1024B; frame cap 16MiB.
+**Chat** (GetChatMessage): `POST`, `content-type: application/connect+proto`, `connect-protocol-version: 1`, `accept-encoding: identity`, `connect-accept-encoding: gzip`, `user-agent: connect-go/1.18.1 (go1.26.3)`; body = Connect frame (`[flags 1B][len BE32][payload]`, flag 0x01 gzip, 0x02 end-stream/trailer JSON); the request is compressed when ≥1024B; frame cap 16MiB.
 
 ### 3.3 Metadata identity
 
@@ -141,12 +141,12 @@ EXCHANGE_PATH   = /exa.seat_management_pb.SeatManagementService/ExchangePKCEAuth
 | locale | `en` | `en` |
 | os | darwin/windows/linux | same |
 | apiKey | encodeDevinCredential | same |
-| userJwt | dari GetUserJwt | — |
-| sessionId | stabil per percakapan | — |
+| userJwt | from GetUserJwt | — |
+| sessionId | stable per conversation | — |
 
-`encodeDevinCredential`: trim → sudah prefix `devin-session-token$` → as-is → JWT 3-segmen (split "." length 3) → prefix → else verbatim (`sk-ws-…` bare). **Verifikasi lintas donor**: oh-my-pi & opencode pakai prefix ini; proxy & devin2api pakai `Basic <token>-<token>` (marker aneh, bukan base64) — **kita ikut oh-my-pi** (token di Metadata.apiKey, bukan header Basic).
+`encodeDevinCredential`: trim → already prefixed `devin-session-token$` → as-is → 3-segment JWT (split "." length 3) → prefix → else verbatim (`sk-ws-…` bare). **Cross-donor verification**: oh-my-pi & opencode use this prefix; proxy & devin2api use `Basic <token>-<token>` (a strange marker, not base64) — **we follow oh-my-pi** (token in Metadata.apiKey, not the Basic header).
 
-### 3.4 Pesan penting (field numbers, dari proto asli + lintas donor)
+### 3.4 Important messages (field numbers, from the original proto + cross-donor)
 
 **Metadata** (`exa.codeium_common_pb.Metadata`): ideName=1, extensionVersion=2, apiKey=3, locale=4, os=5, disableTelemetry=6, ideVersion=7, hardware=8, requestId=9, sessionId=10, sourceAddress=11, extensionName=12, userAgent=13, url=14, authSource=15, lsTimestamp=16, extensionPath=17, userId=20, userJwt=21, forceTeamId=22, deviceFingerprint=24, triggerId=25, planName=26, id=27, ideType=28, impersonateTier=29, supportedModelDisplays=30 (repeated enum), f=31, teamId=32.
 
@@ -154,17 +154,17 @@ EXCHANGE_PATH   = /exa.seat_management_pb.SeatManagementService/ExchangePKCEAuth
 
 **GetChatMessageResponse**: messageId=1, timestamp=2, deltaText=3, deltaTokens=4, stopReason=5, deltaToolCalls=6, usage=7, redact=8, deltaThinking=9, deltaSignature=10, thinkingRedacted=11, latency=12, completionProfile=13, creditCost=14, outputId=15, thinkingId=16 (deprecated), requestId=17, committedCreditCost=18, prompt=19, deltaSignatureType=21, committedAcuCost=22, actualModelUid=23, arenaInvocationCapReached=24, phase=25, committedQuotaCostBasisPoints=26, committedOverageCostCents=27, responseDimensionGroups=28.
 
-**CompletionConfiguration**: numCompletions=1, maxTokens=2, maxNewlines=3, minLogProbability=4, temperature=5, firstTemperature=6, topK=7, topP=8, stopPatterns=9, seed=10. Quirk: `topP` di-`Math.fround()` (float32 widening).
+**CompletionConfiguration**: numCompletions=1, maxTokens=2, maxNewlines=3, minLogProbability=4, temperature=5, firstTemperature=6, topK=7, topP=8, stopPatterns=9, seed=10. Quirk: `topP` is `Math.fround()`-ed (float32 widening).
 
 **ChatToolDefinition**: name=1, description=2, jsonSchemaString=3, attributionFieldNames=5, serverName=6, readOnlyHint=7, computerUseConfig=8, isCustomTool=9, customToolGrammar=10, customToolGrammarSyntax=11, strict=12.
 
-**ChatToolCall** (response): id=1, name=2, argumentsJson=3, invalidJsonStr=4, invalidJsonErr=5, isCustomToolCall=6. Args datang cumulative → delta dari prefix sebelumnya; parse di `toolcall_end`.
+**ChatToolCall** (response): id=1, name=2, argumentsJson=3, invalidJsonStr=4, invalidJsonErr=5, isCustomToolCall=6. Args arrive cumulative → a delta from the previous prefix; parsed at `toolcall_end`.
 
 **ChatMessagePrompt** (history): messageId=1, source=2 (USER=1/SYSTEM=2/UNKNOWN=3/TOOL=4/SYSTEM_PROMPT=5), prompt=3, numTokens=4, safeForCodeTelemetry=5, toolCalls=6, toolCallId=7, promptCacheOptions=8, toolResultIsError=9, images=10, thinking=11, signature=12, thinkingRedacted=13, promptAnnotationRanges=14, outputId=15, thinkingId=16, geminiThoughtSignature=17, signatureType=18, phase=19.
 
 **AssignModelRequest**: metadata=1, modelRouterUid=2, cascadeId=3, chatMessagePrompt=5. **AssignModelResponse**: assignment=1 (ModelAssignment: assignmentJwt=1, modelUid=2, harnessUids=3).
 
-**GetUserJwtRequest**: metadata=1. **Response**: userJwt=1, customApiServerUrl=2 (override base URL chat).
+**GetUserJwtRequest**: metadata=1. **Response**: userJwt=1, customApiServerUrl=2 (overrides the chat base URL).
 
 **GetCliModelConfigsRequest**: metadata=1. **Response**: clientModelConfigs=1, defaultOverrideModelConfig=3 (DefaultOverrideModelConfig: modelUid=3).
 
@@ -184,40 +184,40 @@ EXCHANGE_PATH   = /exa.seat_management_pb.SeatManagementService/ExchangePKCEAuth
 **PlanStatus**: planInfo=1, planStart=2, planEnd=3, availableFlexCredits=4, usedFlowCredits=5, usedPromptCredits=6, usedFlexCredits=7, availablePromptCredits=8, availableFlowCredits=9, topUpStatus=10, overageBalanceMicros=16, dailyQuotaRemainingPercent=14, weeklyQuotaRemainingPercent=15, dailyQuotaResetAtUnix=17, weeklyQuotaResetAtUnix=18.
 **TeamsTier**: DEVIN_PRO=16, DEVIN_MAX=17, DEVIN_FREE=19, DEVIN_TRIAL=20.
 
-### 3.5 Alur chat
+### 3.5 Chat flow
 
 1. `GetUserJwt(metadata w/ apiKey)` → `userJwt` + optional `customApiServerUrl`.
-2. Jika model router (`compat.modelRouter`): `AssignModel(metadata, modelRouterUid, cascadeId)` → `assignmentJwt` + `modelUid`; **share `cascadeId`** dengan chat.
+2. If the model is a router (`compat.modelRouter`): `AssignModel(metadata, modelRouterUid, cascadeId)` → `assignmentJwt` + `modelUid`; **share `cascadeId`** with the chat.
 3. `GetChatMessage(metadata w/ apiKey+userJwt, chatModelUid = assignment.modelUid ?? chatModelUid ?? requestModelId ?? id, prompt = flattened system prompt, chatMessagePrompts, requestType=CASCADE(5), plannerMode=DEFAULT(1), systemPromptCacheOptions=EPHEMERAL, configuration, tools, cascadeId, executionId=randomUUID())`.
-4. Decode frames sampai trailer `0x02`. Map `deltaText`→text, `deltaThinking`/`deltaSignature`→thinking, `deltaToolCalls`→tool blocks, `stopReason` (MAX_TOKENS→`length`, tools pending→`toolUse`, else `stop`), `usage`→tokens, `creditCost`/`committedCreditCost`/`committedAcuCost`→credits.
-5. Non-2xx → `DevinApiError` (status+headers); trailer error envelope → classification; `invalid_argument` + `internal error` + belum ada output + history ≥512KiB → ContextOverflow.
+4. Decode frames until the `0x02` trailer. Map `deltaText`→text, `deltaThinking`/`deltaSignature`→thinking, `deltaToolCalls`→tool blocks, `stopReason` (MAX_TOKENS→`length`, tools pending→`toolUse`, else `stop`), `usage`→tokens, `creditCost`/`committedCreditCost`/`committedAcuCost`→credits.
+5. Non-2xx → `DevinApiError` (status+headers); trailer error envelope → classification; `invalid_argument` + `internal error` + no output yet + history ≥512KiB → ContextOverflow.
 
-Behavior yang diambil dari devin2api (wajib):
-- **call→result re-pairing** — history client (semua call lalu semua result) di-interleave jadi berpasangan di wire.
-- **tool_choice=none** → tools tidak masuk wire sama sekali (bukan dikosongkan).
-- **gambar hanya di turn terakhir**; dokumen/video boleh di history.
-- **stop sequences di-handle lokal** (upstream tidak menghormati) — potong teks + simpan `maxPatternLen-1` byte antisipasi.
-- **signature replay** — thinking client butuh `signature` + `signatureType` yang benar; salah type → upstream invalid_argument.
-- **error mapping** — `classifyUpstreamError` + `mapUpstreamHttpError` Cartethyia menangani status: `unauthenticated`→401, `resource_exhausted`→429, `invalid_argument`/`failed_precondition`/`permission_denied`→400 (bukan 403), transport break→502, timeout→504, context length→413.
+Behavior taken from devin2api (required):
+- **call→result re-pairing** — the client history (all calls then all results) is interleaved into pairs on the wire.
+- **tool_choice=none** → tools do not enter the wire at all (not merely emptied).
+- **images only on the last turn**; documents/videos may be in history.
+- **stop sequences handled locally** (the upstream does not honor them) — cut the text + keep `maxPatternLen-1` bytes in anticipation.
+- **signature replay** — the thinking client needs the correct `signature` + `signatureType`; wrong type → upstream invalid_argument.
+- **error mapping** — Cartethyia's `classifyUpstreamError` + `mapUpstreamHttpError` handle the statuses: `unauthenticated`→401, `resource_exhausted`→429, `invalid_argument`/`failed_precondition`/`permission_denied`→400 (not 403), transport break→502, timeout→504, context length→413.
 
 ---
 
-## 4. Implementasi per file
+## 4. Implementation per file
 
-### 4.1 `protocol/devin-proto.ts` (generated, ±2.678 baris)
+### 4.1 `protocol/devin-proto.ts` (generated, ±2,678 lines)
 
-- Port dari oh-my-pi `discovery/devin-proto.ts` (MIT, header provenance dipertahankan).
-- Konversi dari codec custom IR → `protobufjs` Root (pola `cursor/protocol/messages.ts`): `addType(root, "Metadata", [...])` dst.
-- Hanya message yang dikonsumsi: Metadata, GetChatMessageRequest/Response, ChatMessagePrompt, ChatToolDefinition/Choice/Call, CompletionConfiguration, AssignModelRequest/Response, GetUserJwtRequest/Response, GetCliModelConfigsRequest/Response, ClientModelConfig, ModelInfo, ModelFeatures, ModelDimension, ModelFamilyMetadata, ExchangePKCEAuthorizationCodeRequest/Response, GetUserStatusRequest/Response, UserStatus, PlanInfo, PlanStatus, TeamsTier, enum DisplayOption/StopReason/ChatMessageSource/BillingStrategy/ModelDimensionKind.
-- Simpan `.proto` asli (52 file) di `vendor/proto/devin/` sebagai sumber kebenaran + regenerasi.
+- Ported from oh-my-pi `discovery/devin-proto.ts` (MIT, provenance header preserved).
+- Converted from the custom IR codec → a `protobufjs` Root (the `cursor/protocol/messages.ts` pattern): `addType(root, "Metadata", [...])` etc.
+- Only the consumed messages: Metadata, GetChatMessageRequest/Response, ChatMessagePrompt, ChatToolDefinition/Choice/Call, CompletionConfiguration, AssignModelRequest/Response, GetUserJwtRequest/Response, GetCliModelConfigsRequest/Response, ClientModelConfig, ModelInfo, ModelFeatures, ModelDimension, ModelFamilyMetadata, ExchangePKCEAuthorizationCodeRequest/Response, GetUserStatusRequest/Response, UserStatus, PlanInfo, PlanStatus, TeamsTier, enum DisplayOption/StopReason/ChatMessageSource/BillingStrategy/ModelDimensionKind.
+- Keep the original `.proto` files (52) in `vendor/proto/devin/` as the source of truth + regeneration.
 
 ### 4.2 `protocol/framing.ts` (Connect framing)
 
-- Dari oh-my-pi/opencode `cascade.ts`:
-  - `encodeConnectFrame(payload, {compress})` → gzip bila ≥1024B, `[flags=0x01][len BE32][payload]`.
-  - `decodeConnectFrame` / `ConnectFrameDecoder` — baca 5-byte header, validasi length ≤ 16MiB (`MAX_CONNECT_FRAME_PAYLOAD`), decompress flag 0x01, baca trailer JSON flag 0x02.
+- From oh-my-pi/opencode `cascade.ts`:
+  - `encodeConnectFrame(payload, {compress})` → gzip when ≥1024B, `[flags=0x01][len BE32][payload]`.
+  - `decodeConnectFrame` / `ConnectFrameDecoder` — read the 5-byte header, validate length ≤ 16MiB (`MAX_CONNECT_FRAME_PAYLOAD`), decompress flag 0x01, read the trailer JSON flag 0x02.
   - `readConnectTrailerError` — parse `{error:{code,message}}` → `GatewayError`.
-- Pattern struktur: `cursor/protocol/framing.ts` (sudah ada di repo).
+- Structural pattern: `cursor/protocol/framing.ts` (already in the repo).
 
 ### 4.3 `devin-shared.ts` (constants)
 
@@ -233,39 +233,39 @@ encodeDevinCredential(apiKey)
 ### 4.4 `devin-http.ts` (unary client)
 
 - `callDevinUnary(path, schema, request, {apiKey, baseUrl, signal, timeoutMs})`.
-- Header: `content-type: application/proto`, `connect-protocol-version: 1`, `accept: */*`.
-- Response decode: coba `fromBinary` langsung, fallback `gunzipSync` (±`decodeDevinUnaryMessage`).
-- Gabung signal dengan `AbortSignal.timeout(15_000)` untuk discovery (server sering butuh 7-15s).
+- Headers: `content-type: application/proto`, `connect-protocol-version: 1`, `accept: */*`.
+- Response decode: try `fromBinary` directly, fall back to `gunzipSync` (`decodeDevinUnaryMessage`).
+- Combine the signal with `AbortSignal.timeout(15_000)` for discovery (the server often needs 7-15s).
 
 ### 4.5 `devin.ts` (chat adapter)
 
-- Implement `ProviderAdapter` (kontrak `src/providers/provider-contracts.ts`), **bukan** `BaseProviderAdapter` (payload biner + framing streaming).
-- Alur: `GetUserJwt` → (router?) `AssignModel` → build request → frame → POST → stream decode → canonical events.
-- Tool handling: akumulasi args cumulative, parse di `toolcall_end`, id sanitize/cap 40, `normalizeSchemaForGoogle` untuk class gemini.
-- Error: `GatewayError` mapping per §3.5; `createUpstreamDeadlineLifecycle` dipakai.
-- Quirk: `Math.fround(topP)`, cascadeId threading, executionId UUID, system prompt flattening.
+- Implement `ProviderAdapter` (the `src/providers/provider-contracts.ts` contract), **not** `BaseProviderAdapter` (binary payload + streaming framing).
+- Flow: `GetUserJwt` → (router?) `AssignModel` → build request → frame → POST → stream decode → canonical events.
+- Tool handling: cumulative args accumulation, parse at `toolcall_end`, id sanitize/cap 40, `normalizeSchemaForGoogle` for gemini class.
+- Error: `GatewayError` mapping per §3.5; `createUpstreamDeadlineLifecycle` is used.
+- Quirks: `Math.fround(topP)`, cascadeId threading, executionId UUID, system prompt flattening.
 
 ### 4.6 `devin-auth.ts` (OAuth)
 
-- **Flow 1 — opencode/app.devin.ai** (primary): authorize `https://app.devin.ai/auth/cli/continue` (PKCE S256, state UUID, prompt select_account), callback port 59653, exchange `POST https://api.devin.ai/auth/cli/token` body JSON `{code, code_verifier}` → `{token}`; expires JWT −5m fallback 365d.
-- **Flow 2 — oh-my-pi/windsurf** (enterprise seat): `https://windsurf.com/editor/signin` (PKCE, port 59654) → `ExchangePKCEAuthorizationCode` → apiKey (strip `gsk-`); store as `devin`.
-- **Flow 3 — CLI adopt**: `%APPDATA%/devin/credentials.toml` → `~/.local/share/devin/credentials.toml` → (macOS) Library; parse `windsurf_api_key`; reject `api_server_url` di luar `KNOWN_API_HOSTS = ["server.codeium.com","server.enterprise.windsurf.com"]`; tanpa network.
-- Store: semua simpan sebagai `devin` credential (api_key row) via `storeLoginApiKey`/`upsertAuthCredential`.
-- Tidak ada refresh (expires ∞ untuk seat key; JWT 1 tahun).
+- **Flow 1 — opencode/app.devin.ai** (primary): authorize `https://app.devin.ai/auth/cli/continue` (PKCE S256, state UUID, prompt select_account), callback port 59653, exchange `POST https://api.devin.ai/auth/cli/token` body JSON `{code, code_verifier}` → `{token}`; expires JWT −5m with a 365d fallback.
+- **Flow 2 — oh-my-pi/windsurf** (enterprise seat): `https://windsurf.com/editor/signin` (PKCE, port 59654) → `ExchangePKCEAuthorizationCode` → apiKey (strip `gsk-`); stored as `devin`.
+- **Flow 3 — CLI adopt**: `%APPDATA%/devin/credentials.toml` → `~/.local/share/devin/credentials.toml` → (macOS) Library; parse `windsurf_api_key`; reject an `api_server_url` outside `KNOWN_API_HOSTS = ["server.codeium.com","server.enterprise.windsurf.com"]`; no network.
+- Store: everything is saved as a `devin` credential (api_key row) via `storeLoginApiKey`/`upsertAuthCredential`.
+- No refresh (expires ∞ for seat keys; JWT 1 year).
 
 ### 4.7 `devin-catalog.ts` (discovery + seed)
 
-- `loadModelDiscovery`: `GetCliModelConfigs` identity discovery + `supportedModelDisplays`; timeout 15s; empty-200 atau all-disabled → null (stale pin).
-- Filter client-side `QUICK_REVIEW(4)`/`INTERNAL_DEFAULT(6)`; pertahankan `MODEL_ROUTER(3)`/`UNCLASSIFIED(7)`/`NORMAL(8)`.
-- Normalisasi → `defineModel`: id=modelUid, contextWindow=modelInfo.maxTokens (fallback 200k), maxTokens=modelInfo.maxOutputTokens (fallback 64k), cost dari `modelDimensions` (COST/COST_FUZZY, stop label `sidekick`, denominator k/m/b), reasoning dari ModelFeatures.supportsThinking (authoritative) + label heuristic, tools dari supportsToolCalls, image gated kecuali `DEVIN_IMAGE_BLIND_UIDS = {swe-1-6-fast, swe-1-6-slow}`.
-- Router slot (`MODEL_ROUTER` + tanpa harnessUids) → `compat.modelRouter: true`; harness composites (`fusion`, `fusion-*-sidekick-*`) tetap chat uid + lead-model merging.
-- Seed (boot, synchronous): `swe-1-6-fast` + `swe-1-6-slow` + `swe-2-flash-medium` (dari live `GetCliModelConfigs`); discovery menggantikan; account default (`defaultOverrideModelConfig`) menang. `swe-1-6` dihapus dari seed — tidak ada di roster live dan chat gagal `failed_precondition`.
-- Cost rules (port KDL oh-my-pi): cost-fallback (SWE-2 promo → list 2027-01-01; SWE-1.7; GLM-5.2), cache-write-rate (anthropic 1.25, gpt ≥5.6 <7 1.25, adaptive 1.0), long-context tiers (gpt-6 272k ×2.0 in/1.5 out; gemini-pro ≥3.1<4 & grok 200k ×2.0 in/1.5 out).
+- `loadModelDiscovery`: `GetCliModelConfigs` with identity discovery + `supportedModelDisplays`; timeout 15s; empty-200 or all-disabled → null (stale pin).
+- Client-side filter of `QUICK_REVIEW(4)`/`INTERNAL_DEFAULT(6)`; keep `MODEL_ROUTER(3)`/`UNCLASSIFIED(7)`/`NORMAL(8)`.
+- Normalization → `defineModel`: id=modelUid, contextWindow=modelInfo.maxTokens (fallback 200k), maxTokens=modelInfo.maxOutputTokens (fallback 64k), cost from `modelDimensions` (COST/COST_FUZZY, stop label `sidekick`, denominator k/m/b), reasoning from ModelFeatures.supportsThinking (authoritative) + a label heuristic, tools from supportsToolCalls, images gated unless in `DEVIN_IMAGE_BLIND_UIDS = {swe-1-6-fast, swe-1-6-slow}`.
+- Router slots (`MODEL_ROUTER` without harnessUids) → `compat.modelRouter: true`; harness composites (`fusion`, `fusion-*-sidekick-*`) keep the chat uid + lead-model merging.
+- Seed (boot, synchronous): `swe-1-6-fast` + `swe-1-6-slow` + `swe-2-flash-medium` (from the live `GetCliModelConfigs`); discovery replaces them; the account default (`defaultOverrideModelConfig`) wins. `swe-1-6` was removed from the seed — it is not in the live roster and chat fails with `failed_precondition`.
+- Cost rules (ported KDL from oh-my-pi): cost-fallback (SWE-2 promo → list 2027-01-01; SWE-1.7; GLM-5.2), cache-write-rate (anthropic 1.25, gpt ≥5.6 <7 1.25, adaptive 1.0), long-context tiers (gpt-6 272k ×2.0 in/1.5 out; gemini-pro ≥3.1<4 & grok 200k ×2.0 in/1.5 out).
 
 ### 4.8 `devin-quota.ts` (usage)
 
-- `loadQuotaCollector`: `GetUserStatus(metadata)` → 3 bucket credit (prompt/flow/flex; limit dari `PlanInfo.monthly*`, used/available dari `PlanStatus.*`; unit `unknown`; skip zero-triple) + daily/weekly quota windows (percent; skip hidden atau resetAtUnix=0 saat non-QUOTA) + monthly plan window + `overageBalanceUsd = overageBalanceMicros / 1e6`.
-- Selalu return null non-fatal saat gagal.
+- `loadQuotaCollector`: `GetUserStatus(metadata)` → 3 credit buckets (prompt/flow/flex; limits from `PlanInfo.monthly*`, used/available from `PlanStatus.*`; unit `unknown`; zero-triple skipped) + daily/weekly quota windows (percent; hidden ones or resetAtUnix=0 when non-QUOTA are skipped) + the monthly plan window + `overageBalanceUsd = overageBalanceMicros / 1e6`.
+- Always returns a non-fatal null on failure.
 
 ### 4.9 Registry wiring (`src/providers/default-registry.ts`)
 
@@ -284,43 +284,43 @@ Plus: provider metadata/capabilities (`provider-metadata.ts`), env `DEVIN_API_KE
 
 ---
 
-## 5. Fase implementasi
+## 5. Implementation phases
 
-| Fase | Isi | Keluar |
+| Phase | Contents | Output |
 |---|---|---|
-| **1 — Vendor + generated** | Copy .proto → `vendor/proto/devin/`; port `devin-proto.ts` (protobufjs) + `framing.ts` | Schema + framing siap |
-| **2 — Unary client** | `devin-http.ts` + `devin-shared.ts` + test fake transport | Auth/discovery/exchange bisa dipanggil |
-| **3 — Chat adapter** | `devin.ts` + encoder/decoder behavior (re-pairing, tool_choice=none, stop scan) + test frame stream | Chat streaming hidup |
-| **4 — Discovery** | `devin-catalog.ts` + seed + cost rules + test fixture response | Model list + seed |
-| **5 — Auth** | `devin-auth.ts` 3 flow + test mock exchange | Login Devin/Windsurf/CLI |
-| **6 — Quota** | `devin-quota.ts` + test fixture | Usage/limits |
-| **7 — Registry + e2e** | Wiring + env + dashboard row; live verification pakai seat key | Provider lengkap |
+| **1 — Vendor + generated** | Copy .proto → `vendor/proto/devin/`; port `devin-proto.ts` (protobufjs) + `framing.ts` | Schema + framing ready |
+| **2 — Unary client** | `devin-http.ts` + `devin-shared.ts` + fake transport test | Auth/discovery/exchange callable |
+| **3 — Chat adapter** | `devin.ts` + encoder/decoder behavior (re-pairing, tool_choice=none, stop scan) + frame stream test | Chat streaming live |
+| **4 — Discovery** | `devin-catalog.ts` + seed + cost rules + fixture response test | Model list + seed |
+| **5 — Auth** | `devin-auth.ts` 3 flows + mock exchange test | Devin/Windsurf/CLI login |
+| **6 — Quota** | `devin-quota.ts` + fixture test | Usage/limits |
+| **7 — Registry + e2e** | Wiring + env + dashboard row; live verification with a seat key | Complete provider |
 
 ---
 
 ## 6. Test plan
 
-- **Unit (fake transport)**: identity request (chisel/dev, display options, credential encoding, JWT prefix); gzip fallback decode; frame cap 32MiB ditolak tanpa buffering; trailer error envelope; stopReason mapping; cumulative tool args; large-history ContextOverflow (≥512KiB); discovery empty-200→null, all-disabled→null, timeout 15s; router/harness; cost dims; family aliases (`claude`→`claude-sonnet-5`, `codex`→`gpt-5-3-codex`, …); quota bucket math + window gating.
-- **Golden (dari devin2api)**: port 6 fixture `wire_golden_test.go` → test TS — request encoder byte-exact (tools, tool_choice=none, thinking replay, sampling, image last turn).
-- **Live (fase 7)**: butuh seat key asli (`sk-ws-…`/JWT). auth1 token kita sudah terbukti ditolak.
+- **Unit (fake transport)**: identity request (chisel/dev, display options, credential encoding, JWT prefix); gzip fallback decode; frame cap 32MiB rejected without buffering; trailer error envelope; stopReason mapping; cumulative tool args; large-history ContextOverflow (≥512KiB); discovery empty-200→null, all-disabled→null, timeout 15s; router/harness; cost dims; family aliases (`claude`→`claude-sonnet-5`, `codex`→`gpt-5-3-codex`, …); quota bucket math + window gating.
+- **Golden (from devin2api)**: port the 6 `wire_golden_test.go` fixtures → TS tests — byte-exact request encoder (tools, tool_choice=none, thinking replay, sampling, image last turn).
+- **Live (phase 7)**: needs a real seat key (`sk-ws-…`/JWT). Our auth1 token has been proven to be rejected.
 
 ---
 
-## 7. Risiko & open questions
+## 7. Risks & open questions
 
-1. **Live catalog unverified** — butuh seat key asli. Sampai itu, adapter ship dengan seed SWE-1.6 + discovery logic teruji fixture.
-2. **Drift identity** — tiga donor pakai tiga tuple beda (semua klaim "benar"). Kita ikut oh-my-pi (`devin-cli`/`chisel`/`3000.11.205` chat, `chisel`/`0.0.0-dev` discovery) karena paling teruji lintas 2 repo independen. Verifikasi live saat fase 7: bandingkan hasil katalog vs identity opencode (`windsurf/3.2.23/1.48.2`).
-3. **Proto drift** — schema trimmed bisa miss field baru; mitigation: `noteSchemaDrift`-style warn pada unknown field (pola devin2api), regenerasi dari vendor .proto.
-4. **OAuth page drift** — `windsurf.com/editor/signin` dan `app.devin.ai/auth/cli/continue` bisa berubah; loopback exchange harus resilient + error jelas.
-5. **AI Gateway** (`server.codeium.com/api/v1`, `AI_GATEWAY_API_KEY`) — surface terpisah, out of scope.
-6. **Credentials sensitivity** — jangan log raw keys; reuse redaction Cartethyia.
+1. **Live catalog unverified** — needs a real seat key. Until then, the adapter ships with the SWE-1.6 seed + fixture-tested discovery logic.
+2. **Identity drift** — the three donors use three different tuples (all claiming to be "correct"). We follow oh-my-pi (`devin-cli`/`chisel`/`3000.11.205` chat, `chisel`/`0.0.0-dev` discovery) because it is the most proven across 2 independent repos. Live verification in phase 7: compare catalog results against the opencode identity (`windsurf/3.2.23/1.48.2`).
+3. **Proto drift** — a trimmed schema can miss new fields; mitigation: a `noteSchemaDrift`-style warning on unknown fields (the devin2api pattern), regeneration from the vendor .proto.
+4. **OAuth page drift** — `windsurf.com/editor/signin` and `app.devin.ai/auth/cli/continue` can change; the loopback exchange must be resilient + produce clear errors.
+5. **AI Gateway** (`server.codeium.com/api/v1`, `AI_GATEWAY_API_KEY`) — a separate surface, out of scope.
+6. **Credential sensitivity** — do not log raw keys; reuse Cartethyia's redaction.
 
 ---
 
-## 8. Referensi
+## 8. References
 
-- Donor utama: `Public/oh-my-pi` (packages/ai/src/providers/devin.ts, registry/oauth/devin{,-windsurf,-cli}.ts, usage/devin.ts, catalog/src/{wire,discovery}/devin{,-proto}.ts, catalog/src/compat/rules/{providers/devin.kdl,auth/devin*.kdl,taxonomy/_collapse.kdl}, catalog/test/devin-discovery.test.ts, ai/test/devin-*.test.ts)
-- Referensi pelengkap: `Public/opencode-devin-provider` (cascade.ts, oauth.ts, devin-gen/), `Public/devin-proxy` (proto.py, upstream.py, accounts.py, models.py), `Public/devin2api` (internal/adapter/devin/{request_encoder,response_decoder,failure}.go, wire_golden_test.go)
-- Pola Cartethyia: `src/providers/integrations/cursor/` (protobufjs + Connect framing), `src/providers/default-registry.ts` (registry), `vendor/proto/qoder/` (vendor .proto)
-- Audit sebelumnya: `documentation/research/devin/2026-11-06-devin-desktop-audit.md`, `2026-11-07-oh-my-pi-devin-adapter-proposal.md`
+- Primary donor: `Public/oh-my-pi` (packages/ai/src/providers/devin.ts, registry/oauth/devin{,-windsurf,-cli}.ts, usage/devin.ts, catalog/src/{wire,discovery}/devin{,-proto}.ts, catalog/src/compat/rules/{providers/devin.kdl,auth/devin*.kdl,taxonomy/_collapse.kdl}, catalog/test/devin-discovery.test.ts, ai/test/devin-*.test.ts)
+- Supporting references: `Public/opencode-devin-provider` (cascade.ts, oauth.ts, devin-gen/), `Public/devin-proxy` (proto.py, upstream.py, accounts.py, models.py), `Public/devin2api` (internal/adapter/devin/{request_encoder,response_decoder,failure}.go, wire_golden_test.go)
+- Cartethyia patterns: `src/providers/integrations/cursor/` (protobufjs + Connect framing), `src/providers/default-registry.ts` (registry), `vendor/proto/qoder/` (vendor .proto)
+- Previous audits: `documentation/research/devin/2026-11-06-devin-desktop-audit.md`, `2026-11-07-oh-my-pi-devin-adapter-proposal.md`
 - Skill recipe: `.skills/cartethyia-reverse-engineering/references/unpacking-and-wire-capture.md`

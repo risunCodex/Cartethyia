@@ -1,6 +1,6 @@
 # Proposal — Dashboard i18n (native / fast)
 
-Status: proposed — not yet implemented (target: next session)
+Status: historical proposal — not implemented; kept for reference (as of 2026-11-17)
 Scope: `dashboard/` only. Backend contracts, `/console/api` response messages, and
 share-page server metadata are out of scope except where noted.
 Languages: **English (source of truth) + Indonesian** now; more locales later by

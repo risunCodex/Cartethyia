@@ -36,16 +36,4 @@ export function useUpdateSystemPrompt() {
   });
 }
 
-/** Clears the tenant's system-prompt injection configuration. */
-export function useClearSystemPrompt() {
-  const queryClient = useQueryClient();
-  return useMutation<TenantSystemPrompts, ApiErrorShape, void>({
-    mutationFn: () =>
-      consoleRequest<TenantSystemPrompts>("/system-prompt", { method: "DELETE" }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.systemPrompt.config });
-    },
-  });
-}
-
 export type { PromptMode, PromptSetting, TenantSystemPrompts };

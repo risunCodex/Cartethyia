@@ -243,19 +243,6 @@ export interface TransferProgress {
   readonly total: number | null;
 }
 
-export async function consoleBytes(
-  path: string,
-  onProgress?: (progress: TransferProgress) => void,
-): Promise<Uint8Array> {
-  const response = await fetch(`/console/api${path}`, { credentials: "same-origin" });
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null);
-    maybeSignalSessionTransition(path, response.status, payload);
-    throwApiError(payload, response.status);
-  }
-  return readBodyBytes(response, onProgress);
-}
-
 export async function consoleUpload<TResponse>(
   path: string,
   body: string,
@@ -285,31 +272,6 @@ export async function consoleUpload<TResponse>(
   return payload as TResponse;
 }
 
-async function readBodyBytes(
-  response: Response,
-  onProgress?: (progress: TransferProgress) => void,
-): Promise<Uint8Array> {
-  const total = Number(response.headers.get("content-length"));
-  const known = Number.isFinite(total) && total > 0 ? total : null;
-  const reader = response.body?.getReader();
-  if (!reader) return new Uint8Array(await response.arrayBuffer());
-  const chunks: Uint8Array[] = [];
-  let loaded = 0;
-  for (;;) {
-    const next = await reader.read();
-    if (next.done) break;
-    chunks.push(next.value);
-    loaded += next.value.byteLength;
-    onProgress?.({ loaded, total: known });
-  }
-  const bytes = new Uint8Array(loaded);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
-}
 /**
  * Loads the current signed-in console user, or `null` when the session is
  * not authenticated. Single helper for every dashboard session check

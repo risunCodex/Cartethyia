@@ -1,4 +1,3 @@
-import type { healthStatus } from "../../../src/persistence/schema";
 import type { SessionStatusResponse } from "../../../src/console/auth/session";
 import type {
   ModelMarket as _InferhubModel,
@@ -252,8 +251,6 @@ export interface InferhubModelsResponse {
   readonly models: readonly _InferhubModel[];
   readonly meta: _InferhubMeta;
 }
-
-export type HealthStatus = (typeof healthStatus.enumValues)[number];
 
 /**
  * The dashboard's session view: the wire `SessionStatusResponse`, narrowed to

@@ -15,15 +15,16 @@ Contents:
 
 ## Codebase size
 
-Working-tree snapshot on 2026-11-02 (includes source files created by the
-de-bloat refactor, tracked or not). The backend is `src/`; the frontend is
-`dashboard/src/`, matching the ownership boundary in [Architecture](architecture.md).
+Working-tree snapshot on 2026-11-17, regenerated with the script below. The
+backend is `src/`; the frontend is `dashboard/src/`, matching the ownership
+boundary in [Architecture](architecture.md). Line counts drift while source
+work is in progress — rerun the script for a fresh snapshot.
 
 | Area | Files | Source lines | Nonblank lines |
 | --- | ---: | ---: | ---: |
-| Backend | 587 | 159,702 | 150,983 |
-| Frontend | 181 | 47,494 | 45,080 |
-| **Total** | **768** | **207,196** | **196,063** |
+| Backend | 756 | 186,924 | 177,030 |
+| Frontend | 190 | 51,283 | 48,910 |
+| **Total** | **946** | **238,207** | **225,940** |
 
 Source lines count physical lines in tracked files under those directories,
 matching the script below (`.ts/.tsx/.js/.jsx` plus the stray stylesheet and

@@ -59,9 +59,6 @@ export const DEVIN_SUPPORTED_MODEL_DISPLAYS = [3, 4, 6, 7, 8];
 /** Display slots filtered out client-side (not surfaced to users). */
 export const DEVIN_INTERNAL_MODEL_DISPLAYS = new Set([4, 6]);
 
-/** Models that advertise image support but silently drop images (live-verified). */
-export const DEVIN_IMAGE_BLIND_UIDS = new Set(["swe-1-6-fast", "swe-1-6-slow"]);
-
 /** Default limits when the catalog reports none. */
 export const DEFAULT_CONTEXT_WINDOW = 200_000;
 export const DEFAULT_MAX_TOKENS = 64_000;

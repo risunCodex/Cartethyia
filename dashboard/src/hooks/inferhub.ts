@@ -15,7 +15,6 @@ import type {
   InferhubError,
   InferhubMeta,
   InferhubModel,
-  InferhubModelsResponse,
   InferhubSummary,
 } from "../data/contracts";
 import { queryKeys } from "../data/query-keys";
@@ -51,27 +50,6 @@ export function useInferhubSummary(enabled = true) {
     enabled,
     ...DASHBOARD_QUERY_OPTIONS,
     // 60 s: a remount or tab focus must not re-fetch data that has not moved.
-    staleTime: 60_000,
-  });
-}
-
-/** One prefix's models, for the detail page table. */
-export function useInferhubModels(prefix: string | undefined) {
-  return useQuery({
-    queryKey: queryKeys.inferhub.models(prefix),
-    queryFn: (context) =>
-      consoleRequest<unknown>(
-        `/inferhub/models${prefix === undefined ? "" : `?prefix=${encodeURIComponent(prefix)}`}`,
-        { signal: querySignal(context) },
-      ).then((value) => {
-        const record = value as Partial<InferhubModelsResponse>;
-        return {
-          models: Array.isArray(record.models) ? record.models : [],
-          meta: record.meta ?? { fetchedAt: 0, ageSeconds: 0, stale: true },
-        } satisfies InferhubModelsResponse;
-      }),
-    enabled: prefix !== undefined,
-    ...DASHBOARD_QUERY_OPTIONS,
     staleTime: 60_000,
   });
 }

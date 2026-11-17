@@ -410,15 +410,6 @@ export function readLabDraft(storage: Storage | undefined): LabDraft {
   }
 }
 
-export function writeLabDraft(storage: Storage | undefined, draft: LabDraft): void {
-  if (storage === undefined) return;
-  try {
-    storage.setItem(LEGACY_KEY, JSON.stringify(draft));
-  } catch {
-    // A full or blocked store must not break the conversation on screen.
-  }
-}
-
 export function nextMessageId(): string {
   return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }

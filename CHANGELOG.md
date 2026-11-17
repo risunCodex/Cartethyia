@@ -4798,7 +4798,7 @@ rather than `fetch`, and its Run origin is resolved per dispatch from
 
   There is no quota collector and no static catalog: no Cursor quota endpoint is
   established, and the roster is per-account and per-plan. See
-  [Cursor provider](documentation/features/cursor-provider.md).
+  [Cursor provider](documentation/features/08-cursor-provider.md).
 - **Trae is a working provider, on both realms.** `trae` and `traecn` are two
 providers, not one region flag: separate core, account, and pay hosts, and a
 CN `Cloud-IDE-JWT` against an intl `Bearer` plus a live client version — the

@@ -988,7 +988,3 @@ async function buildAction(
 
 /** The bundled adapter instance. */
 export const cursorAdapter = new CursorAdapter();
-
-export function createCursorAdapter(): CursorAdapter {
-  return new CursorAdapter();
-}

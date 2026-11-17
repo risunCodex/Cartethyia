@@ -14,8 +14,8 @@
  *
  *   bun run scripts/tools/probe-egress.ts --provider opencode \
  *     --direct \
- *     --proxy http://nozomi.proxy.rlwy.net:48011 \
- *     --proxy iriguchi.proxy.rlwy.net:23244
+ *     --proxy http://proxy.example:8080 \
+ *     --proxy http://proxy2.example:8080
  *
  *   # Read endpoints from a file, one per line (# comments allowed).
  *   bun run scripts/tools/probe-egress.ts -p opencode -f proxies.txt

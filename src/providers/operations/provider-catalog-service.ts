@@ -50,18 +50,6 @@ export function bumpCatalogRevision(): number {
 }
 
 /**
- * Forces the next re-seed to run even when the revision is unchanged.
- *
- * For the boot path and for tests: the compiled catalog has to be materialized
- * once for the current process regardless of what an earlier call already
- * applied, because a fresh database or a fresh registry is not a revision
- * change.
- */
-export function invalidateCatalogSeed(): void {
-  lastSeededCatalogRevision = -1;
-}
-
-/**
  * Records that the caller has just materialized the current catalog itself, so
  * the next `refreshActiveProviderCatalogs` is a no-op.
  *

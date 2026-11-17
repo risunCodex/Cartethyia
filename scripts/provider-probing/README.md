@@ -180,8 +180,9 @@ needs the full body shape (`metadata.context`, `metadata.business`,
 `stream_options`) and roster model ids (`auto`, `qmodel`, `dmodel`) — a bare
 OpenAI body or a plugin-only model id like `qwen3.8-max` fails there.
 
-See `documentation/archive/research/qoder/2026-11-01-qoder-chat-wire-verification.md`
-for the full wiring audit.
+See `documentation/research/qoder/archive/qoder-research-archive-2026-11-11.zip`
+for the full wiring audit (the older Qoder wire notes were consolidated into
+that archive).
 
 ## Kiro
 

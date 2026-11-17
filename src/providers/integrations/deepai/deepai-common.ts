@@ -19,7 +19,6 @@ import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-export const DEEPAI_PROVIDER_ID = "deepai" as const;
 export const DEEPAI_API_ORIGIN = "https://api.deepai.org";
 export const DEEPAI_MODEL_BASE = `${DEEPAI_API_ORIGIN}/deepai_code`;
 
@@ -34,7 +33,6 @@ export const DEEPAI_RESPONSES_PATH = "/deepai_code/responses";
 export const DEEPAI_MODELS_PATH = "/deepai_code/models";
 export const DEEPAI_THEOS_PATH = "/deepai_code/theos";
 export const DEEPAI_USAGE_SUMMARY_PATH = "/get_usage_summary";
-export const DEEPAI_SIGNIN_PATH = "/deepai_code/desktop_auth/";
 export const DEEPAI_EXCHANGE_PATH = "/deepai_code/desktop_auth/exchange/";
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;

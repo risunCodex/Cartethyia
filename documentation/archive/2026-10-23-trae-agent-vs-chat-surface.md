@@ -4,7 +4,7 @@
 > description of current behavior: every `file:line`, symbol, path, and
 > measurement below was true when it was written and has not been kept in sync.
 > Do not read it to answer a question about the current codebase, and never cite
-> it as evidence. See the [project README](../../../README.md).
+> it as evidence. See the [project README](../../README.md).
 
 # Trae — agent surface vs chat surface
 

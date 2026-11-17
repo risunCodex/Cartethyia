@@ -49,10 +49,11 @@ export type TlsProfile = "default" | string;
 
 /**
  * The Qoder Desktop 0.5.7 chat fingerprint, from the live ClientHello capture
- * (`documentation/research/qoder/2026-11-11-qoder-desktop-0.5.7-chat-surface-evidence.md`
- * §9, `hijack/conn.log`): 18 suites in this exact order, ALPN `http/1.1`
- * only, TLS 1.2–1.3. This is the profile to dial with when an upstream expects
- * the Qoder desktop client's transport identity.
+ * (`documentation/research/qoder/archive/2026-11-11-qoder-desktop-0.5.7-chat-surface-evidence.md`
+ * §9, `hijack/conn.log`; superseded docs live in the research archive): 18
+ * suites in this exact order, ALPN `http/1.1` only, TLS 1.2–1.3. This is the
+ * profile to dial with when an upstream expects the Qoder desktop client's
+ * transport identity.
  */
 export const QODER_APP_TLS_PROFILE: TlsProfileConfig = {
   id: "qoder-app",

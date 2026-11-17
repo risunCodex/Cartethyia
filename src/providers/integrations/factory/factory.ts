@@ -643,8 +643,4 @@ class FactoryDroidAdapter implements ProviderAdapter {
   }
 }
 
-export function createFactoryDroidAdapter(fetchImpl?: typeof fetch): ProviderAdapter {
-  return new FactoryDroidAdapter(fetchImpl);
-}
-
 export const factoryAdapter: ProviderAdapter = new FactoryDroidAdapter();

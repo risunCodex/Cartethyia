@@ -79,6 +79,11 @@ Full guide (modes, Docker, VPS, systemd, one-shot script):
 The full capability list, and how it differs from plain forwarders:
 [Why Cartethyia](documentation/why-cartethyia.md).
 
+For durable system behavior — architecture, configuration, errors, provider
+families — start at the [reference index](documentation/reference/README.md);
+deploying to a real host (topologies, hardening, incident runbook) is covered
+by the [deployment reference](documentation/reference/deployment.md).
+
 ## <img src="https://api.iconify.design/lucide/image.svg?color=%238b949e" width="20" height="20" alt=""> Showcase
 
 One install, one console: watch traffic land, watch accounts stay healthy,

@@ -334,37 +334,6 @@ export async function listClaudeUserProfiles(
 }
 
 /**
- * `GET /v1/user_profiles/{id}` (`anthropic-user-profiles.ts:174-176`).
- *
- * Throws on transport failure, a non-2xx status, or an unusable body. Reads are
- * cached per credential + id for {@link PROFILE_CACHE_TTL_MS}.
- */
-export async function getClaudeUserProfile(
-  credential: string,
-  profileId: string,
-  options: ClaudeUserProfilesOptions = {},
-): Promise<ClaudeUserProfile> {
-  const id = text(profileId);
-  if (id === null)
-    throw new Error("Claude user profiles request failed: missing profile id");
-  const key = `${credentialKey(credential)}:${id}`;
-  const cached = profileCache.get(key);
-  if (cached !== undefined) return cached;
-  // `encodeURIComponent` matches the donor (`:175`) and neutralizes any control
-  // character in a caller-supplied id, so it cannot escape the path segment.
-  const body = await requestUserProfiles(
-    credential,
-    `/v1/user_profiles/${encodeURIComponent(id)}`,
-    options,
-  );
-  const profile = parseClaudeUserProfile(body);
-  if (profile === null)
-    throw new Error("Claude user profiles request failed: malformed response");
-  profileCache.set(key, profile);
-  return profile;
-}
-
-/**
  * Bounded per-credential caches, the same shape as the quota caches in
  * `claude-quota.ts:150-163`: keys are credential hashes, never raw secrets, and
  * both are capped so credential fan-out cannot pin memory.
@@ -372,10 +341,6 @@ export async function getClaudeUserProfile(
 const PROFILE_CACHE_TTL_MS = 5 * 60_000;
 const PROFILE_CACHE_MAX_ENTRIES = 256;
 const pageCache = new TtlCache<ClaudeUserProfilePage>({
-  ttlMs: PROFILE_CACHE_TTL_MS,
-  maxEntries: PROFILE_CACHE_MAX_ENTRIES,
-});
-const profileCache = new TtlCache<ClaudeUserProfile>({
   ttlMs: PROFILE_CACHE_TTL_MS,
   maxEntries: PROFILE_CACHE_MAX_ENTRIES,
 });

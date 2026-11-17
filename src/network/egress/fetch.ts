@@ -202,14 +202,9 @@ function dialer(options: ValidatedFetchOptions): typeof fetch {
  * stale-socket replay. Both wrap the same `SocksProxyAgent`, so the replay
  * always stays on the pool's egress — only the connection is fresh.
  */
-export interface SocksDispatchers {
-  /** Pooled dispatcher used for the first attempt. */
-  readonly agent: UndiciAgent;
-  /** Fresh-socket dispatcher used for the single stale-socket replay. */
-  readonly fresh: UndiciAgent;
-}
-
-let socksDispatcherCache: WeakMap<SocksProxyAgent, SocksDispatchers> | undefined;
+let socksDispatcherCache:
+  | WeakMap<SocksProxyAgent, { readonly agent: UndiciAgent; readonly fresh: UndiciAgent }>
+  | undefined;
 /**
  * Builds (once per socks agent) the dispatcher pair that routes a dial
  * through a SOCKS5 pool agent. The runtime-native fetch does not support
@@ -218,7 +213,10 @@ let socksDispatcherCache: WeakMap<SocksProxyAgent, SocksDispatchers> | undefined
  * adapter is involved. Exported for the egress-replay tests, which pin that
  * a replay swaps the dispatcher instance, never the egress identity.
  */
-export function socksDispatchersFor(agent: SocksProxyAgent): SocksDispatchers {
+export function socksDispatchersFor(agent: SocksProxyAgent): {
+  readonly agent: UndiciAgent;
+  readonly fresh: UndiciAgent;
+} {
   socksDispatcherCache ??= new WeakMap();
   let pair = socksDispatcherCache.get(agent);
   if (!pair) {
@@ -327,7 +325,7 @@ async function dial(
   init: RequestInit,
   fetchFn: typeof fetch,
   proxyUrl: string | undefined,
-  socksDispatchers?: SocksDispatchers,
+  socksDispatchers?: { readonly agent: UndiciAgent; readonly fresh: UndiciAgent },
   socksFetch: (input: RequestInfo | URL, init?: UndiciRequestInit) => Promise<Response> = undiciFetch,
   freshSocket = false,
 ): Promise<Response> {

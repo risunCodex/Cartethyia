@@ -230,11 +230,6 @@ export function saveCustomizationSettings(patch: Partial<CustomizationSettings>)
   return next;
 }
 
-/** Drops the cached copy so the next read comes from storage. Tests use this. */
-export function resetCustomizationCache(): void {
-  cached = null;
-}
-
 export function useCustomizationSettings(): readonly [
   CustomizationSettings,
   (patch: Partial<CustomizationSettings>) => void,
@@ -250,16 +245,6 @@ export function useCustomizationSettings(): readonly [
     };
   }, []);
   return [settings, (patch) => setSettings(saveCustomizationSettings(patch))] as const;
-}
-
-export function blurStyleOf(settings: CustomizationSettings, target: BlurTarget): BlurStyle {
-  if (target === "chrome") return settings.blurChrome;
-  return settings.blurCards;
-}
-
-export function blurPatch(target: BlurTarget, style: BlurStyle): Partial<CustomizationSettings> {
-  if (target === "chrome") return { blurChrome: style };
-  return { blurCards: style };
 }
 
 export const BLUR_TARGET_ORDER: readonly BlurTarget[] = BLUR_TARGETS;

@@ -124,8 +124,4 @@ class CloudflareAiGatewayAdapter implements ProviderAdapter {
   }
 }
 
-export function createCloudflareAiGatewayAdapter(fetchImpl?: typeof fetch): ProviderAdapter {
-  return new CloudflareAiGatewayAdapter(fetchImpl);
-}
-
 export const cloudflareaiAdapter: ProviderAdapter = new CloudflareAiGatewayAdapter();

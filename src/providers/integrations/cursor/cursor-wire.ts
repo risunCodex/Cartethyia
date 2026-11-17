@@ -55,23 +55,15 @@ export const CURSOR_GET_USABLE_MODELS_PATH = "/agent.v1.AgentService/GetUsableMo
 export const CURSOR_GET_DEFAULT_MODEL_PATH = "/agent.v1.AgentService/GetDefaultModelForCli";
 /** Rich model catalog: variant parameter tuples (effort/thinking/fast/context). */
 export const CURSOR_AVAILABLE_MODELS_PATH = "/aiserver.v1.AiService/AvailableModels";
-/** Account identity (email). */
-export const CURSOR_GET_ME_PATH = "/aiserver.v1.DashboardService/GetMe";
 /** Plan info: included-usage reset timestamps (weekly/monthly pools). */
 export const CURSOR_GET_PLAN_INFO_PATH = "/aiserver.v1.DashboardService/GetPlanInfo";
 
 // ── Auth / usage endpoints (plain JSON HTTP) ──
 
-export const CURSOR_AUTH_POLL_PATH = "/auth/poll";
-export const CURSOR_OAUTH_TOKEN_PATH = "/oauth/token";
-/** Raw `crsr_` API-key exchange for a dispatch JWT. */
-export const CURSOR_API_KEY_EXCHANGE_PATH = "/auth/exchange_user_api_key";
 /** Legacy request-count usage buckets (Bearer auth). */
 export const CURSOR_AUTH_USAGE_PATH = "/auth/usage";
 /** Cookie-authenticated usage summary in USD cents (authoritative). */
 export const CURSOR_USAGE_SUMMARY_PATH = "/api/usage-summary";
-/** PKCE deep-link login page the operator opens. */
-export const CURSOR_LOGIN_DEEP_CONTROL_PATH = "/loginDeepControl";
 
 // ── header policy ──
 

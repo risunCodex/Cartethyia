@@ -17,7 +17,6 @@
  *   `off` / `ineligible` end the lane with no retry.
  * - Bounded by the server's max-wait (`:3737` passes `waitedMs` and `attempts`).
  */
-import { GatewayError } from "../../../protocol/gateway-error";
 import {
   classifyClaudeSlowStatus,
   type ClaudeSlowLanes,
@@ -92,9 +91,4 @@ export function planSlowLaneRetry(
   if (delayMs <= 0) return null;
 
   return { capacityWait: true, delayMs };
-}
-
-/** Typed error for a caller-aborted wait, so it is never read as a failure. */
-export function slowLaneAborted(): GatewayError {
-  return new GatewayError("transport_closed", 499, "The request was cancelled during the slow-lane capacity wait (request {requestId}). Send it again whenever ready 🙃");
 }

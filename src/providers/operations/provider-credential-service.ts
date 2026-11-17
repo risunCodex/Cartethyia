@@ -145,18 +145,6 @@ export interface AccountWithFreshness {
   readonly dueAt: number | undefined;
 }
 
-/** Columns every account+OAuth-state reader selects; narrower readers pick from it. */
-export interface AccountWithOauthStateRow {
-  readonly id: string;
-  readonly providerId: string;
-  readonly credentialKind: CredentialKind;
-  readonly credentialCiphertext: Buffer | null;
-  readonly refreshCiphertext: Buffer | null;
-  readonly authState: unknown;
-  readonly clientSecretCiphertext: Buffer | null;
-  readonly staticToken: boolean;
-}
-
 /** Which optional columns a reader wants on top of the shared base. */
 export interface LoadAccountWithOauthStateOptions {
   /** Select `status` from providerAccounts. */

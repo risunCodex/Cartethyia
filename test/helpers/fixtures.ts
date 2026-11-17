@@ -18,15 +18,6 @@ import { encryptCredential, hashSecret } from "../../src/security/crypto";
 import { TENANT_KEY_SCOPES } from "../../src/security/access-control";
 import { invalidateApiKeyCache } from "../../src/security/api-key-auth";
 
-/** Identifiers of everything one fixture created, for teardown. */
-export interface FixtureScope {
-  readonly runId: string;
-  readonly tenantId: string;
-  readonly providerIds: readonly string[];
-  readonly apiKeyIds: readonly string[];
-  cleanup(): Promise<void>;
-}
-
 export interface TenantFixture {
   readonly tenantId: string;
   readonly name: string;

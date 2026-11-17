@@ -30,9 +30,6 @@ export const FREEPI_CLI_VERSION = "0.6.14";
 /** Header carrying the cost-experiment arm; the client sends `1` on /client-version. */
 export const FREEPI_COST_EXP_HEADER = "x-freepi-cost-exp";
 
-/** Header the client sends on /auth/connect/start. */
-export const FREEPI_SIGNIN_EXP_HEADER = "x-freepi-signin-exp";
-
 export const FREEPI_CONTEXT_WINDOW = 200_000;
 export const FREEPI_MAX_OUTPUT_TOKENS = 8192;
 export const FREEPI_DEFAULT_MODEL = "deepseek/deepseek-v4-flash";

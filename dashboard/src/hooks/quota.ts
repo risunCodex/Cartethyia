@@ -340,54 +340,6 @@ export function supportsAccountCheckin(providerId: string): boolean {
   return CHECKIN_PROVIDER_IDS.has(providerId.trim().toLowerCase());
 }
 
-/** Triggers one account's daily check-in against its upstream provider. */
-export function useTriggerAccountCheckin(accountId: string) {
-  const queryClient = useQueryClient();
-  return useMutation<AccountCheckinResult, ApiErrorShape, void>({
-    mutationFn: async () => {
-      return consoleRequest<AccountCheckinResult>(
-        `/accounts/${encodeURIComponent(accountId)}/checkin`,
-        {
-          method: "POST",
-        },
-      );
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.quota.all }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.providers.all }),
-      ]);
-    },
-  });
-}
-
-/**
- * Triggers one account's growth-activity report on its own.
- *
- * The report is the leg that actually lands on a free plan — the check-in is
- * often simply not open — so an operator needs to be able to run it without
- * also attempting a claim.
- */
-export function useTriggerAccountReport(accountId: string) {
-  const queryClient = useQueryClient();
-  return useMutation<AccountActivityReportResult, ApiErrorShape, void>({
-    mutationFn: async () => {
-      return consoleRequest<AccountActivityReportResult>(
-        `/accounts/${encodeURIComponent(accountId)}/activity-report`,
-        {
-          method: "POST",
-        },
-      );
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.quota.all }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.providers.all }),
-      ]);
-    },
-  });
-}
-
 /** One account's outcome inside a provider-wide daily growth batch. */
 export interface ProviderDailyGrowthEntry {
   readonly accountId: string;

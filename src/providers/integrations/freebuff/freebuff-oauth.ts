@@ -24,11 +24,6 @@ import { isRecord } from "../../../protocol/codecs";
 import { GatewayError } from "../../../protocol/gateway-error";
 import {
   FREEBUFF_API_HOST,
-  FREEBUFF_CLIENT_HEADER_VALUE,
-  FREEBUFF_MODEL_CATALOG_PATH,
-  FREEBUFF_CATALOG_PROTOCOL_HEADER,
-  FREEBUFF_CATALOG_PROTOCOL_VERSION,
-  FREEBUFF_CLIENT_HEADER,
   freebuffMintDeviceKey,
 } from "./freebuff";
 
@@ -221,20 +216,3 @@ const client = new FreebuffOAuthClient();
 
 /** Config imported by the registry; device key lives in auth_state. */
 export const freebuffOAuthClient: OAuthLoginClient = client;
-
-// Re-export a helper so the catalog probe and other modules can validate a
-// pasted token without constructing the client.
-export async function freebuffValidateToken(token: string, fetchFn: typeof fetch = globalThis.fetch): Promise<string | undefined> {
-  const res = await fetchFn(`${FREEBUFF_API_HOST}${FREEBUFF_MODEL_CATALOG_PATH}`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      [FREEBUFF_CATALOG_PROTOCOL_HEADER]: FREEBUFF_CATALOG_PROTOCOL_VERSION,
-      [FREEBUFF_CLIENT_HEADER]: FREEBUFF_CLIENT_HEADER_VALUE,
-    },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) return undefined;
-  const body: unknown = await res.json().catch(() => null);
-  return isRecord(body) && typeof body["fetchId"] === "string" ? body["fetchId"] : undefined;
-}

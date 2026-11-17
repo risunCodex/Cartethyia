@@ -102,8 +102,10 @@ export function resolveDrainToken(): string | undefined {
  * even when `NODE_ENV=production`. A deployment that runs
  * `bun run src/main.ts` must not be pushed onto the eager branch.
  *
- * `CARTETHYIA_SOURCE_RUN` marks a source run explicitly. It is set by
- * `scripts/deploy/*.sh`, which are the only supported way to run from source.
+ * `CARTETHYIA_SOURCE_RUN` marks a source run explicitly. It is an
+ * operator-set sentinel: the operator sets it to `1` whenever a source run
+ * starts with `NODE_ENV=production` (see the deployment gotchas), so the
+ * process never takes the eager branch from source.
  */
 export function resolveElysiaPrecompile(): boolean {
   if (process.env.CARTETHYIA_SOURCE_RUN === "1") return false;
