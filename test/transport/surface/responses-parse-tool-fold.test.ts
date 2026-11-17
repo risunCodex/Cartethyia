@@ -4,7 +4,7 @@ import { parseResponsesRequest } from "../../../src/transport/surface/responses/
 /**
  * Responses input items each decode to one canonical message. Parallel tool
  * calls arrive as consecutive `function_call` items with no output between
- * them; decoding each into its own assistant turn broke the Qoder/OpenAI wire
+ * them; decoding each into its own assistant turn broke the OpenAI wire
  * (an assistant `tool_calls` turn must be directly followed by the `tool`
  * turns answering it). The parser folds bare consecutive call turns into one
  * assistant turn.
@@ -12,7 +12,7 @@ import { parseResponsesRequest } from "../../../src/transport/surface/responses/
 
 function parse(input: unknown) {
   return parseResponsesRequest({
-    model: "qoder/deepseek-v4.1-flash",
+    model: "acme/deepseek-v4.1-flash",
     input,
     stream: false,
     max_output_tokens: 1024,

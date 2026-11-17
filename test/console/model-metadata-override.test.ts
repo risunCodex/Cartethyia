@@ -17,8 +17,6 @@ import {
   applyModelMetadataOverride,
   resolveManualModelMetadata,
 } from "../../src/providers/provider-model-definition";
-import { QODER_PROVIDER_WARNINGS } from "../../src/providers/integrations/qoder/qoder-virtual";
-import { QODER_CN_MODELS, QODER_INTL_MODELS, qoderVirtualModels, qoderCatalogModel } from "../../src/providers/integrations/qoder/qoder-catalog";
 import { seedBundledModels } from "../../src/providers/operations/provider-catalog-seeder";
 import { mapModelRow, withImageModality } from "../../src/console/providers/catalog/store";
 import { createProviderCatalogRoutes } from "../../src/console/providers/catalog/routes";
@@ -209,7 +207,7 @@ describe("warning metadata", () => {
   function warningRow(overrides: Partial<Record<string, unknown>>) {
     return {
       modelId: "warning-model",
-      providerId: "qoder",
+      providerId: "factory",
       wireFamily: "chat",
       endpointPath: "/v1/chat/completions",
       serviceKind: "llm",
@@ -239,29 +237,6 @@ describe("warning metadata", () => {
     expect(mapModelRow(warningRow({ warningMetadata: { warnings: [] } }), false).warnings).toBeUndefined();
   });
 
-  test("qoder carries exactly three provider-level 'may' warnings on every row kind", () => {
-    expect(QODER_PROVIDER_WARNINGS.map((w) => w.kind)).toEqual([
-      "fallback_model",
-      "cache_reliability",
-      "model_refusal",
-    ]);
-    for (const w of QODER_PROVIDER_WARNINGS) {
-      expect(w.message).toMatch(/\bmay\b/);
-      expect(w.severity).toBe("warn");
-    }
-    const all = [
-      ...QODER_CN_MODELS,
-      ...QODER_INTL_MODELS,
-      ...qoderVirtualModels(QODER_CN_MODELS, "qodercn"),
-      qoderCatalogModel(
-        { key: "new-slot", displayName: "New", isVl: false, isReasoning: false, maxInputTokens: 1000, enable: true, isFree: false },
-        "qoder",
-      ),
-    ];
-    expect(all.length).toBeGreaterThan(0);
-    for (const definition of all) expect(definition.warnings).toEqual(QODER_PROVIDER_WARNINGS);
-  });
-
   function removeDir(dir: string): void {
     try {
       rmSync(dir, { recursive: true, force: true });
@@ -277,17 +252,17 @@ describe("warning metadata", () => {
     const db = buildSqliteHandle(sqlite).db;
     const [tenant] = await db.insert(tenants).values({ name: "warnings", status: "active" }).returning({ id: tenants.id });
     const tenantId = tenant!.id;
-    await db.insert(providers).values({ id: "qoder", enabled: true });
+    await db.insert(providers).values({ id: "factory", enabled: true });
     await db.insert(models).values([
       {
-        providerId: "qoder",
+        providerId: "factory",
         modelId: "manual-model",
         wireFamily: "chat",
         endpointPath: "/v1/chat/completions",
         source: "manual",
       },
       {
-        providerId: "qoder",
+        providerId: "factory",
         modelId: "builtin-model",
         wireFamily: "chat",
         endpointPath: "/v1/chat/completions",
@@ -316,7 +291,7 @@ describe("warning metadata", () => {
       snapshotInvalidator: { invalidate: async () => 1 },
     }));
     const patch = (modelId: string, metadata: unknown) => app.handle(
-      new Request("http://localhost/providers/qoder/models", {
+      new Request("http://localhost/providers/factory/models", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ modelId, route: "/v1/chat/completions", enabled: true, metadata }),
@@ -337,7 +312,7 @@ describe("warning metadata", () => {
     const fx = await fixture();
     try {
       await seedBundledModels(fx.db, new Map([[
-        "qoder",
+        "factory",
         [{
           modelId: "seeded-model",
           wireFamily: "chat",
@@ -348,7 +323,7 @@ describe("warning metadata", () => {
           reasoning: false,
           toolCall: true,
           cost: { input: null, output: null },
-          warnings: QODER_PROVIDER_WARNINGS,
+          warnings: [warning],
         }],
       ]]));
       const [seeded] = await fx.db.select().from(models).where(eq(models.modelId, "seeded-model"));
@@ -360,7 +335,7 @@ describe("warning metadata", () => {
         : seeded?.warningMetadata;
       const warnings = (parsed as { warnings?: ModelWarning[] } | null)?.warnings
         ?? (parsed as ModelWarning[] | null);
-      expect(warnings).toEqual([...QODER_PROVIDER_WARNINGS]);
+      expect(warnings).toEqual([warning]);
     } finally {
       fx.cleanup();
     }

@@ -21,8 +21,8 @@ import { clearQuotaCacheForTests, setCachedQuota } from "../../src/providers/quo
 
 function candidate(id: string, extra: Record<string, unknown> = {}): RouteCandidate {
   return {
-    provider_id: "qoder",
-    model_id: "qoder-model",
+    provider_id: "testprov",
+    model_id: "test-model",
     wire_family: "chat",
     endpoint: "/v1/chat",
     capability_profile: {},
@@ -84,7 +84,7 @@ describe("unified routing decision engine", () => {
         candidate("a-zero", { quota_windows: [pooledWindow(0, 100)] }),
         candidate("a-credit", { quota_windows: [pooledWindow(50, 100)] }),
       ]),
-      "qoder-model",
+      "test-model",
     );
     expect(order).toEqual(["a-credit"]);
   });
@@ -95,7 +95,7 @@ describe("unified routing decision engine", () => {
         candidate("a-exhausted", { quota_windows: [independentWindow(0), independentWindow(0)] }),
         candidate("a-healthy", { quota_windows: [independentWindow(80)] }),
       ]),
-      "qoder-model",
+      "test-model",
     );
     expect(order).toEqual(["a-healthy"]);
   });
@@ -106,7 +106,7 @@ describe("unified routing decision engine", () => {
         candidate("a-unknown"),
         candidate("a-credit", { quota_windows: [pooledWindow(42)] }),
       ]),
-      "qoder-model",
+      "test-model",
     );
     expect(order).toEqual(["a-credit", "a-unknown"]);
   });
@@ -114,7 +114,7 @@ describe("unified routing decision engine", () => {
   test("when every candidate is unknown, they remain eligible and dialable (no hard block)", async () => {
     const order = await plannedOrder(
       snapshot([candidate("a-unknown-1"), candidate("a-unknown-2")]),
-      "qoder-model",
+      "test-model",
     );
     expect(order.length).toBe(2);
   });
@@ -133,7 +133,7 @@ describe("unified routing decision engine", () => {
           usage_floor_unit: "credit",
         }),
       ]),
-      "qoder-model",
+      "test-model",
     );
     expect(order).toEqual(["a-above"]);
   });
@@ -183,13 +183,13 @@ describe("unified routing decision engine", () => {
       quota_windows: [pooledWindow(30, 100)],
     });
     await setCachedQuota("global", "a-stale", {
-      source: "qoder",
+      source: "testprov",
       plan: null,
       windows: [pooledWindow(0, 100)],
       error: null,
     }, undefined, new Date(staleFetchedAt));
     await setCachedQuota("global", "a-fresh", {
-      source: "qoder",
+      source: "testprov",
       plan: null,
       windows: [pooledWindow(30, 100)],
       error: null,
@@ -197,7 +197,7 @@ describe("unified routing decision engine", () => {
     const engine = new RoutingEngine();
     // A real RoutingEngine consults the cache; pass the cache-backed candidates
     // through plan() so the fact derivation sees the entry timestamps.
-    const plan = await engine.plan("qoder-model", snapshot([staleActive, staleAvailable]));
+    const plan = await engine.plan("test-model", snapshot([staleActive, staleAvailable]));
     const order = plan.candidates.map((c) => c.provider_account_id);
     // Fresh available outranks stale-unknown.
     expect(order[0]).toBe("a-fresh");

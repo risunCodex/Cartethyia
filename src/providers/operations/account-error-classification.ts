@@ -19,8 +19,6 @@ import {
   deploymentInfraErrorRule,
   githubRules,
   modelFrequencyWindowRule,
-  qoderPlanGatedRule,
-  qoderModelQuotaRule,
   zcodeStartPlanTrialRule,
   traeRules,
   inceptionRules,
@@ -139,18 +137,6 @@ export function classifyAccountError(
     !priceRefusal &&
     !deploymentInfraError &&
     (statusCode === 402 ||
-      // Qoder answers an exhausted credit balance with
-      // `{"code":"112","message":"{\"pricingUrl\":...}"}` — the body points at
-      // the pricing page, i.e. "buy more", which is a balance verdict, not an
-      // auth one. It fell through to `auth_invalidated` and the console showed
-      // "Re-login required" on an account whose credential was fine, sending
-      // operators to re-authenticate instead of topping up.
-      // Recognising it here keeps it out of `auth_invalidated`; the branch
-      // below scopes the resulting cooldown to the model, because the account
-      // keeps serving its other models.
-      providerCode === "112" ||
-      providerCode === "110" ||
-      providerCode === "116" ||
       providerCode === "insufficient_quota" ||
       providerCode === "quota_exceeded" ||
       providerCode === "subscription:free-usage-exhausted" ||
@@ -196,9 +182,7 @@ export function classifyAccountError(
       lower.includes("spending limit") ||
       lower.includes("spending cap") ||
       lower.includes("monthly spend limit") ||
-      lower.includes("billing daily count exceeded") ||
-      // Same Qoder family reached by body text when the code is not parsed out.
-      (lower.includes("pricingurl") && lower.includes("qoder.com/pricing")));
+      lower.includes("billing daily count exceeded"));
   // A deterministic content-policy rejection is NOT credential invalidation.
   // CodeBuddy returns HTTP 403 with provider code 11140 ("request illegal",
   // "did not pass the safety review") — refreshing the token cannot change
@@ -255,16 +239,11 @@ export function classifyAccountError(
    * The upstream accepted the request and put it in a queue behind other
    * callers — it is busy, not rejecting the caller's credential.
    *
-   * Qoder answers `403 {"code":"10605","message":"{\"isQueued\":true,
-   * \"modelKey\":\"dfmodel\",\"queueCount\":1395,...}"}`. The 403 is what made
-   * this misclassify: the generic `(401 || 403) && accountEvidence` arm claimed
-   * it as `auth_invalidated`, so a healthy account was parked as "Re-login
-   * required" purely because the provider was busy, and an operator was sent
-   * to re-authenticate a credential that was never rejected.
-   *
-   * Matched on the queue evidence rather than on the bare `10605`, so an
-   * unrelated 403 that happens to share the code is not swept in. The bodies
+   * Matched on the queue evidence rather than on the bare code, so an
+   * unrelated 403 that happens to share a code is not swept in. The bodies
    * are nested JSON, so the tell is the key, not a parse of the envelope.
+   * (Qoder was the original source of this signal; the match stays for any
+   * provider that emits the same queue vocabulary.)
    */
   const queuedUpstream =
     providerCode === "10605" ||
@@ -352,10 +331,8 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
   ...githubRules,
   credentialRejectedRule,
   priceRefusalRule,
-  qoderPlanGatedRule,
   modelPlanGatedRule,
   ...traeRules,
-  qoderModelQuotaRule,
   quotaExhaustedRule,
   ...inceptionRules,
   ...perchRules,

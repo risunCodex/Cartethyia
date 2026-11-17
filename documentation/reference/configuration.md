@@ -107,8 +107,6 @@ Variables read outside the spec are therefore **not** listed below:
 | `CARTETHYIA_SERVER_MAX_BODY_BYTES` | integer | 16777216 | 1024 – 9007199254740991 |
 | `CARTETHYIA_SERVER_IDLE_TIMEOUT` | integer | 60 | 0 – 86400 |
 | `CARTETHYIA_TOOL_RESULT_MAX_KB` | integer | 0 | 0 – 1048576 |
-| `CARTETHYIA_QODER_MIN_GAP_MS` | integer | 400 | 0 – 60000 |
-| `CARTETHYIA_QODER_P4_WARN_STREAK` | integer | 5 | 1 – 1000 |
 | `CARTETHYIA_CURSOR_CLIENT_VERSION` | string, optional | unset | — |
 | `CARTETHYIA_CURSOR_HEARTBEAT_MS` | integer | 5000 | 500 – 120000 |
 | `CARTETHYIA_CURSOR_WIRE_TRACE` | string, optional | unset | — |

@@ -45,24 +45,24 @@ describe("provider capture size follows the capture depth", () => {
 });
 
 describe("provider exchange capture", () => {
-  test("captures a Uint8Array body (Qoder cosy encoding)", async () => {
-    // Qoder sends its transformed body as `Uint8Array`, not a string. The tee
-    // used to record only `{method, url, headers}` for it — the provider
-    // request panel was empty. It must decode and retain the bytes like any
-    // other string body.
-    const body = Buffer.from(JSON.stringify({ model: "qoder/test" }), "latin1");
+  test("captures a Uint8Array body", async () => {
+    // A provider may send its transformed body as `Uint8Array`, not a string.
+    // The tee used to record only `{method, url, headers}` for it — the
+    // provider request panel was empty. It must decode and retain the bytes
+    // like any other string body.
+    const body = Buffer.from(JSON.stringify({ model: "acme/test" }), "latin1");
     const capture = { request: null, response: Promise.resolve(null) };
     const fetcher = captureProviderExchange(
       async () => new Response("{}", { headers: { "content-type": "application/json" } }),
       capture,
     );
-    await fetcher("https://api1.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation", {
+    await fetcher("https://api1.example.com/v1/chat/completions", {
       method: "POST",
       body: body as unknown as BodyInit,
     });
     expect(capture.request).toMatchObject({
       method: "POST",
-      body: { model: "qoder/test" },
+      body: { model: "acme/test" },
     });
   });
 

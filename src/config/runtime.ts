@@ -47,16 +47,6 @@ export function resolveToolResultMaxKb(): number {
   return readInt("CARTETHYIA_TOOL_RESULT_MAX_KB", CONFIG_SPEC.CARTETHYIA_TOOL_RESULT_MAX_KB);
 }
 
-/** Resolves the minimum gap between same-account Qoder dispatches (ms). */
-export function resolveQoderMinGapMs(): number {
-  return readInt("CARTETHYIA_QODER_MIN_GAP_MS", CONFIG_SPEC.CARTETHYIA_QODER_MIN_GAP_MS);
-}
-
-/** Resolves the p4 streak length that re-alarms the Qoder egress-pin warning. */
-export function resolveQoderP4WarnStreak(): number {
-  return readInt("CARTETHYIA_QODER_P4_WARN_STREAK", CONFIG_SPEC.CARTETHYIA_QODER_P4_WARN_STREAK);
-}
-
 /** Resolves the operator-pinned Cursor client version, or `undefined` for the monitored one. */
 export function resolveCursorClientVersion(): string | undefined {
   return readOptionalText("CARTETHYIA_CURSOR_CLIENT_VERSION", CONFIG_SPEC.CARTETHYIA_CURSOR_CLIENT_VERSION);

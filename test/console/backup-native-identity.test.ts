@@ -1,8 +1,8 @@
 /**
- * The Qoder native identity must survive backup export/restore: it is the
- * account's durable claim on a check-in slot, and moving it to another
- * install is the entire point of export. The backup contract treats jsonb
- * columns generically, so this pins that the new column actually rides along.
+ * A provider's native identity must survive backup export/restore: it is the
+ * account's durable device binding, and moving it to another install is the
+ * entire point of export. The backup contract treats jsonb columns
+ * generically, so this pins that the column actually rides along.
  */
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -23,14 +23,14 @@ test("native_identity travels through export and restore verbatim", async () => 
   try {
     await applySqliteMigrations(sqlite);
     const { db } = buildSqliteHandle(sqlite);
-    await db.insert(providers).values({ id: "qoder" });
+    await db.insert(providers).values({ id: "testprov" });
     const tenantId = randomUUID();
     await db.insert(tenants).values({ id: tenantId, name: "source", status: "active" });
     const accountId = randomUUID();
     // Seed the account with a bound native identity, then export.
     await db.insert(providerAccounts).values({
       id: accountId,
-      providerId: "qoder",
+      providerId: "testprov",
       tenantId,
       label: "a",
       credentialKind: "api_key",

@@ -3,7 +3,7 @@
  * column into one POJO: Postgres' drizzle jsonb arrives as an object, SQLite's
  * text-backed column arrives as a JSON string. Every auth-state reader must
  * accept both — a SQLite install that drops the string form loses per-account
- * identity (Qoder's userId/machineId, Trae's region) and breaks dispatch.
+ * identity (a provider's userId/machineId, Trae's region) and breaks dispatch.
  */
 import { describe, expect, test } from "bun:test";
 import { asJsonbRecord, asRecord } from "../../src/shared/coerce";

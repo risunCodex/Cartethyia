@@ -1,5 +1,4 @@
 import type { ServiceKind, WireFamily } from "../protocol/canonical-model";
-import { QODER_CHAT_PATH, QODER_REALMS } from "./integrations/qoder/qoder-realm";
 import { TRAE_CHAT_PATH, TRAE_REALMS } from "./integrations/trae/trae-realm";
 
 /** Identity and routing defaults for every builtin provider. */
@@ -409,21 +408,7 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
     credentialUrl: "https://commandcode.ai/studio",
     credentialHint: "Use the API key from the Command Code CLI, or create one in the studio.",
   },
-  { id: "qoder", displayName: "Qoder", baseUrl: "https://api2.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=*", hasAdapterUserAgent: true, credentialUrl: "https://qoder.com/account/integrations", credentialHint: "Paste a Personal Access Token (pt-...) from the Qoder integrations page, or sign in with your Qoder account." },
-  // A separate provider, not a region flag on `qoder`: the China deployment has
-  // its own gateway host, OAuth client id, and model roster, and a CN account
-  // dispatched to the global host is refused rather than degraded.
-  //
-  // The base is built from the realm table rather than restated, so the host
-  // the console shows and the host the adapter dials cannot disagree.
-  {
-    id: "qodercn",
-    displayName: "Qoder CN",
-    baseUrl: `${QODER_REALMS.cn.gateway}${QODER_CHAT_PATH}`,
-    hasAdapterUserAgent: true,
-    credentialUrl: `${QODER_REALMS.cn.website}/account/integrations`,
-    credentialHint: "Paste a Personal Access Token (pt-...) from the Qoder CN integrations page, or sign in with your Qoder China account.",
-  },
+
   // Proxied by default, unlike most providers here. Trae applies account-level
   // ban/detection heuristics to the request origin, and a direct egress makes
   // every account in the pool share one identifiable address — the proxy is

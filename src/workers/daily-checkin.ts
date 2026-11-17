@@ -1,6 +1,6 @@
 // Daily check-in ride-along.
 //
-// dynamic-import-ok: the buddy/qoder check-in fetches are lazy-loaded
+// dynamic-import-ok: the buddy check-in fetches are lazy-loaded
 // inside the account loop (B-02); only the provider-id list is imported
 // statically. This runs as a ride-along with the quota sweep, not at startup.
 //
@@ -28,7 +28,6 @@ import { dailyCheckinLedger, networkPools } from "../persistence/schema";
 import type { ProviderId } from "../providers/provider-contracts";
 import { log } from "../observability/logger";
 import type { DailyCheckinResult } from "../providers/integrations/buddy/lifecycle";
-import { QODER_CHECKIN_PROVIDER_IDS } from "../providers/integrations/qoder/qoder-checkin";
 import { BUDDY_PROVIDER_IDS } from "../providers/provider-metadata";
 import { checkinDayKey as sharedCheckinDayKey } from "../shared/time";
 
@@ -38,23 +37,22 @@ export type { DailyCheckinResult };
  * Calendar-day key in UTC, matching the provider's own day boundary.
  *
  * Delegates to `shared/time.ts`'s `checkinDayKey`, the single definition the
- * buddy lifecycle and qoder check-in are expected to converge on. Kept as a
- * re-exported wrapper so this module's existing callers (`quota-refresh-sweep`,
- * the console marker reads, tests) keep their import site.
+ * buddy lifecycle is expected to converge on. Kept as a re-exported wrapper
+ * so this module's existing callers (`quota-refresh-sweep`, the console
+ * marker reads, tests) keep their import site.
  */
 export function checkinDayKey(now: Date = new Date()): string {
   return sharedCheckinDayKey(now);
 }
 
 /**
- * The Buddy and Qoder providers the daily check-in claims a credit for.
+ * The Buddy providers the daily check-in claims a credit for.
  *
- * The shared buddy family set plus `QODER_CHECKIN_PROVIDER_IDS`, the single
- * source in `providers/integrations/qoder/qoder-checkin.ts`.
+ * The shared buddy family set (`BUDDY_PROVIDER_IDS`); the qoder providers
+ * were dropped when the qoder integration was removed pending re-implementation.
  */
 export const DAILY_CHECKIN_PROVIDER_IDS: readonly string[] = [
   ...BUDDY_PROVIDER_IDS,
-  ...QODER_CHECKIN_PROVIDER_IDS,
 ];
 
 /**
@@ -464,37 +462,17 @@ export async function attemptDailyGrowthPass(args: {
   }
   let checkin: DailyCheckinResult;
   try {
-    // The buddy/qoder check-in fetches are lazy-loaded: only the provider on
-    // this account needs its surface (B-02). The qoder module itself is
-    // already loaded for the provider-id list imported at the top.
-    const isQoderCheckinProvider = (
-      await import("../providers/integrations/qoder/qoder-checkin")
-    ).isQoderCheckinProvider;
-    if (isQoderCheckinProvider(String(providerId))) {
-      const { fetchQoderDailyCheckin } = await import(
-        "../providers/integrations/qoder/qoder-checkin"
-      );
-      const { DrizzleQoderNativeIdentityStore } = await import(
-        "../providers/integrations/qoder/qoder-native-identity-store"
-      );
-      checkin = await fetchQoderDailyCheckin({
-        providerId: String(providerId),
-        accountId,
-        credential,
-        fetcher,
-        ...(db ? { nativeIdentityStore: new DrizzleQoderNativeIdentityStore(db) } : {}),
-      });
-    } else {
-      const { fetchDailyCheckin } = await import(
-        "../providers/integrations/buddy/lifecycle"
-      );
-      checkin = await fetchDailyCheckin({
-        providerId,
-        accountId,
-        credential,
-        fetcher,
-      });
-    }
+    // The buddy check-in fetches are lazy-loaded: only the provider on
+    // this account needs its surface (B-02).
+    const { fetchDailyCheckin } = await import(
+      "../providers/integrations/buddy/lifecycle"
+    );
+    checkin = await fetchDailyCheckin({
+      providerId,
+      accountId,
+      credential,
+      fetcher,
+    });
   } catch (error) {
     checkin = {
       providerId,

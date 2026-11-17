@@ -102,10 +102,10 @@ export async function probePostText(
 /**
  * Sends a request with an optional body via node's http(s) client.
  *
- * Some upstreams validate a signature over the body on a GET (Qoder's model
- * list does), and `fetch` rejects `GET` + body. This helper exists for those
- * cases: it performs the request with `node:https`/`node:http` so a GET can
- * carry a body the way the real client sends it.
+ * Some upstreams validate a signature over the body on a GET, and `fetch`
+ * rejects `GET` + body. This helper exists for those cases: it performs the
+ * request with `node:https`/`node:http` so a GET can carry a body the way the
+ * real client sends it.
  */
 function rawRequest(
   url: string,

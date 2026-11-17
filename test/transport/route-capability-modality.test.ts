@@ -3,9 +3,9 @@
  *
  * `buildCapabilityProfile` used to compute `image: inputMods.includes("image") || codecEncodesRichContent`,
  * which made the grant an *override*: every row on a canonical-codec provider
- * claimed image support even when the catalog declared `["text"]`. Qoder is
- * that case — it has no bespoke wire, so the grant fired, and an image was
- * forwarded to an upstream that rejects it. The catalog's own `is_vl: false`
+ * claimed image support even when the catalog declared `["text"]`. A
+ * canonical-codec provider with no bespoke wire is that case — the grant
+ * fired, and an image was forwarded to an upstream that rejects it. The catalog's own `is_vl: false`
  * never mattered.
  *
  * `defineModel` always seeds `"text"`, so a non-empty array is an explicit
@@ -19,7 +19,7 @@ import {
 } from "../../src/transport/routing/route-catalog-helpers";
 
 /** A canonical-codec provider with no bespoke wire. */
-const QODER = "qoder";
+const OPENAI = "openai";
 /** A bespoke-wire provider, for which the grant never fires at all. */
 const KIRO = "kiro";
 
@@ -29,7 +29,7 @@ describe("buildCapabilityProfile input modalities", () => {
       modalities: { input: ["text"], output: ["text"] },
       reasoning: false,
       toolCall: false,
-      providerId: QODER,
+      providerId: OPENAI,
     });
     expect(profile.image).toBe(false);
     expect(profile.document).toBe(false);
@@ -41,7 +41,7 @@ describe("buildCapabilityProfile input modalities", () => {
       modalities: { input: ["text", "image"], output: ["text"] },
       reasoning: false,
       toolCall: false,
-      providerId: QODER,
+      providerId: OPENAI,
     });
     expect(profile.image).toBe(true);
   });
@@ -51,7 +51,7 @@ describe("buildCapabilityProfile input modalities", () => {
       modalities: { input: ["text", "document"], output: ["text"] },
       reasoning: false,
       toolCall: false,
-      providerId: QODER,
+      providerId: OPENAI,
     });
     expect(profile.document).toBe(true);
     expect(profile.image).toBe(false);
@@ -65,7 +65,7 @@ describe("buildCapabilityProfile input modalities", () => {
       modalities: { input: [], output: [] },
       reasoning: false,
       toolCall: false,
-      providerId: QODER,
+      providerId: OPENAI,
     });
     expect(profile.image).toBe(true);
     expect(profile.document).toBe(true);
@@ -114,7 +114,7 @@ describe("capability profile memo", () => {
     modalities,
     reasoning: false,
     toolCall: false,
-    providerId: "qoder",
+    providerId: "openai",
     modelId: "memo-model",
   });
 
@@ -146,7 +146,7 @@ describe("capability profile memo", () => {
       buildCapabilityProfile({
         reasoning: false,
         toolCall: false,
-        providerId: "qoder",
+        providerId: "openai",
         // Distinct modalities per build so each call is a distinct memo key.
         modalities: { input: ["text", `v${i}`], output: ["text"] },
       });

@@ -54,15 +54,6 @@ describe("factory droid client version discovery", () => {
   });
 });
 
-describe("qoder and qodercn share one resolver", () => {
-  // One IDE build identity per product, two deployment realms — the CN gateway
-  // must present the same COSY_VERSION the intl gateway sees.
-  test("qodercn resolves the qoder version", () => {
-    expect(getProviderClientVersion("qodercn")?.client).toBe("qoder");
-    expect(getProviderClientVersion("qodercn")?.version).toBe(getProviderClientVersion("qoder")?.version);
-  });
-});
-
 describe("clixad client version discovery", () => {
   // The gateway publishes its paired CLI build as `cli_latest` on the
   // unauthenticated `/v1/models` listing.
@@ -199,7 +190,7 @@ describe("client version monitor snapshot", () => {
 });
 
 describe("default extractor covers the consolidated sources", () => {
-  // M-27: qoder, cline client, cline sdk, kiro cask, and kimi used to carry
+  // M-27: cline client, cline sdk, kiro cask, and kimi used to carry
   // bespoke extractors that were exact subsets of the resolver's default; they
   // now rely on it. Each must still resolve its source's newer version through
   // `ensure()` — the same pin the old extractor produced.
@@ -210,13 +201,6 @@ describe("default extractor covers the consolidated sources", () => {
     readonly body: unknown;
     readonly expected: string;
   }[] = [
-    {
-      name: "qoder npm",
-      key: "test-qoder",
-      source: VERSION_SOURCES.qoder.sources[0]!,
-      body: { version: "1.1.89" },
-      expected: "1.1.89",
-    },
     {
       name: "cline vscode extension",
       key: "test-cline-client",

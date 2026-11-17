@@ -11,7 +11,6 @@ import {
 import type { ProviderDispatchContext } from "../provider-contracts";
 import type { ProviderModelDiscovery } from "../discovery/discovery-types";
 import { createAnthropicCompatibleAdapter } from "../integrations/anthropic";
-import type { QoderRealm } from "../integrations/qoder/qoder-realm";
 import type { TraeRealm } from "../integrations/trae/trae-realm";
 import { providerBaseUrl } from "../provider-metadata";
 import type { ProviderModuleCapabilities } from "../provider-registry";
@@ -100,47 +99,6 @@ export function traeDiscovery(
     }).filter((model): model is NonNullable<typeof model> => model !== undefined);
   };
 }
-
-/**
- * Qoder's live model list for one realm.
- *
- * The request has to be signed with the account's COSY identity and has to
- * carry the body that was signed — a bare GET is refused — so discovery cannot
- * use the generic bearer helper. It resolves the same identity dispatch uses
- * (PAT exchange or the persisted OAuth state) and then lists against the
- * realm's own gateway hosts.
- */
-export function qoderDiscovery(
-  realm: QoderRealm,
-  providerId: string,
-): NonNullable<ProviderModuleCapabilities["loadModelDiscovery"]> {
-  return async () => async (request: Parameters<ProviderModelDiscovery>[0]) => {
-    const { discoverQoderModels } = await import("../integrations/qoder/qoder-catalog");
-    const { resolveQoderAuth, qoderSignerFor, qoderEncodeBody } = await import("../integrations/qoder/qoder");
-    const secret = request.credential.trim();
-    if (secret.length === 0) throw new Error("Qoder credential is required");
-    const fetcher = request.fetcher as unknown as typeof fetch | undefined;
-    // The discovery context carries only the secret plus the non-secret
-    // `authState` an OAuth login persisted; the account id lives there too, so
-    // an OAuth credential resolves to the same identity dispatch would use.
-    const auth = await resolveQoderAuth({
-      secret,
-      authState: request.authState,
-      signal: AbortSignal.timeout(15_000),
-      fetcher: (url: string, init: RequestInit) => (fetcher ?? globalThis.fetch)(url, init),
-    });
-    const signer = qoderSignerFor(auth);
-    return discoverQoderModels({
-      realm,
-      providerId,
-      credential: secret,
-      headers: (url: string, body: string) => Promise.resolve(signer(url, body)),
-      ...(fetcher === undefined ? {} : { fetcher }),
-      encode: qoderEncodeBody,
-    });
-  };
-}
-
 
 export function openAIModelDiscovery(
   providerId: string,

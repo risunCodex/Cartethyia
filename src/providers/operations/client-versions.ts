@@ -173,19 +173,6 @@ export const VERSION_SOURCES = {
       },
     ],
   },
-  qoder: {
-    key: "qoder",
-    // The chat surface identity is the worker-core build line: the desktop
-    // 0.5.12 core sends `cosy-version: 1.1.86-hotfix.5` (capture 2026-11-17)
-    // and its runtime-info names the product `qodercli` — the npm
-    // `@qoder-ai/qodercli` package ships that same runtime, so its latest tag
-    // is the freshest build of the family. The fallback is the version the
-    // real desktop core sends today; the resolver only ever adopts a
-    // *newer* discovered value, so discovery lifts the pin without ever
-    // presenting a build older than the captured core.
-    fallback: "1.1.86-hotfix.5",
-    sources: [{ url: "https://registry.npmjs.org/@qoder-ai/qodercli/latest" }],
-  },
   opencode: {
     key: "opencode",
     // The v1 package (`opencode-ai`) stopped at 1.18. The v2 line publishes
@@ -427,7 +414,6 @@ export const VERSION_SOURCES = {
 
 const resolvers = {
   antigravity: createClientVersionResolver({ ...VERSION_SOURCES.antigravity, client: "antigravity" }),
-  qoder: createClientVersionResolver({ ...VERSION_SOURCES.qoder, client: "qoder" }),
   hermes: createClientVersionResolver({ ...VERSION_SOURCES.hermes, client: "hermes" }),
   trae: createClientVersionResolver({ ...VERSION_SOURCES.trae, client: "trae" }),
   freepi: createClientVersionResolver({ ...VERSION_SOURCES.freepi, client: "freepi" }),
@@ -470,7 +456,6 @@ const PROVIDER_VERSION_RESOLVERS: Readonly<Record<string, ClientVersionResolver>
   // identity reports the CLI version, not the VS Code extension manifest.
   cline: resolvers.clineCli,
   codex: resolvers.codex,
-  qoder: resolvers.qoder,
   cursor: resolvers.cursor,
   hermes: resolvers.hermes,
   trae: resolvers.trae,
@@ -486,9 +471,6 @@ const PROVIDER_VERSION_RESOLVERS: Readonly<Record<string, ClientVersionResolver>
   kilo: resolvers.kilo,
   muse: resolvers.muse,
   zcode: resolvers.zcode,
-  // Both Qoder realms present the same IDE build identity (one COSY_VERSION
-  // per product, not per deployment host).
-  qodercn: resolvers.qoder,
   factory: resolvers.factoryDroid,
 };
 
@@ -597,7 +579,6 @@ function accessor<K extends keyof typeof resolvers>(name: K): {
   };
 }
 
-export const getQoderVersion = accessor("qoder").get;
 export const getHermesVersion = accessor("hermes").get;
 export const getTraeVersion = accessor("trae").get;
 export const getAntigravityVersion = accessor("antigravity").get;

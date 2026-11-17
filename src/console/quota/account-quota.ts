@@ -2,15 +2,13 @@ import { Elysia } from "elysia";
 import { consoleErrorHandler } from "../shared/errors";
 import { registerAccountQuotaGlobalRoutes } from "./account-quota-global";
 import { registerAccountQuotaTenantRoutes } from "./account-quota-tenant";
-import { registerNativeIdentityRoutes } from "./native-identity";
 import { createQuotaRefreshDeps, type AccountQuotaRoutesDeps } from "./account-quota-shared";
 
 /**
  * Mounts the account/quota console routes: the tenant-scoped group (the
  * caller's own accounts) and the platform-admin group (shared accounts). Each
  * group lives in its own module and authorises every route with its own
- * access check. The native-identity routes are mounted once, here, because
- * they serve both owned and shared accounts with per-account authorization.
+ * access check.
  */
 export function createAccountQuotaRoutes(deps: AccountQuotaRoutesDeps): Elysia {
   const refreshDeps = createQuotaRefreshDeps(deps);
@@ -20,6 +18,5 @@ export function createAccountQuotaRoutes(deps: AccountQuotaRoutesDeps): Elysia {
   app.error(consoleErrorHandler("Quota operation failed"));
   registerAccountQuotaTenantRoutes(app, deps, refreshDeps);
   registerAccountQuotaGlobalRoutes(app, deps, refreshDeps);
-  registerNativeIdentityRoutes(app, { db: deps.db, accessResolver: deps.accessResolver });
   return app;
 }

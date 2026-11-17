@@ -3,7 +3,7 @@
  *
  * The paste importer used to cherry-pick `profileArn/authMethod/region/userId`
  * from the wrapper and silently dropped every other key — so a re-import of an
- * exported Qoder account lost `machineId` and answered 401 "missing its user
+ * exported account lost `machineId` and answered 401 "missing its user
  * identity" at dispatch, buddy accounts lost their `qimei36` device binding,
  * coreweave lost its project. The bag travels
  * wholesale now; these tests pin that, plus the alias picks older export shapes
@@ -77,14 +77,14 @@ async function pastedAuthStateOf(
 }
 
 describe("oauth paste auth-state persistence", () => {
-  test("an import of an exported Qoder row restores userId and machineId", async () => {
+  test("an import of an exported row restores userId and machineId", async () => {
     await withStore(async ({ store, tenantId }) => {
       const state = await pastedAuthStateOf(
         store,
         tenantId,
         JSON.stringify({
           id: randomUUID(),
-          providerId: "qoder",
+          providerId: "opencode",
           credentialKind: "oauth",
           accessToken: "at-1",
           refreshToken: "rt-1",

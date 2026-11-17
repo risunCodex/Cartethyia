@@ -25,8 +25,8 @@ import { persistQuotaSnapshot } from "../../src/providers/quota/snapshot";
 
 function candidate(id: string): RouteCandidate {
   return {
-    provider_id: "qoder",
-    model_id: "qoder-model",
+    provider_id: "testprov",
+    model_id: "test-model",
     wire_family: "chat",
     endpoint: "/v1/chat",
     capability_profile: {},
@@ -50,11 +50,11 @@ async function fixture() {
   const sqlite = createSqliteDatabase(join(dir, "q.sqlite"));
   await applySqliteMigrations(sqlite);
   const { db } = buildSqliteHandle(sqlite);
-  await db.insert(providers).values({ id: "qoder" });
+  await db.insert(providers).values({ id: "testprov" });
   const insert = async (id: string) => {
     await db.insert(providerAccounts).values({
       id,
-      providerId: "qoder",
+      providerId: "testprov",
       label: id,
       credentialKind: "oauth",
     });
@@ -87,11 +87,11 @@ test("cold cache falls back to persisted quota snapshot for ordering", async () 
     await fx.insert("a-zero");
     await fx.insert("a-credit");
     await persistQuotaSnapshot(fx.db, "a-zero", {
-      source: "qoder",
+      source: "testprov",
       plan: null,
       windows: [
         {
-          kind: "qoder:plan",
+          kind: "test:plan",
           label: "Plan credits",
           accounting: "pooled",
           usedPercent: null,
@@ -104,11 +104,11 @@ test("cold cache falls back to persisted quota snapshot for ordering", async () 
       error: null,
     });
     await persistQuotaSnapshot(fx.db, "a-credit", {
-      source: "qoder",
+      source: "testprov",
       plan: null,
       windows: [
         {
-          kind: "qoder:plan",
+          kind: "test:plan",
           label: "Plan credits",
           accounting: "pooled",
           usedPercent: null,
@@ -125,7 +125,7 @@ test("cold cache falls back to persisted quota snapshot for ordering", async () 
     // persisted snapshot. The exhausted account (used=limit) is excluded;
     // only a-credit (with remaining balance) routes.
     const engine = new RoutingEngine(undefined, undefined, fx.db);
-    const plan = await engine.plan("qoder-model", snapshot([candidate("a-credit"), candidate("a-zero")]));
+    const plan = await engine.plan("test-model", snapshot([candidate("a-credit"), candidate("a-zero")]));
     const order = plan.candidates.map((c) => c.provider_account_id);
     expect(order).toEqual(["a-credit"]);
   } finally {
@@ -143,11 +143,11 @@ test("a warm cache wins over the persisted snapshot", async () => {
     // Persist the opposite of the cache: snapshot says a-zero has credit,
     // cache says a-credit has credit. The cache must win.
     await persistQuotaSnapshot(fx.db, "a-zero", {
-      source: "qoder",
+      source: "testprov",
       plan: null,
       windows: [
         {
-          kind: "qoder:plan",
+          kind: "test:plan",
           label: "Plan credits",
           accounting: "pooled",
           usedPercent: null,
@@ -160,11 +160,11 @@ test("a warm cache wins over the persisted snapshot", async () => {
       error: null,
     });
     await persistQuotaSnapshot(fx.db, "a-credit", {
-      source: "qoder",
+      source: "testprov",
       plan: null,
       windows: [
         {
-          kind: "qoder:plan",
+          kind: "test:plan",
           label: "Plan credits",
           accounting: "pooled",
           usedPercent: null,
@@ -180,11 +180,11 @@ test("a warm cache wins over the persisted snapshot", async () => {
     // Prime the in-memory cache directly through the cache module.
     const { setCachedQuota } = await import("../../src/providers/quota/cache");
     await setCachedQuota("global", "a-credit", {
-      source: "qoder",
+      source: "testprov",
       plan: null,
       windows: [
         {
-          kind: "qoder:plan",
+          kind: "test:plan",
           label: "Plan credits",
           accounting: "pooled",
           usedPercent: null,
@@ -197,11 +197,11 @@ test("a warm cache wins over the persisted snapshot", async () => {
       error: null,
     }, undefined);
     await setCachedQuota("global", "a-zero", {
-      source: "qoder",
+      source: "testprov",
       plan: null,
       windows: [
         {
-          kind: "qoder:plan",
+          kind: "test:plan",
           label: "Plan credits",
           accounting: "pooled",
           usedPercent: null,
@@ -213,7 +213,7 @@ test("a warm cache wins over the persisted snapshot", async () => {
       ],
       error: null,
     }, undefined);
-    const plan = await engine.plan("qoder-model", snapshot([candidate("a-credit"), candidate("a-zero")]));
+    const plan = await engine.plan("test-model", snapshot([candidate("a-credit"), candidate("a-zero")]));
     const order = plan.candidates.map((c) => c.provider_account_id);
     expect(order[0]).toBe("a-credit");
   } finally {

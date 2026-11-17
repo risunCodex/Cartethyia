@@ -89,9 +89,6 @@ const ALLOW_LIST: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     // the rest of the buddy credential surface.
     CARTETHYIA_DEVICE_TOKEN_FILE: "buddy device-token file path, deployment-level injection",
   },
-  "src/providers/integrations/qoder/qoder-umid.ts": {
-    // (no environment reads — the OS identity is derived from host state)
-  },
   "src/console/cli-tools/cartethyia-websearch-plugin.ts": {
     // OpenCode websearch plugin generation: operator overrides for the
     // generated plugin's gateway URL/key/backend. Only read at plugin-write

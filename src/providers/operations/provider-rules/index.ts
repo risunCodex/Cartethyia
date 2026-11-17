@@ -1,6 +1,6 @@
 export { traeRules } from "./trae";
 
-export { qoderPlanGatedRule, qoderModelQuotaRule } from "./qoder";
+
 
 export { buddyRules } from "./buddy";
 

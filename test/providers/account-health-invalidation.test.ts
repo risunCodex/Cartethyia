@@ -100,7 +100,7 @@ describe("model cooldown route snapshot invalidation", () => {
     await world?.cleanup();
   });
 
-  test("Qoder virtual model rate limits evict a cached route and then exclude only that pair", async () => {
+  test("a model-scoped rate limit evicts a cached route and then excludes only that pair", async () => {
     const before = await routeService.getSnapshot();
     const candidate = before.candidates.find(
       (row) => row.provider_account_id === world.accountId && row.model_id === world.modelId,
@@ -110,15 +110,15 @@ describe("model cooldown route snapshot invalidation", () => {
     await reportAttemptOutcome(getDb(), {
       accountId: world.accountId,
       modelId: "deepseek-v4.1-flash",
-      error: new GatewayError("quota_exceeded", 429, "Qoder rate limit exceeded", {
-        providerId: "qoder",
+      error: new GatewayError("quota_exceeded", 429, "rate limit exceeded", {
+        providerId: "some-provider",
         providerStatus: 429,
         providerCode: "rate_limit_exceeded",
       }, "upstream"),
       evidence: {
         origin: "upstream",
         scope: "provider",
-        providerId: "qoder",
+        providerId: "some-provider",
         statusCode: 429,
       },
       snapshotService: routeService,
@@ -285,11 +285,11 @@ describe("model cooldown route snapshot invalidation", () => {
 
 describe("a queued upstream is capacity, not a dead credential", () => {
   /**
-   * The reported failure: Qoder answers `403 {"code":"10605", ...}` with
-   * `isQueued:true` and a `queueCount`. The 403 made the generic auth arm
-   * claim it, so a healthy account was parked as `auth_invalidated` — the
-   * console's "Re-login required" — purely because the provider was busy.
-   * The credential was never rejected; refreshing it cannot shorten a queue.
+   * The reported failure shape: a `403` carrying `isQueued:true` and a
+   * `queueCount`. The 403 made the generic auth arm claim it, so a healthy
+   * account was parked as `auth_invalidated` — the console's "Re-login
+   * required" — purely because the provider was busy. The credential was
+   * never rejected; refreshing it cannot shorten a queue.
    */
   const queued = (): GatewayError =>
     new GatewayError(
@@ -304,7 +304,7 @@ describe("a queued upstream is capacity, not a dead credential", () => {
     const classification = classifyAccountError(queued(), {
       origin: "upstream",
       scope: "account",
-      providerId: "qoder",
+      providerId: "some-provider",
       modelId: "deepseek-v4.1-flash",
     });
     expect(classification.category).toBe("model_capacity");
@@ -318,7 +318,7 @@ describe("a queued upstream is capacity, not a dead credential", () => {
       origin: "upstream",
       scope: "account",
       credentialEvidence: true,
-      providerId: "qoder",
+      providerId: "some-provider",
       modelId: "deepseek-v4.1-flash",
     });
     expect(classification.category).not.toBe("auth_invalidated");
@@ -336,7 +336,7 @@ describe("a queued upstream is capacity, not a dead credential", () => {
     const classification = classifyAccountError(error, {
       origin: "upstream",
       scope: "account",
-      providerId: "qoder",
+      providerId: "some-provider",
       modelId: "deepseek-v4.1-flash",
     });
     expect(classification.category).toBe("model_capacity");
@@ -355,7 +355,7 @@ describe("a queued upstream is capacity, not a dead credential", () => {
     const classification = classifyAccountError(error, {
       origin: "upstream",
       scope: "account",
-      providerId: "qoder",
+      providerId: "some-provider",
     });
     expect(classification.category).toBe("auth_invalidated");
   });
@@ -457,7 +457,7 @@ describe("an unclassified failure is a cooldown, never a parked account", () => 
     const classification = classifyAccountError(error, {
       origin: "upstream",
       scope: "account",
-      providerId: "qoder",
+      providerId: "some-provider",
     });
     expect(classification.category).toBe("unknown");
     expect(classification.status).toBe("cooldown");

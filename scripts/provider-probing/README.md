@@ -31,7 +31,7 @@ Probes are plain scripts — there are deliberately no `probe:*` npm scripts.
 Run them straight through `bun run scripts/...` (or `bun scripts/...`):
 
 ```sh
-bun run scripts/provider-probing/qoder/chat/probe-qoder.ts --creds "C:\path\to\qoder-accounts-<ts>.json"
+bun run scripts/provider-probing/trae/probe-trae-chat.ts --creds "C:\path\to\trae-accounts-<ts>.json"
 ```
 
 Options (per probe, see the script header):
@@ -41,11 +41,8 @@ Options (per probe, see the script header):
 | `--creds <path>` | required; account export file |
 | `--model <id>` | model to probe (default `auto`) |
 | `--all` | probe every model in the roster |
-| `--models` | list models from the live `/algo/api/v2/model/list` endpoint (signed GET) |
-| `--json` | print (or `--out`-write) the full model array as pretty JSON |
+| `--models` | list models from the provider's live model endpoint |
 | `--out <path>` | write the model list JSON to a file |
-| `--ctx <n>` | request context window in tokens (`model_config.max_input_tokens`; unset by default) for the IDE surface |
-| `--ide-only` | skip the legacy surface; only the IDE `/model/v1` path (shorthand for `--surface ide`) |
 | `--label <name>` / `--index <n>` | select a specific account |
 
 Kiro-specific flags (`probe-kiro.ts` / `probe-kiro-oauth.ts`):
@@ -73,37 +70,6 @@ provider-probing/
     github-plan-entitlement-probe.ts # plan/SKU + gpt-6-luna entitlement
     github-auto-multiturn-probe.ts   # live multiturn chat probe
     github-wire-audit-probe.ts       # request-shape audit
-  qoder/
-    main.ts                    # dispatcher: `bun run .../qoder/main.ts <probe> [args...]`
-    cosy-signer.ts             # COSY Bearer signer (plugin surface)
-    lib/
-      shared.ts                # machine identity, headers, body builders, SSE reader, account loader
-      grpc.ts                  # gRPC client factory (proto materialization + stream probe)
-    chat/
-      probe-qoder.ts           # canonical chat probe: IDE /model/v1 + legacy COSY (flags: --surface, --reply, --model-echo, --cross, --headers, --lite)
-      probe-qoder-meta.ts      # per-model probe with strategy metadata (raw_usage provider metadata)
-      qoder-capacity-probe.ts  # context acceptance + session-retention experiments (--mode context|retention)
-    grpc/
-      qoder-grpc-meta.ts       # gRPC per-model probe: metadata/trailers/usage/extras (+ --echo-only)
-      qoder-grpc-wire-probe.ts # live gRPC matrix probe against real accounts (isolates rejected tool payloads)
-      qoder-grpc-live-test.ts  # gateway live test: qwen3.8-flash + tool over SSE
-    direct/
-      qoder-gateway-live-test.ts # gateway live test against 127.0.0.1:12800
-    quota/
-      qoder-entitlement-probe.ts # userinfo + quota + roster (--header-mode, --full, --roster-key)
-      probe-qoder-credits.ts     # sash campaign list / claim / reward (--claim, --wait)
-    auth/
-      qoder-device-login.ts    # device-code login (desktop IDE flow)
-      qoder-export-accounts.ts # extract Qoder accounts from local SQLite store (wrapper over lib/export-accounts.ts)
-    inspect/
-      qoder-body-inspect.ts    # inspect the legacy request body builder output
-      qoder-wire-audit.ts      # raw-wire verification + tool-call buffering audit (merged)
-    tools/
-      qoder-bundle-slice.ts    # print slices of the unpacked bundle around a keyword
-    dev/
-      gen-chat-proto.ts        # regenerate embedded chat.proto source
-      mint-admin-key.ts        # mint a local admin API key into Lite SQLite
-      qoder-live-check-db.ts   # inspect local Lite SQLite for API key + active Qoder accounts
   trae/
     probe-trae-chat.ts   # chat/agent wire probe + SSE decode
     probe-trae-quota.ts  # session/entitlement/pay quota probe
@@ -132,57 +98,6 @@ provider-probing/
     probe-deepai.mjs         # DeepAI wire probe (models / quota / chat hit)
     _lib.mjs                 # DeepAI shared helpers (machine id, lane headers, accounts)
 ```
-
-The Qoder probe covers two surfaces:
-
-- **Plugin** (`api2.qoder.sh/algo/.../agent_chat_generation`): COSY Bearer
-  signed body.
-- **IDE** (`api2-v2.qoder.sh/model/v1/chat/completions`): plain
-  `Bearer <dt-…>` with `X-Request-ID` / `X-Session-ID` and `Cosy-*` identity
-  headers. This is the **default** probe surface (and the adapter's default
-  dispatch surface): it streams immediately, while the plugin surface answers
-  `10605 isQueued` and parks requests in a server-side queue.
-
-### Context windows (`context_config` / `max_input_tokens`)
-
-The model list states a `max_input_tokens` (the currently selected window) and
-a `context_config` map of selectable windows (`1M`/`400K`/`200K`/...). The
-selection is sent as `model_config.max_input_tokens` in the chat body — the
-upstream honors a value from `context_config` (e.g. `1000000` for 1M,
-`400000` for 400K). The adapter now sends the **widest selectable window from
-the live list** automatically (a 1M-capable row is dispatched as 1M), so a
-client never sees a conversation capped at the currently active 180k window.
-Probe with `--ctx 1000000` to ask for the largest window explicitly:
-
-```sh
-bun run scripts/provider-probing/qoder/chat/probe-qoder.ts --creds <file> --model dmodel --ctx 1000000
-```
-
-### Why `--models --ide` returns 403
-
-`/algo/api/v2/model/list` is a COSY-signed endpoint for every client: the IDE
-signs it too (its worker uses the WASM signer). A plain `Bearer <dt-…>`
-GET is rejected with `101 Signature invalid`. The probe therefore always signs
-the list GET; there is no plain-bearer model-list surface.
-
-### Discovery fix (2026-11-01)
-
-The gateway's `discoverQoderModels` used to send a plain GET without the signed
-body (or, in an intermediate bad attempt, a POST — upstream answers 400
-"Request method 'POST' not supported"). The correct wire is a **GET that
-carries the signed `{}` body**. Bun's fetch rejects GET bodies, so the
-validated egress (`createValidatedFetch`) now dials GET/HEAD+body through the
-Node http(s) client after the SSRF pass. Verified live: production discovery
-returns the full 15-model roster.
-
-Verified live: the same `dt-` token works on both surfaces. The IDE surface
-needs the full body shape (`metadata.context`, `metadata.business`,
-`stream_options`) and roster model ids (`auto`, `qmodel`, `dmodel`) — a bare
-OpenAI body or a plugin-only model id like `qwen3.8-max` fails there.
-
-See `documentation/research/qoder/archive/qoder-research-archive-2026-11-11.zip`
-for the full wiring audit (the older Qoder wire notes were consolidated into
-that archive).
 
 ## Kiro
 
@@ -237,37 +152,6 @@ bun run scripts/provider-probing/github/github-opencode-login.ts \
 
 The account file can be probed directly with
 `github-auto-multiturn-probe.ts --creds <file>`.
-
-## Qoder gRPC (1M context)
-
-The Qoder **HTTP** model-server surface caps request bodies at ~256 KiB
-(~60K tokens) — verified live (`500 internal server error` above it). The
-**gRPC** surface (`model.chat.ChatService/ChatCompletionStream`) accepts up to
-~8M chars (~1.9M tokens), so it is the only proven path for real 1M-token
-context. Full evidence:
-`documentation/research/qoder/2026-11-04-qoder-grpc-1m-context.md`.
-
-`qoder-grpc-meta.ts` probes the gRPC surface per model and captures everything
-the server returns — chunk fields (`model` echo, `usage`, `extras`) plus the
-gRPC initial metadata and trailers:
-
-```sh
-bun run scripts/provider-probing/qoder/grpc/qoder-grpc-meta.ts \
-  --creds <accounts.json> --label "Akun Ytprem" --model dmodel --model ultimate
-```
-
-**Metadata findings (2026-11-04):** the gRPC surface returns **no** strategy
-metadata — the IDE SSE surface's `raw_usage` keys (`provider_model`,
-`from_model`, `supply_model`, `model_level`, `router_strategy_name`, `target`)
-are absent; `extras` is empty. What the server does return is infra timing in
-the gRPC initial metadata: `req-cost-time`, `req-arrive-time`,
-`resp-start-time`, `x-envoy-upstream-service-time`, plus `x-request-id` in
-both metadata and trailers. Intermittent `429 Upstream error` can occur on
-rate-limited slots (e.g. `ultimate`); retrying succeeds.
-
-Related repo probes: `chat/qoder-capacity-probe.ts` (context cap + session
-retention modes), and `chat/probe-qoder.ts --lite` (free-tier `lite` via
-legacy COSY at 1M).
 
 ## OpenCode
 

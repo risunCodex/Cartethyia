@@ -103,18 +103,18 @@ test("a quota_plan survives alongside the health columns it shares a row with", 
 test("quota_snapshot persists and survives a restart (fresh handle)", async () => {
   const sqlite = await boot();
   const handle = buildSqliteHandle(sqlite);
-  sqlite.exec("INSERT INTO providers (id) VALUES ('qoder')");
+  sqlite.exec("INSERT INTO providers (id) VALUES ('cb')");
   sqlite.exec(
     `INSERT INTO provider_accounts (id, provider_id, label, credential_kind)
-     VALUES ('acct-q1', 'qoder', 'qoder', 'oauth')`,
+     VALUES ('acct-q1', 'cb', 'cb', 'oauth')`,
   );
 
   const quota: ProviderQuotaResult = {
-    source: "qoder",
+    source: "cb",
     plan: null,
     windows: [
       {
-        kind: "qoder:addon",
+        kind: "cb:addon",
         label: "Granted credits",
         accounting: "pooled",
         used: 0,
@@ -131,7 +131,7 @@ test("quota_snapshot persists and survives a restart (fresh handle)", async () =
   await persistQuotaSnapshot(handle.db, "acct-q1", quota, new Date("2026-11-02T00:00:00Z"));
   const snapshot = await readQuotaSnapshot(handle.db, "acct-q1");
   expect(snapshot).not.toBeNull();
-  expect(snapshot?.quota.source).toBe("qoder");
+  expect(snapshot?.quota.source).toBe("cb");
   expect(snapshot?.quota.windows[0]?.limit).toBe(100);
   expect(snapshot?.fetchedAt).toBe("2026-11-02T00:00:00.000Z");
 
@@ -145,12 +145,12 @@ test("quota_snapshot persists and survives a restart (fresh handle)", async () =
 test("readQuotaSnapshots batch-reads for several accounts", async () => {
   const sqlite = await boot();
   const handle = buildSqliteHandle(sqlite);
-  sqlite.exec("INSERT INTO providers (id) VALUES ('qoder')");
+  sqlite.exec("INSERT INTO providers (id) VALUES ('cb')");
   sqlite.exec(
     `INSERT INTO provider_accounts (id, provider_id, label, credential_kind)
-     VALUES ('acct-a', 'qoder', 'a', 'oauth'), ('acct-b', 'qoder', 'b', 'oauth')`,
+     VALUES ('acct-a', 'cb', 'a', 'oauth'), ('acct-b', 'cb', 'b', 'oauth')`,
   );
-  const quota: ProviderQuotaResult = { source: "qoder", plan: null, windows: [], error: null };
+  const quota: ProviderQuotaResult = { source: "cb", plan: null, windows: [], error: null };
   await persistQuotaSnapshot(handle.db, "acct-a", quota);
   const map = await readQuotaSnapshots(handle.db, ["acct-a", "acct-b"]);
   expect(map.has("acct-a")).toBe(true);

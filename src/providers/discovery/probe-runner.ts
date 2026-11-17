@@ -110,17 +110,7 @@ export class ProbeRunner {
     request: ProbeModelRequest,
   ): Promise<ProbeModelResult> {
     const startedAt = Date.now();
-    // Qoder's legacy COSY surface is the only live chat transport since
-    // 2026-11-07 (the gRPC host is NXDOMAIN and the IDE `/model/v1` surface
-    // answers 404 on every alive host). Probes for Qoder default to it unless
-    // the operator picked a surface explicitly. The IDE surface also echoes
-    // provider metadata, but that is worthless when the surface itself is
-    // dead — a probe must report what live traffic would do.
-    const normalizedRequest: ProbeModelRequest =
-      (providerId === "qoder" || providerId === "qodercn") &&
-      (request.surface === undefined || request.surface === "default")
-        ? { ...request, surface: "cosy" }
-        : request;
+    const normalizedRequest: ProbeModelRequest = request;
     const modelId = normalizedRequest.modelId;
     // One provider snapshot per probe: the contract gate, the account gate, the
     // custom-adapter fallback, and the wire context all read this same row, so a

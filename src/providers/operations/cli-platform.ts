@@ -16,8 +16,6 @@
  * Every value below is what the real client would report, taken from each
  * client's own source rather than guessed.
  */
-import { createHash } from "node:crypto";
-import { hostname as osHostname } from "node:os";
 
 /**
  * `os_info` — the crate Codex reads this from — returns the marketing name
@@ -128,37 +126,6 @@ export function kimiDeviceName(): string {
 }
 
 /**
- * Qoder's `cosy-machineos`: "<arch>_<os>".
- *
- * The desktop IDE builds this from its own runtime
- * (`V8e = ${process.arch==="arm64"?"aarch64":process.arch==="x64"?"x86_64":process.arch}_${process.platform}`),
- * so the gateway mirrors that exact mapping instead of a fixed macOS value.
- */
-export function qoderMachineOs(): string {
-  const arch = process.arch === "arm64" ? "aarch64" : process.arch === "x64" ? "x86_64" : process.arch;
-  return `${arch}_${process.platform}`;
-}
-
-/**
- * Qoder's `cosy-machinehostname`.
- *
- * The desktop IDE sends the real machine hostname, normalized to a header-safe
- * form (`B9i` in the unpacked worker: lowercase, non-ASCII and runs of dashes
- * collapsed, truncated to 96 chars with a short hash suffix). Mirror the exact
- * mapping so the value is indistinguishable from the IDE's.
- */
-export function qoderMachineHostname(): string {
-  const raw = (osHostname() ?? "").trim().toLowerCase();
-  if (!raw) return "";
-  const safe = raw
-    .replace(/[^\x21-\x7e]+/gu, "-")
-    .replace(/-{2,}/gu, "-")
-    .replace(/^-+|-+$/gu, "");
-  if (safe.length <= 96) return safe;
-  const hash = createHash("sha256").update(safe, "utf8").digest("hex").slice(0, 8);
-  return `${safe.slice(0, 96 - 1 - 8)}-${hash}`;
-}
-
 /** Cline's `x-platform`. */
 export function clinePlatform(): string {
   return CLINE_PLATFORM;

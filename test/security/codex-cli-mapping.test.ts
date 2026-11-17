@@ -57,8 +57,8 @@ describe("cliMappingSourceKeys for codex", () => {
   });
 
   test("other codex model ids pass through verbatim", () => {
-    expect(cliMappingSourceKeys("codex", "qoder/deepseek-v4.1-flash")).toEqual([
-      "qoder/deepseek-v4.1-flash",
+    expect(cliMappingSourceKeys("codex", "acme/deepseek-v4.1-flash")).toEqual([
+      "acme/deepseek-v4.1-flash",
     ]);
     expect(cliMappingSourceKeys("codex", "gpt-5.6-sol")).toEqual(["gpt-5.6-sol"]);
   });

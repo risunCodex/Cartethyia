@@ -15,8 +15,8 @@ import { StickySessionStore } from "../../src/transport/routing/round-robin";
 
 function candidate(id: string, extra: Record<string, unknown> = {}): RouteCandidate {
   return {
-    provider_id: "qoder",
-    model_id: "qoder-model",
+    provider_id: "testprov",
+    model_id: "test-model",
     wire_family: "chat",
     endpoint: "/v1/chat",
     capability_profile: {},
@@ -99,7 +99,7 @@ describe("routing sort: drain vs reserve vs hot vs sticky", () => {
         candidate("a-fast-burn", { quota_windows: [percentWindow(40, soonReset)] }),
         candidate("a-slow-burn", { quota_windows: [percentWindow(40, null)] }),
       ]),
-      "qoder-model",
+      "test-model",
     );
     expect(order).toEqual(["a-fast-burn", "a-slow-burn"]);
   });
@@ -110,7 +110,7 @@ describe("routing sort: drain vs reserve vs hot vs sticky", () => {
         candidate("a-reserved", { quota_windows: [percentWindow(90)] }), // 10% remaining ≤ reserve 20
         candidate("a-healthy", { quota_windows: [percentWindow(50)] }), // 50% remaining
       ]),
-      "qoder-model",
+      "test-model",
     );
     expect(order).toEqual(["a-healthy", "a-reserved"]);
   });
@@ -122,7 +122,7 @@ describe("routing sort: drain vs reserve vs hot vs sticky", () => {
         candidate("a-hot", { quota_windows: [percentWindow(90, soonReset)] }),
         candidate("a-cool", { quota_windows: [percentWindow(40)] }), // no reset clock, cooler
       ]),
-      "qoder-model",
+      "test-model",
     );
     expect(order).toEqual(["a-cool", "a-hot"]);
   });
@@ -136,10 +136,10 @@ describe("routing sort: drain vs reserve vs hot vs sticky", () => {
     // First plan (no session id yet) records nothing sticky for a session;
     // simulate a prior session by pre-seeding the store through a plan with
     // the session id, then confirm the next plan prefers it.
-    const first = await engine.plan("qoder-model", snap, null, undefined, false, undefined, "sess-1");
+    const first = await engine.plan("test-model", snap, null, undefined, false, undefined, "sess-1");
     const chosenFirst = first.candidates[0]!.provider_account_id!;
     const order = await engine.plan(
-      "qoder-model",
+      "test-model",
       snap,
       null,
       undefined,
@@ -156,7 +156,7 @@ describe("routing sort: drain vs reserve vs hot vs sticky", () => {
         candidate("a-free-reserved", { free_tier: true, quota_windows: [percentWindow(95)] }),
         candidate("a-free-healthy", { free_tier: true, quota_windows: [percentWindow(20)] }),
       ]),
-      "qoder-model",
+      "test-model",
     );
     expect(order).toEqual(["a-free-reserved", "a-free-healthy"]);
   });
@@ -165,30 +165,30 @@ describe("routing sort: drain vs reserve vs hot vs sticky", () => {
 describe("StickySessionStore", () => {
   test("records and recalls a session's account", () => {
     const store = new StickySessionStore(8);
-    store.set("qoder", "sess-1", "account-7");
-    expect(store.get("qoder", "sess-1")?.accountId).toBe("account-7");
-    expect(store.get("qoder", "sess-2")).toBeUndefined();
+    store.set("testprov", "sess-1", "account-7");
+    expect(store.get("testprov", "sess-1")?.accountId).toBe("account-7");
+    expect(store.get("testprov", "sess-2")).toBeUndefined();
   });
 
   test("explicit pin is marked and survives warm-window checks", () => {
     const store = new StickySessionStore(8);
-    store.set("qoder", "sess-1", "account-7", true);
-    expect(store.get("qoder", "sess-1")?.explicit).toBe(true);
+    store.set("testprov", "sess-1", "account-7", true);
+    expect(store.get("testprov", "sess-1")?.explicit).toBe(true);
   });
 
   test("clear drops one session's stickiness", () => {
     const store = new StickySessionStore(8);
-    store.set("qoder", "sess-1", "account-7");
-    store.clear("qoder", "sess-1");
-    expect(store.get("qoder", "sess-1")).toBeUndefined();
+    store.set("testprov", "sess-1", "account-7");
+    store.clear("testprov", "sess-1");
+    expect(store.get("testprov", "sess-1")).toBeUndefined();
   });
 
   test("bounds by LRU capacity per provider", () => {
     const store = new StickySessionStore(2);
-    store.set("qoder", "s-1", "a1");
-    store.set("qoder", "s-2", "a2");
-    store.set("qoder", "s-3", "a3");
-    expect(store.get("qoder", "s-1")).toBeUndefined(); // evicted
-    expect(store.get("qoder", "s-3")?.accountId).toBe("a3");
+    store.set("testprov", "s-1", "a1");
+    store.set("testprov", "s-2", "a2");
+    store.set("testprov", "s-3", "a3");
+    expect(store.get("testprov", "s-1")).toBeUndefined(); // evicted
+    expect(store.get("testprov", "s-3")?.accountId).toBe("a3");
   });
 });

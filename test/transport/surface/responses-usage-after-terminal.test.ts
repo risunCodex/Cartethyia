@@ -2,7 +2,7 @@
  * Regression: a `usage` canonical event arriving AFTER the terminal must not
  * fail a completed Responses stream.
  *
- * Several upstreams (Qoder gRPC among them) stream the usage chunk after the
+ * Several upstreams stream the usage chunk after the
  * finish-reason chunk. The Responses encoder previously threw
  * `ResponsesLifecycleError("Canonical event arrived after terminal Responses event")`
  * for it — which the stream finalizer recorded as `failed / invalid_lifecycle`

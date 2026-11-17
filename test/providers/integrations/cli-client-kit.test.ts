@@ -1,7 +1,7 @@
 /**
  * Shared CLI-client kit: the quota null-result, the upstream-error wrapper,
  * the JSON probe, and the finish-reason map every CLI-client integration
- * (freepi, perch, qoder) now shares.
+ * (freepi, perch) now shares.
  */
 import { describe, expect, test } from "bun:test";
 import { GatewayError } from "../../../src/protocol/gateway-error";
@@ -63,9 +63,9 @@ describe("upstreamGatewayError", () => {
   });
 
   test("omits absent optional keys rather than stamping undefined", () => {
-    const error = upstreamGatewayError("qoder", "policy_rejected", 403, "no");
+    const error = upstreamGatewayError("cline", "policy_rejected", 403, "no");
     // providerId is always stamped; the optional keys are not.
-    expect(error.details).toEqual({ providerId: "qoder" });
+    expect(error.details).toEqual({ providerId: "cline" });
   });
 });
 

@@ -26,7 +26,7 @@ describe("createValidatedFetch streaming with TLS profile", () => {
 
     try {
       const fetchFn = createValidatedFetch({
-        tlsProfile: "qoder-app",
+        tlsProfile: "default",
         policy: { allowPrivate: true },
         ca: Buffer.from(readFileSync("test/fixtures/localhost-cert.pem")),
       });

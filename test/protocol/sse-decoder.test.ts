@@ -48,7 +48,7 @@ describe("decodeSseEvents", () => {
   });
 
   test("bare continuation lines join the open data event", async () => {
-    // Qoder IDE /model/v1 emits JSON with literal newlines; the decoder must
+    // Some upstreams emit JSON with literal newlines; the decoder must
     // treat non-prefixed lines as continuations of the open `data:` event.
     const events = await collect('data: {"a": 1,\n"b": 2}\n\n');
     expect(events).toHaveLength(1);
@@ -56,7 +56,7 @@ describe("decodeSseEvents", () => {
   });
 
   test("blank line inside a JSON string is a continuation, not an event boundary", async () => {
-    // Qoder raw_usage has literal "\n\n" inside string values. Without the
+    // An upstream's raw_usage payload has literal "\n\n" inside string values. Without the
     // JSON-depth guard this split the event and threw "Malformed SSE line".
     const json =
       '{"choices":[],"created":1,"id":"x","model":"qfmodel","object":"chat.completion.chunk",' +
@@ -105,7 +105,7 @@ describe("F-39: continuation bounds", () => {
     }).toThrow(/Malformed SSE line/);
   });
 
-  test("a bare line while the open data is incomplete still continues (Qoder shape)", async () => {
+  test("a bare line while the open data is incomplete still continues", async () => {
     const stream = streamFrom('data: {"a":\n1}\n\n');
     const events: SseEvent[] = [];
     for await (const event of decodeSseEvents(stream)) events.push(event);

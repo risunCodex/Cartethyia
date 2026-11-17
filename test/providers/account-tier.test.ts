@@ -20,7 +20,7 @@ describe("mapPlanToTier", () => {
     expect(mapPlanToTier("traecn", "Free Plan Subscription")).toBe("free");
     expect(mapPlanToTier("cb", "personal_free_user")).toBe("free");
     expect(mapPlanToTier("cbcn", "personal_free_user_lite")).toBe("free");
-    expect(mapPlanToTier("qoder", "free")).toBe("free");
+    expect(mapPlanToTier("grok", "free")).toBe("free");
     expect(mapPlanToTier("cursor", "FREE")).toBe("free");
   });
 
@@ -41,16 +41,6 @@ describe("mapPlanToTier", () => {
     expect(mapPlanToTier("cbcn", "Team")).toBe("pro");
   });
 
-  test("Qoder non-personal_standard / org maps to pro; personal_standard stays unknown", () => {
-    expect(mapPlanToTier("qoder", "team")).toBe("pro");
-    expect(mapPlanToTier("qoder", "enterprise")).toBe("pro");
-    expect(mapPlanToTier("qodercn", "org_admin")).toBe("pro");
-    expect(mapPlanToTier("qoder", "personal_pro")).toBe("pro");
-    // `personal_standard` is the default personal type — not proven pro, and
-    // not free, so it stays unknown.
-    expect(mapPlanToTier("qoder", "personal_standard")).toBeNull();
-  });
-
   test("unknown providers and plans stay unknown", () => {
     expect(mapPlanToTier("openai", "Pro")).toBeNull();
     expect(mapPlanToTier("grok", "SuperGrok")).toBeNull();
@@ -60,6 +50,6 @@ describe("mapPlanToTier", () => {
 
   test("provider ids are case-insensitive", () => {
     expect(mapPlanToTier("TRAE", "Pro")).toBe("paid");
-    expect(mapPlanToTier("QODER", "team")).toBe("pro");
+    expect(mapPlanToTier("Cursor", "Pro")).toBe("paid");
   });
 });

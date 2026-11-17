@@ -4,7 +4,7 @@
 // drag the integration into memory at process start.
 import { createApiKeyAdapter, discoveryCapability, withStaticRosterFallback, type ModelDiscoveryRequest } from "../configured-provider";
 import { oauthCapability, quotaCapability } from "../provider-registry";
-import { extractJsonCredentialToken, qoderDiscovery, traeDiscovery } from "./capability-helpers";
+import { extractJsonCredentialToken, traeDiscovery } from "./capability-helpers";
 
 export const OAUTH_INTEGRATION_CAPABILITIES = {
   cline: {
@@ -55,32 +55,7 @@ export const OAUTH_INTEGRATION_CAPABILITIES = {
       "fetchCommandCodeQuota",
     ),
   },
-  qoder: {
-    loadAdapter: async () => (await import("../integrations/qoder/qoder")).createQoderAdapter(),
-    loadModels: async () => (await import("../integrations/qoder/qoder")).QODER_MODELS,
-    // No `withRefresher`: the upstream refresh endpoint answers 403 for the
-    // device flow, so the issued token is used exactly as issued until the
-    // operator re-runs login — same shape as Kilo Code.
-    loadAuthentication: oauthCapability(() => import("../integrations/qoder/qoder-oauth"), "qoderOAuthClient"),
-    loadQuotaCollector: quotaCapability(() => import("../integrations/qoder/qoder-quota"), "fetchQoderQuota"),
-    // Discovery signed by the account's own COSY identity: the model list is
-    // per-account and per-realm, and a GET without the signed body is 403.
-    loadModelDiscovery: qoderDiscovery("intl", "qoder"),
-  },
-  // Separate provider, not a region flag: a CN account has its own gateway
-  // host, OAuth client id, and model roster, and is refused by the global host.
-  qodercn: {
-    loadAdapter: async () => (await import("../integrations/qoder/qoder")).createQoderCnAdapter(),
-    loadModels: async () => (await import("../integrations/qoder/qoder-catalog")).QODER_CN_MODELS,
-    // The CN client, not the intl one: a device login opened on
-    // `qoder.com/device/selectAccounts` polled `openapi.qoder.sh`, which a CN
-    // account is refused by. `qoderCnOAuthClient` is the same class bound to
-    // `QODER_REALMS.cn` — its own login/token/userinfo hosts, client id, and
-    // native redirect.
-    loadAuthentication: oauthCapability(() => import("../integrations/qoder/qoder-oauth"), "qoderCnOAuthClient"),
-    loadQuotaCollector: quotaCapability(() => import("../integrations/qoder/qoder-quota"), "fetchQoderCnQuota"),
-    loadModelDiscovery: qoderDiscovery("cn", "qodercn"),
-  },
+
   trae: {
     loadAdapter: async () => (await import("../integrations/trae/trae")).createTraeAdapter(),
     loadModels: async () => (await import("../integrations/trae/trae-catalog")).TRAE_INTL_MODELS,

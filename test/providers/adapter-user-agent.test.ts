@@ -4,7 +4,7 @@
  *
  * A provider whose adapter frames its own client identity headers (Command
  * Code stamps `x-command-code-version`/`x-cli-environment`/`x-session-id`,
- * Qoder sends `Go-http-client/2.0`) never consumes `candidate.user_agent`. If
+ * others send their own client build string) never consumes `candidate.user_agent`. If
  * such a provider is not flagged `hasAdapterUserAgent`, the console offers a
  * User-Agent field that is silently ignored — the operator's edit does
  * nothing. Command Code regressed exactly this way.

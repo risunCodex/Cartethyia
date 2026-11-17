@@ -1018,8 +1018,8 @@ describe("classifyUpstreamFailure", () => {
   });
 
   test("a local transport_closed 499 is not treated as theoder quota", () => {
-    // The gateway's own client-abort is produced locally with no qoder
-    // providerId; it must stay a transport_closed cancel, not quota.
+    // The gateway's own client-abort is produced locally with no providerId;
+    // it must stay a transport_closed cancel, not quota.
     const policy = classifyUpstreamFailure(
       new GatewayError("transport_closed", 499, "request was cancelled", {}, "cartethyia"),
     );
@@ -2063,7 +2063,7 @@ describe("fallbackRetryDelayMs", () => {
 });
 
 describe("isUpstreamQueued", () => {
-  test("matches Qoder's queued refusal", () => {
+  test("matches a queued refusal", () => {
     // The shape that motivated this: a 403 carrying `isQueued`. It is not a
     // rejection — the request was accepted and will be served — but it arrives
     // on a failure status, so without this the client read it as "you may not
@@ -2126,7 +2126,7 @@ describe("a queued upstream response", () => {
       JSON.stringify({ code: "10605", isQueued: true, retryAfterSeconds: 30 }),
       { status: 403, headers: { "content-type": "application/json" } },
     );
-    const error = await mapUpstreamHttpError(response, "qoder").catch((err: unknown) => err);
+    const error = await mapUpstreamHttpError(response, "inception").catch((err: unknown) => err);
     expect(error).toBeInstanceOf(GatewayError);
     expect((error as GatewayError).code).toBe("upstream_queued");
     expect((error as GatewayError).status).toBe(503);
@@ -2140,7 +2140,7 @@ describe("a queued upstream response", () => {
       status: 403,
       headers: { "content-type": "application/json" },
     });
-    const error = await mapUpstreamHttpError(response, "qoder").catch((err: unknown) => err);
+    const error = await mapUpstreamHttpError(response, "inception").catch((err: unknown) => err);
     expect((error as GatewayError).code).not.toBe("upstream_queued");
   });
 
@@ -2238,40 +2238,5 @@ describe("upstream error passthrough (message as-is, no generalized 502)", () =>
     expect(extractUpstreamMessageText({ code: 4026, message: "context too long" })).toBe("context too long");
     expect(extractUpstreamMessageText({ code: "6004", msg: "resets at 12:00" })).toBe("resets at 12:00");
     expect(extractUpstreamMessageText("plain upstream words")).toBe("plain upstream words");
-  });
-});
-
-describe("Qoder job-token expiry (105 / Login expired)", () => {
-  test("classifies as auth without credential evidence (re-mintable via PAT)", () => {
-    const classification = classifyUpstreamError(403, "105");
-    expect(classification.code).toBe("authentication_failed");
-    expect(classification.status).toBe(403);
-    expect(classification.origin).toBe("upstream");
-    // The PAT is still valid — re-exchanging it mints a fresh job token.
-    // Credential evidence is what parks the account; it must be absent.
-    expect(classification.credentialEvidence).toBeUndefined();
-  });
-
-  test("recognises the textual 'Login expired' verdict the same way", () => {
-    const classification = classifyUpstreamError(403, "login expired");
-    expect(classification.code).toBe("authentication_failed");
-    expect(classification.credentialEvidence).toBeUndefined();
-  });
-
-  test("mapUpstreamHttpError keeps providerCode but drops credentialEvidence", async () => {
-    const response = new Response(
-      JSON.stringify({ code: "105", message: "Login expired" }),
-      { status: 403, headers: { "content-type": "application/json" } },
-    );
-    const error = await mapUpstreamHttpError(response, "qoder").catch((err: unknown) => err);
-    expect(error).toBeInstanceOf(GatewayError);
-    expect((error as GatewayError).code).toBe("authentication_failed");
-    expect((error as GatewayError).details.providerCode).toBe("105");
-    expect((error as GatewayError).details.credentialEvidence).toBeUndefined();
-  });
-
-  test("a genuine auth rejection still carries credential evidence", () => {
-    const classification = classifyUpstreamError(401, "invalid_api_key");
-    expect(classification.credentialEvidence).toBe(true);
   });
 });

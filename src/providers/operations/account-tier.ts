@@ -18,14 +18,10 @@
 
 import { FREE_PLAN_MARKERS } from "../../transport/routing/plan-gate";
 import { BUDDY_PROVIDER_IDS } from "../provider-metadata";
-import { QODER_CHECKIN_PROVIDER_IDS } from "../integrations/qoder/qoder-checkin";
 import { TRAE_PROVIDER_IDS } from "../integrations/trae/trae-realm";
 
 /** The three-tier taxonomy for cooldown rules. `null` = unknown. */
 export type AccountTier = "free" | "paid" | "pro" | null;
-
-/** Team/enterprise/org signals that prove a "pro" tier. */
-const PRO_PLAN_MARKERS: readonly string[] = ["team", "enterprise", "org", "pro"];
 
 /**
  * Maps a provider's plan string to a tier.
@@ -42,14 +38,6 @@ export function mapPlanToTier(providerId: string, plan: string | null): AccountT
   // routing plan-gate uses (imported, not copied), so the two cannot disagree
   // about an account.
   if (FREE_PLAN_MARKERS.some((marker) => lower.includes(marker))) return "free";
-
-  if ((QODER_CHECKIN_PROVIDER_IDS as readonly string[]).includes(providerId.toLowerCase())) {
-    // Qoder's `userType` is `personal_standard` by default; team/enterprise/
-    // org suffixes prove a higher tier. `personal_standard` itself is not
-    // verified against the taxonomy, so it stays unknown rather than guessed.
-    if (PRO_PLAN_MARKERS.some((marker) => lower.includes(marker))) return "pro";
-    return null;
-  }
 
   if (BUDDY_PROVIDER_IDS.has(providerId.toLowerCase())) {
     if (lower.includes("enterprise") || lower.includes("team")) return "pro";

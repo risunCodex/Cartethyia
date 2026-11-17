@@ -261,7 +261,7 @@ describe("trackToolCall — index assignment", () => {
   });
 
   test("two calls sharing a wire index get unique indexes", () => {
-    // Upstream Qoder parallel calls repeat the same wire index (0,0) for two
+    // Some upstreams' parallel calls repeat the same wire index (0,0) for two
     // different ids. Previously that handed both calls the same index and the
     // client's accumulation merged them into one glued call. The tracker now
     // synthesizes a fresh index for the second call so every logical call keeps

@@ -25,19 +25,6 @@ import {
   type BuddyActivityReportResult,
   type DailyCheckinResult,
 } from "../../providers/integrations/buddy/lifecycle";
-import {
-  fetchQoderDailyCheckin,
-  isQoderCheckinProvider,
-} from "../../providers/integrations/qoder/qoder-checkin";
-import {
-  claimQoderCredits,
-  QODER_CREDIT_PROVIDER_IDS,
-  type QoderCreditClaimResult,
-} from "../../providers/integrations/qoder/claim-qoder-credits";
-import {
-  DrizzleQoderNativeIdentityStore,
-  type QoderNativeIdentityStore,
-} from "../../providers/integrations/qoder/qoder-native-identity-store";
 import { claimZcodeGifts, type ZcodeGiftResult } from "../../providers/integrations/zcode-start-plan/gifts";
 import { ZCODE_START_PLAN_PROVIDER_ID } from "../../providers/integrations/zcode-start-plan/provider";
 import {
@@ -60,22 +47,12 @@ import {
   type DailyGrowthJobDeps,
 } from "./daily-growth-job";
 
-/** One account's check-in through the buddy billing facade (Qoder uses its own surface). */
+/** One account's check-in through the buddy billing facade. */
 async function runAccountCheckin(
   account: { id: string; providerId: string },
   credential: string,
   forceClaim: boolean,
-  nativeIdentityStore?: QoderNativeIdentityStore,
 ): Promise<DailyCheckinResult> {
-  if (isQoderCheckinProvider(account.providerId)) {
-    return fetchQoderDailyCheckin({
-      providerId: account.providerId,
-      accountId: account.id,
-      credential,
-      fetcher: globalThis.fetch,
-      ...(nativeIdentityStore ? { nativeIdentityStore } : {}),
-    });
-  }
   return fetchDailyCheckin({
     providerId: account.providerId,
     accountId: account.id,
@@ -120,9 +97,7 @@ async function runDailyGrowthForAccount(
   }
 
   // Report leg: needs a uid, which only a JWT carries, so an opaque API key
-  // fails closed instead of reporting under another account's identity. Qoder
-  // has no activity-report leg — its daily grant is purely the check-in.
-  const qoderAccount = isQoderCheckinProvider(String(providerId));
+  // fails closed instead of reporting under another account's identity.
   // dynamic-import: B-02 lazy graph — buddy uid decoder, only for buddy report legs.
   // The buddy-oauth-shared graph is lazy-loaded: the uid decoder is only
   // needed for buddy accounts' report leg (B-02).
@@ -131,9 +106,7 @@ async function runDailyGrowthForAccount(
   );
   const userId = buddyAccountUid(credential);
   let report: { ok: boolean; message: string };
-  if (qoderAccount) {
-    report = { ok: true, message: "Qoder has no activity-report leg" };
-  } else if (userId === undefined || userId.length === 0) {
+  if (userId === undefined || userId.length === 0) {
     report = { ok: false, message: "Report needs an OAuth account (no uid in this credential)" };
   } else {
     try {
@@ -157,21 +130,13 @@ async function runDailyGrowthForAccount(
 
   let checkin: { ok: boolean; message: string };
   try {
-    const result = qoderAccount
-      ? await fetchQoderDailyCheckin({
-          providerId: String(providerId),
-          accountId: account.id,
-          credential,
-          fetcher,
-          nativeIdentityStore: new DrizzleQoderNativeIdentityStore(refreshDeps.db),
-        })
-      : await fetchDailyCheckin({
-          providerId,
-          accountId: account.id,
-          credential,
-          forceClaim: true,
-          fetcher,
-        });
+    const result = await fetchDailyCheckin({
+      providerId,
+      accountId: account.id,
+      credential,
+      forceClaim: true,
+      fetcher,
+    });
     checkin =
       result.state === "error"
         ? { ok: false, message: result.error ?? "Daily check-in failed" }
@@ -398,7 +363,7 @@ export function registerAccountGrowthTenantRoutes(
         account.providerId as ProviderId,
         account.id,
       );
-      result = await runAccountCheckin(account, credential, true, new DrizzleQoderNativeIdentityStore(db));
+      result = await runAccountCheckin(account, credential, true);
     } catch (error) {
       result = {
         providerId: account.providerId,
@@ -496,68 +461,6 @@ export function registerAccountGrowthTenantRoutes(
             : result.state === "already_claimed"
               ? "Every gift plan was claimed before"
               : (result.detail ?? "Claim it in the ZCode app"),
-    };
-  })
-  // Qoder daily-credits claim is likewise an explicit operator action: the
-  // CREDITS campaign only surfaces with the real UMID headers, so the claim
-  // mints/binds a native identity first (same store the check-in worker uses).
-  .post("/accounts/:id/claim-qoder-credits", async ({ request, params, set }) => {
-    const access = requireTenantScope(accessResolver(request), "dashboard:write");
-    const account = await loadAccountRow(db, params.id, access.tenantId);
-    if (!account) {
-      set.status = 404;
-      return { error: `Account ${params.id} not found`, code: "not_found" };
-    }
-    if (!QODER_CREDIT_PROVIDER_IDS.includes(account.providerId as (typeof QODER_CREDIT_PROVIDER_IDS)[number])) {
-      set.status = 400;
-      return {
-        error: "Daily credits are only claimable for qoder accounts",
-        code: "qoder_credits_unsupported",
-      };
-    }
-    let result: QoderCreditClaimResult;
-    try {
-      const credential = await refreshDeps.resolveCredential(account.providerId as ProviderId, account.id);
-      const fetcher = networkBindingFactory
-        ? await dailyCheckinEgressForPass({ db, networkBindingFactory })(account.id, access.tenantId)
-        : globalThis.fetch;
-      result = await claimQoderCredits({ db, providerId: account.providerId, accountId: account.id, credential, fetcher });
-    } catch {
-      set.status = 502;
-      return {
-        ok: false, status: 502,
-        data: { id: account.id, state: "error", amount: 0, detail: "Qoder credit claim request failed" },
-        message: "Qoder credit claim request failed", code: "qoder_credit_claim_failed",
-      };
-    }
-    if (result.state === "claimed") {
-      // Cold readers must not resurrect the balance from before the grant.
-      await db.update(providerAccounts).set({ quotaSnapshot: null }).where(
-        and(eq(providerAccounts.id, account.id), eq(providerAccounts.tenantId, access.tenantId)),
-      );
-      await invalidateQuotaCacheForAccount(account.id, redis);
-      await snapshotInvalidator?.invalidate();
-    }
-    if (result.state === "error") {
-      set.status = 502;
-      return {
-        ok: false,
-        status: 502,
-        data: { id: account.id, ...result },
-        message: result.detail ?? "Qoder credit claim failed",
-        code: "qoder_credit_claim_failed",
-      };
-    }
-    return {
-      ok: true,
-      status: 200,
-      data: { id: account.id, ...result },
-      message:
-        result.state === "nothing"
-          ? "No CREDITS campaign to claim"
-          : result.state === "claimed"
-            ? `Claimed ${result.amount} credits`
-            : "CREDITS campaign already claimed",
     };
   })
   .post("/accounts/:id/activity-report", async ({ request, params, set }) => {

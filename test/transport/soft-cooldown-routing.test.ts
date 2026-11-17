@@ -22,8 +22,8 @@ import type { RouteCandidate, RouteSnapshot } from "../../src/transport/routing/
 
 function candidate(id: string, extra: Record<string, unknown> = {}): RouteCandidate {
   return {
-    provider_id: "qoder",
-    model_id: "qoder-model",
+    provider_id: "testprov",
+    model_id: "test-model",
     wire_family: "chat",
     endpoint: "/v1/chat",
     capability_profile: {},
@@ -71,7 +71,7 @@ describe("soft cooldown plan ordering", () => {
   test("a soft-cooling candidate listed first loses to a healthy sibling", async () => {
     const order = await plannedOrder(
       snapshot([softCooling("a-soft"), candidate("a-healthy")]),
-      "qoder-model",
+      "test-model",
     );
     expect(order).toEqual(["a-healthy", "a-soft"]);
   });
@@ -87,7 +87,7 @@ describe("soft cooldown plan ordering", () => {
         }),
         candidate("a-healthy-unknown"),
       ]),
-      "qoder-model",
+      "test-model",
     );
     expect(order).toEqual(["a-healthy-unknown", "a-soft-credit"]);
   });
@@ -98,7 +98,7 @@ describe("soft cooldown plan ordering", () => {
     let thrown: { code?: string; status?: number; details?: Record<string, unknown> } | undefined;
     try {
       await engine.plan(
-        "qoder-model",
+        "test-model",
         snapshot([softCooling("a-soft-1", resetWindowMs), softCooling("a-soft-2", 0)]),
       );
     } catch (error) {
@@ -116,7 +116,7 @@ describe("soft cooldown plan ordering", () => {
   });
 
   test("a single healthy candidate still routes", async () => {
-    const order = await plannedOrder(snapshot([candidate("a-healthy")]), "qoder-model");
+    const order = await plannedOrder(snapshot([candidate("a-healthy")]), "test-model");
     expect(order).toEqual(["a-healthy"]);
   });
 });
