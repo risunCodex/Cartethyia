@@ -15,7 +15,7 @@
 import pkg from "../../../package.json";
 
 export const DASHBOARD_VERSION = pkg.version;
-export const DASHBOARD_CODENAME = "Arc-en-ciel";
+export const DASHBOARD_CODENAME = "Arc-en-Ciel";
 // The manifest is a semver triple (npm requires it); the user-facing label
 // keeps the two-part form the dashboard has always shown.
 const DASHBOARD_LABEL_VERSION = DASHBOARD_VERSION.replace(/\.0$/, "");
