@@ -44,6 +44,14 @@ export function useInFlight(): InFlightState {
   const [count, setCount] = useState<number | null>(null);
   const [uniqueIps, setUniqueIps] = useState<number | null>(null);
   const [live, setLive] = useState(false);
+  const usageInvalidateTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    const timer = usageInvalidateTimer;
+    return () => {
+      if (timer.current !== undefined) clearTimeout(timer.current);
+    };
+  }, []);
 
   useConsoleEventSource({
     url: "/console/api/live/in-flight/stream",
@@ -58,12 +66,19 @@ export function useInFlight(): InFlightState {
     events: ["count", "request_completed"],
     onEvent: (event, data) => {
       if (event === "request_completed") {
-        // Invalidate all request list queries so the table refreshes
-        // immediately. The query key prefix covers every period/limit combo.
-        void queryClient.invalidateQueries({
-          queryKey: ["console", "usage", "requests"],
-          exact: false,
-        });
+        // Coalesce a burst of completions into one refetch (see
+        // USAGE_INVALIDATE_DEBOUNCE_MS). The query key prefix covers every
+        // period/limit/httpStatus combo and the detail keys.
+        if (usageInvalidateTimer.current !== undefined) {
+          clearTimeout(usageInvalidateTimer.current);
+        }
+        usageInvalidateTimer.current = setTimeout(() => {
+          usageInvalidateTimer.current = undefined;
+          void queryClient.invalidateQueries({
+            queryKey: ["console", "usage", "requests"],
+            exact: false,
+          });
+        }, USAGE_INVALIDATE_DEBOUNCE_MS);
         return;
       }
       if (event !== "count") return;
@@ -141,6 +156,15 @@ function enforcePeakLimit(peaks: Map<string, PoolUsageRow>): void {
     peaks.delete(oldest);
   }
 }
+
+/**
+ * Debounce window for the usage-requests invalidation triggered by
+ * `request_completed` SSE events. Without it a burst of completions (a
+ * sweep, a fan-out agent) refires the list query once per event on top of
+ * the Usage page's own polling interval; coalescing the burst into one
+ * refetch keeps the table fresh without N back-to-back requests.
+ */
+const USAGE_INVALIDATE_DEBOUNCE_MS = 500;
 
 /**
  * Folds one frame of pool rows into the remembered peaks and returns the rows

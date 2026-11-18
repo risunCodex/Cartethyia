@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { resolveTelemetryPayloadMaxBytes } from "../config/telemetry";
 import { Worker } from "node:worker_threads";
 import { hourStamp } from "../shared/time";
 
@@ -494,9 +495,12 @@ export async function readPayloadFrame(reference: PayloadFileReference): Promise
 }
 
 /** Decompressed frame body, or undefined when the bytes are not gzip. */
-function gunzipFrame(stored: Buffer): Buffer | undefined {
+function gunzipFrame(
+  stored: Buffer,
+  maxOutputLength = resolveTelemetryPayloadMaxBytes(),
+): Buffer | undefined {
   try {
-    return gunzipSync(stored);
+    return gunzipSync(stored, { maxOutputLength });
   } catch {
     return undefined;
   }

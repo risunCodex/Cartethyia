@@ -259,6 +259,7 @@ export async function handleProviderProxyRequest(
           proxySlot,
           networkPoolId,
           providerCapture,
+          tenantSystemPromptText,
           retainLeases: context.retainLeases,
           ttfbFields,
           ...(leaseOwnership === undefined ? {} : { leaseOwnership }),

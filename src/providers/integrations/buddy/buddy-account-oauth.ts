@@ -65,11 +65,15 @@ export interface BuddyOAuthVariant {
 const DEVICE_EXPIRY_SECONDS = 900;
 
 const BUDDY_PENDING_CODE = 11217;
-
-export function buddyAccountUid(accessToken: string): string | undefined {
-  const claims = decodeJwtPayload(accessToken);
+export function buddyAccountUidFromClaims(
+  claims: Record<string, unknown> | undefined,
+): string | undefined {
   if (!claims) return undefined;
   return nonEmptyTrimmedString(claims.sub) ?? nonEmptyTrimmedString(claims.uid);
+}
+
+export function buddyAccountUid(accessToken: string): string | undefined {
+  return buddyAccountUidFromClaims(decodeJwtPayload(accessToken));
 }
 
 function buddyAccountLabel(accessToken: string): string | undefined {

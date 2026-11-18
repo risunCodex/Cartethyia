@@ -112,6 +112,7 @@ export function useRegisterProviderModels() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.providers.models(variables.providerId),
       });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.providers.flatAll });
       toast.success("Models registered", `${variables.modelIds.length} model(s) added to ${variables.providerId}`);
     },
     onError: (error) => {
@@ -199,6 +200,7 @@ export function useSetModelEnabled() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.providers.models(variables.providerId),
       });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.providers.flatAll });
     },
   });
 }
@@ -226,6 +228,7 @@ export function useUpdateModelMetadata() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.providers.models(variables.providerId),
       });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.providers.flatAll });
       toast.success("Model updated", `${variables.modelId} limits and capabilities saved`);
     },
     onError: (error) => {
@@ -250,6 +253,7 @@ export function useDeleteProviderModel() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.providers.models(variables.providerId),
       });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.providers.flatAll });
     },
   });
 }
@@ -819,6 +823,7 @@ export function useSyncProviderModels(options: { readonly silent?: boolean } = {
     // but still invalidate the model query with the same result.
     onSuccess: async (result, providerId) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.providers.models(providerId) });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.providers.flatAll });
       if (!options.silent) {
         toast.success(
           "Models fetched",
@@ -962,6 +967,7 @@ export function useCommitDiscoveredModels() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.providers.models(variables.providerId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.providers.modelDiscovery(variables.providerId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.providers.flatAll }),
       ]);
       toast.success(
         "Models added",

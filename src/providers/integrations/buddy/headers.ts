@@ -2,7 +2,7 @@ import type { ProviderDispatchContext } from "../../provider-contracts";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { decodeJwtPayload } from "../../authentication/oauth-flow-store";
-import { buddyAccountUid } from "./account";
+import { buddyAccountUidFromClaims } from "./account";
 import type { CanonicalRequest } from "../../../protocol/canonical-model";
 
 // ── buddy-identity ──────────────────────────────────────────
@@ -19,11 +19,54 @@ export function resolveBuddyIdentity(
   return profileIdentity === true ? "cli" : "desktop";
 }
 
-export function buddyUserId(context?: ProviderDispatchContext): string {
+export interface BuddyHeaderIdentity {
+  readonly claims: Record<string, unknown> | undefined;
+  readonly uid: string | undefined;
+  readonly enterpriseId: string | undefined;
+  readonly idSource: string | undefined;
+  readonly authMethod: string | undefined;
+}
+
+export type BuddyJwtPayloadDecoder = (token: string) => Record<string, unknown> | undefined;
+
+export function resolveBuddyHeaderIdentity(
+  context?: ProviderDispatchContext,
+  decoder: BuddyJwtPayloadDecoder = decodeJwtPayload,
+): BuddyHeaderIdentity {
   const secret = context?.credential?.secret;
-  const token = secret ? new TextDecoder().decode(secret).trim() : "";
-  const uid = buddyAccountUid(token);
-  if (uid !== undefined) return uid;
+  const token = secret && secret.length > 0 ? new TextDecoder().decode(secret).trim() : "";
+  const claims = token.length > 0 ? decoder(token) : undefined;
+  const uid = buddyAccountUidFromClaims(claims) ?? context?.credential.account_id ?? undefined;
+  const storedEnterprise = context?.credential.auth_state?.["enterpriseId"];
+  let enterpriseId: string | undefined;
+  if (typeof storedEnterprise === "string" && storedEnterprise.trim().length > 0) {
+    enterpriseId = storedEnterprise.trim();
+  } else if (claims) {
+    for (const claim of ENTERPRISE_CLAIMS) {
+      const value = claims[claim];
+      if (typeof value === "string" && value.trim().length > 0) {
+        enterpriseId = value.trim();
+        break;
+      }
+    }
+  }
+  const state = context?.credential.auth_state;
+  const idSource =
+    identityClaim(claims, "id_source") ??
+    identityClaim(claims, "idSource") ??
+    identityClaim(state as Record<string, unknown> | undefined, "idSource");
+  const authMethod =
+    identityClaim(claims, "token_source") ??
+    identityClaim(state as Record<string, unknown> | undefined, "authMethod");
+  return { claims, uid, enterpriseId, idSource, authMethod };
+}
+
+export function buddyUserId(
+  context?: ProviderDispatchContext,
+  identity?: BuddyHeaderIdentity,
+): string {
+  const resolved = identity ?? resolveBuddyHeaderIdentity(context);
+  if (resolved.uid !== undefined) return resolved.uid;
   const accountId = context?.credential.account_id;
   return accountId !== undefined && accountId.length > 0 ? accountId : "anonymous";
 }
@@ -38,18 +81,11 @@ const ENTERPRISE_CLAIMS: readonly string[] = [
   "organization_id",
 ];
 
-export function buddyEnterprise(context?: ProviderDispatchContext): string | undefined {
-  const stored = context?.credential.auth_state?.["enterpriseId"];
-  if (typeof stored === "string" && stored.trim().length > 0) return stored.trim();
-  const token = context?.credential.secret;
-  if (token === undefined || token.length === 0) return undefined;
-  const claims = decodeJwtPayload(new TextDecoder().decode(token).trim());
-  if (claims === undefined) return undefined;
-  for (const claim of ENTERPRISE_CLAIMS) {
-    const value = claims[claim];
-    if (typeof value === "string" && value.trim().length > 0) return value.trim();
-  }
-  return undefined;
+export function buddyEnterprise(
+  context?: ProviderDispatchContext,
+  identity?: BuddyHeaderIdentity,
+): string | undefined {
+  return (identity ?? resolveBuddyHeaderIdentity(context)).enterpriseId;
 }
 
 /**
@@ -89,26 +125,14 @@ function identityClaim(claims: Record<string, unknown> | undefined, name: string
 
 export function buddyOAuthIdentityHeaders(
   context?: ProviderDispatchContext,
+  identity?: BuddyHeaderIdentity,
 ): Record<string, string> {
-  const secret = context?.credential?.secret;
-  const token = secret ? new TextDecoder().decode(secret).trim() : "";
-  const uid = buddyAccountUid(token) ?? context?.credential.account_id ?? "";
+  const resolved = identity ?? resolveBuddyHeaderIdentity(context);
+  const uid = resolved.uid ?? "";
   if (uid.length === 0) return {};
-  const enterpriseId = buddyEnterprise(context);
-  // The reference gateway reads `id_source` / `token_source` from the JWT
-  // payload and the account record, not from stored auth state — an account
-  // authorized before either was persisted still carries them on the wire.
-  // Precedence matches the donor (`client_profiles._identity_claim_headers`):
-  // account fields first, then JWT claims, then legacy `auth_state`.
-  const claims = token.length > 0 ? decodeJwtPayload(token) : undefined;
-  const state = context?.credential.auth_state;
-  const idSource =
-    identityClaim(claims, "id_source") ??
-    identityClaim(claims, "idSource") ??
-    identityClaim(state as Record<string, unknown> | undefined, "idSource");
-  const method =
-    identityClaim(claims, "token_source") ??
-    identityClaim(state as Record<string, unknown> | undefined, "authMethod");
+  const enterpriseId = resolved.enterpriseId;
+  const idSource = resolved.idSource;
+  const method = resolved.authMethod;
   const headers: Record<string, string> = { "X-User-Id": uid };
   if (method !== undefined) headers["X-Auth-Method"] = method;
   if (idSource !== undefined) headers["X-Id-Source"] = idSource;

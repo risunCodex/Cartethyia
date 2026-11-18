@@ -10,6 +10,7 @@ import {
   buddyPrivateData,
   buddyUserId,
   resolveBuddyDeviceBinding,
+  resolveBuddyHeaderIdentity,
   resolveBuddyIdentity,
 } from "../headers";
 import { buildCodeBuddyUserAgent, getCodeBuddyCnVersion, getCodeBuddyVersion } from "../../../operations/client-versions";
@@ -99,6 +100,7 @@ export async function codebuddyHeaders(
     ...(conversationId === undefined ? {} : { conversationId }),
   });
   if (resolveBuddyIdentity(context, cliIdentity) === "cli") {
+    const identity = resolveBuddyHeaderIdentity(context);
     const purpose = buddyAgentPurpose(context, request);
     // Root/parent conversation context is forwarded only when the caller
     // actually supplied it — the reference emits these conditionally for
@@ -125,10 +127,10 @@ export async function codebuddyHeaders(
       ...buddyCliTraceHeaders(conversation),
       // The CLI's OAuth identity family: X-User-Id from the JWT sub plus the
       // base64 X-Userinfo envelope when identity fields exist.
-      ...buddyOAuthIdentityHeaders(context),
+      ...buddyOAuthIdentityHeaders(context, identity),
       ...buddyCliHeaders({
-        userId: buddyUserId(context),
-        enterpriseId: buddyEnterprise(context),
+        userId: buddyUserId(context, identity),
+        enterpriseId: buddyEnterprise(context, identity),
         privateData: buddyPrivateData(context),
       }),
     };

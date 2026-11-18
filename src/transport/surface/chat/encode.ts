@@ -464,7 +464,14 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
       if (resolvedName === undefined || resolvedName.trim().length === 0) return result;
       const alreadyEmitted = this.emittedToolCallIds.has(identity);
       const sent = this.emittedToolArguments.get(identity) ?? 0;
-      const pending = argumentsFrom(tracked.state, sent);
+      // `sent` always equals the accumulated length at the previous emit, so
+      // once a call has emitted, this event's fragment IS the pending tail.
+      // Re-deriving it from the joined string would re-materialize the whole
+      // prefix on every delta — quadratic over a large tool argument. The
+      // first emission still needs the full accumulated text.
+      const pending = alreadyEmitted
+        ? tool.state.arguments
+        : argumentsFrom(tracked.state, sent);
       if (alreadyEmitted && pending.length === 0) return result;
       const delta: JsonObject = {
         index: tracked.index,

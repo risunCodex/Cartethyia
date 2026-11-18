@@ -44,9 +44,7 @@ import type { NetworkPoolSelector } from "../../../network/pool/selector";
 import type { TelemetryBatchBuffer } from "../../../observability/telemetry-buffer";
 import type { ProviderExchangeCapture } from "../attempt-finalize";
 import { resolveCaptureModeForRequest } from "../capture-policy";
-import { resolveTenantImageClampMaxBytes, readTenantSystemPromptsForDispatch } from "../../request/tenant-preferences";
-import { resolveTenantSystemPrompt } from "../../request/system-prompt-injection";
-import { isWrappedInjectionProvider } from "../../../protocol/system-prompt-contracts";
+import { resolveTenantImageClampMaxBytes } from "../../request/tenant-preferences";
 import { proxySuccessHeaders, buildUpstreamDispatchContext, buildDispatchNetworkBindings } from "../upstream";
 import type { AttemptLeaseOwnership } from "../leases";
 import { resolveStreamFirstChunkTimeoutMs, resolveStreamStallTimeoutMs, resolveUpstreamTimeoutMs } from "../../../config/timeouts";
@@ -85,6 +83,8 @@ interface StreamingDispatchInput {
   readonly proxySlot: { poolId: string; release: () => void } | undefined;
   readonly networkPoolId: string | undefined;
   readonly providerCapture: ProviderExchangeCapture;
+  /** The tenant's system prompt text, already resolved once per request by the caller. */
+  readonly tenantSystemPromptText: string | undefined;
   /** Ownership of this attempt's account/network-pool release, when one was acquired. */
   readonly leaseOwnership?: AttemptLeaseOwnership | undefined;
   /** Caller identity authorizing a provider session held across requests. */
@@ -156,6 +156,7 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
     proxySlot,
     networkPoolId,
     providerCapture,
+    tenantSystemPromptText,
     retainLeases,
     ttfbFields,
     leaseOwnership,
@@ -197,28 +198,12 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
       ? {}
       : { imageClampMaxBytes: state.imageClampMaxBytes }),
     ...(conversationAffinity ? { conversationAffinity } : {}),
-    // Same wrapped-injection text the non-streaming path carries: providers
-    // whose upstream validates the fixed system prompt as a channel identity
-    // (the buddy family) receive the tenant prompt through dispatch context
-    // so the adapter can fold it into its fixed turn. `override` degrades to
-    // wrapped append there; stripping the identity would be refused outright.
-    ...(await (async () => {
-      if (
-        canonicalRequest.skipTenantSystemPrompt === true ||
-        !isWrappedInjectionProvider(candidate.provider_id)
-      ) {
-        return {};
-      }
-      const text = resolveTenantSystemPrompt(
-        await readTenantSystemPromptsForDispatch(deps.db, prepared.authorization.snapshot.tenant_id),
-        {
-          providerId: candidate.provider_id,
-          modelId: candidate.model_id,
-          requestedModel: prepared.plan?.requested_model ?? candidate.model_id,
-        },
-      )?.text;
-      return text === undefined ? {} : { tenantSystemPrompt: text };
-    })()),
+    // Same wrapped-injection text the non-streaming path carries: the tenant
+    // prompt is resolved once per request (proxy-request.ts) and travels here
+    // through the input; the attempt loop must not re-read it per candidate.
+    ...(tenantSystemPromptText === undefined
+      ? {}
+      : { tenantSystemPrompt: tenantSystemPromptText }),
     ...(candidate.user_agent === undefined ? {} : { userAgent: candidate.user_agent }),
     ...bindings,
     ...(leaseOwnership === undefined ? {} : { leaseOwnership }),

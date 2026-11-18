@@ -11,6 +11,7 @@ import type { FlatModelCatalogEntry } from "../data/contracts";
 import { UNKNOWN_LIMITS_TOOLTIP } from "../lib/format/tokens";
 import { queryKeys } from "../data/query-keys";
 import { querySignal } from "../data/assert";
+import { DASHBOARD_QUERY_OPTIONS } from "../data/query-policy";
 
 export type FlatModelEntry = FlatModelCatalogEntry;
 
@@ -27,7 +28,11 @@ export function useAllModelsCatalog(enabled: boolean): {
         signal: querySignal(context),
       }),
     enabled,
-    staleTime: 0,
+    // Catalog mutations (register/enable/edit/delete/sync/discovery commit)
+    // invalidate `providers.flatAll` explicitly, so a remount or route
+    // change can reuse the cached list instead of refetching the whole
+    // catalog every time the picker opens.
+    ...DASHBOARD_QUERY_OPTIONS,
   });
   return {
     items: query.data ?? [],

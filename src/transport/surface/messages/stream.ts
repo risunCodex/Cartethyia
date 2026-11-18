@@ -109,14 +109,26 @@ export class MessagesStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
    * yet. Requires a real name: opening the block under a placeholder would
    * make the client reject the call as an unknown tool.
    */
-  private emitToolCall(callId: string, entry: ToolCallState): MessagesStreamEvent[] {
+  private emitToolCall(
+    callId: string,
+    entry: ToolCallState,
+    freshFragment?: string,
+  ): MessagesStreamEvent[] {
     const out: MessagesStreamEvent[] = [];
     const name = requireMessagesToolName(entry.name, callId);
     const existing = this.tools.indexById.get(callId);
     const index = existing ?? this.nextIndex++;
     this.tools.indexById.set(callId, index);
     const sent = this.emittedArguments.get(callId) ?? 0;
-    const pending = argumentsFrom(entry, sent);
+    // `sent` equals the accumulated length at the previous emit, so a fresh
+    // fragment (push path) is exactly the pending tail once anything has been
+    // sent — no need to re-slice the joined prefix, which is quadratic over a
+    // large tool argument. No fragment (flush path) or a first emission still
+    // reads the accumulated tail.
+    const pending =
+      freshFragment !== undefined && sent > 0
+        ? freshFragment
+        : argumentsFrom(entry, sent);
     if (!this.openedToolCalls.has(callId)) {
       this.openedToolCalls.add(callId);
       out.push(...this.closeOpenBlock());
@@ -392,7 +404,7 @@ export class MessagesStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, 
       // without a real name, and the fragments are kept by the tracker so they
       // are emitted intact once it arrives.
       if (tracked.state.name === undefined || tracked.state.name.trim().length === 0) return out;
-      out.push(...this.emitToolCall(callKey, tracked.state));
+      out.push(...this.emitToolCall(callKey, tracked.state, event.arguments_delta ?? ""));
       return out;
     }
     if (event.type === "terminal") {

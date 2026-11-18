@@ -1,7 +1,7 @@
 // API-key authentication and authorization snapshots: token extraction, hashing, lookup, and admission identity.
 
 import type { CartethyiaDatabase } from "../persistence/db-handle";
-import { deleteShared, publishInvalidation, readShared, writeShared } from "../persistence/shared-cache";
+import { deleteShared, publishInvalidation, readShared, subscribeInvalidation, writeShared } from "../persistence/shared-cache";
 import { DrizzleApiKeyStore } from "../persistence/stores/api-key-store";
 import { GatewayError } from "../protocol/gateway-error";
 import { hashSecret } from "./crypto";
@@ -82,6 +82,28 @@ export function invalidateApiKeyCache(keyId?: string): void {
   // mutating request does not have. The notice is at-most-once, so the TTL
   // stays the backstop for a peer that misses it.
   publishInvalidation({ namespace: "auth", key: keyId });
+}
+
+/**
+ * Wires cross-process auth-key invalidation (one subscription per process).
+ *
+ * A console mutation on another process publishes a key-id notice; this
+ * handler drops the local key-id reverse index and retires the shared L2
+ * snapshot so the next lookup re-resolves from the database. The notice names
+ * a key id, while L2 is keyed by token hash, so a whole-namespace drop is the
+ * only exact retirement available here. TTL remains the backstop for a missed
+ * notice. Never publish from inside this handler — that would re-broadcast
+ * every peer notice and self-amplify.
+ */
+let peerAuthInvalidationBound = false;
+export function bindPeerAuthInvalidation(): void {
+  if (peerAuthInvalidationBound) return;
+  peerAuthInvalidationBound = true;
+  subscribeInvalidation((notice) => {
+    if (notice.namespace !== "auth") return;
+    authorizationCache.invalidate(notice.key);
+    void deleteShared("auth");
+  });
 }
 
 /**
@@ -315,6 +337,7 @@ export async function resolveApiKeyAuthorization(
   token: string,
 ): Promise<ResolvedApiKey | undefined> {
   const now = Date.now();
+  bindPeerAuthInvalidation();
   const hash = hashSecret(token);
   const cached = authorizationCache.lookup(hash, now);
   if (cached.kind === "negative") return undefined;

@@ -9,6 +9,7 @@
 export {
   BuddyOAuthClient,
   buddyAccountUid,
+  buddyAccountUidFromClaims,
   buddyResponseData,
   parseBuddyTokenData,
   strictResponseCode,

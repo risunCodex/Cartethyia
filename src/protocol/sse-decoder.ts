@@ -181,6 +181,16 @@ export async function* decodeSseEvents(
     if (line.length > maxLineBytes) throw oversized("line", line);
     return line;
   }
+  /** Copies the pending byte chunks into one buffer and decodes a bounded snippet. */
+  function pendingSnippet(): string {
+    const total = new Uint8Array(pendingBytes);
+    let offset = 0;
+    for (const chunk of pending) {
+      total.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return decoder.decode(total).slice(0, MAX_SSE_SNIPPET);
+  }
   function* dispatchEvent(): Iterable<SseEvent> {
     if (dataLines.length === 0) {
       eventName = null;
@@ -261,8 +271,7 @@ export async function* decodeSseEvents(
         pending.push(chunk.value);
         pendingBytes += chunk.value.byteLength;
         if (!hasPendingNewline() && pendingBytes > maxLineBytes) {
-          const partial = decoder.decode(new Uint8Array(pendingBytes)).slice(0, MAX_SSE_SNIPPET);
-          throw oversized("line", partial);
+          throw oversized("line", pendingSnippet());
         }
       }
       let line = takeLine();
@@ -274,8 +283,7 @@ export async function* decodeSseEvents(
     }
     if (pendingBytes > 0) {
       if (pendingBytes > maxLineBytes) {
-        const partial = decoder.decode(new Uint8Array(pendingBytes)).slice(0, MAX_SSE_SNIPPET);
-        throw oversized("line", partial);
+        throw oversized("line", pendingSnippet());
       }
       const total = new Uint8Array(pendingBytes);
       let offset = 0;
