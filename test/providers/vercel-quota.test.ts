@@ -41,8 +41,8 @@ describe("Vercel AI Gateway quota", () => {
 });
 
 describe("Vercel AI Gateway default roster", () => {
-  test("seeds the free nemotron row plus the four billed picks", () => {
-    expect(VERCEL_DEFAULT_MODELS).toHaveLength(5);
+  test("seeds the free nemotron row plus the five billed picks", () => {
+    expect(VERCEL_DEFAULT_MODELS).toHaveLength(6);
     const ids = new Set(VERCEL_DEFAULT_MODELS.map((model) => model.modelId));
     expect(ids).toEqual(
       new Set([
@@ -51,6 +51,7 @@ describe("Vercel AI Gateway default roster", () => {
         "inception/mercury-3",
         "tencent/hy4-flash",
         "meta/muse-ember",
+        "xiaomi/mimo-v2.6-flash",
       ]),
     );
   });
@@ -66,7 +67,7 @@ describe("Vercel AI Gateway default roster", () => {
     const billed = VERCEL_DEFAULT_MODELS.filter(
       (model) => model.modelId !== "nvidia/nemotron-3.5-lightning-free",
     );
-    expect(billed).toHaveLength(4);
+    expect(billed).toHaveLength(5);
     for (const model of billed) {
       expect(model.freeTier).toBeUndefined();
       expect(model.proOnly).toBeUndefined();
@@ -100,5 +101,12 @@ describe("Vercel AI Gateway default roster", () => {
     expect(ember.toolCall).toBe(true);
     expect(ember.contextLimit).toBe(1_048_576);
     expect(ember.outputLimit).toBe(943_718);
+
+    const mimo = VERCEL_DEFAULT_MODELS.find((model) => model.modelId === "xiaomi/mimo-v2.6-flash")!;
+    expect(mimo.modalities.input).toEqual(expect.arrayContaining(["text", "image", "audio"]));
+    expect(mimo.reasoning).toBe(true);
+    expect(mimo.toolCall).toBe(true);
+    expect(mimo.contextLimit).toBe(1_050_000);
+    expect(mimo.outputLimit).toBe(131_072);
   });
 });

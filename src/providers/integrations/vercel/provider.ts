@@ -45,12 +45,14 @@ export const VERCEL_SPEC: ApiKeyProviderSpec = {
  * Verified live with a free-tier key: only
  * `nvidia/nemotron-3.5-lightning-free` is served on a free plan; the other
  * zero-priced listing rows are refused with 403 `no_providers_available`, so
- * they are not seeded. The four billed rows (`meituan/longcat-2.5`,
- * `inception/mercury-3`, `tencent/hy4-flash`, `meta/muse-ember`) are the
- * operator's picks and carry the capabilities the upstream itself declares —
- * LongCat is the vision-capable coding row, Mercury 3 is the diffusion row,
- * Hy4 flash is Tencent's cost-efficient agent row, and Muse Ember is Meta's
- * multimodal agent row. Everything else comes from live discovery.
+ * they are not seeded. The five billed rows (`meituan/longcat-2.5`,
+ * `inception/mercury-3`, `tencent/hy4-flash`, `meta/muse-ember`,
+ * `xiaomi/mimo-v2.6-flash`) are the operator's picks and carry the
+ * capabilities the upstream itself declares — LongCat is the vision-capable
+ * coding row, Mercury 3 is the diffusion row, Hy4 flash is Tencent's
+ * cost-efficient agent row, Muse Ember is Meta's multimodal agent row, and
+ * Mimo v2.6 Flash is Xiaomi's multimodal fast row. Everything else comes from
+ * live discovery.
  */
 export const VERCEL_DEFAULT_MODELS: readonly ModelDefinition[] = [
   defineModel({
@@ -101,6 +103,17 @@ export const VERCEL_DEFAULT_MODELS: readonly ModelDefinition[] = [
     out: 943_718,
     vision: true,
     document: true,
+    audio: true,
+    reasoning: true,
+    toolCall: true,
+  }),
+  defineModel({
+    id: "xiaomi/mimo-v2.6-flash",
+    wireFamily: "chat",
+    endpoint: VERCEL_CHAT_PATH,
+    ctx: 1_050_000,
+    out: 131_072,
+    vision: true,
     audio: true,
     reasoning: true,
     toolCall: true,

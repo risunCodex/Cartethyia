@@ -55,9 +55,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   `particle-ai/particle-1:free`, `recursive/flint-v1.0:free`, and
   `thinkingmachines/inkling-2-small:free` join the shared zero-price roster
   (limits, reasoning, and vision read from OpenRouter's `/api/v1/models`).
-- **Vercel default catalog gains two billed picks.** `tencent/hy4-flash`
-  (vision, 1M ctx) and `meta/muse-ember` (vision/document/audio inputs, 1M
-  ctx) with the capabilities the upstream declares.
+- **Vercel default catalog gains three billed picks.** `tencent/hy4-flash`
+  (vision, 1M ctx), `meta/muse-ember` (vision/document/audio inputs, 1M
+  ctx), and `xiaomi/mimo-v2.6-flash` (vision/audio inputs, 1.05M ctx) with
+  the capabilities the upstream declares.
 
 ### Fixed
 
