@@ -10,9 +10,49 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **Numes provider.** OpenAI-compatible marketplace key (`sk-numes-...`) on
+  `api.numes.ai/api/v1`: the static roster seeds the nine live-verified
+  `:free` rows (zero price, `freeTier`), discovery maps the full 331-model
+  catalog for manual adds, quota comes from `GET /api/v1/key`, and the
+  provider lands in Free Limited with its brand mark.
+- **Runcrate provider.** OpenAI-compatible inference on
+  `api.runcrate.ai/v1` plus the Anthropic Messages wire on the same base
+  (both verified live): the roster tags the five free-allowance models
+  (DeepSeek V4.1 Flash, GLM 5.3 Flash, GLM 5.3, gpt-oss 120B, Qwen3.8
+  Flash — weekly workspace allowance, free tier) with `free`/`freeTier`,
+  discovery returns the 120-model catalog, quota reads
+  `GET www.runcrate.ai/api/v1/billing/balance` (the free allowance itself
+  has no API — dashboard only), and the provider lands in Free Limited
+  with its brand mark.
+- **Perch plans are chosen for the account.** Fresh Perch logins select the
+  free Starter plan automatically after the OAuth exchange, and dispatch
+  re-selects it lazily when the session reports no plan — ending the
+  "Pick a plan to start using Perch" refusal that greeted every new
+  account before its first call.
+- **Qoder provider re-implemented end to end** (provider module, risk
+  controls with `CARTETHYIA_QODER_MIN_GAP_MS` / `CARTETHYIA_QODER_P4_WARN_STREAK`,
+  check-in, plan/quota rules, discovery, quota actions), returning after
+  the removal that predated it.
+- **Antigravity: `gemini-4-hydrogen`.** Argon-shaped wire tiers with the
+  `medium` default tier, so the logical id dispatches to
+  `gemini-4-hydrogen-medium`.
+- **Clixad roster follows the upstream rename.** `deepseek-v4-flash` is now
+  `deepseek-v4.1-flash` (the old id left the upstream listing) and three
+  new free rows joined it: `glm-5.3-flash`, `gemini-3.8-flash`, and the
+  renamed V4.1 — seven free rows total, effort ladders from the live
+  listing.
+
 ### Fixed
 
 - **Console update apply restricted to platform admins.** `POST /console/api/updates/apply` now requires `platform:admin` scope instead of tenant-scoped `dashboard:write`, preventing tenant API keys from triggering a gateway-wide package update and process restart.
+- **Perch turn tickets identify as a current client.** The turn-ticket mint
+  now stamps `ticketClient: 2` — the marker both the shipping CLI (2.4.137)
+  and Desktop (2.5.9) send — and an upstream `banned` verdict maps to an
+  upstream authentication failure instead of an outage, so routing stops
+  dialing an account Perch has banned for looking like a foreign app
+  (evidence: `documentation/research/perch/2026-11-18-perch-ticketclient-surface-gate.md`).
 - **Clixad long sessions no longer fail with 502 on large payloads.** The edge
   in front of the Clixad gateway answers 403 "Blocked" to large plain-JSON
   request bodies (a ~576KB, 100-message session was rejected while small
@@ -21,6 +61,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   sends `Content-Type: application/vnd.clixad.chat+gzip`, matching the Clixad
   CLI's encoding; `ApiKeyProviderSpec` gained an optional
   `request_compression` field for this.
+- **DeepAI stops dropping over-long messages.** The upstream silently drops
+  any single message longer than ~128k characters (a 250k-char message came
+  back with a 289-prompt-token request); the DeepAI adapter now chunks such
+  messages at 90k characters before they leave, so long-context turns keep
+  their history (evidence:
+  `documentation/research/deepai/2026-11-18-deepai-context-limits-and-message-drop.md`).
+- **`carte` keeps the diagnosis on screen.** A gateway startup failure used
+  to flash and exit; an interactive window now holds for 30 seconds with
+  amber guidance (including the reinstall commands) while piped or
+  scripted runs still exit at once with the actionable detail on stderr.
 
 ## [2.8.3] - 2026-11-17 · Codename Arc-en-ciel
 

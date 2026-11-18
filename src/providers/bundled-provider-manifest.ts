@@ -169,6 +169,13 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
     credentialUrl: "https://numes.ai/dashboard/keys",
     credentialHint: "Create an API key at numes.ai/dashboard/keys (`sk-numes-...`, USD or BTC). OpenAI-compatible chat; model ids are `author/slug` and the `:free` suffix marks zero-price rows.",
   },
+  {
+    id: "runcrate",
+    displayName: "Runcrate",
+    baseUrl: "https://api.runcrate.ai/v1",
+    credentialUrl: "https://www.runcrate.ai/dashboard/api-keys",
+    credentialHint: "Create an API key at runcrate.ai (Dashboard → Keys, `rc_live_...`). OpenAI-compatible chat plus an Anthropic Messages wire on the same base; five open models serve a free weekly workspace allowance (GitHub sign-up needs no card).",
+  },
 
   // OpenAI-compatible bearer aggregators. Each is a bare host already rooted at
   // its own version prefix, so the `/v1`-prefixed wire paths stay pinned by the

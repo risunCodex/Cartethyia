@@ -821,6 +821,10 @@ const FREE_LIMITED_IDS = new Set([
   // zero; the static roster seeds those nine rows and live discovery keeps
   // the paid catalog available for manual adds.
   "numes",
+  // Runcrate gives five open models a weekly workspace allowance (reset
+  // Monday, GitHub sign-up needs no card); past it the same models bill at
+  // half list price with credit.
+  "runcrate",
 ]);
 /**
  * The providers an operator reaches for first: household names with a

@@ -114,6 +114,9 @@ const iconAssets: Record<
   // Numes' official mark is its favicon.svg (the three-bar glyph served from
   // assets.numes.ai on numes.ai).
   numes: { file: "numes", ext: "svg" },
+  // Runcrate's official mark: favicon.svg from runcrate.ai (128px SVG
+  // wrapping the brand PNG).
+  runcrate: { file: "runcrate", ext: "svg" },
   // DeepAI's official app icon from its PWA manifest (the root favicon.ico is
   // a generic star, not the brand mark).
   deepai: { file: "deepai", ext: "png" },
