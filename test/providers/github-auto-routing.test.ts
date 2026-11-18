@@ -36,7 +36,7 @@ const candidate: ProviderDispatchTarget = {
 
 describe("GitHub Copilot Auto routing", () => {
   test("maps catalog variants to supported Auto tiers", () => {
-    expect(GITHUB_AUTO_MODEL_TIERS.has("auto")).toBe(false);
+    expect(GITHUB_AUTO_MODEL_TIERS.get("auto")).toBe("balance");
     expect(GITHUB_AUTO_MODEL_TIERS.get("gpt-6-luna")).toBe("efficiency");
     expect(GITHUB_AUTO_MODEL_TIERS.get("mai-code-2-flash")).toBe("intelligence");
     expect(GITHUB_AUTO_MODEL_TIERS.has("gpt-6-luna-low")).toBe(false);
@@ -306,5 +306,132 @@ describe("GitHub Copilot Auto routing", () => {
       .toBe("When it reaches GitHub Copilot's parser");
     expect(JSON.stringify(events)).not.toContain("Auto selected GPT-6 Luna.");
     expect(events[4]).toMatchObject({ type: "terminal", state: "complete" });
+  });
+
+  test("routes Auto selections over /responses even when the upstream advertises chat", async () => {
+    // Live-verified 2026-11-18: `mai-code-2-flash` advertises both
+    // `/chat/completions` and `/responses`, but the chat surface answers 400
+    // `no_available_model_endpoints` while `/responses` serves. The Auto route
+    // must prefer responses whenever it is advertised.
+    const cred = JSON.stringify({
+      access: "auto-access",
+      apiHost: "copilot.example",
+      github: "account-auto",
+      profile: "opencode-copilot",
+    });
+    const seen: string[] = [];
+    const outboundFetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      seen.push(new URL(url).pathname);
+      if (url.endsWith("/auto")) {
+        return new Response(JSON.stringify({
+          selected_model: {
+            id: "mai-code-2-flash",
+            supported_endpoints: ["/chat/completions", "/responses"],
+          },
+          session_token: "auto-session-token",
+          expires_at: Math.floor(Date.now() / 1_000) + 3_600,
+        }), { headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        id: "response-ok",
+        object: "response",
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "ok", annotations: [] }],
+          },
+        ],
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+      }), { headers: { "content-type": "application/json" } });
+    }) as unknown as ProviderDispatchContext["outbound_fetch"];
+    const context = {
+      credential: {
+        provider_id: "github",
+        credential_kind: "oauth",
+        secret: new TextEncoder().encode(cred),
+      },
+      deadline: Date.now() + 30_000,
+      abort_signal: new AbortController().signal,
+      outbound_fetch: outboundFetch,
+      request_headers: { "x-session-id": "auto-session-2" },
+    } as unknown as ProviderDispatchContext;
+    const candidate: ProviderDispatchTarget = {
+      provider_id: "github",
+      model_id: "mai-code-2-flash",
+      wire_family: "chat",
+      endpoint_path: "/chat/completions",
+      capabilities: {},
+    };
+    const events: CanonicalEvent[] = [];
+    for await (const event of githubAdapter.dispatch(
+      { ...request, model: "mai-code-2-flash" } as CanonicalRequest,
+      candidate,
+      { ...context, request_id: "auto-request-3" },
+    )) events.push(event);
+    expect(seen).toEqual(["/auto", "/responses"]);
+    expect(events.some((event) => event.type === "content_delta")).toBe(true);
+  });
+
+  test("the virtual auto id pins the balance tier on /auto", async () => {
+    const cred = JSON.stringify({
+      access: "auto-access",
+      apiHost: "copilot.example",
+      github: "account-auto",
+      profile: "opencode-copilot",
+    });
+    let autoBody: Record<string, unknown> | undefined;
+    const outboundFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/auto")) {
+        autoBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        return new Response(JSON.stringify({
+          selected_model: { id: "gpt-6-luna", supported_endpoints: ["/responses"] },
+          session_token: "auto-session-token",
+          expires_at: Math.floor(Date.now() / 1_000) + 3_600,
+        }), { headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        id: "response-ok",
+        object: "response",
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "ok", annotations: [] }],
+          },
+        ],
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+      }), { headers: { "content-type": "application/json" } });
+    }) as unknown as ProviderDispatchContext["outbound_fetch"];
+    const context = {
+      credential: {
+        provider_id: "github",
+        credential_kind: "oauth",
+        secret: new TextEncoder().encode(cred),
+      },
+      deadline: Date.now() + 30_000,
+      abort_signal: new AbortController().signal,
+      outbound_fetch: outboundFetch,
+      request_headers: { "x-session-id": "auto-session-3" },
+    } as unknown as ProviderDispatchContext;
+    const candidate: ProviderDispatchTarget = {
+      provider_id: "github",
+      model_id: "auto",
+      wire_family: "chat",
+      endpoint_path: "/chat/completions",
+      capabilities: {},
+    };
+    for await (const _event of githubAdapter.dispatch(
+      { ...request, model: "auto" } as CanonicalRequest,
+      candidate,
+      { ...context, request_id: "auto-request-4" },
+    )) {
+      // drain
+    }
+    expect(autoBody?.tier).toBe("balance");
   });
 });

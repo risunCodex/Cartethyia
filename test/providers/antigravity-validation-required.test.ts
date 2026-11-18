@@ -1,12 +1,14 @@
 /**
- * Antigravity / Google Cloud Code `VALIDATION_REQUIRED` must disable the
- * account, never leave it active or merely cool it down.
+ * Antigravity / Google Cloud Code `VALIDATION_REQUIRED` must cool the account
+ * down, never leave it active or (permanently) disabled.
  *
  * The upstream answers an unverified account with HTTP 403
  * `PERMISSION_DENIED` and a `VALIDATION_REQUIRED` reason plus a
- * `validation_url`. It is a verdict on the credential: no retry or cooldown
- * clears it, so the account must be parked (`disabled`) and the validation URL
- * carried in the recorded reason for the dashboard pill link.
+ * `validation_url`. It is a verdict on the credential: no retry clears it, so
+ * the account must be excluded while it cools and the validation URL carried in
+ * the recorded reason for the dashboard pill link. It is a *timed* cooldown —
+ * never a permanent `disabled` — so a machine verdict can never park a
+ * credential forever.
  */
 import { expect, test } from "bun:test";
 import { classifyAccountError } from "../../src/providers/operations/account-health-service";
@@ -43,7 +45,7 @@ function gatewayError(): GatewayError {
   );
 }
 
-test("VALIDATION_REQUIRED disables the account", () => {
+test("VALIDATION_REQUIRED cools the account", () => {
   const r = classifyAccountError(gatewayError(), {
     origin: "upstream",
     scope: "provider",
@@ -51,7 +53,7 @@ test("VALIDATION_REQUIRED disables the account", () => {
     statusCode: 403,
   });
   expect(r.category).toBe("validation_required");
-  expect(r.status).toBe("disabled");
+  expect(r.status).toBe("cooldown");
   expect(r.mutatesAccount).toBe(true);
 });
 

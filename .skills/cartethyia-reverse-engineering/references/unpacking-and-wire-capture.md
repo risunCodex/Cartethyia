@@ -346,7 +346,6 @@ The evidence ledgers produced with these techniques are consolidated in
 | Devin | unpack complete (Inno Setup 6.4, `innounp 2.70.1`, 14,616 files / ~1.31 GB → `D:\tmp\unpacked\devin\`; VS Code fork + `devin-webapp-host` + appx). **OAuth captured live** (Google, 2026-11-06): `POST /api/auth1/connections` → client_ids; PKCE S256; `POST /api/auth1/google/exchange` → `{status:"authenticated", token:"auth1_…"}`; auth1 token alone 401 "No organizations found" until org exists. Docs → `documentation/research/devin/2026-11-06-devin-desktop-audit.md` |
 | Trae | `documentation/research/trae/` — `2026-11-06-trae-3.6.13-unpack-wire-audit.md`, `2026-11-06-trae-header-payload-builder-audit.md` |
 | DeepAI | `documentation/research/deepai/` — `2026-11-11-deepai-code-desktop-0.3.35-unpack-wire-audit.md`, `2026-11-11-deepai-code-live-wire-verification.md` |
-| Freebuff | `documentation/research/freebuff/2026-11-09-freebuff-desktop-wire-audit.md` |
 | Clixad | `documentation/research/clixad/2026-11-11-clixad-wire.md` |
 
 ## Cleanup

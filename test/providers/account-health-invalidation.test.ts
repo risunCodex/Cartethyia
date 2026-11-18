@@ -570,7 +570,9 @@ describe("GitHub Copilot not-licensed verdict", () => {
 
   test("disables the account instead of cycling a cooldown", () => {
     // The health log showed exactly this: `unauthorized: not licensed to use
-    // Copilot` on `gpt-6-luna`, cycling active → cooldown → active forever.
+    // Copilot` on `gpt-6-luna`, cycling active → cooldown → active forever. A
+    // ban is the one verdict that stays permanently disabled — only an
+    // operator can recover it.
     const classification = classifyAccountError(githubUpstream("unauthorized: not licensed to use Copilot"), {
       origin: "upstream",
       scope: "account",

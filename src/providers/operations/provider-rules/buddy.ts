@@ -163,16 +163,19 @@ function decidePolicyBlock(
   refusalReason: string,
 ): AccountErrorClassification {
   if (buddyBanned) {
+    // A ban is evidence about the credential even at provider scope, for the
+    // same reason a named revocation is: the message is the evidence. Without
+    // this a stream frame's missing credential detail would leave a banned
+    // account serving. A ban is the one verdict that stays permanently
+    // `disabled` — the upstream refused the account itself, not a window, so
+    // a cooldown would only return it to rotation to burn sibling accounts
+    // again. Only an operator can recover it.
     return result(
       "policy_blocked_banned",
       "disabled",
       0,
       null,
       reason("Account banned by upstream"),
-      // A ban is evidence about the credential even at provider scope, for the
-      // same reason a named revocation is: the message is the evidence. Without
-      // this a stream frame's missing credential detail would leave a banned
-      // account serving.
       true,
     );
   }

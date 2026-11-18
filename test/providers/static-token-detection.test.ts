@@ -135,23 +135,25 @@ dbDescribe("OAuth refresh: automatic static-token detection", () => {
     expect(row.lastErrorCategory).toBeNull();
   });
 
-  test("a definitive refresh failure with an unusable access token is parked for re-auth", async () => {
+  test("a definitive refresh failure with an unusable access token cools for re-auth", async () => {
     const accountId = await oauthAccount(jwt(-3_600));
     const service = new OAuthRefreshService(db());
     await service.ensureFreshAccessToken(accountId, revokedRefresher(), { force: true });
     const row = await readAccount(accountId);
     expect(row.staticToken).toBe(false);
-    expect(row.status).toBe("disabled");
+    // A timed cooldown, never a permanent disable: the account comes back
+    // once the recovery window elapses and is re-probed then.
+    expect(row.status).toBe("cooldown");
     expect(row.lastErrorCategory).toBe("auth_invalidated");
   });
 
-  test("an opaque access token is treated as unusable and parked for re-auth", async () => {
+  test("an opaque access token is treated as unusable and cools for re-auth", async () => {
     const accountId = await oauthAccount("opaque-no-expiry");
     const service = new OAuthRefreshService(db());
     await service.ensureFreshAccessToken(accountId, revokedRefresher(), { force: true });
     const row = await readAccount(accountId);
     expect(row.staticToken).toBe(false);
-    expect(row.status).toBe("disabled");
+    expect(row.status).toBe("cooldown");
   });
 
   test("a successful refresh stays refreshable and is not marked static", async () => {

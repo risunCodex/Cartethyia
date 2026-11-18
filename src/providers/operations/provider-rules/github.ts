@@ -25,7 +25,8 @@ export const githubRules: readonly AccountErrorRule[] = [
     // and no amount of waiting or refreshing changes it. Cooldown cycling
     // (auth_invalidated + 5m backoff) kept a dead account in rotation where a
     // client's retry budget burned sibling accounts — the same failure the
-    // buddy ban exists to prevent. Disable immediately. Must run before
+    // buddy ban exists to prevent. It is a ban, so it stays permanently
+    // `disabled`; only an operator can recover it. Must run before
     // `credential-rejected`, which would claim the bare 403 as a refreshable
     // auth rejection.
     name: "github-copilot-not-licensed",

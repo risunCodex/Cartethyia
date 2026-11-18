@@ -12,7 +12,6 @@ import {
   getCodeBuddyCnVersion,
   getCodeBuddyVersion,
   getDeepAIVersion,
-  getFreebuffVersion,
   getProviderClientVersion,
   pinnedClientVersions,
   VERSION_SOURCES,
@@ -236,13 +235,6 @@ describe("default extractor covers the consolidated sources", () => {
       body: { version: "0.6.19", "dist-tags": { latest: "0.6.19" } },
       expected: "0.6.19",
     },
-    {
-      name: "perch npm",
-      key: "test-perch",
-      source: VERSION_SOURCES.perch.sources[0]!,
-      body: { version: "2.4.129", "dist-tags": { latest: "2.4.129" } },
-      expected: "2.4.129",
-    },
   ];
 
   for (const { name, key, source, body, expected } of cases) {
@@ -305,46 +297,20 @@ describe("pinnedClientVersions", () => {
   });
 });
 
-describe("freepi and perch ride the client-version refresh cycle", () => {
-  test("both providers are wired into PROVIDER_VERSION_RESOLVERS", () => {
+describe("freepi rides the client-version refresh cycle", () => {
+  test("freepi is wired into PROVIDER_VERSION_RESOLVERS", () => {
     // `refreshProviderClientVersions()` only refreshes resolvers reachable from
     // `PROVIDER_VERSION_RESOLVERS`; a provider missing from that map silently
-    // keeps its pin forever. Both freepi and perch publish their CLI on npm,
-    // so both must be wired.
+    // keeps its pin forever. Freepi publishes its CLI on npm, so it must be
+    // wired.
     expect(getProviderClientVersion("freepi")?.client).toBe("freepi");
-    expect(getProviderClientVersion("perch")?.client).toBe("perch");
   });
 
-  test("the feeds are the official npm packages", () => {
+  test("the feed is the official npm package", () => {
     expect(VERSION_SOURCES.freepi.sources[0]?.url).toBe(
       "https://registry.npmjs.org/free-pi-cli/latest",
     );
-    expect(VERSION_SOURCES.perch.sources[0]?.url).toBe(
-      "https://registry.npmjs.org/perchai-cli/latest",
-    );
     expect(VERSION_SOURCES.freepi.fallback).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(VERSION_SOURCES.perch.fallback).toMatch(/^\d+\.\d+\.\d+$/);
-  });
-});
-
-describe("freebuff client version stays pinned", () => {
-  test("no discovery source exists, and the fallback is the audited desktop bundle", () => {
-    // Freebuff Desktop publishes no machine-readable version feed (GitHub
-    // releases are Codecane staging builds; npm `freebuff` is the CLI, a
-    // different product; the site's downloads are client-rendered). The pin
-    // is the version unpacked from the official Windows installer during the
-    // wire audit — raise it when the next bundle is audited.
-    expect(VERSION_SOURCES.freebuff.fallback).toBe("0.0.201");
-    expect(VERSION_SOURCES.freebuff.sources).toEqual([]);
-    expect(getFreebuffVersion()).toBe("0.0.201");
-  });
-
-  test("it is wired into the refresh cycle and reports its pinned fallback", () => {
-    // No live feed exists, so the resolver stays on its pin — but it is part
-    // of the refresh cycle so the pinned-version report and route identity
-    // see it like any other provider.
-    expect(getProviderClientVersion("freebuff")?.client).toBe("freebuff");
-    expect(getProviderClientVersion("freebuff")?.version).toBe("0.0.201");
   });
 });
 

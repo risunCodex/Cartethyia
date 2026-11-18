@@ -19,6 +19,7 @@ import type { ProviderRegistry } from "../provider-registry";
 import { quotaLens, setCachedQuota } from "./cache";
 import { persistQuotaSnapshot } from "./snapshot";
 import { applyAccountVerdict } from "../operations/account-health-service";
+import { resolveAccountDisabledRecoveryMs } from "../../config/cooldowns";
 import { asJsonbRecord } from "../../shared/coerce";
 import { KIRO_DEFAULT_LABELS } from "../integrations/kiro/kiro-oauth";
 import { invalidateCredentialCache } from "../operations/provider-credential-service";
@@ -162,14 +163,19 @@ export async function recordAccountCheck(
   snapshotInvalidator?: { invalidate(): unknown },
 ): Promise<void> {
   if (outcome.authInvalidated === true) {
+    // A timed cooldown, never a permanent disable: the account comes back once
+    // the recovery window elapses and is re-probed then, so a credential that
+    // heals (re-issued key, re-authorized grant) is never parked forever. The
+    // category still reads `auth_invalidated`, which is what the console uses
+    // to render "Re-login required" and what the quota sweep excludes from
+    // re-probing while it is cooling.
+    const recoveryMs = resolveAccountDisabledRecoveryMs();
     const disabled = await applyAccountVerdict(db, {
       accountId,
-      status: "disabled",
+      status: "cooldown",
       reason: outcome.error ?? "Provider rejected account authentication",
       category: "auth_invalidated",
-      // No deadline: a credential rejected as invalid cannot heal by waiting,
-      // and the OAuth refresh sweep must not keep spending refresh attempts.
-      cooldownUntil: null,
+      cooldownUntil: recoveryMs > 0 ? new Date(Date.now() + recoveryMs) : null,
     });
     if (disabled) {
       invalidateCredentialCache(accountId);

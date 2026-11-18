@@ -197,11 +197,15 @@ export async function recordAccountFailure(
     if (autoDisableTarget && !statedTooShort) {
       autoDisableActive = await autoDisableRateLimitedEnabled(client, account.tenantId);
     }
-    // Rewritten classification used by the write paths below.
+    // Rewritten classification used by the write paths below. The intercept
+    // lands as a *timed cooldown* on the recovery window — not `disabled` — so
+    // an automatic verdict can never park the account as permanently unusable;
+    // the sweep brings it back once the window elapses. The marker still names
+    // the auto-disable origin for diagnostics and legacy recovery.
     const interception = autoDisableActive
       ? {
           ...effective,
-          status: "disabled" as const,
+          status: "cooldown" as const,
           cooldownMs: resolveAccountDisabledRecoveryMs(),
           ruleSource: "fallback" as const,
         }

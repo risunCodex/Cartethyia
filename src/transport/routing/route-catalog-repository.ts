@@ -35,8 +35,12 @@ const HARD_COOLDOWN_CATEGORIES: Readonly<Record<string, true>> = {
   auth_invalidated: true,
   // A rejected credential cools the account *out* of rotation for the window —
   // dialing it again can only reproduce the same 401, so it is excluded like
-  // the terminal `auth_invalidated` verdict rather than merely deprioritized.
+  // the `auth_invalidated` verdict rather than merely deprioritized.
   auth_rejected: true,
+  // An account that must be verified before it can serve cannot be healed by
+  // the next request — but it lands as a timed cooldown, so while it cools it
+  // is excluded rather than dialed and failed again.
+  validation_required: true,
 };
 
 function hardCooldownCategory(category: string | null): boolean {

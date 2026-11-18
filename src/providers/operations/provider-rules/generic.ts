@@ -156,19 +156,26 @@ export const proxyConnectRefusalRule: AccountErrorRule = {
 export const validationRequiredRule: AccountErrorRule = {
   name: "validation-required",
   match: (s) => s.validationRequired,
-  decide: (s) =>
-    s.result(
+  // The upstream named the verdict; the account cannot serve until the
+  // operator completes verification. It is still a *timed* cooldown, never
+  // a permanent `disabled`: the account comes back after the window, retries,
+  // and re-cools if verification is still outstanding — so a machine verdict
+  // can never park a credential forever. `validation_required` is a hard
+  // category (see `HARD_COOLDOWN_CATEGORIES`), so the account is excluded
+  // while cooling instead of being dialed and failing again.
+  decide: (s) => {
+    const cooldownMs = s.statedCooldownMs ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS();
+    return s.result(
       "validation_required",
-      "disabled",
-      0,
-      null,
+      "cooldown",
+      cooldownMs,
+      new Date(Date.now() + cooldownMs),
       s.validationUrl !== undefined
         ? `${s.reason("Google account verification required")} — ${s.validationUrl}`
         : s.reason("Google account verification required"),
-      // The upstream named the verdict; the account cannot serve until the
-      // operator completes verification.
       true,
-    ),
+    );
+  },
 };
 
 export const credentialRejectedRule: AccountErrorRule = {
@@ -214,26 +221,20 @@ export const credentialRejectedRule: AccountErrorRule = {
       !s.staticToken &&
       s.credentialKind === "oauth" &&
       (s.lower.includes("expired") || s.lower.includes("refresh"));
-    // A *named* revocation is the one auth outcome that still parks the account.
-    // The upstream said the credential itself is dead — not that it expired, not
-    // that this request was refused — so there is no window to wait out and no
-    // refresh to run, and a cooldown would only return it to rotation to fail
-    // again. Every other auth rejection is weak evidence (clock skew, a key
+    // A *named* revocation is the strongest auth evidence: the upstream said
+    // the credential itself is dead — not that it expired, not that this
+    // request was refused — so there is no window to wait out and no refresh
+    // to run. Every other auth rejection is weak evidence (clock skew, a key
     // rotated a moment ago, an edge answering before the credential loads) and
-    // cools down instead.
+    // cools down on a short window.
     //
-    // This distinction is the whole fix. Reaching `disabled` from the generic
-    // `401`/`403` branch would be unrecoverable by any sweep, so one transient
-    // rejection would remove the account from rotation until an operator
-    // noticed — the exact outcome the comment above says a static token must
-    // not suffer.
+    // Neither state disables the account permanently: `auth_invalidated` lands
+    // as a *timed* cooldown on the recovery window, so the machine can undo
+    // its own verdict once it elapses while an operator's decision still
+    // outranks it — see `resolveAccountDisabledRecoveryMs`. A permanent
+    // `disabled` is reserved for the operator.
     const revoked = s.revocationNamed;
     const recoverable = s.staticToken || oauthRecovery || !revoked;
-    // An automatic disable is **not** terminal any more, but the deadline is what
-    // makes that safe: `sweepExpiredCooldowns` recovers a disabled row only when
-    // its `cooldownUntil` has elapsed, and an operator-disabled row keeps that
-    // column null. So the machine can undo its own verdict while an operator's
-    // decision still outranks it — see `resolveAccountDisabledRecoveryMs`.
     const disabledRecoveryMs = resolveAccountDisabledRecoveryMs();
     const disabledRetryAt =
       disabledRecoveryMs > 0 ? new Date(Date.now() + disabledRecoveryMs) : null;
@@ -241,10 +242,11 @@ export const credentialRejectedRule: AccountErrorRule = {
     return s.result(
       // `auth_rejected` is the recoverable verdict: it cools the account down
       // and heals on its own. `auth_invalidated` stays reserved for the
-      // terminal arm — a named revocation on a refreshable credential — which
-      // is the only auth outcome the console may render "Re-login required".
+      // named-revocation arm — the only auth outcome the console may render
+      // "Re-login required" — but it is a timed cooldown, not a permanent
+      // disable.
       recoverable ? "auth_rejected" : "auth_invalidated",
-      recoverable ? "cooldown" : "disabled",
+      "cooldown",
       cooldownMs,
       recoverable ? new Date(Date.now() + cooldownMs) : disabledRetryAt,
       s.reason(
@@ -381,6 +383,15 @@ export const modelCapacityRule: AccountErrorRule = {
       cooldownMs,
       new Date(Date.now() + cooldownMs),
       s.reason("Provider model capacity"),
+      // With a model id the pair backs off (model-scoped). Without one there
+      // is no pair to cool, but the account must still back off — leaving it
+      // `active` meant it stayed at the head of the plan and was re-dialed on
+      // every request, failing over and over with no cooldown ever written.
+      // `canMutate` is true for account-scoped evidence, so the undefined case
+      // lands as an account-wide cooldown (soft, so a single-account
+      // deployment still routes).
+      modelScopedMutation,
+      false,
       modelScopedMutation,
     );
   },

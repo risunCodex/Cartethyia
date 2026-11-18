@@ -301,7 +301,12 @@ export function classifyAccountError(
   }
 
   // Same reasoning as above, with the shortest backoff: an unmapped failure
-  // must still be retried automatically rather than parked forever.
+  // must still be retried automatically rather than parked forever. When the
+  // evidence is account-scoped (`canMutate`), write the cooldown so the
+  // account backs off instead of staying `active` at the head of the plan and
+  // being re-dialed on every request; provider-scoped evidence stays
+  // non-mutating (the upstream is failing for everyone, no single account is
+  // at fault).
   const unclassifiedMs = UNCLASSIFIED_COOLDOWN_MS();
   return result(
     "unknown",
@@ -309,7 +314,7 @@ export function classifyAccountError(
     unclassifiedMs,
     new Date(Date.now() + unclassifiedMs),
     reason("Unclassified provider failure"),
-    false,
+    canMutate,
   );
 }
 

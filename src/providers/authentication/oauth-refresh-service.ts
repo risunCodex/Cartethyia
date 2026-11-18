@@ -223,7 +223,7 @@ async function persistRefreshed(
       credentialCiphertext: encryptCredential(result.access),
       // Only what the refresh reported: a refresher that learned nothing new
       // leaves the stored configuration alone rather than blanking it.
-      // A learned identity only replaces a default label — an operator's
+      // A learned identity only replaces a default label ï¿½ an operator's
       // custom rename is never overwritten. The CASE keeps the read and the
       // write in one statement, so a concurrent rename cannot lose to the
       // refresh's learned identity.
@@ -314,7 +314,12 @@ async function disableAccount(
     // keep their `null` recovery deadline) via `preserveOperatorDisable`.
     const applied = await applyAccountVerdict(tx, {
       accountId,
-      status: "disabled",
+      // A timed cooldown, never a permanent disable: the account comes back
+      // once the recovery window elapses, so one definitive rejection can
+      // never park the credential for good. The deadline is also what
+      // distinguishes this (machine verdict) from an operator's own disable,
+      // which leaves `cooldownUntil` null and is therefore never swept (D23).
+      status: "cooldown",
       // `auth_invalidated` is the category the console reads to render the
       // "Re-login required" pill, and the one the quota sweep excludes so it
       // stops re-probing a credential that cannot repair itself. The refresh
@@ -322,11 +327,6 @@ async function disableAccount(
       // be shown to still work, so this is exactly that state.
       reason: message,
       category: "auth_invalidated",
-      // Carries a recovery deadline so `sweepExpiredCooldowns` can bring this
-      // account back once it elapses; without one, one definitive rejection
-      // parks the credential for good. The deadline is also what distinguishes
-      // this (machine-disabled) from an operator's own disable, which leaves
-      // `cooldownUntil` null and is therefore never swept (D23).
       cooldownUntil:
         disabledRecoveryMs > 0 ? new Date(Date.now() + disabledRecoveryMs) : null,
       ...(options.preserveOperatorDisable === true

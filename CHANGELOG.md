@@ -18,10 +18,48 @@ hash `8375c77d` (2.8.4 release) by cherry-picking the relevant provider
 modules, registrations, manifests, icons, tests, and documentation from that
 commit. This entry is the canonical restore anchor — do not delete it.
 
+### Changed
+
+- **Built-in system prompt presets renamed.** `builtin-jinhsi-jgeneral` is now
+  labeled **Jinxi General Agent** (id unchanged) and `builtin-general-jbreak` is
+  now labeled **General Assistant** (id unchanged), so existing saved preset
+  selections keep working.
+- **Account health verdicts are never permanent.** Every automatic verdict now
+  lands as a timed cooldown on a stated recovery window — `validation_required`,
+  `auth_invalidated` (named revocation, refresh/quota rejection), and the
+  auto-disable intercept included — so a machine verdict can never park an
+  account as permanently unusable; the recovery sweep brings it back. Banned
+  credentials (`policy_blocked_banned`) stay permanently `disabled`; only an
+  operator can recover those. `validation_required` was added to the hard
+  cooldown categories so it excludes the account while cooling instead of being
+  dialed and failed again.
+- **Account-scoped failures that previously wrote no cooldown now back off.** A
+  `model_capacity` verdict without a model id and an unclassified (`unknown`)
+  failure at account scope used to leave the account `active` at the head of
+  the plan, where it was re-dialed on every request with no written cooldown.
+  Both now write an account-wide cooldown so the account backs off, while
+  provider-scoped evidence stays non-mutating (the upstream is failing for
+  everyone).
+- **`fallback` combo recovery is locked.** A regression test proves a recovered
+  member returns to the front of the member order on the next plan, so a combo
+  fails over to a sibling while the primary cools and uses the primary again the
+  moment it heals.
+- **GitHub Copilot Auto dispatches over `/responses`.** Live-verified 2026-11-18:
+  every Auto tier (`gpt-6-luna` efficiency, `mai-code-2-flash` balance and
+  intelligence) serves only on `/responses` — the upstream advertises
+  `/chat/completions` for `mai-code-2-flash` but answers 400
+  `no_available_model_endpoints` there. Auto routing now prefers `/responses`
+  whenever the `/auto` decision advertises it, so `github/mai-code-2-flash`
+  invocations succeed instead of failing before any token is generated.
+- **The legacy virtual `auto` id is back, bound to the balance tier.** Requesting
+  `github/auto` enters the `/auto` flow pinned to balance, matching the upstream's
+  own dynamic balance-tier decision.
+
 ### Removed
 
-- **"Jinhsi Agent by risun" builtin system prompt preset.** The preset and its
-bundled prompt asset were removed from the dashboard's builtin prompt list.
+- **`builtin-jinhsi-agent` ("Jinhsi Agent by risun") system prompt preset.** The
+  preset and its bundled prompt asset were removed from the dashboard's builtin
+  prompt list.
 
 ## [2.8.4] - 2026-11-18 · Codename Arc-en-Ciel
 

@@ -304,9 +304,9 @@ export interface ProviderAdapter {
   /**
    * Optional provider-mandated system prompt, returned for probes and any
    * caller that needs the upstream's required identity prompt. A provider
-   * whose wire refuses requests without a specific system prompt (Perch's
-   * Saffron fingerprint) declares it here so the probe path can carry it —
-   * the probe builder otherwise sends only the user message.
+   * whose wire refuses requests without a specific system prompt declares it
+   * here so the probe path can carry it — the probe builder otherwise sends
+   * only the user message.
    */
   systemPrompt?(): string | undefined;
   /**

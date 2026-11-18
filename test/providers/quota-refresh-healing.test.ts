@@ -140,7 +140,7 @@ describe("recordAccountCheck healing", () => {
     expect(row.lastSuccessAt).toBeNull();
   });
 
-  test("Trae auth invalidation disables the account terminally", async () => {
+  test("Trae auth invalidation cools the account on the recovery window", async () => {
     await setHealth({
       status: "active",
       lastErrorCategory: null,
@@ -158,9 +158,11 @@ describe("recordAccountCheck healing", () => {
     });
 
     const row = await readHealth();
-    expect(row.status).toBe("disabled");
+    // A timed cooldown — never a permanent disable — so the account returns
+    // once the recovery window elapses and is re-probed then.
+    expect(row.status).toBe("cooldown");
     expect(row.lastErrorCategory).toBe("auth_invalidated");
-    expect(row.cooldownUntil).toBeNull();
+    expect(row.cooldownUntil).not.toBeNull();
     expect(row.lastError).toContain("HTTP 401 code 1001");
   });
 

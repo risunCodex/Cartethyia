@@ -68,6 +68,10 @@ export const GITHUB_MESSAGES_ENDPOINT_PATH = "/v1/messages" as const;
 
 /** Supported virtual Copilot Auto catalog ids and their router tiers. */
 export const GITHUB_AUTO_MODEL_TIERS: ReadonlyMap<string, "efficiency" | "balance" | "intelligence"> = new Map([
+  // The legacy virtual `auto` id: balance-tier decisions are picked
+  // dynamically by the upstream either way, so requesting `auto` enters the
+  // same /auto flow pinned to the balance tier.
+  ["auto", "balance"],
   ["gpt-6-luna", "efficiency"],
   // Intelligence-tier alias: a request for the model the upstream picks on
   // the intelligence tier enters the same /auto flow pinned to that tier
@@ -307,11 +311,18 @@ function routeFromAutoModel(value: unknown): GithubModelRoute | undefined {
       .filter((endpoint): endpoint is string => typeof endpoint === "string")
       .map((endpoint) => endpoint.replace(/^\/v1(?=\/)/, "")),
   );
-  if (endpoints.has("/chat/completions")) {
-    return { wireFamily: "chat", endpointPath: GITHUB_ENDPOINT_PATH };
-  }
+  // Live-verified 2026-11-18: every Auto tier serves only on `/responses`.
+  // `gpt-6-luna` (efficiency) advertises `/responses` alone, and
+  // `mai-code-2-flash` (balance/intelligence) advertises `/chat/completions`
+  // too but still answers 400 `no_available_model_endpoints` there. The
+  // upstream's advertised chat surface is a lie for these selected models, so
+  // responses wins whenever it is advertised; chat is only a fallback when
+  // responses is absent.
   if (endpoints.has("/responses")) {
     return { wireFamily: "responses", endpointPath: GITHUB_RESPONSES_ENDPOINT_PATH };
+  }
+  if (endpoints.has("/chat/completions")) {
+    return { wireFamily: "chat", endpointPath: GITHUB_ENDPOINT_PATH };
   }
   if (endpoints.has("/messages")) {
     return { wireFamily: "messages", endpointPath: GITHUB_MESSAGES_ENDPOINT_PATH };

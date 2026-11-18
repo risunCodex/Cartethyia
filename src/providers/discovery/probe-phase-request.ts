@@ -176,7 +176,6 @@ export function buildProbeCanonicalRequest(args: {
   /**
    * A provider-specific default probe prompt, used when the operator sent no
    * prompt. Lets a provider whose policy gate flags repeated identical probes
-   * (Freebuff: `prompt_policy_refused` / "same message sent over and over")
    * receive a minimal, per-model-varying probe instead of the shared identity
    * question every provider otherwise sends.
    */

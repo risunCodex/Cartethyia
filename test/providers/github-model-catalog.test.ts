@@ -32,10 +32,11 @@ describe("GitHub Copilot fallback model catalog", () => {
 
     expect(modelIds.has("gpt-6-luna")).toBe(true);
     expect(modelIds.has("mai-code-2-flash")).toBe(true);
+    // The legacy virtual `auto` id is bound to the balance tier.
+    expect(modelIds.has("auto")).toBe(true);
     expect(modelIds.has("gpt-6-luna-low")).toBe(false);
     expect(modelIds.has("gpt-6-luna-medium")).toBe(false);
     expect(modelIds.has("gpt-6-luna-high")).toBe(false);
-    expect(modelIds.has("auto")).toBe(false);
     expect(modelIds.has("auto-efficiency")).toBe(false);
     expect(modelIds.has("auto-balance")).toBe(false);
     expect(modelIds.has("auto-intelligence")).toBe(false);

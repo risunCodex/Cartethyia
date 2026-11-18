@@ -140,7 +140,7 @@ scratch (`D:\tmp\scratch\`), redacting credentials.
 Per-provider findings produced with those techniques live in
 `documentation/research/<provider>/` — the canonical home for dated evidence
 ledgers, not this skill. The current inventory (Kiro, OpenCode, Cursor,
-CodeBuddy, Qoder, Grok, Copilot, Antigravity, Devin, Trae, DeepAI, Freebuff,
+CodeBuddy, Qoder, Grok, Copilot, Antigravity, Devin, Trae, DeepAI,
 Clixad) is in
 [`references/unpacking-and-wire-capture.md`](references/unpacking-and-wire-capture.md#5-where-per-provider-findings-live).
 
