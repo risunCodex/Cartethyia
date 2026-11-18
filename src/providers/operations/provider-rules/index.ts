@@ -10,8 +10,6 @@ export { githubRules } from "./github";
 
 export { inceptionRules } from "./inception";
 
-export { perchRules } from "./perch";
-
 export { qoderPlanGatedRule, qoderModelQuotaRule } from "./qoder";
 
 export {

@@ -148,14 +148,18 @@ export async function applyTenantPreferences(
     // Tenant system-prompt injection runs before compression: the PonyTail
     // directive must stay the tail of the system content, and the injected
     // prompt is itself stable per scope, so the prefix-cache invariant holds.
-    const prompts = await readTenantSystemPromptsCached(db, tenantId);
-    const candidate = prepared.candidate;
-    canonicalRequest = applyInjectSystemPrompt(canonicalRequest, prompts, {
-      providerId: candidate.provider_id,
-      modelId: candidate.model_id,
-      serviceKind: candidate.service_kind ?? "llm",
-      requestedModel: prepared.plan?.requested_model ?? candidate.model_id,
-    });
+    // A request that opted out (the dashboard's diagnostic model test) skips
+    // the prompt read entirely.
+    if (canonicalRequest.skipTenantSystemPrompt !== true) {
+      const prompts = await readTenantSystemPromptsCached(db, tenantId);
+      const candidate = prepared.candidate;
+      canonicalRequest = applyInjectSystemPrompt(canonicalRequest, prompts, {
+        providerId: candidate.provider_id,
+        modelId: candidate.model_id,
+        serviceKind: candidate.service_kind ?? "llm",
+        requestedModel: prepared.plan?.requested_model ?? candidate.model_id,
+      });
+    }
     if (prefs) {
       // When the routed model is Responses (codex/openai/muse-spark) and the
       // client hit a Chat surface, force the configured summary mode so the

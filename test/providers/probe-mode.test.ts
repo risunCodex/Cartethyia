@@ -16,7 +16,6 @@ import {
   PROBE_FAST_SAMPLE_MAX_CHARS,
 } from "../../src/providers/discovery/probe-phases";
 import type { ProbeModelRequest } from "../../src/providers/discovery/discovery-types";
-import { PERCH_SAFFRON_SYSTEM_PROMPT } from "../../src/providers/integrations/perch/perch-protocol";
 
 /**
  * One console-settings row, injectable so the default and the override are
@@ -111,21 +110,6 @@ describe("fast canonical probe request", () => {
     expect(detail.generation_controls.max_tokens).toBe(256);
   });
 
-  test("carries the adapter's provider-mandated system prompt into both probe modes", () => {
-    const args = {
-      modelId: "perch/standard",
-      request: base,
-      probeReasoning: undefined,
-      sourceSurface: "chat" as const,
-      providerSystemPrompt: PERCH_SAFFRON_SYSTEM_PROMPT,
-    };
-    const detail = buildProbeCanonicalRequest(args);
-    const fast = buildProbeCanonicalRequest({ ...args, maxOutputTokens: PROBE_FAST_MAX_OUTPUT_TOKENS });
-    expect(detail.system).toEqual([{ kind: "text", text: PERCH_SAFFRON_SYSTEM_PROMPT }]);
-    expect(fast.system).toEqual([{ kind: "text", text: PERCH_SAFFRON_SYSTEM_PROMPT }]);
-    expect(detail.messages[0]?.role).toBe("user");
-    expect(fast.messages[0]?.role).toBe("user");
-  });
 
   test("the fast sample bound is 80 characters", () => {
     expect(PROBE_FAST_SAMPLE_MAX_CHARS).toBe(80);

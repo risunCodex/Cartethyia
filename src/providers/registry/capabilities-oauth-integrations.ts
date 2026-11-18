@@ -123,20 +123,6 @@ export const OAUTH_INTEGRATION_CAPABILITIES = {
       async () => (await import("../integrations/freepi/freepi-catalog")).FREEPI_MODELS,
     ),
   },
-  perch: {
-    loadAdapter: async () => (await import("../integrations/perch/perch")).createPerchAdapter(),
-    loadModels: async () => (await import("../integrations/perch/perch-catalog")).PERCH_MODELS,
-    // Perch login is Supabase PKCE (Google/GitHub); the session blob
-    // (access/refresh token) is the credential, and the CLI refreshes it.
-    loadAuthentication: oauthCapability(() => import("../integrations/perch/perch-oauth"), "perchOAuthClient", { withRefresher: true }),
-    loadQuotaCollector: quotaCapability(() => import("../integrations/perch/perch-quota"), "fetchPerchQuota"),
-    // The hosted API exposes no public model list — Roost tiers are the only
-    // surface the CLI accepts, so discovery returns the static roster.
-    loadModelDiscovery: async () => async () => {
-      const { PERCH_MODELS } = await import("../integrations/perch/perch-catalog");
-      return PERCH_MODELS;
-    },
-  },
   clixad: {
     loadAdapter: async () => createApiKeyAdapter((await import("../integrations/clixad/provider")).CLIXAD_SPEC),
     loadModels: async () => (await import("../integrations/clixad/provider")).CLIXAD_DEFAULT_MODELS,
@@ -177,31 +163,6 @@ export const OAUTH_INTEGRATION_CAPABILITIES = {
         });
       },
       async () => (await import("../integrations/numes/provider")).NUMES_DEFAULT_MODELS,
-    ),
-  },
-  runcrate: {
-    // OpenAI-compatible chat plus the Anthropic Messages wire the same base
-    // serves (both verified live 2026-11-18).
-    endpointPathsByWireFamily: {
-      chat: "/chat/completions",
-      messages: "/messages",
-    },
-    loadAdapter: async () => createApiKeyAdapter((await import("../integrations/runcrate/provider")).RUNCRATE_SPEC),
-    loadModels: async () => (await import("../integrations/runcrate/provider")).RUNCRATE_DEFAULT_MODELS,
-    // Runcrate is a plain API-key provider (`rc_live_...`). The catalog is
-    // key-scoped: the static roster carries the five free-allowance rows and
-    // discovery returns all 120 so paid models stay addable by hand.
-    loadQuotaCollector: quotaCapability(() => import("../integrations/runcrate/runcrate-quota"), "fetchRuncrateQuota"),
-    loadModelDiscovery: async () => withStaticRosterFallback(
-      async ({ baseUrl, credential, fetcher }) => {
-        const { discoverRuncrateModels } = await import("../integrations/runcrate/provider");
-        return discoverRuncrateModels({
-          baseUrl,
-          ...(credential === undefined ? {} : { credential }),
-          ...(fetcher === undefined ? {} : { fetcher }),
-        });
-      },
-      async () => (await import("../integrations/runcrate/provider")).RUNCRATE_DEFAULT_MODELS,
     ),
   },
 };

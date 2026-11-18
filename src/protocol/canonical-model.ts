@@ -554,6 +554,13 @@ export interface CanonicalRequest {
   residency?: string;
   stream: boolean;
   source_surface: SourceSurface;
+  /**
+   * Request-level opt-out from tenant system-prompt injection. Set by the
+   * dashboard's diagnostic model test (and honored for any client that asks):
+   * the request carries its own purpose-built prompt, so the tenant's
+   * global/scope-injected text must not ride along.
+   */
+  skipTenantSystemPrompt?: boolean;
 }
 
 

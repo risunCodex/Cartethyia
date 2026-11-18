@@ -24,7 +24,6 @@ import {
   zcodeStartPlanTrialRule,
   traeRules,
   inceptionRules,
-  perchRules,
 } from "./provider-rules";
 import {
   credentialRejectedRule,
@@ -339,7 +338,6 @@ const ACCOUNT_ERROR_RULES: readonly AccountErrorRule[] = [
   qoderModelQuotaRule,
   quotaExhaustedRule,
   ...inceptionRules,
-  ...perchRules,
   rateLimitRule,
   modelCapacityRule,
   modelUnsupportedRule,

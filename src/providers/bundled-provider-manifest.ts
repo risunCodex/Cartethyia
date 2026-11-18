@@ -169,13 +169,6 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
     credentialUrl: "https://numes.ai/dashboard/keys",
     credentialHint: "Create an API key at numes.ai/dashboard/keys (`sk-numes-...`, USD or BTC). OpenAI-compatible chat; model ids are `author/slug` and the `:free` suffix marks zero-price rows.",
   },
-  {
-    id: "runcrate",
-    displayName: "Runcrate",
-    baseUrl: "https://api.runcrate.ai/v1",
-    credentialUrl: "https://www.runcrate.ai/dashboard/api-keys",
-    credentialHint: "Create an API key at runcrate.ai (Dashboard → Keys, `rc_live_...`). OpenAI-compatible chat plus an Anthropic Messages wire on the same base; five open models serve a free weekly workspace allowance (GitHub sign-up needs no card).",
-  },
 
   // OpenAI-compatible bearer aggregators. Each is a bare host already rooted at
   // its own version prefix, so the `/v1`-prefixed wire paths stay pinned by the
@@ -464,14 +457,6 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
     credentialUrl: "https://freepi.ai",
     credentialHint: "Sign in with a GitHub device code (free-pi login), or paste a free-pi JWT issued by the backend.",
   },
-  {
-    id: "perch",
-    displayName: "Perch",
-    baseUrl: "https://app.perchai.app",
-    defaultSkipProxy: true,
-    credentialUrl: "https://chat.perchai.app",
-    credentialHint: "Sign in with Google or GitHub (Perch account). Starter includes Roost Standard and Standard 1M.",
-  },
   { id: "ollamacloud", displayName: "Ollama Cloud", baseUrl: "https://ollama.com/v1", credentialUrl: "https://ollama.com/settings/keys" },
   { id: "gemini", displayName: "Google Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta", serviceKinds: ["llm", "websearch", "imageGeneration"], credentialUrl: "https://aistudio.google.com/app/apikey" },
   { id: "xiaomipg", displayName: "Xiaomi MiMo (PAYG)", baseUrl: "https://api.xiaomimimo.com/v1", credentialUrl: "https://platform.xiaomimimo.com" },
@@ -493,19 +478,6 @@ const RAW_BUNDLED_PROVIDER_METADATA = [
   // rows are served by `/v1/search`, never by the canonical chat pipeline.
   { id: "exa", displayName: "Exa", baseUrl: "https://mcp.exa.ai", serviceKinds: ["websearch"], requiresAccount: false, credentialHint: "No API key. Search goes through the public MCP." },
   { id: "parallel", displayName: "Parallel", baseUrl: "https://search.parallel.ai", serviceKinds: ["websearch"], requiresAccount: false, credentialUrl: "https://platform.parallel.ai/settings?tab=api-keys", credentialHint: "Optional. Leave empty for the public MCP, or paste an API key for the higher-limit search API." },
-  {
-    // Freebuff (Codebuff Desktop). OAuth code flow → bearer token; every
-    // dispatch carries the desktop identity group + Ed25519 device signature
-    // (see documentation/research/freebuff/). The chat surface is
-    // OpenAI-compatible on `/api/v1/chat/completions` but requires a stateful
-    // session admission + agent-runs preflight — handled by the custom adapter.
-    id: "freebuff",
-    displayName: "Freebuff",
-    baseUrl: "https://www.codebuff.com",
-    hasAdapterUserAgent: true,
-    credentialUrl: "https://www.codebuff.com/login",
-    credentialHint: "Sign in with your Freebuff account (Desktop/CLI code flow).",
-  },
   {
     // Zro (moonmath). Fast, private, multi-region inference for open models.
     // Claude Code connects via the Messages wire with a plain bearer key; the

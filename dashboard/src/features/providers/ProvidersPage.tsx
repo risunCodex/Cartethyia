@@ -797,15 +797,9 @@ const FREE_LIMITED_IDS = new Set([
   // Free-pi is ad-funded: a daily USD/credit allowance (guest or GitHub
   // sign-in), with a small set of "Free Unlimited" rows on the free tier.
   "freepi",
-  // Perch Starter is free with a Google/GitHub sign-in: Roost Standard and
-  // Standard 1M tiers, a $20/month included-usage allowance.
-  "perch",
   // Zro serves open models with a small per-key allowance; a key only sees
   // the models it may call, and the free allowance is metered per use.
   "zro",
-  // Freebuff's plan is a metered free allowance (freebucks + per-model
-  // sessions), surfaced with a small daily credit.
-  "freebuff",
   // Clixad is ad-funded: a daily free tier (120k credits/day) plus account
   // credits earned from offers (grant_per_ad ~40k/survey, $5/day cap).
   "clixad",
@@ -821,10 +815,6 @@ const FREE_LIMITED_IDS = new Set([
   // zero; the static roster seeds those nine rows and live discovery keeps
   // the paid catalog available for manual adds.
   "numes",
-  // Runcrate gives five open models a weekly workspace allowance (reset
-  // Monday, GitHub sign-up needs no card); past it the same models bill at
-  // half list price with credit.
-  "runcrate",
 ]);
 /**
  * The providers an operator reaches for first: household names with a

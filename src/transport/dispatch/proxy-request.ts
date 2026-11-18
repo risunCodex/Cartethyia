@@ -100,19 +100,22 @@ export async function handleProviderProxyRequest(
   // `override` degrades to wrapped append there: stripping the identity would
   // have the upstream refuse the request outright.
   const candidateForPrompt = prepared.candidate;
-  const tenantSystemPromptText = isWrappedInjectionProvider(candidateForPrompt.provider_id)
-    ? resolveTenantSystemPrompt(
-        await readTenantSystemPromptsForDispatch(
-          deps.db,
-          prepared.authorization.snapshot.tenant_id,
-        ),
-        {
-          providerId: candidateForPrompt.provider_id,
-          modelId: candidateForPrompt.model_id,
-          requestedModel: prepared.plan?.requested_model ?? candidateForPrompt.model_id,
-        },
-      )?.text
-    : undefined;
+  const tenantSystemPromptText =
+    canonicalRequest.skipTenantSystemPrompt === true
+      ? undefined
+      : isWrappedInjectionProvider(candidateForPrompt.provider_id)
+        ? resolveTenantSystemPrompt(
+            await readTenantSystemPromptsForDispatch(
+              deps.db,
+              prepared.authorization.snapshot.tenant_id,
+            ),
+            {
+              providerId: candidateForPrompt.provider_id,
+              modelId: candidateForPrompt.model_id,
+              requestedModel: prepared.plan?.requested_model ?? candidateForPrompt.model_id,
+            },
+          )?.text
+        : undefined;
   // Per-tenant timeout, applied as soon as the tenant is known. The deadline
   // was armed at admission with the deployment default; this re-arms it.
   await applyTenantDeadlineOverride(

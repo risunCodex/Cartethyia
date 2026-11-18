@@ -264,6 +264,17 @@ describe("applyInjectSystemPrompt", () => {
     );
     expect(next).toBe(base);
   });
+
+  test("request-level skipTenantSystemPrompt excludes injection even with active global setting", () => {
+    const base = request({ skipTenantSystemPrompt: true });
+    const next = applyInjectSystemPrompt(
+      base,
+      basePrompts,
+      { providerId: "p", modelId: "m", serviceKind: "llm" },
+    );
+    expect(next).toBe(base);
+    expect(next.system).toBeUndefined();
+  });
 });
 
 describe("buddy wrapped append", () => {

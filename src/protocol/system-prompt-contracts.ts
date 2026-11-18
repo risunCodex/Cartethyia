@@ -74,6 +74,15 @@ export const EMPTY_TENANT_SYSTEM_PROMPTS: TenantSystemPrompts = {
   aliases: {},
 };
 
+/**
+ * Ingress header that opts a request out of tenant system-prompt injection.
+ * The dashboard's diagnostic model test sends it so its own purpose-built
+ * prompt never rides alongside the tenant's global/scope-injected text. It is
+ * honored for any client that sends the marker — the same trust model as the
+ * surface header (`x-cartethyia-surface`).
+ */
+export const SKIP_TENANT_SYSTEM_PROMPT_HEADER = "x-cartethyia-skip-system-prompt";
+
 /** Maximum stored text per scope (5 MB). Enforced at the console API. */
 export const SYSTEM_PROMPT_TEXT_CAP_BYTES = 5_000_000;
 

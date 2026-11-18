@@ -133,6 +133,10 @@ export function applyInjectSystemPrompt(
 ): CanonicalRequest {
   // Non-chat native protocols have no system surface to inject into.
   if (route.serviceKind !== "llm") return request;
+  // Request-level opt-out: the dashboard's diagnostic model test sends its own
+  // purpose-built prompt, so tenant global/scope injection must not ride along
+  // (see `SKIP_TENANT_SYSTEM_PROMPT_HEADER`).
+  if (request.skipTenantSystemPrompt === true) return request;
   const setting = resolveTenantSystemPrompt(prompts, route);
   if (setting === undefined || setting.text.length === 0) return request;
 

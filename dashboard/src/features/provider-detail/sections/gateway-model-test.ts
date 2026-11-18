@@ -88,6 +88,9 @@ export function useGatewaySignedModelTest() {
             Accept: "application/json",
             "Content-Type": "application/json",
             Authorization: `Bearer ${secret}`,
+            // The test is a diagnostic with its own purpose-built prompt: it must
+            // not also receive the tenant's global/scope-injected system prompt.
+            "x-cartethyia-skip-system-prompt": "1",
           },
           body: JSON.stringify({
             model,

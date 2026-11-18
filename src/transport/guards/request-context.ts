@@ -15,6 +15,7 @@ import { log } from "../../observability/logger";
 import { isProxyDispatchRoute } from "./body-policy";
 import { isOpaqueBodyRoute } from "../contracts";
 import { peerAddressUnavailableError } from "./guard-errors";
+import { SKIP_TENANT_SYSTEM_PROMPT_HEADER } from "../../protocol/system-prompt-contracts";
 
 
 
@@ -209,7 +210,15 @@ export function createCanonicalRequestMiddleware(deps: {
       const ingress = deps.stateStore.require(request);
       const userAgent = headers["user-agent"];
       if (userAgent) ingress.clientUserAgent = userAgent.slice(0, 512);
-      ingress.canonicalRequest = adapter.parse({ body, headers, path });
+      const parsed = adapter.parse({ body, headers, path });
+      // The dashboard's diagnostic model test opts out of tenant system-prompt
+      // injection: it carries its own purpose-built prompt (see
+      // gateway-model-test.ts). Honored for any client that sends the marker —
+      // the same trust model as the surface header.
+      if (headers[SKIP_TENANT_SYSTEM_PROMPT_HEADER] === "1") {
+        parsed.skipTenantSystemPrompt = true;
+      }
+      ingress.canonicalRequest = parsed;
       // The parsed body is the largest per-request value, and once the
       // canonical request exists the only later reader is payload capture — and
       // only in `full` mode (see `captureTerminalPayload`). For `none`/`metadata`

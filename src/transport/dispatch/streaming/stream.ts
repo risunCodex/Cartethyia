@@ -203,7 +203,12 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
     // so the adapter can fold it into its fixed turn. `override` degrades to
     // wrapped append there; stripping the identity would be refused outright.
     ...(await (async () => {
-      if (!isWrappedInjectionProvider(candidate.provider_id)) return {};
+      if (
+        canonicalRequest.skipTenantSystemPrompt === true ||
+        !isWrappedInjectionProvider(candidate.provider_id)
+      ) {
+        return {};
+      }
       const text = resolveTenantSystemPrompt(
         await readTenantSystemPromptsForDispatch(deps.db, prepared.authorization.snapshot.tenant_id),
         {

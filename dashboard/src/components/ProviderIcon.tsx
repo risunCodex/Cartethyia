@@ -114,9 +114,6 @@ const iconAssets: Record<
   // Numes' official mark is its favicon.svg (the three-bar glyph served from
   // assets.numes.ai on numes.ai).
   numes: { file: "numes", ext: "svg" },
-  // Runcrate's official mark: favicon.svg from runcrate.ai (128px SVG
-  // wrapping the brand PNG).
-  runcrate: { file: "runcrate", ext: "svg" },
   // DeepAI's official app icon from its PWA manifest (the root favicon.ico is
   // a generic star, not the brand mark).
   deepai: { file: "deepai", ext: "png" },
@@ -146,8 +143,6 @@ const iconAssets: Record<
   umans: { file: "umans", ext: "png" },
   qianfan: { file: "qianfan", ext: "ico" },
   larprouter: { file: "larprouter", ext: "png" },
-  freebuff: { file: "freebuff", ext: "webp" },
-  perch: { file: "perch", ext: "png" },
   freepi: { file: "freepi", ext: "ico" },
   factory: { file: "factory", ext: "ico" },
   // Same Qwen brand as the qwen provider; the portal is its API-key surface.

@@ -106,4 +106,21 @@ describe("ingress body release", () => {
     // must not have run either: nothing cleared it mid-flight.
     expect(stateStore.get(request)?.canonicalRequest).toBeUndefined();
   });
+
+  test("x-cartethyia-skip-system-prompt header flags canonical request with skipTenantSystemPrompt", async () => {
+    const { app, stateStore } = chain(false);
+    const request = new Request("https://gateway.test/v1/chat/completions", {
+      method: "POST",
+      body: CHAT_BODY,
+      headers: {
+        "content-type": "application/json",
+        "user-agent": "curl/8.7.1",
+        "x-cartethyia-skip-system-prompt": "1",
+      },
+    });
+    const response = await app.handle(request);
+    expect(response.status).toBe(200);
+    const state = stateStore.get(request);
+    expect(state?.canonicalRequest?.skipTenantSystemPrompt).toBe(true);
+  });
 });

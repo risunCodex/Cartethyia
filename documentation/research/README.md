@@ -29,12 +29,10 @@ or foundational notes stay at this root.
 | `cursor/`   | Cursor Run protocol + entitlement + agent CLI 2026.11.05 wire audit (hosts, endpoint inventory, headers)                                                   | 2 files    |
 | `grok/`     | Grok Build CLI 1.0.70 binary unpack — endpoint, headers, payload, quota                                                                                    | 1 file     |
 | `trae/`     | Trae IDE 3.6.13 unpack — endpoint inventory (chat/agent/commercial), auth headers, wire verification vs adapter                                            | 2 files   |
-| `freebuff/` | Freebuff Desktop 0.0.201 unpack — OAuth code flow, session admission/catalog, cloud runs (chat) + device gate, ads surface, device-signature spoofing, live probe (ID region, 8/12 sweep) | 1 file    |
 | `deepai/`  | DeepAI Code 0.3.35 desktop unpack + wire audit — DeepAI sign-in (loopback exchange → api_key), API headers (Theos/machine/check-in), T3 Connect Clerk OAuth (PKCE/device grant), relay `/v1` control plane | 2 files   |
 | `antigravity/` | Antigravity wire verification — live probes (2026-11-03)                                                                                                | 1 file     |
 | `clixad/`   | Clixad wire — live verification ledger (2026-11-11)                                                                                                        | 1 file     |
 | `devin/`    | Devin Desktop 3.11.238 audit, adapter proposals, image wire debug, live upstream verification (2026-11-06/07)                                              | 5 files    |
-| `perch/`    | Perch research ledger                                                                                                                                       | 1 file     |
 
 
 ## Root notes
@@ -140,14 +138,6 @@ credits/claims, IDE/CLI/NSIS audits) were consolidated into
 | 2026-11-06 | [Header & payload builder audit](trae/2026-11-06-trae-header-payload-builder-audit.md) — harness header inventory, gap audit vs `buildTraeHeaders` (24 gaps), payload shapes |
 
 
-## Freebuff findings (`freebuff/`)
-
-
-| Date       | Note                                                                                                                                                                  |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-11-09 | [Desktop 0.0.201 wire audit + live probe](freebuff/2026-11-09-freebuff-desktop-wire-audit.md) — OAuth code flow, session admission/catalog, chat via `POST /api/v1/chat/completions` (desktop-identity gate), ads surface (ID region ineligible), device-signature spoofing |
-
-
 ## DeepAI findings (`deepai/`)
 
 
@@ -185,9 +175,3 @@ credits/claims, IDE/CLI/NSIS audits) were consolidated into
 | 2026-11-07 | [Live upstream verification](devin/2026-11-07-devin-live-upstream-verification.md) — first end-to-end proof against the real Cascade backend with a seat key; live-only bugs found and fixed             |
 
 
-## Perch findings (`perch/`)
-
-
-| Date       | Note                                                                                                                                                                                  |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-11-08 | [Research ledger](perch/README.md) — Perch Terminal identity, Roost hosted tiers (only `standard` servable on Starter), Supabase GoTrue PKCE OAuth, turn tickets, pure-HTTP adapter notes |

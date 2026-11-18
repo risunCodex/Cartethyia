@@ -326,14 +326,6 @@ export const VERSION_SOURCES = {
     fallback: "0.6.21",
     sources: [{ url: "https://registry.npmjs.org/free-pi-cli/latest" }],
   },
-  perch: {
-    key: "perch",
-    // The official Perch CLI, spawned by the adapter for hosted inference.
-    // Fallback = the current npm latest (2.4.137 as of 2026-11-18); a cold
-    // process sends it until the monitor's first successful discovery.
-    fallback: "2.4.137",
-    sources: [{ url: "https://registry.npmjs.org/perchai-cli/latest" }],
-  },
   clixad: {
     key: "clixad",
     // The Clixad gateway publishes the CLI build it is paired with as
@@ -347,18 +339,6 @@ export const VERSION_SOURCES = {
         extract: clixadVersion,
       },
     ],
-  },
-  freebuff: {
-    key: "freebuff",
-    // No machine-readable public feed exists for Freebuff Desktop. GitHub
-    // releases only publish Codecane (a separate CLI line) staging builds,
-    // npm `freebuff` is the CLI (a different product), and the site's
-    // download links are client-rendered with no stable asset path.
-    // Fallback = the version unpacked from the official Windows installer
-    // during the wire audit (2026-11-09, Freebuff Desktop 0.0.201). Raise it
-    // when the next installer bundle is audited.
-    fallback: "0.0.201",
-    sources: [],
   },
   deepai: {
     key: "deepai",
@@ -431,9 +411,7 @@ const resolvers = {
   hermes: createClientVersionResolver({ ...VERSION_SOURCES.hermes, client: "hermes" }),
   trae: createClientVersionResolver({ ...VERSION_SOURCES.trae, client: "trae" }),
   freepi: createClientVersionResolver({ ...VERSION_SOURCES.freepi, client: "freepi" }),
-  perch: createClientVersionResolver({ ...VERSION_SOURCES.perch, client: "perch" }),
   clixad: createClientVersionResolver({ ...VERSION_SOURCES.clixad, client: "clixad" }),
-  freebuff: createClientVersionResolver({ ...VERSION_SOURCES.freebuff, client: "freebuff" }),
   deepai: createClientVersionResolver({ ...VERSION_SOURCES.deepai, client: "deepai" }),
   cursor: createClientVersionResolver({ ...VERSION_SOURCES.cursor, client: "cursor" }),
   opencode: createClientVersionResolver({ ...VERSION_SOURCES.opencode, client: "opencode" }),
@@ -457,9 +435,7 @@ const resolvers = {
 const PROVIDER_VERSION_RESOLVERS: Readonly<Record<string, ClientVersionResolver>> = {
   antigravity: resolvers.antigravity,
   freepi: resolvers.freepi,
-  perch: resolvers.perch,
   clixad: resolvers.clixad,
-  freebuff: resolvers.freebuff,
   deepai: resolvers.deepai,
   grok: resolvers.grok,
   xai: resolvers.grok,
@@ -602,8 +578,6 @@ export const getHermesVersion = accessor("hermes").get;
 export const getTraeVersion = accessor("trae").get;
 export const getAntigravityVersion = accessor("antigravity").get;
 export const getFreepiVersion = accessor("freepi").get;
-export const getPerchVersion = accessor("perch").get;
-export const getFreebuffVersion = accessor("freebuff").get;
 export const getDeepAIVersion = accessor("deepai").get;
 
 export const getOpenCodeVersion = accessor("opencode").get;
