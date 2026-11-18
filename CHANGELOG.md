@@ -111,6 +111,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   transient (annotated, never counted toward the park threshold) so the sweep
   retries it next pass, and `quota_fetch_failed` cooldowns are now healed the
   moment a quota read succeeds.
+- **Codex tool calls registered but never completed are recovered at stream
+  end.** If the upstream bills a tool call (its tokens appear in usage) but its
+  completion frames never arrive, the Codex decoder now surfaces the call from
+  the `output_item.added` item before the terminal — so a `tool_use` stop
+  always has a visible `tool_use` block and Claude Code never sees "tool call
+  could not be parsed" on a turn that really produced one.
 
 ## [2.8.3] - 2026-11-17 · Codename Arc-en-ciel
 

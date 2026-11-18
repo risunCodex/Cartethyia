@@ -781,6 +781,69 @@ export class CodexStreamFrameProcessor {
     return events;
   }
 
+  /**
+   * Emits tool calls that were registered but whose completion frames never
+   * arrived (or arrived in a shape this decoder does not name).
+   *
+   * The terminal must never claim `tool_use` while a call the upstream billed
+   * is invisible to the client — Claude Code reports that as "the model's tool
+   * call could not be parsed" and retries into the same empty turn. A call is
+   * recovered here only when it is still open (never `output_item.done`) and
+   * its arguments were never streamed (they were already emitted if they were);
+   * the complete payload is whatever the `output_item.added` item carried.
+   */
+  preTerminalEvents(): CanonicalEvent[] {
+    if (this.terminalStatus === undefined) return [];
+    const events: CanonicalEvent[] = [];
+    const seen = new Set<OpenItemEntry>();
+    for (const entry of [
+      ...this.#openItems.values(),
+      ...this.#openItemsByOutputIndex.values(),
+    ]) {
+      if (seen.has(entry)) continue;
+      seen.add(entry);
+      const type = entry.item["type"];
+      if (
+        type !== "function_call" &&
+        type !== "custom_tool_call" &&
+        type !== "computer_call"
+      ) {
+        continue;
+      }
+      if (entry.argDeltasSeen === true) continue;
+      const rawCallId =
+        typeof entry.item["call_id"] === "string"
+          ? (entry.item["call_id"] as string)
+          : entry.itemId;
+      const callId =
+        rawCallId === undefined ? "call" : decodeCodexToolCallId(rawCallId);
+      const name =
+        type === "computer_call"
+          ? "computer"
+          : typeof entry.item["name"] === "string" &&
+              (entry.item["name"] as string).length > 0
+            ? (entry.item["name"] as string)
+            : undefined;
+      const args =
+        type === "function_call"
+          ? entry.item["arguments"]
+          : type === "custom_tool_call"
+            ? entry.item["input"]
+            : typeof entry.item["action"] === "object"
+              ? JSON.stringify(entry.item["action"])
+              : undefined;
+      events.push({
+        type: "tool_call_delta",
+        sequence_number: this.#seq++,
+        call_id: callId,
+        name,
+        arguments_delta: typeof args === "string" ? args : "",
+      } as CanonicalEvent);
+      this.hasToolCall = true;
+    }
+    return events;
+  }
+
   /** Builds the terminal canonical event once the stream has ended. */
   terminalEvent(): CanonicalEvent {
     // An incomplete terminal always promotes to tool_use when any tool call

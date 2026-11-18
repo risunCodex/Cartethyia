@@ -31,6 +31,7 @@ function run(frames: readonly Record<string, unknown>[]): CanonicalEvent[] {
   const processor = new CodexStreamFrameProcessor(2);
   const events: CanonicalEvent[] = [];
   for (const frame of frames) events.push(...processor.process(frame));
+  events.push(...processor.preTerminalEvents());
   events.push(processor.terminalEvent());
   return events;
 }
@@ -120,6 +121,54 @@ describe("CodexStreamFrameProcessor argument fallback", () => {
     const deltas = toolDeltas(events);
     expect(deltas).toHaveLength(2);
     expect(deltas.map((delta) => delta.arguments_delta).join("")).toBe('{"a":1}');
+  });
+
+  test("recovers a registered call whose completion frames never arrived", () => {
+    // The reported incident: the canonical stream ended with `tool_use` but
+    // carried no `tool_call_delta` — a call the upstream registered and billed
+    // (its tokens were in the usage totals) but never completed. The terminal
+    // reconcile surfaces it from the `output_item.added` item.
+    const events = run([
+      {
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { id: "fc_9", type: "function_call", call_id: "call_9", name: "Bash", arguments: '{"command":"ls"}' },
+      },
+      { type: "response.completed", response: { status: "completed", usage: { input_tokens: 1, output_tokens: 1 } } },
+    ]);
+
+    const deltas = toolDeltas(events);
+    expect(deltas).toHaveLength(1);
+    expect(deltas[0]?.call_id).toBe("call_9");
+    expect(deltas[0]?.name).toBe("Bash");
+    expect(deltas[0]?.arguments_delta).toBe('{"command":"ls"}');
+    const terminal = events.at(-1);
+    expect(terminal?.type).toBe("terminal");
+    expect(terminal?.type === "terminal" ? terminal.stop_reason : undefined).toBe("tool_use");
+  });
+
+  test("does not duplicate calls whose arg deltas already streamed", () => {
+    const events = run([
+      {
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { id: "fc_10", type: "function_call", call_id: "call_10", name: "Bash", arguments: "" },
+      },
+      { type: "response.function_call_arguments.delta", item_id: "fc_10", output_index: 0, delta: '{"x":1}' },
+      { type: "response.completed", response: { status: "completed" } },
+    ]);
+
+    expect(toolDeltas(events)).toHaveLength(1);
+  });
+
+  test("a completed text-only turn emits no tool calls", () => {
+    const events = run([
+      { type: "response.output_text.delta", item_id: "tx_1", delta: "hello" },
+      { type: "response.completed", response: { status: "completed" } },
+    ]);
+    expect(toolDeltas(events)).toHaveLength(0);
+    const terminal = events.at(-1);
+    expect(terminal?.type === "terminal" ? terminal.stop_reason : undefined).toBe("stop");
   });
 
   test("falls back to custom_tool_call_input.done for custom tool calls", () => {

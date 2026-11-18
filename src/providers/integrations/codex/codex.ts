@@ -762,6 +762,9 @@ export function createCodexAdapter(
             );
           }
         }
+        // Reconcile tool calls whose completion frames never arrived before the
+        // terminal is emitted, so a `tool_use` stop always has a visible block.
+        for (const ev of processor.preTerminalEvents()) yield ev;
         yield processor.terminalEvent();
       } else {
         const json = JSON.parse(await new Response(body).text()) as Record<string, unknown>;
