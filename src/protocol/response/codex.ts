@@ -269,6 +269,8 @@ type OpenItemEntry = {
   blockIndex: number;
   outputIndex?: number | undefined;
   itemId?: string | undefined;
+  /** True once an arguments/input delta frame was seen for this item. */
+  argDeltasSeen?: boolean;
 };
 
 /** Shared incremental parser for a single `response.*` frame. */
@@ -284,6 +286,9 @@ export class CodexStreamFrameProcessor {
   // output_index routing + `output_item.added` registration.
   readonly #openItems = new Map<string, OpenItemEntry>();
   readonly #openItemsByOutputIndex = new Map<number, OpenItemEntry>();
+  // Argument deltas seen for calls that never registered an `output_item.added`
+  // entry; correlates the done-frame fallback with streamed deltas.
+  readonly #orphanArgDeltaKeys = new Set<string>();
 
   // Whitespace-loop guard: a model stuck emitting only whitespace tool-call
   // argument deltas would otherwise hang the dispatch loop forever.
@@ -311,6 +316,7 @@ export class CodexStreamFrameProcessor {
   #resolveToolIdentity(json: Record<string, unknown>): {
     callId: string;
     name: string | undefined;
+    entry: OpenItemEntry | undefined;
   } {
     const itemId =
       typeof json["item_id"] === "string" ? (json["item_id"] as string) : undefined;
@@ -331,14 +337,14 @@ export class CodexStreamFrameProcessor {
     const rawCallId =
       typeof json["call_id"] === "string" ? (json["call_id"] as string) : undefined;
     if (rawCallId !== undefined)
-      return { callId: decodeCodexToolCallId(rawCallId), name };
+      return { callId: decodeCodexToolCallId(rawCallId), name, entry };
     const entryCallId = entry === undefined ? undefined : entry.item["call_id"];
     if (typeof entryCallId === "string")
-      return { callId: decodeCodexToolCallId(entryCallId), name };
-    if (itemId !== undefined) return { callId: itemId, name };
-    if (entry?.itemId !== undefined) return { callId: entry.itemId, name };
-    if (outputIndex !== undefined) return { callId: `idx_${outputIndex}`, name };
-    return { callId: "call", name };
+      return { callId: decodeCodexToolCallId(entryCallId), name, entry };
+    if (itemId !== undefined) return { callId: itemId, name, entry };
+    if (entry?.itemId !== undefined) return { callId: entry.itemId, name, entry };
+    if (outputIndex !== undefined) return { callId: `idx_${outputIndex}`, name, entry };
+    return { callId: "call", name, entry };
   }
 
   /**
@@ -368,6 +374,35 @@ export class CodexStreamFrameProcessor {
         { call_key: key, event_count: next.count, char_count: next.chars },
       );
     }
+  }
+
+  /**
+   * Key identifying one call's argument stream across delta/done frames.
+   * Delta and done frames for the same item share `item_id` (or the
+   * `output_index` when the id is absent), which correlates the
+   * complete-arguments fallback below with deltas already streamed.
+   */
+  #argumentStreamKey(
+    itemId: string | undefined,
+    outputIndex: number | undefined,
+    callId: string,
+  ): string {
+    return itemId ?? (outputIndex !== undefined ? `idx_${outputIndex}` : callId);
+  }
+
+  /** Records that argument deltas were seen for a call. */
+  #noteArgumentDeltas(entry: OpenItemEntry | undefined, key: string): void {
+    if (entry !== undefined) {
+      entry.argDeltasSeen = true;
+    } else {
+      this.#orphanArgDeltaKeys.add(key);
+    }
+  }
+
+  /** True when any argument delta was already seen for this call. */
+  #hasArgumentDeltas(entry: OpenItemEntry | undefined, key: string): boolean {
+    if (entry !== undefined) return entry.argDeltasSeen === true;
+    return this.#orphanArgDeltaKeys.has(key);
   }
 
   /** Returns true once a frame carrying the terminal status/type has been seen. */
@@ -421,7 +456,7 @@ export class CodexStreamFrameProcessor {
       t === "response.function_call_arguments.delta" &&
       typeof json["delta"] === "string"
     ) {
-      const { callId, name } = this.#resolveToolIdentity(json);
+      const { callId, name, entry } = this.#resolveToolIdentity(json);
       const itemId =
         typeof json["item_id"] === "string"
           ? (json["item_id"] as string)
@@ -435,12 +470,20 @@ export class CodexStreamFrameProcessor {
         name,
         arguments_delta: json["delta"] as string,
       } as CanonicalEvent);
+      this.#noteArgumentDeltas(
+        entry,
+        this.#argumentStreamKey(itemId, readOutputIndex(json), callId),
+      );
       this.hasToolCall = true;
     } else if (
       t === "response.custom_tool_call_input.delta" &&
       typeof json["delta"] === "string"
     ) {
-      const { callId, name } = this.#resolveToolIdentity(json);
+      const { callId, name, entry } = this.#resolveToolIdentity(json);
+      const itemId =
+        typeof json["item_id"] === "string"
+          ? (json["item_id"] as string)
+          : undefined;
 
       events.push({
         type: "tool_call_delta",
@@ -449,6 +492,10 @@ export class CodexStreamFrameProcessor {
         name,
         arguments_delta: json["delta"] as string,
       } as CanonicalEvent);
+      this.#noteArgumentDeltas(
+        entry,
+        this.#argumentStreamKey(itemId, readOutputIndex(json), callId),
+      );
       this.hasToolCall = true;
     } else if (
       t === "response.reasoning_summary_text.delta" &&
@@ -496,14 +543,49 @@ export class CodexStreamFrameProcessor {
         },
       });
     } else if (t === "response.function_call_arguments.done") {
-      // The arguments themselves are emitted by the delta events above; the
-      // `.done` event only marks the call complete.
-
+      // The arguments normally arrive as `.delta` frames above; an upstream
+      // that skips them carries the complete string only here, so emit it
+      // when nothing was streamed — otherwise the call vanishes while the
+      // terminal still reports `tool_use`.
       this.hasToolCall = true;
+      const { callId, name, entry } = this.#resolveToolIdentity(json);
+      const itemId =
+        typeof json["item_id"] === "string"
+          ? (json["item_id"] as string)
+          : undefined;
+      const key = this.#argumentStreamKey(itemId, readOutputIndex(json), callId);
+      if (!this.#hasArgumentDeltas(entry, key)) {
+        const args = json["arguments"];
+        events.push({
+          type: "tool_call_delta",
+          sequence_number: this.#seq++,
+          call_id: callId,
+          name,
+          arguments_delta: typeof args === "string" ? args : "",
+        } as CanonicalEvent);
+      }
+      this.#noteArgumentDeltas(entry, key);
     } else if (t === "response.custom_tool_call_input.done") {
-      // As above: the input arrives as deltas, so `.done` only completes it.
-
+      // As above: the input normally arrives as deltas, so `.done` only
+      // completes it — unless no delta was ever seen.
       this.hasToolCall = true;
+      const { callId, name, entry } = this.#resolveToolIdentity(json);
+      const itemId =
+        typeof json["item_id"] === "string"
+          ? (json["item_id"] as string)
+          : undefined;
+      const key = this.#argumentStreamKey(itemId, readOutputIndex(json), callId);
+      if (!this.#hasArgumentDeltas(entry, key)) {
+        const input = json["input"];
+        events.push({
+          type: "tool_call_delta",
+          sequence_number: this.#seq++,
+          call_id: callId,
+          name,
+          arguments_delta: typeof input === "string" ? input : "",
+        } as CanonicalEvent);
+      }
+      this.#noteArgumentDeltas(entry, key);
     } else if (t === "response.output_item.done") {
       const item = json["item"];
       if (item && typeof item === "object") {
@@ -569,6 +651,46 @@ export class CodexStreamFrameProcessor {
           outputItem["type"] === "computer_call"
         ) {
           this.hasToolCall = true;
+          // Upstreams that skip every argument frame deliver the complete call
+          // only on this item; without it the terminal still reports `tool_use`
+          // while no `tool_use` block ever reaches the client.
+          const entry =
+            (outputItemId === undefined
+              ? undefined
+              : this.#openItems.get(outputItemId)) ??
+            (outputIndex === undefined
+              ? undefined
+              : this.#openItemsByOutputIndex.get(outputIndex));
+          const rawCallId =
+            typeof outputItem["call_id"] === "string"
+              ? (outputItem["call_id"] as string)
+              : outputItemId;
+          const callId =
+            rawCallId === undefined ? "call" : decodeCodexToolCallId(rawCallId);
+          const itemName = outputItem["name"];
+          const name =
+            outputItem["type"] === "computer_call"
+              ? "computer"
+              : typeof itemName === "string" && itemName.length > 0
+                ? itemName
+                : undefined;
+          const args =
+            outputItem["type"] === "function_call"
+              ? outputItem["arguments"]
+              : outputItem["type"] === "custom_tool_call"
+                ? outputItem["input"]
+                : JSON.stringify(outputItem["action"] ?? {});
+          const key = this.#argumentStreamKey(outputItemId, outputIndex, callId);
+          if (!this.#hasArgumentDeltas(entry, key)) {
+            events.push({
+              type: "tool_call_delta",
+              sequence_number: this.#seq++,
+              call_id: callId,
+              name,
+              arguments_delta: typeof args === "string" ? args : "",
+            } as CanonicalEvent);
+          }
+          this.#noteArgumentDeltas(entry, key);
         }
         // Every completed item unregisters its routing entries, whatever its
         // type; the three call kinds differ from the rest only in `hasToolCall`.

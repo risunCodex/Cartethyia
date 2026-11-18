@@ -83,6 +83,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **Codex-routed turns no longer lose their tool calls.** The Codex Responses
+  stream decoder only emitted tool-call events from argument *delta* frames,
+  so an upstream that delivers the complete call on the done frames (or only
+  on `response.output_item.done`) produced a turn whose terminal still said
+  `tool_use` but whose translated stream carried no `tool_use` block — the
+  exact shape Claude Code reports as "the model's tool call could not be
+  parsed". The done frames now fall back to the complete arguments when no
+  delta was streamed, guarded so a call that already streamed is never
+  emitted twice.
+
 - **Docker defaults close the 2026-11-16 origin-misconfig class.** The image's
   `HEALTHCHECK` dials `127.0.0.1` instead of `localhost` (which can resolve to
   `::1` first and dead-dial an IPv4-only bind — the exact shape of the
