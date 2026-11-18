@@ -1,10 +1,19 @@
 /**
- * Clixad provider tests: catalog rows, quota collector, device-flow OAuth.
+ * Clixad provider tests: catalog rows, quota collector, device-flow OAuth,
+ * and the gzip request encoding the edge WAF requires.
  */
 import { describe, expect, test } from "bun:test";
+import { gunzipSync } from "node:zlib";
 import { CLIXAD_DEFAULT_MODELS, CLIXAD_SPEC } from "../../src/providers/integrations/clixad/provider";
 import { fetchClixadQuota } from "../../src/providers/integrations/clixad/clixad-quota";
 import { ClixadOAuthClient } from "../../src/providers/integrations/clixad/clixad-oauth";
+import { createApiKeyAdapter } from "../../src/providers/configured-provider";
+import type { CanonicalRequest } from "../../src/protocol/canonical-model";
+import type {
+  ProviderDispatchContext,
+  ProviderDispatchTarget,
+  ValidatedOutboundFetch,
+} from "../../src/providers/provider-contracts";
 import type { FetchLike } from "../../src/providers/quota/quota-contracts";
 
 const TOKEN = "adg_test_token";
@@ -15,8 +24,13 @@ describe("Clixad catalog", () => {
     expect(CLIXAD_SPEC.endpoint_paths_by_wire_family?.chat).toBe("/chat/completions");
   });
 
+  test("spec forces the gzip encoding the edge WAF requires", () => {
+    expect(CLIXAD_SPEC.request_compression).toBe("gzip");
+    expect(CLIXAD_SPEC.extra_headers?.["content-type"]).toBe("application/vnd.clixad.chat+gzip");
+  });
+
   test("free tier rows bill zero and carry the freeTier marker", () => {
-    expect(CLIXAD_DEFAULT_MODELS.length).toBe(5);
+    expect(CLIXAD_DEFAULT_MODELS.length).toBe(7);
     for (const model of CLIXAD_DEFAULT_MODELS) {
       expect(model.freeTier).toBe(true);
       expect(model.cost.input).toBe(0);
@@ -26,13 +40,15 @@ describe("Clixad catalog", () => {
     }
   });
 
-  test("all five live-verified free rows are present", () => {
+  test("all live free-tier rows are present", () => {
     const ids = CLIXAD_DEFAULT_MODELS.map((m) => m.modelId).sort();
     expect(ids).toEqual([
       "claude-haiku-5.5",
-      "deepseek-v4-flash",
+      "deepseek-v4.1-flash",
       "gemini-2.5-flash-lite",
       "gemini-3.5-flash-lite",
+      "gemini-3.8-flash",
+      "glm-5.3-flash",
       "gpt-5-nano",
     ]);
   });
@@ -106,6 +122,66 @@ describe("fetchClixadQuota", () => {
     );
     expect(result.error).not.toBeNull();
     expect(result.windows).toEqual([]);
+  });
+});
+
+describe("Clixad adapter dispatch encoding", () => {
+  const TARGET: ProviderDispatchTarget = {
+    provider_id: "clixad",
+    model_id: "gemini-2.5-flash-lite",
+    wire_family: "chat",
+    endpoint_path: "/chat/completions",
+    capabilities: {},
+  };
+
+  test("sends a gzipped body with the vnd chat content type", async () => {
+    let capturedBody: Uint8Array | string | undefined;
+    let capturedHeaders: Record<string, string> | undefined;
+    const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedBody = init?.body as Uint8Array | string;
+      capturedHeaders = init?.headers as Record<string, string>;
+      return new Response(
+        JSON.stringify({
+          id: "chatcmpl_test",
+          object: "chat.completion",
+          model: "gemini-2.5-flash-lite",
+          choices: [{ index: 0, message: { role: "assistant", content: "pong" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as ValidatedOutboundFetch;
+
+    const adapter = createApiKeyAdapter(CLIXAD_SPEC);
+    const request: CanonicalRequest = {
+      model: "gemini-2.5-flash-lite",
+      messages: [{ role: "user", content: [{ kind: "text", text: "ping" }] }],
+      generation_controls: {},
+      stream: false,
+      source_surface: "chat",
+    };
+    const context = {
+      credential: {
+        provider_id: "clixad",
+        credential_kind: "oauth",
+        secret: new TextEncoder().encode(TOKEN),
+      },
+      deadline: Date.now() + 30_000,
+      abort_signal: new AbortController().signal,
+      outbound_fetch: fetcher,
+    } as ProviderDispatchContext;
+
+    let events = 0;
+    for await (const _event of adapter.dispatch(request, TARGET, context)) events += 1;
+    expect(events).toBeGreaterThan(0);
+
+    expect(capturedHeaders?.["content-type"]).toBe("application/vnd.clixad.chat+gzip");
+    expect(capturedHeaders?.["content-encoding"]).toBe("gzip");
+    expect(capturedHeaders?.["authorization"]).toBe(`Bearer ${TOKEN}`);
+    expect(capturedBody).toBeInstanceOf(Uint8Array);
+    const decoded = JSON.parse(gunzipSync(capturedBody as Uint8Array).toString());
+    expect(decoded.model).toBe("gemini-2.5-flash-lite");
+    expect(decoded.stream).toBe(false);
   });
 });
 

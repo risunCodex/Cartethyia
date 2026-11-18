@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import type { CanonicalRequest } from "../../src/protocol/canonical-model";
 import type { ProviderDispatchContext, ProviderDispatchTarget } from "../../src/providers/provider-contracts";
 import { createPerchAdapter } from "../../src/providers/integrations/perch/perch";
+import { GatewayError } from "../../src/protocol/gateway-error";
 import { PERCH_SAFFRON_SYSTEM_PROMPT } from "../../src/providers/integrations/perch/perch-protocol";
 import { VERSION_SOURCES } from "../../src/providers/operations/client-versions";
 
@@ -130,17 +131,18 @@ describe("PerchAdapter (HTTP)", () => {
     const headers = new Headers(call!.init?.headers);
     expect(headers.get("authorization")).toBe("Bearer jwt-access");
     expect(headers.get("x-perch-call-delta")).toBe("1");
-    // Ticket mint is the second request (account first? no — mint is first,
-    // then account, then model-call). The stub increments its sequence per
-    // request: ticket=1, account=2, model-call=3 → ticket tk-1.
-    expect(headers.get("x-perch-turn-ticket")).toBe("tk-1");
+    // Request order is account session → (plan ensure, skipped when the
+    // Request order is account session → (plan ensure, skipped when the
+    // account already has a plan) → turn ticket → model-call, so the stub
+    // sequence makes this ticket tk-2 / run-2.
+    expect(headers.get("x-perch-turn-ticket")).toBe("tk-2");
     expect(headers.get("user-agent")).toBe(`perchai-cli/${VERSION_SOURCES.perch.fallback}`);
     expect(headers.get("accept")).toBe("text/event-stream");
 
     const body = JSON.parse(String(call!.init?.body)) as Record<string, unknown>;
     expect(body["roostModelChoice"]).toBe("standard_max");
     expect(body["clientSurface"]).toBe("cli");
-    expect(body["runId"]).toBe("run-1");
+    expect(body["runId"]).toBe("run-2");
     expect(body["resendAfterOutput"]).toBe(true);
     const attribution = body["attribution"] as Record<string, unknown>;
     expect(attribution["userId"]).toBe("u1");
@@ -188,6 +190,9 @@ describe("PerchAdapter (HTTP)", () => {
     const body = JSON.parse(String(ticketReq!.init?.body)) as Record<string, unknown>;
     expect(body["surface"]).toBe("cli");
     expect(body["profile"]).toBe("standard");
+    // The current-client marker both the shipping CLI and Desktop stamp; a
+    // mint without it reads as a foreign app (live 2026-11-18).
+    expect(body["ticketClient"]).toBe(2);
   });
 
   test("emits error + failed terminal when the upstream fails", async () => {
@@ -212,6 +217,99 @@ describe("PerchAdapter (HTTP)", () => {
 
     const adapter = createPerchAdapter({ fetch: fetchImpl });
     await expect(drain(adapter, request(), candidate(), context())).rejects.toThrow();
+  });
+
+  test("auto-selects the Starter plan when the account has none", async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : String(input);
+      requests.push({ url, ...(init === undefined ? {} : { init }) });
+      if (url.includes("/api/perchai/account")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            session: { userId: "u1", workspaceId: "w1", orgId: "o1", planCode: null },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.includes("/cli-plan") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true, planRequired: false }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.includes("/cli-plan")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            planRequired: true,
+            starter: { noticeVersion: "2026-09-13" },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.includes("/turn-ticket")) {
+        return new Response(JSON.stringify({ ok: true, ticket: "tk-1", runId: "run-1" }), { status: 200 });
+      }
+      if (url.includes("/model-call")) {
+        return new Response(
+          'data: {"type":"done","ok":true,"text":"pong","model":"m","provider":"p"}\n',
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        );
+      }
+      return new Response("{}", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const adapter = createPerchAdapter({ fetch: fetchImpl });
+    await drain(adapter, request(), candidate(), context());
+
+    const planPost = requests.find((r) => r.url.includes("/cli-plan") && r.init?.method === "POST");
+    expect(planPost).toBeDefined();
+    const planBody = JSON.parse(String(planPost!.init?.body)) as Record<string, unknown>;
+    expect(planBody["plan"]).toBe("starter");
+    expect(planBody["noticeVersion"]).toBe("2026-09-13");
+    // Selection happens before the ticket mint so the turn is not burned.
+    const urls = requests.map((r) => r.url);
+    expect(urls.findIndex((u) => u.includes("/cli-plan"))).toBeLessThan(
+      urls.findIndex((u) => u.includes("/turn-ticket")),
+    );
+  });
+
+  test("does not touch cli-plan when the account already has a plan", async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    const adapter = createPerchAdapter({ fetch: stubFetch(requests) });
+    await drain(adapter, request(), candidate(), context());
+    expect(requests.some((r) => r.url.includes("/cli-plan"))).toBe(false);
+  });
+
+  test("maps a banned verdict to an upstream authentication failure", async () => {
+    const fetchImpl = (async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url.includes("/turn-ticket")) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: "This account was banned for using Perch through another app or tool, which the terms do not allow.",
+            errorCode: "banned",
+          }),
+          { status: 403, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("{}", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const adapter = createPerchAdapter({ fetch: fetchImpl });
+    const failure = await drain(adapter, request(), candidate(), context()).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(GatewayError);
+    const gatewayError = failure as GatewayError;
+    expect(gatewayError.code).toBe("authentication_failed");
+    expect(gatewayError.status).toBe(401);
+    expect(gatewayError.origin).toBe("upstream");
+    expect(gatewayError.message).toContain("banned");
   });
 
   test("ships the Saffron prompt as a bundled literal", () => {

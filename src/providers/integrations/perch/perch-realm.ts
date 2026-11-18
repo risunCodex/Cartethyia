@@ -19,6 +19,12 @@
 //   - Refresh: POST /auth/v1/token?grant_type=refresh_token.
 //   - Plan selection (Starter free): GET/POST /api/perch-terminal/cli-plan
 //     (POST body {plan:"starter", noticeVersion}).
+//   - Turn ticket (POST /api/perch-terminal/turn-ticket) must carry
+//     `ticketClient: <PERCH_TICKET_CLIENT_VERSION>` — the current CLI
+//     (2.4.137) and Desktop (2.5.9) both stamp it; a mint without the field
+//     is treated as a foreign client and the account that keeps using such
+//     tickets gets `perch_surface_required` / `banned` responses
+//     (verified live 2026-11-18).
 //   - Inference: the hosted model-call API is surface-gated
 //     (`perch_surface_required`) and requires the full CLI turn envelope:
 //     turn ticket, attribution, Roost tier, and the Saffron system-prompt
@@ -26,6 +32,13 @@
 
 /** Default Supabase project host for Perch accounts. */
 export const PERCH_SUPABASE_HOST = "zlfuvsfjtgsdtqcaykia.supabase.co";
+
+/**
+ * `ticketClient` value stamped into every turn-ticket mint (see the wire
+ * facts above). The shipping CLI (2.4.137, `TURN_TICKET_CLIENT_VERSION = 2`)
+ * and the Desktop bundle (2.5.9) both send exactly `2`.
+ */
+export const PERCH_TICKET_CLIENT_VERSION = 2;
 
 /** Supabase publishable key (used as `apikey`; not a JWT). */
 export const PERCH_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_w4R_pNkUpygBFIljZCoOlA_67ACg0FO";

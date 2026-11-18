@@ -29,6 +29,22 @@ function stubFetch() {
         headers: { "content-type": "application/json" },
       });
     }
+    if (url.includes("/cli-plan") && init?.method === "POST") {
+      return new Response(JSON.stringify({ ok: true, planRequired: false }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/cli-plan")) {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          planRequired: true,
+          starter: { noticeVersion: "2026-09-13" },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
     return new Response("not found", { status: 404 });
   }) as unknown as typeof fetch;
   return { fetchImpl, calls };
@@ -93,6 +109,16 @@ describe("PerchOAuthClient", () => {
     expect(userCall).toBeDefined();
     const userBody = JSON.parse(String(userCall!.init?.body)) as Record<string, unknown>;
     expect((userBody["data"] as Record<string, unknown>)["signup_source"]).toBe("cli");
+
+    // …and auto-selects the free Starter plan so the first model call does
+    // not answer "Pick a plan to start using Perch".
+    const planPost = calls.find((c) => c.url.includes("/cli-plan") && c.init?.method === "POST");
+    expect(planPost).toBeDefined();
+    const planBody = JSON.parse(String(planPost!.init?.body)) as Record<string, unknown>;
+    expect(planBody["plan"]).toBe("starter");
+    expect(planBody["noticeVersion"]).toBe("2026-09-13");
+    const planHeaders = new Headers(planPost!.init?.headers);
+    expect(planHeaders.get("authorization")).toBe("Bearer jwt-access");
   });
 
   test("resolves the GoTrue user email as the account label", async () => {

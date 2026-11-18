@@ -39,8 +39,9 @@ import {
   PERCH_MODEL_PINS,
   PERCH_MODEL_ROOST_TIERS,
 } from "./perch-catalog";
-import { PERCH_APP_URL, PERCH_PROVIDER_ID } from "./perch-realm";
+import { PERCH_APP_URL, PERCH_PROVIDER_ID, PERCH_TICKET_CLIENT_VERSION } from "./perch-realm";
 import { parsePerchCredentialToken } from "./perch-oauth";
+import { ensurePerchStarterPlan } from "./perch-plan";
 
 interface PerchAdapterOptions {
   readonly providerId?: string;
@@ -53,7 +54,21 @@ interface PerchAccountSession {
   readonly workspaceId: string | null;
   readonly orgId: string | null;
   readonly planCode: string | null;
+  /**
+   * The account endpoint flags accounts that still owe a plan choice
+   * (`tierSelectionRequired`); `planCode: null` alone is ambiguous because a
+   * failed read also yields nulls.
+   */
+  readonly tierSelectionRequired: boolean;
 }
+
+const EMPTY_PERCH_SESSION: PerchAccountSession = {
+  userId: null,
+  workspaceId: null,
+  orgId: null,
+  planCode: null,
+  tierSelectionRequired: false,
+};
 
 export class PerchAdapter implements ProviderAdapter {
   readonly provider_id: ProviderId;
@@ -76,17 +91,21 @@ export class PerchAdapter implements ProviderAdapter {
         headers: { authorization: `Bearer ${access}`, accept: "application/json" },
         signal: AbortSignal.timeout(15_000),
       });
-      if (!res.ok) return { userId: null, workspaceId: null, orgId: null, planCode: null };
-      const body = (await res.json()) as { session?: Record<string, unknown> };
+      if (!res.ok) return EMPTY_PERCH_SESSION;
+      const body = (await res.json()) as {
+        session?: Record<string, unknown>;
+        tierSelectionRequired?: unknown;
+      };
       const ctx = body.session ?? {};
       return {
         userId: typeof ctx["userId"] === "string" ? ctx["userId"] : null,
         workspaceId: typeof ctx["workspaceId"] === "string" ? ctx["workspaceId"] : null,
         orgId: typeof ctx["orgId"] === "string" ? ctx["orgId"] : null,
         planCode: typeof ctx["planCode"] === "string" ? ctx["planCode"] : null,
+        tierSelectionRequired: body.tierSelectionRequired === true,
       };
     } catch {
-      return { userId: null, workspaceId: null, orgId: null, planCode: null };
+      return EMPTY_PERCH_SESSION;
     }
   }
 
@@ -100,13 +119,23 @@ export class PerchAdapter implements ProviderAdapter {
         "user-agent": `perchai-cli/${getPerchVersion()}`,
         "x-perch-locale": "en",
       },
-      body: JSON.stringify({ surface: "cli", profile: "standard" }),
+      // `ticketClient` marks this as a current official client (the field
+      // both the shipping CLI and Desktop stamp); a mint without it is read
+      // as a foreign app and the account is eventually banned for it
+      // (verified live 2026-11-18 — see perch-realm.ts wire facts).
+      body: JSON.stringify({ surface: "cli", profile: "standard", ticketClient: PERCH_TICKET_CLIENT_VERSION }),
       signal: AbortSignal.timeout(15_000),
     });
     const body = (await res.json().catch(() => null)) as { ok?: boolean; ticket?: string; runId?: string; error?: string; errorCode?: string } | null;
     if (!res.ok || !body?.ok || !body.ticket || !body.runId) {
       const message = body?.error ?? `HTTP ${res.status}`;
       const providerCode = body?.errorCode;
+      // The account is gone upstream (Perch bans accounts it reads as a
+      // foreign app); report a credential failure so routing stops dialing
+      // it instead of mislabelling the verdict as an outage.
+      if (providerCode === "banned") {
+        throw upstreamPerchError("authentication_failed", 401, `Perch turn ticket mint failed: ${message}`, providerCode);
+      }
       // Upstream verdict: 429/turn_rate_limited cools this account so routing
       // tries the next one instead of hammering the same key all day.
       if (res.status === 429 || providerCode === "turn_rate_limited") {
@@ -141,9 +170,21 @@ export class PerchAdapter implements ProviderAdapter {
       timestamp: Date.now(),
     };
 
-    const ticket = await this.#mintTicket(access, fetchFn);
     const account = await this.#accountSession(access, fetchFn);
 
+    // Accounts that never picked a plan (fresh logins from before the
+    // exchange-time auto-select, or a cli-plan reset) would otherwise burn
+    // this turn — and possibly the ticket mint — on "Pick a plan to start
+    // using Perch". Select Starter once, best-effort; a failed selection
+    // leaves behavior unchanged.
+    if (
+      account.tierSelectionRequired ||
+      (account.userId !== null && account.planCode === null)
+    ) {
+      await ensurePerchStarterPlan(access, fetchFn);
+    }
+
+    const ticket = await this.#mintTicket(access, fetchFn);
     const body = buildPerchModelCallBody(request, modelId, {
       userId: account.userId,
       workspaceId: account.workspaceId,
@@ -183,6 +224,11 @@ export class PerchAdapter implements ProviderAdapter {
           providerCode = parsed.errorCode;
           if (parsed.errorCode === "starter_model_blocked" || parsed.errorCode === "plan_model_blocked") {
             throw upstreamPerchError("policy_rejected", 403, message, providerCode);
+          }
+          // The account was banned upstream (foreign-app verdict); a
+          // credential failure stops routing from retrying a dead account.
+          if (parsed.errorCode === "banned") {
+            throw upstreamPerchError("authentication_failed", 401, message, providerCode);
           }
           if (res.status === 429 || parsed.errorCode === "turn_rate_limited") {
             throw upstreamPerchError("rate_limited", 429, message, providerCode);

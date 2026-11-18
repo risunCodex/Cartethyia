@@ -4,7 +4,7 @@
 // drag the integration into memory at process start.
 import { createApiKeyAdapter, discoveryCapability, withStaticRosterFallback, type ModelDiscoveryRequest } from "../configured-provider";
 import { oauthCapability, quotaCapability } from "../provider-registry";
-import { extractJsonCredentialToken, traeDiscovery } from "./capability-helpers";
+import { extractJsonCredentialToken, qoderDiscovery, traeDiscovery } from "./capability-helpers";
 
 export const OAUTH_INTEGRATION_CAPABILITIES = {
   cline: {
@@ -55,7 +55,32 @@ export const OAUTH_INTEGRATION_CAPABILITIES = {
       "fetchCommandCodeQuota",
     ),
   },
-
+  qoder: {
+    loadAdapter: async () => (await import("../integrations/qoder/qoder")).createQoderAdapter(),
+    loadModels: async () => (await import("../integrations/qoder/qoder")).QODER_MODELS,
+    // No `withRefresher`: the upstream refresh endpoint answers 403 for the
+    // device flow, so the issued token is used exactly as issued until the
+    // operator re-runs login — same shape as Kilo Code.
+    loadAuthentication: oauthCapability(() => import("../integrations/qoder/qoder-oauth"), "qoderOAuthClient"),
+    loadQuotaCollector: quotaCapability(() => import("../integrations/qoder/qoder-quota"), "fetchQoderQuota"),
+    // Discovery signed by the account's own COSY identity: the model list is
+    // per-account and per-realm, and a GET without the signed body is 403.
+    loadModelDiscovery: qoderDiscovery("intl", "qoder"),
+  },
+  // Separate provider, not a region flag: a CN account has its own gateway
+  // host, OAuth client id, and model roster, and is refused by the global host.
+  qodercn: {
+    loadAdapter: async () => (await import("../integrations/qoder/qoder")).createQoderCnAdapter(),
+    loadModels: async () => (await import("../integrations/qoder/qoder-catalog")).QODER_CN_MODELS,
+    // The CN client, not the intl one: a device login opened on
+    // `qoder.com/device/selectAccounts` polled `openapi.qoder.sh`, which a CN
+    // account is refused by. `qoderCnOAuthClient` is the same class bound to
+    // `QODER_REALMS.cn` — its own login/token/userinfo hosts, client id, and
+    // native redirect.
+    loadAuthentication: oauthCapability(() => import("../integrations/qoder/qoder-oauth"), "qoderCnOAuthClient"),
+    loadQuotaCollector: quotaCapability(() => import("../integrations/qoder/qoder-quota"), "fetchQoderCnQuota"),
+    loadModelDiscovery: qoderDiscovery("cn", "qodercn"),
+  },
   trae: {
     loadAdapter: async () => (await import("../integrations/trae/trae")).createTraeAdapter(),
     loadModels: async () => (await import("../integrations/trae/trae-catalog")).TRAE_INTL_MODELS,
@@ -128,6 +153,30 @@ export const OAUTH_INTEGRATION_CAPABILITIES = {
         return discoverClixadModels({ baseUrl, fetcher });
       },
       async () => (await import("../integrations/clixad/provider")).CLIXAD_DEFAULT_MODELS,
+    ),
+  },
+  numes: {
+    loadAdapter: async () => createApiKeyAdapter((await import("../integrations/numes/provider")).NUMES_SPEC),
+    loadModels: async () => (await import("../integrations/numes/provider")).NUMES_DEFAULT_MODELS,
+    // Numes is a plain API-key provider (`sk-numes-...` from the dashboard);
+    // no OAuth surface. `/api/v1/models` is key-scoped and lists the whole
+    // catalog — the static roster carries only the `:free` rows and
+    // discovery returns everything the key can call, so paid rows stay
+    // addable by hand.
+    // `GET /api/v1/key` reports the key's usage counters and optional spend
+    // cap; the account balance endpoint wants a management key, which is a
+    // different credential than the inference key stored here.
+    loadQuotaCollector: quotaCapability(() => import("../integrations/numes/numes-quota"), "fetchNumesQuota"),
+    loadModelDiscovery: async () => withStaticRosterFallback(
+      async ({ baseUrl, credential, fetcher }) => {
+        const { discoverNumesModels } = await import("../integrations/numes/provider");
+        return discoverNumesModels({
+          baseUrl,
+          ...(credential === undefined ? {} : { credential }),
+          ...(fetcher === undefined ? {} : { fetcher }),
+        });
+      },
+      async () => (await import("../integrations/numes/provider")).NUMES_DEFAULT_MODELS,
     ),
   },
 };

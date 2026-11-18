@@ -28,6 +28,29 @@ import { restoreControllerAfterFailedHandoff } from "./controller";
  */
 const UPDATE_NOTICE_SECONDS = 30;
 
+/**
+ * Seconds to hold the terminal open after a gateway startup failure. The
+ * gateway's last log lines are the whole diagnosis; exiting the moment they
+ * print meant a `carte` window closed before the operator could read why.
+ * Same trade-off as the double-instance pause in `main.ts`.
+ */
+const STARTUP_FAILURE_EXIT_SECONDS = 30;
+
+const FAILURE_PAINT =
+  process.stdout.isTTY === true && process.env.NO_COLOR === undefined && process.env.TERM !== "dumb";
+
+/** True only in a human's terminal; piped/scripted runs must exit at once. */
+const INTERACTIVE_TERMINAL = process.stdout.isTTY === true;
+
+/**
+ * Amber guidance for a startup failure: the block has a documented fix path
+ * (config, port, reinstall), so it should read as "needs attention", not as
+ * a fatal crash. Detail lines stay uncolored so the log tail reads plainly.
+ */
+function failurePaint(code: string, value: string): string {
+  return FAILURE_PAINT ? `\u001b[${code}m${value}\u001b[0m` : value;
+}
+
 
 /**
  * The default `carte` experience: start the gateway, then offer an arrow-key
@@ -106,9 +129,31 @@ async function runMenu(handoff: { readonly token: string; readonly parentPid: nu
     await ready;
     if (startupError !== null) {
       const detail = startupError instanceof Error ? startupError.message : "unknown startup error";
-      console.error(`The gateway did not start on port ${port}.\n${detail}`);
-      console.error("Fix the reported issue, then run `carte` again.");
+      // The actionable text goes to stderr — scripts and tests read the
+      // failure from the error stream; an interactive window shows both.
+      console.error(detail);
+      console.error(failurePaint("1;33", `The gateway did not start on port ${port}.`));
+      console.error(
+        failurePaint(
+          "33",
+          "Fix the reported issue, then run `carte` again. Use `cartethyia doctor` to check configuration.",
+        ),
+      );
+      console.error(
+        failurePaint(
+          "33",
+          "If this install is broken or too old, reinstall it:\n" +
+            "  npm uninstall -g cartethyia\n" +
+            "  npm install -g cartethyia",
+        ),
+      );
       process.exitCode = 1;
+      // Hold only a human's window so the diagnosis stays readable; a piped
+      // or scripted run exits the moment the guidance is printed.
+      if (INTERACTIVE_TERMINAL) {
+        console.error(`\nThis window closes in ${STARTUP_FAILURE_EXIT_SECONDS} seconds.`);
+        await Bun.sleep(STARTUP_FAILURE_EXIT_SECONDS * 1_000);
+      }
       return;
     }
   }

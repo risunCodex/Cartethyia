@@ -2,6 +2,7 @@ import { asCoercedNumber as sharedAsNumber, asRecord as sharedAsRecord } from ".
 import { checkinDayKey as sharedCheckinDayKey } from "../../../shared/time";
 import { providerBaseUrl, BUDDY_PROVIDER_IDS } from "../../provider-metadata";
 import { sleep } from "../../../shared/sleep";
+import { QODER_CHECKIN_PROVIDER_IDS } from "../qoder/qoder-checkin";
 import { buddyIdentityHeaders, type CodeBuddyVariant } from "./codebuddy/shared";
 import type { FetchLike } from "../../quota/quota-contracts";
 import { text as asText } from "../../quota/quota-contracts";
@@ -10,6 +11,7 @@ import { text as asText } from "../../quota/quota-contracts";
 
 export const DAILY_CHECKIN_PROVIDER_IDS: readonly string[] = [
   ...BUDDY_PROVIDER_IDS,
+  ...QODER_CHECKIN_PROVIDER_IDS,
 ];
 
 const TIMEOUT_MS = 15_000;
@@ -416,9 +418,9 @@ export async function fetchDailyCheckin(args: {
 }
 
 /**
- * Calendar-day key shared with `workers/daily-checkin.ts`; the definition
- * lives in `shared/time.ts` so all once-a-day ledgers bucket on the same
- * UTC boundary.
+ * Calendar-day key shared with `workers/daily-checkin.ts` and the qoder
+ * check-in; the definition lives in `shared/time.ts` so all once-a-day
+ * ledgers bucket on the same UTC boundary.
  */
 export function checkinDayKey(now: Date = new Date()): string {
   return sharedCheckinDayKey(now);

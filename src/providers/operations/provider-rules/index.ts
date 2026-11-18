@@ -1,7 +1,5 @@
 export { traeRules } from "./trae";
 
-
-
 export { buddyRules } from "./buddy";
 
 export { deploymentInfraErrorRule, modelFrequencyWindowRule } from "./generic";
@@ -13,6 +11,8 @@ export { githubRules } from "./github";
 export { inceptionRules } from "./inception";
 
 export { perchRules } from "./perch";
+
+export { qoderPlanGatedRule, qoderModelQuotaRule } from "./qoder";
 
 export {
   GROK_QUOTA_COOLDOWN_MS,

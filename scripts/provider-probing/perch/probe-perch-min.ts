@@ -42,7 +42,7 @@ async function mintTicket(): Promise<{ ticket: string; runId: string }> {
       "user-agent": CLI_USER_AGENT,
       "x-perch-locale": "en",
     },
-    body: JSON.stringify({ surface: "cli", profile: "standard" }),
+    body: JSON.stringify({ surface: "cli", profile: "standard", ticketClient: 2 }),
     signal: AbortSignal.timeout(15_000),
   });
   const body = (await res.json().catch(() => null)) as { ok?: boolean; ticket?: string; runId?: string; error?: string } | null;

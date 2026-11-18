@@ -96,10 +96,11 @@ export const CONFIG_SPEC = {
   CARTETHYIA_API_KEY: { kind: "optional-text" },
   CARTETHYIA_SERVER_MAX_BODY_BYTES: {
     kind: "int",
-    // A 1M-token context is roughly 4+ MB of text, so 16 MB admits every real
-    // request while bounding the worst-case hold. How many may be in flight is
-    // admission's job, so an operator with even larger payloads raises this and
-    // sets the ceiling in Settings.
+    // A 1M-token context is roughly 4+ MB of text (Qoder gRPC/legacy paths
+    // accept it), so 16 MB admits every real request while bounding the
+    // worst-case hold. How many may be in flight is admission's job, so an
+    // operator with even larger payloads raises this and sets the ceiling in
+    // Settings.
     default: 16 * 1024 * 1024,
     min: 1024,
     max: Number.MAX_SAFE_INTEGER,
@@ -115,6 +116,24 @@ export const CONFIG_SPEC = {
     default: 0,
     min: 0,
     max: 1024 * 1024,
+  },
+
+  // Qoder risk controls (see src/providers/integrations/qoder/qoder-risk.ts):
+  // the upstream scores request cadence and machine identity as their own
+  // dimensions. The gap spaces same-account dispatches (the donor hub's
+  // PR #78 uses 400ms with concurrency 1); the streak is how many consecutive
+  // queueType=p4 queue envelopes re-alarm the egress/machine-pin warning.
+  CARTETHYIA_QODER_MIN_GAP_MS: {
+    kind: "int",
+    default: 400,
+    min: 0,
+    max: 60_000,
+  },
+  CARTETHYIA_QODER_P4_WARN_STREAK: {
+    kind: "int",
+    default: 5,
+    min: 1,
+    max: 1000,
   },
 
   // Cursor Run wire controls (see src/providers/integrations/cursor/cursor.ts):

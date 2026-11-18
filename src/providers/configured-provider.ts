@@ -40,6 +40,14 @@ export interface ApiKeyProviderSpec {
   /** Static headers applied to every dispatch, before `buildExtraHeaders`. */
   readonly extra_headers?: Readonly<Record<string, string>>;
   /**
+   * Request body encoding for the transport. `"json"` (default) sends plain
+   * JSON; `"gzip"`/`"zstd"` compress the body and stamp the matching
+   * `Content-Encoding`. Use it for upstreams whose edge WAF rejects large
+   * plain-JSON bodies (Clixad) — pair it with an `extra_headers` content
+   * type when the upstream keys its parser off the media type.
+   */
+  readonly request_compression?: "json" | "zstd" | "gzip";
+  /**
    * Credential-derived origin override for upstreams that carry per-account
    * state in the path prefix (a plan region, a residency host). Defaults to
    * `base_url`; the resolved value replaces it at transport time only.
@@ -88,6 +96,7 @@ export function createApiKeyAdapter(
       base_url: spec.base_url ?? providerBaseUrl(spec.provider_id),
       endpoint_paths_by_wire_family: spec.endpoint_paths_by_wire_family ?? {},
       ...(spec.extra_headers ? { extra_headers: spec.extra_headers } : {}),
+      ...(spec.request_compression === undefined ? {} : { request_compression: spec.request_compression }),
       ...(spec.resolveBaseUrl ? { resolveBaseUrl: spec.resolveBaseUrl } : {}),
       ...(spec.buildExtraHeaders ? { buildExtraHeaders: spec.buildExtraHeaders } : {}),
       ...(spec.credential_forwarding ? { credential_forwarding: spec.credential_forwarding } : {}),

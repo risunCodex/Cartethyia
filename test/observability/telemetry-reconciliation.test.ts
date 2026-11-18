@@ -22,6 +22,7 @@ import { eq } from "drizzle-orm";
 // module-level constant.
 const sandbox = await mkdtemp(join(tmpdir(), "carte-reconcile-"));
 const previousDataDir = process.env.CARTETHYIA_DATA_DIR;
+const previousDbMode = process.env.CARTETHYIA_DB_MODE;
 process.env.CARTETHYIA_DATA_DIR = sandbox;
 process.env.CARTETHYIA_DB_MODE = "lite";
 
@@ -41,6 +42,11 @@ const db = buildSqliteHandle(sqliteDb).db;
 afterAll(async () => {
   if (previousDataDir === undefined) delete process.env.CARTETHYIA_DATA_DIR;
   else process.env.CARTETHYIA_DATA_DIR = previousDataDir;
+  // The mode switch above is for this suite's own SQLite handle only; leaving
+  // it set would route every later suite's `getDb()` to lite mode in a shared
+  // test process (its telemetry rows then miss the Postgres the suite reads).
+  if (previousDbMode === undefined) delete process.env.CARTETHYIA_DB_MODE;
+  else process.env.CARTETHYIA_DB_MODE = previousDbMode;
   sqliteDb.close();
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {

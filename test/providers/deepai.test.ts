@@ -4,6 +4,10 @@
 import { describe, expect, test } from "bun:test";
 import { DEEPAI_SPEC } from "../../src/providers/integrations/deepai/provider";
 import { DEEPAI_DEFAULT_MODELS } from "../../src/providers/integrations/deepai/deepai-catalog";
+import {
+  DEEPAI_MAX_MESSAGE_CHARS,
+  chunkDeepAIChatMessages,
+} from "../../src/providers/integrations/deepai/deepai-common";
 import { fetchDeepAIQuota } from "../../src/providers/integrations/deepai/deepai-quota";
 import { DeepAIOAuthClient } from "../../src/providers/integrations/deepai/deepai-oauth";
 import { createApiKeyAdapter } from "../../src/providers/configured-provider";
@@ -259,8 +263,100 @@ describe("DeepAI adapter dispatch", () => {
     expect(captured?.url).toBe("https://api.deepai.org/deepai_code/chat/completions");
     const headers = captured?.init?.headers as Record<string, string> | undefined;
     expect(headers?.["Api-Key"]).toBe(API_KEY);
-    expect(headers?.["X-DeepAI-Code-Theos"]).toBe("4");
+    expect(headers?.["X-DeepAI-Code-Theos"]).toBe("7");
     expect(headers?.["X-DeepAI-Code-Instance"]).toMatch(/^[0-9a-f]{32}$/);
     expect(headers?.["authorization"]).toBeUndefined();
+  });
+
+  test("splits oversized message contents under the per-message ceiling", async () => {
+    let capturedBody = "";
+    const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedBody = typeof init?.body === "string" ? init.body : "";
+      return new Response(
+        JSON.stringify({
+          id: "gen_2",
+          object: "chat.completion",
+          model: "z-ai/glm-5.3-flash",
+          choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as ValidatedOutboundFetch;
+
+    const big = "x".repeat(DEEPAI_MAX_MESSAGE_CHARS * 2 + 123);
+    const adapter = createApiKeyAdapter(DEEPAI_SPEC);
+    const req: CanonicalRequest = {
+      model: "glm-5.3-flash",
+      messages: [{ role: "user", content: [{ kind: "text", text: big }] }],
+      generation_controls: {},
+      stream: false,
+      source_surface: "chat",
+    };
+    for await (const _event of adapter.dispatch(req, TARGET, context(fetcher))) {
+      // drain
+    }
+
+    const payload = JSON.parse(capturedBody) as { messages: { role: string; content: unknown }[] };
+    expect(payload.messages.length).toBe(3);
+    for (const message of payload.messages) {
+      expect(message.role).toBe("user");
+      expect(typeof message.content).toBe("string");
+      expect((message.content as string).length).toBeLessThanOrEqual(DEEPAI_MAX_MESSAGE_CHARS);
+    }
+    const joined = payload.messages.map((m) => m.content as string).join("");
+    expect(joined).toBe(big);
+  });
+});
+
+describe("chunkDeepAIChatMessages", () => {
+  test("leaves small messages untouched", () => {
+    const payload = { messages: [{ role: "user", content: "hi" }] };
+    chunkDeepAIChatMessages(payload);
+    expect(payload.messages).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  test("ignores payloads without a messages array (responses wire)", () => {
+    const payload = { input: [{ role: "user", content: "x".repeat(200_000) }] };
+    chunkDeepAIChatMessages(payload);
+    expect((payload.input as unknown[]).length).toBe(1);
+  });
+
+  test("splits array content across part boundaries", () => {
+    const text = "y".repeat(DEEPAI_MAX_MESSAGE_CHARS + 50);
+    const payload = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text },
+            { type: "image_url", image_url: { url: "https://example.test/i.png" } },
+          ],
+        },
+      ],
+    };
+    chunkDeepAIChatMessages(payload);
+    const messages = payload.messages as { content: { type: string; text?: string }[] }[];
+    expect(messages.length).toBe(2);
+    expect(messages[0]!.content[0]!.text!.length).toBe(DEEPAI_MAX_MESSAGE_CHARS);
+    expect(messages[1]!.content.at(-1)!.type).toBe("image_url");
+    expect(messages[1]!.content[0]!.text!.length).toBe(50);
+  });
+
+  test("drops tool_calls from continuation chunks only", () => {
+    const payload = {
+      messages: [
+        {
+          role: "assistant",
+          content: "z".repeat(DEEPAI_MAX_MESSAGE_CHARS + 10),
+          tool_calls: [{ id: "call_1", type: "function", function: { name: "f", arguments: "{}" } }],
+        },
+      ],
+    };
+    chunkDeepAIChatMessages(payload);
+    const messages = payload.messages as Record<string, unknown>[];
+    expect(messages.length).toBe(2);
+    expect(messages[0]!["tool_calls"]).toBeDefined();
+    expect(messages[1]!["tool_calls"]).toBeUndefined();
   });
 });

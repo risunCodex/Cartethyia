@@ -111,6 +111,9 @@ const iconAssets: Record<
   // Clixad's official mark is its own SVG — a pixel-art duck served as
   // favicon.svg (fetched from clixad.io).
   clixad: { file: "clixad", ext: "svg" },
+  // Numes' official mark is its favicon.svg (the three-bar glyph served from
+  // assets.numes.ai on numes.ai).
+  numes: { file: "numes", ext: "svg" },
   // DeepAI's official app icon from its PWA manifest (the root favicon.ico is
   // a generic star, not the brand mark).
   deepai: { file: "deepai", ext: "png" },

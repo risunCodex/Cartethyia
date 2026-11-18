@@ -19,6 +19,7 @@ import {
   DEEPAI_API_ORIGIN,
   DEEPAI_CHAT_PATH,
   DEEPAI_RESPONSES_PATH,
+  chunkDeepAIChatMessages,
   deepAIBaseHeaders,
 } from "./deepai-common";
 import type { ProviderDispatchContext } from "../../provider-contracts";
@@ -34,6 +35,12 @@ export const DEEPAI_SPEC: ApiKeyProviderSpec = {
   // (and the upstream rejects a stray bearer). `buildExtraHeaders` stamps the
   // `Api-Key` + lane headers instead.
   credential_forwarding: "never",
+  // The upstream silently discards any single chat message above ~128k chars
+  // (verified live 2026-11-18); split oversized contents into consecutive
+  // same-role messages under the safe ceiling before serialization.
+  prePayload: (payload) => {
+    chunkDeepAIChatMessages(payload);
+  },
   buildExtraHeaders: async (context: ProviderDispatchContext) => {
     const secret = context.credential.secret;
     const apiKey = secret === undefined || secret.length === 0 ? "" : new TextDecoder().decode(secret);

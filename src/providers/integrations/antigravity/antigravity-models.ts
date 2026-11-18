@@ -60,6 +60,7 @@ export const ANTIGRAVITY_MODELS: readonly ModelDefinition[] = [
   antigravityModel("gemini-3.8-flash", 1_000_000, 65_536, true),
   antigravityModel("gemini-4-argon", 1_000_000, 65_536, true),
   antigravityModel("gemini-4-carbon", 1_000_000, 65_536, true),
+  antigravityModel("gemini-4-hydrogen", 1_000_000, 65_536, true),
   // Tab (laptop-class) preview SKU.
   antigravityModel("tab_flash_lite_preview", 16_000, 4_000, true),
   // Gemini image generation. `gemini-3-pro-image` uses the same catalog

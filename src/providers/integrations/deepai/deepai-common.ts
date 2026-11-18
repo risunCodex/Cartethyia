@@ -6,7 +6,7 @@
 //   - Model base is `https://api.deepai.org/deepai_code`; the sign-in flow
 //     (`/deepai_code/desktop_auth/`) returns an opaque `api_key`.
 //   - Every model call carries:
-//       `X-DeepAI-Code-Theos: 4`   (lane version)
+//       `X-DeepAI-Code-Theos: 7`   (lane version)
 //       `X-DeepAI-Code-Instance`     (16 random bytes hex, per process)
 //       `X-DeepAI-Code-Machine`      (sha256hex of the machine id)
 //       `Api-Key: <api_key>`         (the credential; NOT a Bearer)
@@ -22,7 +22,7 @@ import { readFileSync } from "node:fs";
 export const DEEPAI_API_ORIGIN = "https://api.deepai.org";
 export const DEEPAI_MODEL_BASE = `${DEEPAI_API_ORIGIN}/deepai_code`;
 
-export const DEEPAI_LANE_VERSION = "4";
+export const DEEPAI_LANE_VERSION = "7";
 export const DEEPAI_HEADER_THEOS = "X-DeepAI-Code-Theos";
 export const DEEPAI_HEADER_INSTANCE = "X-DeepAI-Code-Instance";
 export const DEEPAI_HEADER_MACHINE = "X-DeepAI-Code-Machine";
@@ -140,4 +140,116 @@ export async function deepAIBaseHeaders(apiKey?: string): Promise<Record<string,
   if (machine !== null) headers[DEEPAI_HEADER_MACHINE] = machine;
   if (apiKey !== undefined && apiKey.length > 0) headers[DEEPAI_HEADER_API_KEY] = apiKey;
   return headers;
+}
+
+/**
+ * Per-message content ceiling, in characters.
+ *
+ * Verified live 2026-11-18 (mimo-2.6-pro, lane 7 + machine header): a single
+ * message above ~128k chars is silently discarded server-side (a 200k-char
+ * user message surfaced as `prompt_tokens=289` — only the trailing question
+ * survived), while 90k-char messages are counted honestly (~5.3 chars/token).
+ * The drop is per message, not per request: 10×90k-char messages streamed
+ * fine, though the server retains only ~34k prompt tokens of them. Chunking
+ * cannot raise that retention ceiling, but it prevents the catastrophic
+ * all-or-nothing loss of an oversized single message.
+ */
+export const DEEPAI_MAX_MESSAGE_CHARS = 90_000;
+
+type WirePart = Record<string, unknown>;
+type WireMessage = Record<string, unknown>;
+
+function textOfPart(part: WirePart): string {
+  const text = part["text"];
+  return typeof text === "string" ? text : "";
+}
+
+function messageTextLength(content: unknown): number {
+  if (typeof content === "string") return content.length;
+  if (!Array.isArray(content)) return 0;
+  let total = 0;
+  for (const part of content as WirePart[]) {
+    if (part !== null && typeof part === "object") total += textOfPart(part).length;
+  }
+  return total;
+}
+
+/**
+ * Split one oversized message into consecutive same-role messages whose text
+ * content stays under `DEEPAI_MAX_MESSAGE_CHARS`. String content splits
+ * directly; array content splits text parts across chunk messages while
+ * non-text parts ride along with the chunk they precede. Continuation chunks
+ * copy the original fields except `tool_calls` (duplicated tool calls would
+ * register as phantom calls upstream).
+ */
+function splitMessage(message: WireMessage): WireMessage[] {
+  const content = message["content"];
+  if (typeof content === "string") {
+    if (content.length <= DEEPAI_MAX_MESSAGE_CHARS) return [message];
+    const chunks: WireMessage[] = [];
+    for (let offset = 0; offset < content.length; offset += DEEPAI_MAX_MESSAGE_CHARS) {
+      const chunk: WireMessage = { ...message, content: content.slice(offset, offset + DEEPAI_MAX_MESSAGE_CHARS) };
+      if (chunks.length > 0) delete chunk["tool_calls"];
+      chunks.push(chunk);
+    }
+    return chunks;
+  }
+  if (!Array.isArray(content)) return [message];
+
+  const parts = content as WirePart[];
+  // Fast path: nothing oversized, keep the message untouched.
+  if (messageTextLength(content) <= DEEPAI_MAX_MESSAGE_CHARS) return [message];
+
+  const chunks: WirePart[][] = [[]];
+  let used = 0;
+  for (const part of parts) {
+    const text = part !== null && typeof part === "object" ? textOfPart(part) : "";
+    if (text.length <= DEEPAI_MAX_MESSAGE_CHARS) {
+      if (used + text.length > DEEPAI_MAX_MESSAGE_CHARS && chunks[chunks.length - 1]!.length > 0) {
+        chunks.push([]);
+        used = 0;
+      }
+      chunks[chunks.length - 1]!.push(part);
+      used += text.length;
+      continue;
+    }
+    // Oversized text part: flush current chunk, then emit char slices.
+    if (chunks[chunks.length - 1]!.length > 0) {
+      chunks.push([]);
+      used = 0;
+    }
+    for (let offset = 0; offset < text.length; offset += DEEPAI_MAX_MESSAGE_CHARS) {
+      chunks.push([{ ...part, text: text.slice(offset, offset + DEEPAI_MAX_MESSAGE_CHARS) }]);
+      used = 0;
+    }
+  }
+  // `used` tracking above only guards same-part accumulation; re-verify the
+  // final layout did not exceed the ceiling for mixed part sizes.
+  return chunks
+    .filter((group) => group.length > 0)
+    .map((group, index) => {
+      const chunk: WireMessage = { ...message, content: group };
+      if (index > 0) delete chunk["tool_calls"];
+      return chunk;
+    });
+}
+
+/**
+ * `prePayload` hook for the DeepAI spec: rewrite `payload.messages` so no
+ * single message exceeds `DEEPAI_MAX_MESSAGE_CHARS`. Only chat-completions
+ * payloads carry `messages`; the responses wire (`input` items) is left
+ * untouched.
+ */
+export function chunkDeepAIChatMessages(payload: Record<string, unknown>): void {
+  const messages = payload["messages"];
+  if (!Array.isArray(messages)) return;
+  const out: WireMessage[] = [];
+  for (const message of messages as WireMessage[]) {
+    if (message === null || typeof message !== "object") {
+      out.push(message);
+      continue;
+    }
+    out.push(...splitMessage(message));
+  }
+  payload["messages"] = out;
 }

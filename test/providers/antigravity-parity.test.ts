@@ -404,6 +404,7 @@ describe("7. tool schemas survive the envelope", () => {
 describe("Antigravity wire model mapping & variant collapse", () => {
   test("resolves logical model ids to upstream wire deployments", () => {
     expect(antigravityWireModelId("gemini-4-argon")).toBe("gemini-4-argon-low");
+    expect(antigravityWireModelId("gemini-4-hydrogen")).toBe("gemini-4-hydrogen-medium");
     expect(antigravityWireModelId("gemini-3.8-flash")).toBe("gemini-3.8-flash-low");
     expect(antigravityWireModelId("claude-opus-4-6")).toBe("claude-opus-4-6-thinking");
     expect(antigravityWireModelId("gemini-3.1-pro")).toBe("gemini-pro-agent");
@@ -414,6 +415,8 @@ describe("Antigravity wire model mapping & variant collapse", () => {
     expect(collapseAntigravityVariant("gemini-4-argon-low")).toBe("gemini-4-argon");
     expect(collapseAntigravityVariant("gemini-4-argon-medium")).toBe("gemini-4-argon");
     expect(collapseAntigravityVariant("gemini-4-argon-high")).toBe("gemini-4-argon");
+    expect(collapseAntigravityVariant("gemini-4-hydrogen-medium")).toBe("gemini-4-hydrogen");
+    expect(collapseAntigravityVariant("gemini-4-hydrogen-high")).toBe("gemini-4-hydrogen");
     expect(collapseAntigravityVariant("gemini-3.8-flash-low")).toBe("gemini-3.8-flash");
     expect(collapseAntigravityVariant("gemini-pro-agent")).toBe("gemini-3.1-pro");
   });
@@ -438,6 +441,7 @@ describe("Antigravity effort-tier vocabulary (single owner)", () => {
     expect(antigravityThinkingBudget("gemini-4-argon-low")).toBe(1_000);
     expect(antigravityThinkingBudget("gemini-4-argon-medium")).toBe(4_000);
     expect(antigravityThinkingBudget("gemini-4-argon-high")).toBe(10_000);
+    expect(antigravityThinkingBudget("gemini-4-hydrogen-medium")).toBe(4_000);
     expect(antigravityThinkingBudget("gemini-4-carbon-low")).toBe(1_000);
     expect(antigravityThinkingBudget("gemini-3.8-flash-medium")).toBe(4_000);
     // A bare thinking-capable id falls back to the client's default budget.
@@ -458,6 +462,7 @@ describe("Antigravity effort-tier vocabulary (single owner)", () => {
       ["gemini-3.7-flash", "low"],
       ["gemini-3.8-flash", "low"],
       ["gemini-4-argon", "low"],
+      ["gemini-4-hydrogen", "medium"],
       ["gpt-oss-120b", "medium"],
     ] as const) {
       const wire = antigravityWireModelId(logical);

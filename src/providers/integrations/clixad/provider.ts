@@ -39,13 +39,19 @@ const CLIXAD_CHAT_PATH = "/chat/completions";
  * Clixad adapter spec: plain bearer, OpenAI-compatible chat.
  *
  * The model call endpoint accepts standard OpenAI fields and streams normally,
- * so the generic API-key adapter serves it. No bespoke headers are required
- * beyond the bearer. (The upstream's gzipped-body fallback is a *client-side*
- * workaround for an edge WAF; the gateway itself answers plain JSON.)
+ * so the generic API-key adapter serves it.
+ *
+ * Requests are always gzip-compressed and carry the
+ * `application/vnd.clixad.chat+gzip` content type: the edge in front of the
+ * gateway answers 403 HTML "Blocked" to large plain-JSON bodies (verified
+ * live 2026-11-18 — a ~576KB long-session payload was blocked as plain JSON
+ * and accepted gzipped, JSON and SSE alike), matching the CLI/probe encoding.
  */
 export const CLIXAD_SPEC: ApiKeyProviderSpec = {
   provider_id: CLIXAD_PROVIDER_ID,
   endpoint_paths_by_wire_family: { chat: CLIXAD_CHAT_PATH },
+  request_compression: "gzip",
+  extra_headers: { "content-type": "application/vnd.clixad.chat+gzip" },
 };
 
 /**
@@ -97,16 +103,40 @@ export const CLIXAD_DEFAULT_MODELS: readonly ModelDefinition[] = [
     reasoningEfforts: ["off", "low", "medium", "high", "xhigh", "max"]
   }),
   defineModel({
-    id: "deepseek-v4-flash",
+    id: "deepseek-v4.1-flash",
     wireFamily: "chat",
     endpoint: CLIXAD_CHAT_PATH,
     ctx: 1_048_576,
-    out: 42_000,
+    out: 65_536,
     reasoning: true,
     toolCall: true,
     free: true,
     freeTier: true,
-    reasoningEfforts: ["off", "low", "medium", "high", "xhigh", "max"]
+    reasoningEfforts: ["off", "low", "high", "max"]
+  }),
+  defineModel({
+    id: "glm-5.3-flash",
+    wireFamily: "chat",
+    endpoint: CLIXAD_CHAT_PATH,
+    ctx: 1_048_576,
+    out: 65_536,
+    reasoning: true,
+    toolCall: true,
+    free: true,
+    freeTier: true,
+    reasoningEfforts: ["low", "high", "max"]
+  }),
+  defineModel({
+    id: "gemini-3.8-flash",
+    wireFamily: "chat",
+    endpoint: CLIXAD_CHAT_PATH,
+    ctx: 1_048_576,
+    out: 65_536,
+    reasoning: true,
+    toolCall: true,
+    free: true,
+    freeTier: true,
+    reasoningEfforts: ["low", "medium", "high"]
   }),
   defineModel({
     id: "gemini-3.5-flash-lite",

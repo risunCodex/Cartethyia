@@ -13,6 +13,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 
 - **Console update apply restricted to platform admins.** `POST /console/api/updates/apply` now requires `platform:admin` scope instead of tenant-scoped `dashboard:write`, preventing tenant API keys from triggering a gateway-wide package update and process restart.
+- **Clixad long sessions no longer fail with 502 on large payloads.** The edge
+  in front of the Clixad gateway answers 403 "Blocked" to large plain-JSON
+  request bodies (a ~576KB, 100-message session was rejected while small
+  requests passed), which surfaced as `transport_unavailable`/502 on the
+  failing trace. The Clixad adapter now always gzips the request body and
+  sends `Content-Type: application/vnd.clixad.chat+gzip`, matching the Clixad
+  CLI's encoding; `ApiKeyProviderSpec` gained an optional
+  `request_compression` field for this.
 
 ## [2.8.3] - 2026-11-17 · Codename Arc-en-ciel
 

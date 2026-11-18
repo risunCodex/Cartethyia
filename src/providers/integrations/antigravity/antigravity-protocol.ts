@@ -171,6 +171,16 @@ const ANTIGRAVITY_MODEL_WIRE_PROFILES: Readonly<
   "gemini-4-argon-high": {
     maxOutputTokens: 65536,
   },
+  // Gemini 4 Hydrogen effort tiers — same deployment shape as Argon.
+  "gemini-4-hydrogen-low": {
+    maxOutputTokens: 65536,
+  },
+  "gemini-4-hydrogen-medium": {
+    maxOutputTokens: 65536,
+  },
+  "gemini-4-hydrogen-high": {
+    maxOutputTokens: 65536,
+  },
   // GPT-OSS via Antigravity (verified live).
   "gpt-oss-120b-medium": {
     modelEnum: "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
@@ -225,6 +235,7 @@ const ANTIGRAVITY_DEFAULT_TIER: Readonly<Record<string, AntigravityEffortSuffix>
   "gemini-3.7-flash": "low",
   "gemini-3.8-flash": "low",
   "gemini-4-argon": "low",
+  "gemini-4-hydrogen": "medium",
   "gpt-oss-120b": "medium",
 });
 

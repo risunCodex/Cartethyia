@@ -255,6 +255,13 @@ function buildSocksDispatcher(agent: SocksProxyAgent, keepAliveTimeoutMs: number
   } as unknown as ConstructorParameters<typeof UndiciAgent>[0]);
 }
 
+/** A no-knob profile: every TLS field absent, so the dial runs the runtime's
+ * default handshake while still carrying agent-level options (a custom `ca`). */
+const RUNTIME_TLS_PROFILE: TlsProfileConfig = {
+  id: "default",
+  label: "Runtime default",
+};
+
 /**
  * A Node `https` agent whose connections are dialed with a chosen TLS profile.
  *
@@ -515,11 +522,18 @@ export function createValidatedFetch(options: ValidatedFetchOptions = {}): Valid
         // A TLS profile request is a *custom ClientHello* dial: it goes
         // through a Node https agent configured with the profile's OpenSSL
         // options, so the wire fingerprint matches the impersonated client.
-        // This path is direct-only (never a pool/relay dial) and rejects
-        // bodies on GET/HEAD like the runtime fetch does — that shape is
-        // still handled by `nodeDial` below.
-        if (profile !== undefined && !socksAgent && configuredAgent === undefined) {
-          response = await nodeDial(url, requestInit, createProfileAgent(profile, options.ca));
+        // A caller-supplied `ca` rides the same path even without a profile:
+        // only the Node https agent can carry a custom trust bundle (the
+        // runtime fetch has no `ca` knob), and the direct dial is the one
+        // place both reach. This path is direct-only (never a pool/relay
+        // dial) and rejects bodies on GET/HEAD like the runtime fetch does —
+        // that shape is still handled by `nodeDial` below.
+        if ((profile !== undefined || options.ca !== undefined) && !socksAgent && configuredAgent === undefined) {
+          response = await nodeDial(
+            url,
+            requestInit,
+            createProfileAgent(profile ?? RUNTIME_TLS_PROFILE, options.ca),
+          );
         } else if ((method === "GET" || method === "HEAD") && hasBody && !socksAgent && options.fetchFn === undefined) {
           // The runtime fetch cannot carry a body on GET/HEAD, but Qoder's
           // model-list endpoint requires a signed GET body. When no pool/relay

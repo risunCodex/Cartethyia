@@ -21,7 +21,7 @@ import {
   finishDetachedUpdate,
 } from "../../src/console/updates/apply-update";
 import { createUpdateRoutes } from "../../src/console/updates/routes";
-import { ConsoleDomainError, errorResponse } from "../../src/console/shared/errors";
+import { ConsoleDomainError } from "../../src/console/shared/errors";
 
 describe("update status file round-trip", () => {
   const dirs: string[] = [];

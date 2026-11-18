@@ -24,6 +24,7 @@ import {
   PERCH_SUPABASE_HOST,
   PERCH_SUPABASE_PUBLISHABLE_KEY,
 } from "./perch-realm";
+import { ensurePerchStarterPlan } from "./perch-plan";
 
 const PERCH_SUPABASE_URL = `https://${PERCH_SUPABASE_HOST}`;
 const PERCH_AUTHORIZE_PATH = "/auth/v1/authorize";
@@ -130,6 +131,11 @@ export class PerchOAuthClient extends OAuthClient {
     });
     const result = this.toExchangeResult(this.parseTokenResponse(response));
     await this.#stampCliSignup(result.access).catch(() => undefined);
+    // Fresh accounts have no plan until one is chosen; select the free
+    // Starter tier here so the first model call does not answer
+    // "Pick a plan to start using Perch". Best-effort — a failure leaves the
+    // account unplanned exactly as before.
+    await ensurePerchStarterPlan(result.access, this.fetchFn).catch(() => false);
     return result;
   }
 
