@@ -50,6 +50,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   dynamically by the upstream either way). Verified live: every tier
   answered its decision and a follow-up turn
   (`scripts/provider-probing/github/github-auto-tier-probe.ts`).
+- **Kilo and OpenRouter free rosters gain five live-verified rows.**
+  `baidu/ernie-5.5-flash-preview:free`, `inclusionai/ling-3.2-flash:free`,
+  `particle-ai/particle-1:free`, `recursive/flint-v1.0:free`, and
+  `thinkingmachines/inkling-2-small:free` join the shared zero-price roster
+  (limits, reasoning, and vision read from OpenRouter's `/api/v1/models`).
+- **Vercel default catalog gains two billed picks.** `tencent/hy4-flash`
+  (vision, 1M ctx) and `meta/muse-ember` (vision/document/audio inputs, 1M
+  ctx) with the capabilities the upstream declares.
 
 ### Fixed
 
@@ -78,6 +86,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   to flash and exit; an interactive window now holds for 30 seconds with
   amber guidance (including the reinstall commands) while piped or
   scripted runs still exit at once with the actionable detail on stderr.
+- **Trivially short upstream rate-limit windows no longer churn accounts.**
+  A provider-stated `retry_after`/`resets_in_seconds` below the configured
+  rate-limit cooldown (OpenRouter's `retry_after_seconds: 1`) is now floored
+  up to it, so the cooldown survives the sweep's next tick; the raw stated
+  window still rides the classification so the auto-disable gate's sub-5-minute
+  exemption keeps reading the provider's own number.
+- **Recoverable auth rejections cool down instead of saying "Re-login
+  required".** A bare 401/403 or an expired-but-refreshable token is now its
+  own `auth_rejected` category — a cooldown that heals on success — while the
+  terminal `auth_invalidated` (named revocation / definitive refresh failure)
+  stays the only state that asks for a re-login. Routing excludes the
+  cooldown as hard, and a successful quota check lifts it.
+- **A `cooldown` status can never persist without a recovery deadline.** The
+  shared verdict seam now stamps a bounded fallback deadline when none is
+  supplied, so `sweepExpiredCooldowns` can always recover the row.
+- **Cursor upstream refusals fail over again.** `response_start` is no longer
+  emitted before upstream contact: a failure observed before the first event
+  throws a typed upstream verdict (quota 429 / auth 401 / else 502) so the
+  attempt loop can rotate candidates, and mid-stream failures carry
+  `stop_details` so the client envelope keeps the quota/auth code.
+- **Kiro accounts stop parking for six hours on a profile-400.** The
+  management `Get-Usage-Limits` refusal `Invalid profileArn` is reported as
+  transient (annotated, never counted toward the park threshold) so the sweep
+  retries it next pass, and `quota_fetch_failed` cooldowns are now healed the
+  moment a quota read succeeds.
 
 ## [2.8.3] - 2026-11-17 · Codename Arc-en-ciel
 

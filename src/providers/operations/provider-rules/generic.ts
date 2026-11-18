@@ -239,7 +239,11 @@ export const credentialRejectedRule: AccountErrorRule = {
       disabledRecoveryMs > 0 ? new Date(Date.now() + disabledRecoveryMs) : null;
     const cooldownMs = recoverable ? resolveAccountAuthRejectedCooldownMs() : disabledRecoveryMs;
     return s.result(
-      "auth_invalidated",
+      // `auth_rejected` is the recoverable verdict: it cools the account down
+      // and heals on its own. `auth_invalidated` stays reserved for the
+      // terminal arm — a named revocation on a refreshable credential — which
+      // is the only auth outcome the console may render "Re-login required".
+      recoverable ? "auth_rejected" : "auth_invalidated",
       recoverable ? "cooldown" : "disabled",
       cooldownMs,
       recoverable ? new Date(Date.now() + cooldownMs) : disabledRetryAt,
@@ -329,7 +333,20 @@ export const rateLimitRule: AccountErrorRule = {
       s.lower.includes("tpm limit") ||
       s.lower.includes("rpm limit")),
   decide: (s) => {
-    const cooldownMs = s.statedCooldownMs ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS();
+    const fallbackMs = DEFAULT_RATE_LIMIT_COOLDOWN_MS();
+    // A provider-stated window still wins when it is *longer* than the
+    // configured cooldown, but a trivially short `retry_after` (OpenRouter's
+    // `retry_after_seconds: 1`) is not a real reset window — honoring it
+    // verbatim expired the cooldown before the sweep's next tick and left the
+    // account churning active → cooldown → active with no visible backoff.
+    // The configured rate-limit cooldown is therefore a floor, not just a
+    // fallback. The raw stated value still rides on the classification
+    // (`statedCooldownMs`) so the auto-disable gate's sub-5-minute exemption
+    // keeps reading the provider's own number.
+    const cooldownMs =
+      s.statedCooldownMs === null
+        ? fallbackMs
+        : Math.max(s.statedCooldownMs, fallbackMs);
     // Same per-account reasoning as quota above: the failing account (or
     // its model, when modelId is present) backs off so routing tries the
     // next candidate instead of hammering the same key.

@@ -45,10 +45,12 @@ export const VERCEL_SPEC: ApiKeyProviderSpec = {
  * Verified live with a free-tier key: only
  * `nvidia/nemotron-3.5-lightning-free` is served on a free plan; the other
  * zero-priced listing rows are refused with 403 `no_providers_available`, so
- * they are not seeded. The two billed rows (`meituan/longcat-2.5`,
- * `inception/mercury-3`) are the operator's picks and carry the capabilities
- * the upstream itself declares — LongCat is the vision-capable coding row,
- * Mercury 3 is the diffusion row. Everything else comes from live discovery.
+ * they are not seeded. The four billed rows (`meituan/longcat-2.5`,
+ * `inception/mercury-3`, `tencent/hy4-flash`, `meta/muse-ember`) are the
+ * operator's picks and carry the capabilities the upstream itself declares —
+ * LongCat is the vision-capable coding row, Mercury 3 is the diffusion row,
+ * Hy4 flash is Tencent's cost-efficient agent row, and Muse Ember is Meta's
+ * multimodal agent row. Everything else comes from live discovery.
  */
 export const VERCEL_DEFAULT_MODELS: readonly ModelDefinition[] = [
   defineModel({
@@ -78,6 +80,28 @@ export const VERCEL_DEFAULT_MODELS: readonly ModelDefinition[] = [
     endpoint: VERCEL_CHAT_PATH,
     ctx: 1_000_000,
     out: 131_072,
+    reasoning: true,
+    toolCall: true,
+  }),
+  defineModel({
+    id: "tencent/hy4-flash",
+    wireFamily: "chat",
+    endpoint: VERCEL_CHAT_PATH,
+    ctx: 1_048_576,
+    out: 65_536,
+    vision: true,
+    reasoning: true,
+    toolCall: true,
+  }),
+  defineModel({
+    id: "meta/muse-ember",
+    wireFamily: "chat",
+    endpoint: VERCEL_CHAT_PATH,
+    ctx: 1_048_576,
+    out: 943_718,
+    vision: true,
+    document: true,
+    audio: true,
     reasoning: true,
     toolCall: true,
   }),

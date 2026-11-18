@@ -18,6 +18,10 @@ const ACCOUNT_ERROR_LABELS: Readonly<Record<string, string>> = {
   policy_blocked_banned: "Account banned",
   policy_blocked_invalid_request: "Request refused",
   rate_limit_transient: "Rate limited",
+  // The recoverable credential verdict: the account is cooling down and heals
+  // on its own — unlike `auth_invalidated`, which is the terminal "Re-login
+  // required" state handled below.
+  auth_rejected: "Credential rejected",
   missing_credential: "No credential",
   validation_required: "Verification required",
   model_unreachable: "Model unavailable",

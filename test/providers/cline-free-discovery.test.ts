@@ -126,13 +126,14 @@ describe("the shared free roster", () => {
     expect(openrouter).toEqual(kilo);
 
     // Cline seeds its own roster, probed from its account's `free` bucket. It
-    // is OpenRouter-backed, but the shared roster's ids are served by the
-    // openrouter and kilo accounts and not by Cline's — the listing names 17
-    // `:free` ids while Cline's own bucket names 5, sharing none. So Cline
-    // matches neither provider, and that divergence is the point: a seeded row
-    // that cannot serve is offered and then fails at dispatch.
+    // is OpenRouter-backed, and most ids are Cline's own spellings
+    // (`cline-free/…`, `…-free`) that the shared roster does not carry — but
+    // the two now genuinely overlap where both serve the same upstream row
+    // (`baidu/ernie-5.5-flash-preview:free` is in both, so the old "sharing
+    // none" premise is no longer true). The point that survives: Cline is not
+    // a mirror of kilo — it carries free ids the shared roster does not.
     expect(cline.length).toBeGreaterThan(0);
-    expect(cline.every((id) => !kilo.includes(id))).toBe(true);
+    expect(cline.some((id) => !kilo.includes(id))).toBe(true);
   });
 
   test("cline's pass roster is marked pro-only and its free rows are not", () => {

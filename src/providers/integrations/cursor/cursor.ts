@@ -27,6 +27,7 @@
 import { randomUUID } from "node:crypto";
 import { resolveCursorClientVersion, resolveCursorHeartbeatMs, resolveCursorWireTrace } from "../../../config/runtime";
 import { log } from "../../../observability/logger";
+import { GatewayError, type GatewayErrorCode } from "../../../protocol/gateway-error";
 import {
   canContainToolResult,
   joinTextParts,
@@ -44,7 +45,7 @@ import {
   type ProviderDispatchContext,
   type ProviderDispatchTarget,
 } from "../../provider-contracts";
-import { classifyCursorThrown } from "./cursor-errors";
+import { classifyCursorThrown, type CursorFailure } from "./cursor-errors";
 import {
   CURSOR_DEFAULT_CONTEXT_TOKENS,
   resolveCursorModelPair,
@@ -543,6 +544,54 @@ function failureCategory(): string {
   return "upstream";
 }
 
+/**
+ * Maps a Cursor failure policy to the public `stop_details` frame the
+ * terminal failed event carries. `attempt-finalize.terminalFailure` reads
+ * `stop_details.code` to map `quota_exceeded` → 429 and
+ * `authentication_failed` → 401; anything else stays `transport_unavailable`
+ * 502. This is the one place the Cursor policy vocabulary becomes the public
+ * gateway vocabulary.
+ */
+function cursorFailureStop(
+  failure: CursorFailure,
+): { code: string; status: number } {
+  switch (failure.policy) {
+    case "quota":
+      return { code: "quota_exceeded", status: 429 };
+    case "auth":
+      return { code: "authentication_failed", status: 401 };
+    case "abort":
+      return { code: "transport_closed", status: 499 };
+    default:
+      return { code: "transport_unavailable", status: 502 };
+  }
+}
+
+/**
+ * The typed upstream `GatewayError` for a failure observed *before* the
+ * dispatch committed (no `response_start` surfaced yet). Throwing it lets the
+ * attempt loop fail over to the next candidate instead of emitting an error
+ * into a stream the client already sees as successful — the 502 hole that
+ * made every Cursor upstream refusal final before the attempt loop could
+ * rotate. Auth/quota verdicts carry `credentialEvidence` so the account
+ * health classifier cools/parks the concrete account.
+ */
+function cursorFailureGatewayError(failure: CursorFailure): GatewayError {
+  const stop = cursorFailureStop(failure);
+  const credentialEvidence = failure.policy === "quota" || failure.policy === "auth";
+  return new GatewayError(
+    stop.code as GatewayErrorCode,
+    stop.status,
+    failure.message,
+    {
+      providerId: "cursor",
+      providerCode: failure.name ?? (failure.code === undefined ? "" : String(failure.code)),
+      ...(credentialEvidence ? { credentialEvidence: true } : {}),
+    },
+    "upstream",
+  );
+}
+
 // ── the adapter ──
 
 export class CursorAdapter implements ProviderAdapter {
@@ -599,7 +648,13 @@ export class CursorAdapter implements ProviderAdapter {
     context.abort_signal.addEventListener("abort", onAbort, { once: true });
 
     try {
-      yield { type: "response_start", sequence_number: nextSeq(), model: request.model, response_id: responseId };
+      // `response_start` is deliberately NOT emitted here. The stream contract
+      // is "a returned stream never fails over": returning a `Response`
+      // commits this candidate, so an upstream failure observed before the
+      // first real event must be throwable pre-commit. Both the fresh-run loop
+      // and `consumePump` yield `response_start` only once the first real pump
+      // item has arrived — so `failed` as the first item throws the typed
+      // upstream verdict and lets the attempt loop rotate.
 
       // ── in-band resume ──
       const parked = results.length > 0 ? parkedRegistry.peek(session) : undefined;
@@ -622,6 +677,7 @@ export class CursorAdapter implements ProviderAdapter {
               nextSeq,
               responseId,
               wireModelId: pair.requestedModel.modelId,
+              model: request.model,
               modelKey,
               onSessionEnd: () => {
                 cursorPumps.delete(session);
@@ -720,10 +776,13 @@ export class CursorAdapter implements ProviderAdapter {
           if (result.status === "failed") {
             pump.queue.push({ kind: "failed", failure: result.failure });
             // A dead run cannot be resumed: release the parked entry if one
-            // exists (a no-op otherwise) so the lease travels home, and drop
-            // the pump so the next request opens fresh.
+            // exists (a no-op otherwise) so the lease travels home, drop the
+            // pump so the next request opens fresh, and close the queue so a
+            // waiting consumer observes the end instead of hanging.
             cursorPumps.delete(session);
             parkedRegistry.release(session, "cursor run failed while parked");
+            pump.queue.close();
+            pump.transport?.abort("cursor run failed while parked");
           }
         })
         .catch((error) => {
@@ -736,10 +795,37 @@ export class CursorAdapter implements ProviderAdapter {
       cursorPumps.set(session, pump);
 
       let sawTurnEnd = false;
+      let started = false;
       for (;;) {
         const next = await pump.queue.next();
-        if (next.done) break;
+        if (next.done) {
+          if (!started) {
+            // The queue closed before producing anything (the turn crashed or
+            // the transport cut before a frame landed). Nothing has been
+            // surfaced — this is a pre-commit failure, so fail over.
+            throw new GatewayError(
+              "transport_unavailable",
+              502,
+              "Cursor run ended before producing a result",
+              { providerId: "cursor" },
+              "upstream",
+            );
+          }
+          break;
+        }
         const item = next.value;
+        if (!started) {
+          if (item.kind === "failed") {
+            // The first real pump item is a failure: no `response_start` has
+            // been surfaced, so the attempt loop can still fail over to the
+            // next candidate. Throw the mapped upstream verdict instead of
+            // emitting an error into a stream the client already sees as
+            // successful.
+            throw cursorFailureGatewayError(item.failure);
+          }
+          started = true;
+          yield { type: "response_start", sequence_number: nextSeq(), model: request.model, response_id: responseId };
+        }
         if (item.kind === "text") {
           yield { type: "content_delta", sequence_number: nextSeq(), content: { kind: "text", text: item.text } };
           continue;
@@ -806,13 +892,17 @@ export class CursorAdapter implements ProviderAdapter {
           };
           return;
         }
-        // failed
+        // failed — mid-stream: a result was already surfaced, so the stream is
+        // committed. Emit the in-band error terminal with the mapped
+        // `stop_details`; `terminalFailure` reads them to preserve the
+        // upstream's code/status on the client envelope.
         log.warn("cursor: run failed", {
           policy: item.failure.policy,
           name: item.failure.name ?? "",
           code: item.failure.code ?? "",
           message: item.failure.message,
         });
+        const stop = cursorFailureStop(item.failure);
         yield {
           type: "error",
           sequence_number: nextSeq(),
@@ -825,6 +915,7 @@ export class CursorAdapter implements ProviderAdapter {
           sequence_number: nextSeq(),
           state: "failed",
           stop_reason: "error",
+          stop_details: { code: stop.code, status: stop.status, message: item.failure.message },
           response_id: responseId,
         };
         break;
@@ -848,14 +939,25 @@ async function* consumePump(
     readonly nextSeq: () => number;
     readonly responseId: string;
     readonly wireModelId: string;
+    readonly model?: string;
     readonly modelKey: string;
     readonly onSessionEnd: () => void;
     readonly onReleased: () => void;
   },
 ): AsyncGenerator<CanonicalEvent> {
+  let started = false;
   for (;;) {
     const next = await pump.queue.next();
     if (next.done) {
+      if (!started) {
+        throw new GatewayError(
+          "transport_unavailable",
+          502,
+          "Cursor run ended before producing a result",
+          { providerId: "cursor" },
+          "upstream",
+        );
+      }
       yield {
         type: "terminal",
         sequence_number: scope.nextSeq(),
@@ -867,6 +969,16 @@ async function* consumePump(
       return;
     }
     const item = next.value;
+    if (!started) {
+      if (item.kind === "failed") throw cursorFailureGatewayError(item.failure);
+      started = true;
+      yield {
+        type: "response_start",
+        sequence_number: scope.nextSeq(),
+        model: scope.model ?? scope.wireModelId,
+        response_id: scope.responseId,
+      };
+    }
     if (item.kind === "text") {
       yield { type: "content_delta", sequence_number: scope.nextSeq(), content: { kind: "text", text: item.text } };
       continue;
@@ -938,6 +1050,7 @@ async function* consumePump(
       code: item.failure.code ?? "",
       message: item.failure.message,
     });
+    const stop = cursorFailureStop(item.failure);
     yield {
       type: "error",
       sequence_number: scope.nextSeq(),
@@ -950,6 +1063,7 @@ async function* consumePump(
       sequence_number: scope.nextSeq(),
       state: "failed",
       stop_reason: "error",
+      stop_details: { code: stop.code, status: stop.status, message: item.failure.message },
       response_id: scope.responseId,
     };
     scope.onSessionEnd();

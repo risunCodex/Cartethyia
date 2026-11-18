@@ -12,7 +12,10 @@ import {
   latestDeadlineMs,
   unsupportedModelCooldownMs,
 } from "./account-error-classification";
-import { resolveAccountDisabledRecoveryMs } from "../../config/cooldowns";
+import {
+  resolveAccountDisabledRecoveryMs,
+  resolveAccountRateLimitCooldownMs,
+} from "../../config/cooldowns";
 import type { AccountErrorClassification, AccountFailureEvidence } from "./account-error-classification";
 import { resolveCooldownRule } from "./cooldown-rules";
 import { mapPlanToTier } from "./account-tier";
@@ -180,10 +183,16 @@ export async function recordAccountFailure(
       effective.status === "cooldown" &&
       effective.mutatesAccount &&
       options?.origin === "upstream";
+    // The gate reads the provider's *own* stated window (`statedCooldownMs`),
+    // not `cooldownMs`: the rate-limit arm floors a trivially short
+    // `retry_after` up to the configured cooldown, and judging the floored
+    // value here would auto-disable on exactly the sub-5-minute windows D04
+    // exists to protect (e.g. Inception's per-minute limit).
+    const statedWindowMs = effective.statedCooldownMs ?? effective.cooldownMs;
     const statedTooShort =
       effective.providerStated === true &&
-      effective.cooldownMs > 0 &&
-      effective.cooldownMs < AUTO_DISABLE_STATED_MIN_MS;
+      statedWindowMs > 0 &&
+      statedWindowMs < AUTO_DISABLE_STATED_MIN_MS;
     let autoDisableActive = false;
     if (autoDisableTarget && !statedTooShort) {
       autoDisableActive = await autoDisableRateLimitedEnabled(client, account.tenantId);
@@ -712,6 +721,21 @@ export async function applyAccountVerdict(
         if (isOperatorDisable) return false;
       }
       const now = verdict.createdAt ?? new Date();
+      // `status = "cooldown"` must never persist without a deadline:
+      // `sweepExpiredCooldowns` only selects rows whose `cooldownUntil` has
+      // elapsed, so a null deadline parks the account out of rotation forever
+      // while it still reads `cooldown`. An explicit deadline wins; an omitted
+      // one keeps the row's existing deadline; a missing deadline gets the
+      // bounded rate-limit fallback so the verdict always self-heals. Every
+      // other status keeps the old tri-state: `undefined` leaves the column
+      // untouched, `null` clears it (a terminal disable), a Date stamps it.
+      const resolvedCooldownUntil =
+        verdict.status === "cooldown"
+          ? ((verdict.cooldownUntil === undefined
+              ? row.cooldownUntil
+              : verdict.cooldownUntil) ??
+            new Date(now.getTime() + resolveAccountRateLimitCooldownMs()))
+          : verdict.cooldownUntil;
       await tx
         .update(providerAccounts)
         .set({
@@ -719,9 +743,9 @@ export async function applyAccountVerdict(
           lastError: (verdict.reason ?? "Account failed").slice(0, 500),
           lastErrorCategory: verdict.category ?? "check_failed",
           lastErrorAt: now,
-          ...(verdict.cooldownUntil === undefined
+          ...(resolvedCooldownUntil === undefined
             ? {}
-            : { cooldownUntil: verdict.cooldownUntil }),
+            : { cooldownUntil: resolvedCooldownUntil }),
         })
         .where(eq(providerAccounts.id, verdict.accountId));
       await writeHealthEvent(tx, {

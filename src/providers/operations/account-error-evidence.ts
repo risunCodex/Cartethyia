@@ -356,6 +356,9 @@ export function accountErrorContext(
     // invisible). Defaulting true keeps existing callers conservative.
     routesVisible: true,
     providerStated,
+    // The provider's own stated window, before any rule floors it — see
+    // `AccountErrorClassification.statedCooldownMs`.
+    statedCooldownMs,
     // Usage-limit exhaustion, spending caps, and credential verdicts rotate to a
     // sibling account now; transient throttles (per-minute, capacity) do not.
     // The transient guard also applies to a category the classifier resolved to

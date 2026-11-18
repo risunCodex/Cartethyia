@@ -151,7 +151,14 @@ function isTransientTimeout(error: string | null | undefined): boolean {
 export async function recordAccountCheck(
   db: CartethyiaDatabase,
   accountId: string,
-  outcome: { ok: boolean; error?: string | null; category?: string | null; authInvalidated?: boolean },
+  outcome: {
+    ok: boolean;
+    error?: string | null;
+    category?: string | null;
+    authInvalidated?: boolean;
+    /** True when the failure says nothing about the account (transient, or a provisioning gap). */
+    transient?: boolean;
+  },
   snapshotInvalidator?: { invalidate(): unknown },
 ): Promise<void> {
   if (outcome.authInvalidated === true) {
@@ -174,16 +181,31 @@ export async function recordAccountCheck(
     // A successful quota refresh is the freshest evidence about the account's
     // health: heal a cooldown that the refresh shows is no longer justified, so
     // the account returns to rotation immediately instead of waiting out the
-    // remainder of a stale fallback window. Only healable scopes heal — an
-    // auth/policy cooldown must never be lifted by a quota report (the
-    // credential is still refused). `lastErrorCategory` carries the category
-    // that parked the account, so the heal is scoped by the same verdict the
-    // health machine wrote.
+    // remainder of a stale fallback window. Only healable scopes heal — a
+    // *terminal* auth/policy verdict must never be lifted by a quota report
+    // (`auth_invalidated` is disabled anyway, so it never reaches this branch).
+    // `auth_rejected` is the exception the set below names: it is the
+    // recoverable credential verdict, and a quota fetch that just succeeded is
+    // fresh proof the credential is accepted. `lastErrorCategory` carries the
+    // category that parked the account, so the heal is scoped by the same
+    // verdict the health machine wrote.
     const healableCategories = new Set([
       "quota_exhausted",
       "rate_limit_transient",
       "model_capacity",
       "model_unreachable",
+      // `quota_fetch_failed` is the park reason when the quota surface itself
+      // refused/errored. A successful read is direct counter-evidence that the
+      // last failure was transient or stale (e.g. Kiro's profile-400 before
+      // the account's profile resolved), so it must lift immediately instead of
+      // leaving the account parked for the whole fallback window.
+      "quota_fetch_failed",
+      // `auth_rejected` is the *recoverable* credential verdict: a quota fetch
+      // that just succeeded is fresh proof the credential is accepted, so the
+      // cooldown lifts instead of waiting out a rejection that no longer
+      // reproduces. `auth_invalidated` stays excluded — that verdict is
+      // terminal and never reaches `cooldown` status anyway.
+      "auth_rejected",
       "unknown",
       "check_failed",
     ]);
@@ -226,7 +248,7 @@ export async function recordAccountCheck(
       .where(and(eq(providerAccounts.id, accountId), eq(providerAccounts.status, "active")));
     return;
   }
-  const transient = isTransientTimeout(outcome.error);
+  const transient = outcome.transient === true || isTransientTimeout(outcome.error);
   // Count the failure in the same statement — unless it is a transient
   // timeout (see below). A quota endpoint that keeps refusing is an account
   // problem, and the row has to say so: the dashboard reads
@@ -549,6 +571,7 @@ async function runQuotaRefresh(
         ok: quota.error === null,
         ...(quota.error === null ? {} : { error: quota.error, category: failure ?? "quota_fetch_failed" }),
         ...(quota.authInvalidated === true ? { authInvalidated: true } : {}),
+        ...(quota.transient === true ? { transient: true } : {}),
       },
       deps.snapshotInvalidator,
     );

@@ -105,13 +105,16 @@ test("an unknown numeric provider code never invalidates the credential", () => 
   expect(classification.status).toBe("cooldown");
 });
 
-test("textual auth rejection still invalidates the credential", () => {
+test("textual auth rejection is the recoverable auth_rejected verdict", () => {
   const classification = classifyAccountError(new Error("invalid api key"), {
     origin: "upstream",
     scope: "account",
     providerId: "qoder",
   });
-  expect(classification.category).toBe("auth_invalidated");
+  // No revocation named: the account cools down as `auth_rejected` and heals
+  // on its own — `auth_invalidated` is reserved for the terminal verdict.
+  expect(classification.category).toBe("auth_rejected");
+  expect(classification.status).toBe("cooldown");
 });
 
 test("Qoder gRPC quota_exceeded with providerCode cools the model for a day", () => {

@@ -31,6 +31,14 @@ export interface ProviderQuotaResult {
   readonly error: string | null;
   /** The provider explicitly rejected the account credential; do not retry it automatically. */
   readonly authInvalidated?: boolean;
+  /**
+   * True when the failure is not a verdict on the account — a quota surface
+   * that refused for a reason the credential does not fix (e.g. Kiro's 400
+   * `Invalid profileArn` when the account's profile is not resolved yet). Such
+   * a failure is annotated but never counted toward the park threshold, so the
+   * account stays in rotation and the sweep retries it on the next pass.
+   */
+  readonly transient?: boolean;
   /** Display identity the billing surface reported, when it reported one. */
   readonly accountLabel?: string;
 }

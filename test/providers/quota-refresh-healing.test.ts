@@ -80,6 +80,28 @@ describe("recordAccountCheck healing", () => {
     expect(row.lastRecoveredAt).not.toBeNull();
   });
 
+  test("a quota-fetch-failed cooldown is lifted by a successful refresh", async () => {
+    // Kiro accounts get parked `quota_fetch_failed` when the management surface
+    // 400s before the account's profile resolves; once the profile is present
+    // the next fetch succeeds, and a success must lift the cooldown instead of
+    // leaving the account parked for the whole fallback window.
+    await setHealth({
+      status: "cooldown",
+      lastErrorCategory: "quota_fetch_failed",
+      lastError: "management-get: HTTP 400",
+      cooldownUntil: new Date(Date.now() + 6 * 60 * 60 * 1000),
+      consecutiveFailures: 3,
+    });
+
+    await recordAccountCheck(getDb(), world.accountId, { ok: true });
+
+    const row = await readHealth();
+    expect(row.status).toBe("active");
+    expect(row.cooldownUntil).toBeNull();
+    expect(row.lastErrorCategory).toBeNull();
+    expect(row.consecutiveFailures).toBe(0);
+  });
+
   test("a healable cooldown with a null category is also lifted", async () => {
     await setHealth({
       status: "cooldown",

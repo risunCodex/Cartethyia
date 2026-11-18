@@ -41,14 +41,16 @@ describe("Vercel AI Gateway quota", () => {
 });
 
 describe("Vercel AI Gateway default roster", () => {
-  test("seeds the free nemotron row plus the two billed picks", () => {
-    expect(VERCEL_DEFAULT_MODELS).toHaveLength(3);
+  test("seeds the free nemotron row plus the four billed picks", () => {
+    expect(VERCEL_DEFAULT_MODELS).toHaveLength(5);
     const ids = new Set(VERCEL_DEFAULT_MODELS.map((model) => model.modelId));
     expect(ids).toEqual(
       new Set([
         "nvidia/nemotron-3.5-lightning-free",
         "meituan/longcat-2.5",
         "inception/mercury-3",
+        "tencent/hy4-flash",
+        "meta/muse-ember",
       ]),
     );
   });
@@ -64,7 +66,7 @@ describe("Vercel AI Gateway default roster", () => {
     const billed = VERCEL_DEFAULT_MODELS.filter(
       (model) => model.modelId !== "nvidia/nemotron-3.5-lightning-free",
     );
-    expect(billed).toHaveLength(2);
+    expect(billed).toHaveLength(4);
     for (const model of billed) {
       expect(model.freeTier).toBeUndefined();
       expect(model.proOnly).toBeUndefined();
@@ -84,5 +86,19 @@ describe("Vercel AI Gateway default roster", () => {
     expect(mercury.toolCall).toBe(true);
     expect(mercury.contextLimit).toBe(1_000_000);
     expect(mercury.outputLimit).toBe(131_072);
+
+    const hy4 = VERCEL_DEFAULT_MODELS.find((model) => model.modelId === "tencent/hy4-flash")!;
+    expect(hy4.modalities.input).toContain("image");
+    expect(hy4.reasoning).toBe(true);
+    expect(hy4.toolCall).toBe(true);
+    expect(hy4.contextLimit).toBe(1_048_576);
+    expect(hy4.outputLimit).toBe(65_536);
+
+    const ember = VERCEL_DEFAULT_MODELS.find((model) => model.modelId === "meta/muse-ember")!;
+    expect(ember.modalities.input).toEqual(expect.arrayContaining(["text", "image", "document", "audio"]));
+    expect(ember.reasoning).toBe(true);
+    expect(ember.toolCall).toBe(true);
+    expect(ember.contextLimit).toBe(1_048_576);
+    expect(ember.outputLimit).toBe(943_718);
   });
 });
