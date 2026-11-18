@@ -36,8 +36,9 @@ const candidate: ProviderDispatchTarget = {
 
 describe("GitHub Copilot Auto routing", () => {
   test("maps catalog variants to supported Auto tiers", () => {
-    expect(GITHUB_AUTO_MODEL_TIERS.get("auto")).toBe("balance");
+    expect(GITHUB_AUTO_MODEL_TIERS.has("auto")).toBe(false);
     expect(GITHUB_AUTO_MODEL_TIERS.get("gpt-6-luna")).toBe("efficiency");
+    expect(GITHUB_AUTO_MODEL_TIERS.get("mai-code-2-flash")).toBe("intelligence");
     expect(GITHUB_AUTO_MODEL_TIERS.has("gpt-6-luna-low")).toBe(false);
     expect(GITHUB_AUTO_MODEL_TIERS.has("gpt-6-luna-medium")).toBe(false);
     expect(GITHUB_AUTO_MODEL_TIERS.has("gpt-6-luna-high")).toBe(false);

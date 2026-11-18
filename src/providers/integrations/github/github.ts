@@ -68,8 +68,11 @@ export const GITHUB_MESSAGES_ENDPOINT_PATH = "/v1/messages" as const;
 
 /** Supported virtual Copilot Auto catalog ids and their router tiers. */
 export const GITHUB_AUTO_MODEL_TIERS: ReadonlyMap<string, "efficiency" | "balance" | "intelligence"> = new Map([
-  ["auto", "balance"],
   ["gpt-6-luna", "efficiency"],
+  // Intelligence-tier alias: a request for the model the upstream picks on
+  // the intelligence tier enters the same /auto flow pinned to that tier
+  // (verified live 2026-11-18: intelligence → mai-code-2-flash).
+  ["mai-code-2-flash", "intelligence"],
 ]);
 
 /** Copilot model ids excluded from both the fallback and discovered catalogs. */

@@ -43,6 +43,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   new free rows joined it: `glm-5.3-flash`, `gemini-3.8-flash`, and the
   renamed V4.1 — seven free rows total, effort ladders from the live
   listing.
+- **GitHub Copilot Auto gains an intelligence alias.** `mai-code-2-flash`
+  now enters the `/auto` flow pinned to the intelligence tier, alongside
+  the existing `gpt-6-luna` efficiency alias; the legacy virtual `auto`
+  id left the offline roster (its balance-tier decisions are picked
+  dynamically by the upstream either way). Verified live: every tier
+  answered its decision and a follow-up turn
+  (`scripts/provider-probing/github/github-auto-tier-probe.ts`).
 
 ### Fixed
 
