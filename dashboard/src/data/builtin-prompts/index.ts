@@ -8,28 +8,20 @@
  * an operator edits and saves a built-in, their version wins.
  */
 import type { SystemPromptPreset } from "../../../../src/protocol/system-prompt-contracts";
-import jinhsiAgentRaw from "./jinhsi-agent.txt?raw";
 import jinhsiJGeneralRaw from "./jinhsi-jgeneral.txt?raw";
 import generalJBreakRaw from "./general-jbreak.txt?raw";
 
 export const BUILTIN_PRESETS: readonly SystemPromptPreset[] = [
   {
-    id: "builtin-jinhsi-agent",
-    name: "Jinhsi Agent by risun",
-    enabled: true,
-    mode: "append",
-    text: jinhsiAgentRaw,
-  },
-  {
     id: "builtin-jinhsi-jgeneral",
-    name: "Jinxi JGeneral",
+    name: "Jinxi General Agent",
     enabled: true,
     mode: "append",
     text: jinhsiJGeneralRaw,
   },
   {
     id: "builtin-general-jbreak",
-    name: "General JBreak",
+    name: "General Assistant",
     enabled: true,
     mode: "append",
     text: generalJBreakRaw,
