@@ -28,6 +28,9 @@ commit. This entry is the canonical restore anchor — do not delete it.
   kilo/OpenRouter free roster; `particle-ai/particle-1:free` joins Cline's free
   bucket; DeepAI gains the metered `gpt-6.1-terra` and `claude-sonnet-5-5`. Limits
   mirror each family's existing rows, pending a live re-probe.
+- **Deployment reference expanded.** `documentation/reference/deployment.md`
+  gains a WireGuard prerequisites checklist and a tested DUDUL (DB) + PakaiCloud
+  (app) topology-3 reference, with a topology-4 → topology-3 migration checklist.
 
 ### Changed
 

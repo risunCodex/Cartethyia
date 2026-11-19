@@ -291,6 +291,46 @@ a public IP, a global IPv6 on both ends, or a UDP port forwarded by the
 provider's NAT panel. If neither box can offer that, use
 [topology 4](#topology-4--remote-split-over-a-direct-ssh-tunnel).
 
+#### WireGuard prerequisites — read before choosing this topology
+
+Not every VPS can run WireGuard "out of the box". Verify **all** of these
+before committing; if any fails, fall back to topology 4 (SSH tunnel) —
+outbound TCP always works.
+
+1. **Kernel + tooling on both boxes**
+   - Kernel with WireGuard support (`modprobe wireguard` succeeds, or built-in
+     on kernel ≥ 5.6) and the `wireguard-tools` package (`wg`, `wg-quick`).
+   - `iptables`/`nftables` available if you use `PostUp`/`PostDown` rules
+     (NAT/masquerade for forwarded traffic).
+2. **A public UDP endpoint on at least one side** — pick one:
+   - a public IPv4/IPv6 on the box itself, **or**
+   - a provider-side **UDP port forward** (NAT panel) pointing at the box's
+     private IP and port 51820, **or**
+   - global IPv6 on *both* ends (no NAT).
+   - If **both** boxes are behind NAT with no UDP forward and no IPv6, WG
+     cannot be established — use topology 4.
+3. **Firewall on the listening side** must accept inbound UDP on the chosen
+   port (default 51820). On the NAT box, also allow the forwarded port.
+4. **PersistentKeepalive = 25** on the dialing side, so the NAT mapping stays
+   open. Without it the tunnel silently dies after a few minutes of idle.
+5. **MTU**: WG's default 1420 often needs lowering on tunnelled/PPPoE paths
+   (symptom: small packets pass, large ones stall). Set `MTU = 1380` (or 1280)
+   in both `[Interface]` blocks if you see partial transfers.
+6. **IP plan**: pick a dedicated `/24` (e.g. `10.77.0.0/24`) and assign one
+   address per box. The DB services bind to the DB box's WG address only —
+   never `0.0.0.0`.
+7. **Boot persistence**: `systemctl enable --now wg-quick@wg0` on both boxes,
+   and keep the service ordered after `network-online.target`.
+8. **Cleanup discipline**: when retiring a peer, remove it from `wg0.conf` *and*
+   run `wg set wg0 peer <PUBKEY> remove`. Never `wg-quick down` a live interface
+   to retire a peer — the DB services bind to its address and every connection
+   string breaks.
+
+> Symptom checklist if WG won't come up: `wg show` shows no handshake → UDP
+> blocked/not forwarded; handshake OK but no ping → firewall on the DB box
+> blocking the WG subnet; ping OK but DB refused → service bound to the wrong
+> address or not listening on the WG IP.
+
 ### Setup
 
 1. Install `wireguard-tools` on both boxes and generate a keypair on each
@@ -457,6 +497,57 @@ side that accepts (the app box) runs a stock, unmodified sshd.
 - If a UDP path appears later (provider forward, IPv6 on both ends, a public
   IP), migrate to [WireGuard](#topology-3--remote-split-over-wireguard): flip
   the `.env` connection strings to the tunnel addresses and retire this unit.
+
+## Real-world reference: DUDUL (DB) + PakaiCloud (app) over WireGuard
+
+A concrete, tested instance of [topology 3](#topology-3--remote-split-over-wireguard)
+that also illustrates the prerequisites above. Both boxes are NAT VPS products;
+WireGuard works because at least one side has a reachable UDP endpoint and the
+provider forwards the port.
+
+| Box | Role | Specs | WG IP | Public ingress |
+| --- | --- | --- | --- | --- |
+| DUDUL | database (PostgreSQL 17 + Redis 8) | 2 GiB RAM, 30 GiB disk | `10.77.0.2/24` | none (DB only) |
+| PakaiCloud | app (Cartethyia gateway) | 1 vCPU, 960 MiB RAM | `10.77.0.1/24` | Cloudflare tunnel (outbound) |
+
+- App `.env` (PakaiCloud): `DATABASE_URL=postgres://...@10.77.0.2:6432/cartethyia`,
+  `REDIS_URL=redis://:...@10.77.0.2:6379/0` — PgBouncer in transaction mode on `:6432`,
+  direct Postgres on `:5432` (kept for admin/migrations only).
+- DB services on DUDUL bind to `10.77.0.2` (and `127.0.0.1`) only; the WG
+  subnet `10.77.0.0/24` is allowed through the host firewall on ports 5432/6379/6432.
+- When fronting Postgres with PgBouncer in transaction mode, set
+  `ignore_startup_parameters = extra_float_digits, statement_timeout, lock_timeout,
+  idle_in_transaction_session_timeout, application_name, search_path, DateStyle,
+  TimeZone, client_encoding, standard_conforming_strings` — the app's `pg` driver
+  sends several of these at connect time and PgBouncer rejects them with
+  `08P01 unsupported startup parameter` otherwise.
+- Cloudflare tunnel runs on the **app** box, origin `http://127.0.0.1:8080`
+  (never `localhost` — see [ingress](#ingress-cloudflare-tunnel)).
+- Cloudflare tunnel runs on the **app** box, origin `http://127.0.0.1:8080`
+  (never `localhost` — see [ingress](#ingress-cloudflare-tunnel)).
+- A retired third box (Dahono) was decommissioned as part of this migration:
+  app + tunnel stopped and removed, `/opt/cartethyia` deleted, leaving SSH only.
+
+### Migration checklist (old topology 4 → topology 3)
+
+1. **Back up** the data box first (`pg_dump -Fc`, Redis `BGSAVE`); copy the
+   dumps off-host.
+2. Provision Postgres + Redis on the new DB box; restore core data only
+   (truncate telemetry/audit/health/session tables — they are not worth moving).
+3. Bring up WireGuard on both boxes, verify `ping <WG_DB_IP>` and a real
+   `SELECT 1` / Redis `PING` across the tunnel before touching the app.
+4. Install the app on the new app box (clone, `bun install`, build dashboard
+   elsewhere and copy `dist/dashboard` if the box is RAM-tight), write `.env`
+   with WG addresses, start the service, check `/health/ready`.
+5. Move or re-point the Cloudflare tunnel to the new app box; verify public
+   `/health/ready` returns 200.
+6. **Clean up the old hosts** so nothing runs twice: stop/disable (then delete)
+   the old app, tunnel, and data services and remove their unit files; delete
+   app directories. Leave SSH for standby access.
+7. Enable `wg-quick@wg0` on both boxes for boot persistence.
+
+> If the DB box is RAM-tight, build the dashboard on a larger box and `scp`
+> the `dist/dashboard` tarball over — the build needs ~1 GiB peak RSS.
 
 ---
 
