@@ -13,22 +13,42 @@ The gateway never executes a Cursor native tool. The Run announces itself as an
 external executor (`x-cursor-agent-allowed-tools:
 mcp_tool_call,get_mcp_tools_tool_call`), which turns Cursor's built-ins off
 server-side, and the caller's tools are advertised through the
-`requestContext` handshake (`providerIdentifier: "tools"`); `mcp_tools` on the
-run request stays empty. Every tool call Cursor's model makes reaches the
-caller:
+`requestContext` handshake (`providerIdentifier: "pi-agent"`, the reference
+client's live-verified literal) verbatim — a caller tool named like a native
+(`read`, `todo`) still routes through `mcp_tool_call` and must not be dropped
+from the catalog. `mcp_tools` on the run request stays empty. Every tool call
+Cursor's model makes reaches the caller:
 
 - Held `mcp_args` calls surface to the caller as they arrive; the dispatch ends
-  with a tool-use terminal while the Run stays parked (heartbeats keep its
-  counted tool batch open).
-- The next request resumes the parked run in-band only when all three resume
-  conditions hold — same model and wire id, same conversation, and exactly one
-  result per held call (`canResumeParkedRun`). Anything else releases the run
-  and the turn rebuilds from history. A parked run idles out after 30 minutes
-  (`CURSOR_PARKED_IDLE_MS`).
+  with a tool-use terminal that carries `usage_deferred` (the upstream turn is
+  still open, so the interim response is not estimated and billed as a finished
+  turn — the real usage arrives with the resumed turn's `turn_ended`) while the
+  Run stays parked (heartbeats keep its counted tool batch open).
+- Smart-mode approval-only frames are gate probes, answered immediately:
+  approved for a tool the caller declared, rejected for one it did not. The
+  real call, when it follows, is held like any other.
+- The next request resumes the parked run in-band only when the resume
+  conditions hold — same model and wire id, same conversation key, exactly one
+  result per held call (`canResumeParkedRun`) — and the request ends on pure
+  tool results. A Messages-origin turn that carries `tool_result` blocks
+  together with follow-up text cannot resume (the held run would never see the
+  text); it supersedes the park and rebuilds, which carries both. The
+  conversation key comes from the wire conversation ids when the caller sends
+  them, else the gateway's cross-surface session resolver (inbound session
+  headers such as `x-opencode-session`/`x-claude-code-session-id`, the
+  Responses `conversation.conversation_id`, or a hash of the opening turn) — a
+  stateless caller never mints a fresh identity per request. Anything else
+  releases the run and the turn rebuilds from history. A parked run idles out
+  after 30 minutes (`CURSOR_PARKED_IDLE_MS`), swept on every park, not only on
+  a same-key peek.
+- The declared-batch counters reset when a server-declared step's results are
+  collected, so the next step's listing is judged on its own — a stale total
+  would satisfy it immediately and split the next batch across responses.
 - Pairing is mandatory: every exec-dispatched call leaves exactly one
   `toolResult` in the transcript, including interrupted ones
-  (`flushOpenToolCalls`). An unpaired call is stripped from every rebuilt
-  transcript upstream, which silently corrupts the next turn.
+  (`flushOpenToolCalls`, wired into teardown). An unpaired call is stripped
+  from every rebuilt transcript upstream, which silently corrupts the next
+  turn.
 - `interaction_query` frames (hosted web search, Exa, plan gates) are answered
   with an explicit rejection — the gateway serves none of the hosted
   capabilities, and a dropped frame strands the stream on non-semantic
@@ -57,8 +77,11 @@ History becomes one content-addressed blob per record (`root_prompt_messages_jso
 holds SHA-256 ids the server pulls over the KV channel; `get` for an unknown
 blob answers empty, which the server treats as "rebuild that record"). System
 prompt and instructions ride as system records; the trailing user turn rides
-the action — a request that instead ends in tool results resumes the run. The
-final checkpoint of a clean turn is remembered byte-for-byte under the wire
+the action — a request that instead ends in tool results resumes the run. A
+`tool_result` riding that final user turn (the Messages shape: results and
+follow-up text in one turn) still reaches the transcript as its own tool
+record, keeping the assistant's call paired; only the text rides the action.
+The final checkpoint of a clean turn is remembered byte-for-byte under the wire
 route plus the digest of the history that produced it; a later request with the
 same digest replays the server's own records, anything else rebuilds from
 content.

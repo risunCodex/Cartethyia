@@ -27,6 +27,7 @@
 import { randomUUID } from "node:crypto";
 import { resolveCursorClientVersion, resolveCursorHeartbeatMs, resolveCursorWireTrace } from "../../../config/runtime";
 import { log } from "../../../observability/logger";
+import { resolveInboundSessionId } from "../../operations/session-resolution";
 import { GatewayError, type GatewayErrorCode } from "../../../protocol/gateway-error";
 import {
   canContainToolResult,
@@ -203,9 +204,11 @@ interface CursorHistoryBuildInput {
  * action; a request that instead ends in tool results keeps its full history
  * and resumes the run instead. Tool result names are recovered from the
  * assistant tool-call that precedes them — the canonical `toolResult` part
- * carries only the call id.
+ * carries only the call id. Exported for the rebuild tests: the mixed-turn
+ * pairing contract ("a `tool_result` riding the final user turn still reaches
+ * the transcript") is what keeps Messages-origin tool loops alive.
  */
-async function toCursorHistory(request: CanonicalRequest, context: ProviderDispatchContext): Promise<CursorHistoryBuildInput> {
+export async function toCursorHistory(request: CanonicalRequest, context: ProviderDispatchContext): Promise<CursorHistoryBuildInput> {
   const toolNames = new Map<string, string>();
   for (const message of request.messages) {
     for (const call of toolCallParts(message)) toolNames.set(call.call_id, call.name);
@@ -268,6 +271,25 @@ async function toCursorHistory(request: CanonicalRequest, context: ProviderDispa
         content.push({ type: "image", mediaType: image.mimeType, data: Buffer.from(image.data).toString("base64") });
       }
       if (content.length > 0) history.push({ role: "user", content });
+    }
+  }
+
+  // A Messages-origin caller sends `tool_result` blocks and the follow-up
+  // text in ONE user turn. The promoted active turn must not swallow those
+  // results: they answer the assistant calls in the history above and keep
+  // the transcript paired — without them the rebuild refuses the history
+  // ("tool result ... has no matching tool call") and every second round of
+  // a tool loop fails outright. Only the turn's text/images ride the live
+  // user action.
+  if (active !== undefined) {
+    for (const part of toolResultParts(active)) {
+      history.push({
+        role: "tool",
+        toolCallId: part.call_id,
+        toolName: toolNames.get(part.call_id) ?? "",
+        result: resultText(part),
+        isError: part.is_error === true,
+      });
     }
   }
 
@@ -436,6 +458,13 @@ class CursorTurnPump {
 
   /** Tears the pump down without a resume (transport abort included). */
   dispose(reason: string): void {
+    // Pair every still-held call with an error answer while the transport may
+    // still carry it: an unpaired call is stripped from every rebuilt
+    // transcript, and a never-answered exec id leaves the server waiting on a
+    // frame that will never come. Best-effort — a dead transport swallows.
+    for (const answer of this.relay.flushOpenToolCalls()) {
+      void this.transport?.write(answer).catch(() => undefined);
+    }
     this.queue.close();
     this.transport?.abort(reason);
   }
@@ -451,10 +480,15 @@ class CursorTurnPump {
   #answerKv(kv: KvServerMessage, transport: CursorRunTransport): void {
     // The generated interface types ids and bytes optional; the decode layer
     // materialises them, and a frame that somehow lost its payload is dropped
-    // rather than answered with garbage.
+    // rather than answered with garbage. Dropping leaves the server's blob
+    // fetch waiting forever, so the drop is logged — this branch should be
+    // unreachable, and if it fires it is evidence of a decode-layer gap.
     if (kv.getBlobArgs !== undefined) {
       const blobId = kv.getBlobArgs.blobId;
-      if (!(blobId instanceof Uint8Array)) return;
+      if (!(blobId instanceof Uint8Array)) {
+        log.warn("cursor: KV get_blob frame lost its blob id; left unanswered");
+        return;
+      }
       const answer = answerKvRequest({ kind: "get", id: kv.id ?? 0, blobId }, this.#store);
       void transport.write({ kvClientMessage: answer }).catch(() => undefined);
       return;
@@ -462,7 +496,10 @@ class CursorTurnPump {
     if (kv.setBlobArgs !== undefined) {
       const blobId = kv.setBlobArgs.blobId;
       const blobData = kv.setBlobArgs.blobData;
-      if (!(blobId instanceof Uint8Array) || !(blobData instanceof Uint8Array)) return;
+      if (!(blobId instanceof Uint8Array) || !(blobData instanceof Uint8Array)) {
+        log.warn("cursor: KV set_blob frame lost its id or payload; left unanswered");
+        return;
+      }
       const answer = answerKvRequest({ kind: "set", id: kv.id ?? 0, blobId, blobData }, this.#store);
       void transport.write({ kvClientMessage: answer }).catch(() => undefined);
     }
@@ -624,7 +661,21 @@ export class CursorAdapter implements ProviderAdapter {
     const pair = resolveCursorModelPair(route);
     const modelKey = candidate.model_id;
 
-    const conversationId = request.conversation_id ?? request.session_id ?? randomUUID();
+    // The parked-run key must be stable across the requests of one tool loop.
+    // Wire-level conversation ids first (the harness and Responses callers
+    // carry them), then the gateway's cross-surface session resolver —
+    // inbound session headers (`x-opencode-session`,
+    // `x-claude-code-session-id`, `prompt_cache_key`, …), the Responses
+    // `conversation.conversation_id`, and finally a hash of the opening turn,
+    // which is constant for the life of one stateless conversation. Without
+    // this, a stateless caller minted a fresh id per request and every tool
+    // round rebuilt from history while the parked run — and the routing
+    // lease it holds — leaked until a same-key peek that never came.
+    const conversationId =
+      request.conversation_id ??
+      request.session_id ??
+      resolveInboundSessionId(context, request) ??
+      randomUUID();
     const session = sessionKey(context, conversationId);
     const results = trailingToolResults(request);
 
@@ -657,7 +708,18 @@ export class CursorAdapter implements ProviderAdapter {
       // upstream verdict and lets the attempt loop rotate.
 
       // ── in-band resume ──
-      const parked = results.length > 0 ? parkedRegistry.peek(session) : undefined;
+      // omp discipline: a follow-up request resumes the held run only when it
+      // ENDS on pure tool results. A Messages caller that sends `tool_result`
+      // blocks together with follow-up text in one user turn cannot resume —
+      // the held run would consume the results while the text never reaches
+      // the model — so such a request supersedes the park and rebuilds, which
+      // (unlike the resume) carries both the results and the text.
+      const lastMessage = request.messages.at(-1);
+      const pureResultsTrail =
+        results.length > 0 &&
+        (lastMessage === undefined ||
+          !lastMessage.content.some((part) => part.kind === "text" || part.kind === "image"));
+      const parked = pureResultsTrail ? parkedRegistry.peek(session) : undefined;
       if (parked !== undefined) {
         const resume: ParkedRunResults = {
           conversationId: session,
@@ -888,6 +950,10 @@ export class CursorAdapter implements ProviderAdapter {
             sequence_number: nextSeq(),
             state: "complete",
             stop_reason: "tool_use",
+            // The upstream turn is still open (its `turn_ended` usage arrives
+            // with the resuming request), so the interim response must not
+            // be estimated and billed as a finished turn.
+            usage_deferred: true,
             response_id: responseId,
           };
           return;
@@ -1040,6 +1106,9 @@ async function* consumePump(
         sequence_number: scope.nextSeq(),
         state: "complete",
         stop_reason: "tool_use",
+        // Same deferred-usage contract as the fresh park above: the upstream
+        // turn is still open across the request boundary.
+        usage_deferred: true,
         response_id: scope.responseId,
       };
       return;

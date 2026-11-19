@@ -2,21 +2,25 @@
  * Cursor external-executor tool relay.
  *
  * The invariants under test:
- * 1. The tool catalog the model sees is the CALLER's: native names are
- *    filtered out so there is one way to call each thing, and the gateway
- *    never executes a Cursor host tool (a `shell` frame can only be answered
- *    where the files live).
+ * 1. The tool catalog the model sees is the CALLER's, advertised verbatim —
+ *    the allowed-tools header has disabled the native toolset server-side, so
+ *    even a caller tool named like a native must reach the catalog. The
+ *    gateway never executes a Cursor host tool (a `shell` frame can only be
+ *    answered where the files live).
  * 2. Every exec-dispatched call leaves exactly one paired result — including
  *    interrupted ones — because "an unpaired call is stripped from every
  *    rebuilt transcript" and a quiet failure corrupts the next turn.
  * 3. The declared batch reconciles with `>=` counting answered and self-served
  *    calls; heartbeats keep the batch open (they never extend the quiet
- *    timer that hands held calls off).
+ *    timer that hands held calls off), and a server-declared step's counters
+ *    reset on resume so the next step's listing is judged on its own.
+ * 4. A smart-mode approval-only probe is answered immediately — approved for
+ *    a tool the caller declared, rejected for one it did not — because the
+ *    probe gates the real call.
  */
 import { describe, expect, test } from "bun:test";
 import {
   CursorToolRelay,
-  CURSOR_NATIVE_TOOL_NAMES,
   decodeMcpCall,
   throwAnswer,
   type RelayedToolCall,
@@ -25,9 +29,9 @@ import {
 import type { ExecServerMessage } from "../../src/providers/integrations/cursor/cursor-protocol/generated";
 
 const CALLER_TOOLS: RelayToolDefinition[] = [
-  { name: "bash", description: "run a command", inputSchema: { type: "object" } }, // native name: hidden
+  { name: "bash", description: "run a command", inputSchema: { type: "object" } }, // native-named: still advertised
   { name: "deploy", description: "deploy the app", inputSchema: { type: "object" } },
-  { name: "read", description: "read a file", inputSchema: { type: "object" } }, // native name: hidden
+  { name: "read", description: "read a file", inputSchema: { type: "object" } }, // native-named: still advertised
 ];
 
 function relay(): { relay: CursorToolRelay; calls: RelayedToolCall[] } {
@@ -40,7 +44,7 @@ function execFrame(message: Partial<ExecServerMessage>): ExecServerMessage {
 }
 
 describe("Cursor relay — requestContext handshake", () => {
-  test("advertises caller tools under neutral names, native names filtered", () => {
+  test("advertises every caller tool verbatim, native-named ones included", () => {
     const { relay: r } = relay();
     const answer = r.buildRequestContextResult(1, undefined) as {
       execClientMessage: {
@@ -52,16 +56,17 @@ describe("Cursor relay — requestContext handshake", () => {
     const tools =
       answer.execClientMessage.requestContextResult.success?.requestContext.tools ?? [];
     const names = tools.map((tool) => tool.name);
+    // The allowed-tools header disables the native toolset server-side, so a
+    // caller tool named like a native routes through mcp_tool_call and must
+    // NOT be dropped from the catalog.
     expect(names).toContain("deploy");
-    expect(names).not.toContain("bash"); // native
-    expect(names).not.toContain("read"); // native
+    expect(names).toContain("bash");
+    expect(names).toContain("read");
+    expect(tools.length).toBe(CALLER_TOOLS.length);
     // Nothing sent upstream names the gateway.
     for (const tool of tools) {
       expect(tool.providerIdentifier).toBe("pi-agent");
     }
-    // The filter is the single source of native-name truth.
-    expect(CURSOR_NATIVE_TOOL_NAMES.has("bash")).toBe(true);
-    expect(CURSOR_NATIVE_TOOL_NAMES.has("deploy")).toBe(false);
   });
 
   test("the requestContext frame is answered in-band, never held", () => {
@@ -130,7 +135,43 @@ describe("Cursor relay — MCP call relay", () => {
     }
   });
 
-  test("an approval probe is answered here and never executed", () => {
+  test("an approval-only probe for a declared tool is approved, never executed", () => {
+    const { relay: r, calls } = relay();
+    const answers = r.handleExecServerMessage(
+      execFrame({
+        mcpArgs: {
+          name: "deploy",
+          toolName: "deploy",
+          toolCallId: "call-1",
+          smartModeApprovalOnly: true,
+        },
+      }),
+    );
+    expect(answers.length).toBe(1);
+    const answer = answers[0] as { execClientMessage: { mcpResult: { approved?: unknown } } };
+    expect(answer.execClientMessage.mcpResult.approved).toBeDefined();
+    expect(calls.length).toBe(0); // a probe is not a call: nothing held
+  });
+
+  test("an approval-only probe for an undeclared tool is rejected", () => {
+    const { relay: r, calls } = relay();
+    const answers = r.handleExecServerMessage(
+      execFrame({
+        mcpArgs: {
+          name: "exfiltrate",
+          toolName: "exfiltrate",
+          toolCallId: "call-1",
+          smartModeApprovalOnly: true,
+        },
+      }),
+    );
+    expect(answers.length).toBe(1);
+    const answer = answers[0] as { execClientMessage: { mcpResult: { rejected?: { reason?: string } } } };
+    expect(answer.execClientMessage.mcpResult.rejected?.reason).toContain("not declared");
+    expect(calls.length).toBe(0);
+  });
+
+  test("a real call carrying the approval oneof still holds for its result", () => {
     const { relay: r, calls } = relay();
     const answers = r.handleExecServerMessage(
       execFrame({
@@ -142,8 +183,9 @@ describe("Cursor relay — MCP call relay", () => {
         },
       }),
     );
-    expect(answers.length).toBe(1);
-    expect(calls.length).toBe(0); // never surfaced: nothing to execute
+    expect(answers.length).toBe(0); // held open: the result comes next request
+    expect(r.pendingCount).toBe(1);
+    expect(calls.length).toBe(1);
   });
 
   test("a frame with no resolvable call id is refused as tool-not-found", () => {
@@ -201,6 +243,26 @@ describe("Cursor relay — declared batch reconciliation", () => {
     r.handleInteractionUpdate({ toolCallStarted: {} }, 1_000);
     r.handleInteractionUpdate({ toolRequestsListed: { callCount: 2 } }, 1_000);
     expect(r.readyToHandOff(1_500)).toBe(true);
+  });
+
+  test("a server-declared step's counters reset on resume — the next listing is judged alone", () => {
+    const { relay: r } = relay();
+    // Step 1: declared 2, both calls held and answered.
+    r.handleExecServerMessage(mcpFrame("deploy", "call-1"));
+    r.handleExecServerMessage(mcpFrame("deploy", "call-2"));
+    r.handleInteractionUpdate({ toolRequestsListed: { callCount: 2 } }, 1_000);
+    r.collectResults([
+      { callId: "call-1", content: "ok", isError: false },
+      { callId: "call-2", content: "ok", isError: false },
+    ]);
+    // Step 2 declares 2 more calls. The answered total from step 1 must not
+    // count toward it: with the stale total, the FIRST held call already
+    // satisfies `covered >= listed` and the batch splits across responses.
+    r.handleInteractionUpdate({ toolRequestsListed: { callCount: 2 } }, 2_000);
+    r.handleExecServerMessage(mcpFrame("deploy", "call-3"));
+    expect(r.readyToHandOff(2_500)).toBe(false); // 1 held of 2 declared
+    r.handleExecServerMessage(mcpFrame("deploy", "call-4"));
+    expect(r.readyToHandOff(2_500)).toBe(true); // batch complete
   });
 
   test("heartbeats keep the batch open: they never extend the quiet timer", () => {

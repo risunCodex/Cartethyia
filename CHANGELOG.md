@@ -115,6 +115,25 @@ the capabilities the upstream declares.
 
 ### Fixed
 
+- **Cursor tool calling works across real client sessions.** Three gaps found by
+re-auditing the rebuilt relay against the reference implementation and the
+pre-deletion provider: stateless callers never resumed a parked run (the
+resume key minted a fresh UUID per request, leaking every held upstream stream
+and its routing lease) — the key now falls through the gateway's cross-surface
+session resolver (session headers, the Responses conversation id, a hash of
+the opening turn); a Messages-origin turn that carries `tool_result` blocks
+together with follow-up text in one user turn crashed the rebuild with an
+untyped "tool call has no result" error every second round — the results now
+reach the transcript and only the text rides the live turn, and such a turn
+rebuilds instead of resuming (a resumed run would never see the text); and the
+declared-batch counters never reset between steps, splitting the second tool
+batch across responses. Also: smart-mode approval-only probes are answered
+(approved for caller-declared tools) instead of blanket-rejected, the tool-use
+terminal carries `usage_deferred` so interim responses stop being billed as
+finished turns, teardown pairs still-held calls with error answers, parked
+runs are swept on every park, caller tools named like Cursor natives are no
+longer dropped from the catalog, and `providerIdentifier` is corrected in the
+feature doc.
 - **Console update apply restricted to platform admins.** `POST /console/api/updates/apply` now requires `platform:admin` scope instead of tenant-scoped `dashboard:write`, preventing tenant API keys from triggering a gateway-wide package update and process restart.
 - **Perch turn tickets identify as a current client.** The turn-ticket mint
 now stamps `ticketClient: 2` — the marker both the shipping CLI (2.4.137)

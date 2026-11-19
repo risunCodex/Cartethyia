@@ -111,14 +111,22 @@ export function canResumeParkedRun(parked: CursorParkedRun, request: ParkedRunRe
 /**
  * Registry of parked runs keyed by conversation.
  *
- * Idle runs are released lazily on access — a request that resumes a stale
- * entry finds it gone and rebuilds from history, which is exactly the
- * behaviour an expired run should produce.
+ * Idle runs are released lazily: on access (a request that resumes a stale
+ * entry finds it gone and rebuilds from history) and on every park, which
+ * bounds the leak an expired entry would otherwise hold forever — its live
+ * upstream stream, queue, and transferred routing lease — when its caller
+ * never produces a same-key peek again.
  */
 export class CursorParkedRegistry {
   readonly #runs = new Map<string, CursorParkedRun>();
 
-  park(parked: CursorParkedRun): void {
+  park(parked: CursorParkedRun, now: number = Date.now()): void {
+    for (const [key, entry] of this.#runs) {
+      if (now - entry.parkedAt <= CURSOR_PARKED_IDLE_MS) continue;
+      entry.onReleased?.();
+      entry.transport.abort("parked run idle deadline");
+      this.#runs.delete(key);
+    }
     const existing = this.#runs.get(parked.conversationId);
     if (existing !== undefined) {
       // A second park for one conversation means the previous run is

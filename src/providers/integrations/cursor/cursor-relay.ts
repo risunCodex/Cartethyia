@@ -10,9 +10,12 @@
  *
  * - **`request_context_args`** — the tool-catalog handshake. Answered with the
  *   caller's tools as `McpToolDefinition[]` (providerIdentifier + toolName +
- *   JSON input schema). Cursor-native names are filtered so the model has one
- *   way to call each thing. There is no `mcp_meta_tool_options` field in this
- *   protocol: the catalog rides in `request_context`, not the run request.
+ *   JSON input schema). Every caller tool is advertised verbatim — the
+ *   allowed-tools header has already disabled the native toolset server-side,
+ *   so even a caller tool named like a native (`read`, `todo`) routes through
+ *   `mcp_tool_call` and must not be dropped from the catalog. There is no
+ *   `mcp_meta_tool_options` field in this protocol: the catalog rides in
+ *   `request_context`, not the run request.
  * - **`mcp_args`** — a tool call under the caller's own name and schema. The
  *   call is held open (the exec frame is not answered yet) and surfaced to the
  *   caller; the result comes back with the next request and is written into
@@ -65,22 +68,6 @@ export interface RelaySink {
 
 /** Answer frames the relay produces, in the transport's client-message shape. */
 export type RelayAnswer = Record<string, unknown>;
-
-/**
- * Cursor-native tool names: hidden from the advertised catalog so the model
- * has exactly one way to call each capability (the caller's tool). `lsp` is
- * deliberately absent — only its diagnostics action has a native frame, and
- * hiding it would break callers that use it.
- */
-export const CURSOR_NATIVE_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "bash",
-  "read",
-  "write",
-  "delete",
-  "ls",
-  "grep",
-  "todo",
-]);
 
 /** How long held calls may sit unanswered before handoff (Cursor going quiet). */
 export const CURSOR_RELAY_QUIET_MS = 1_000;
@@ -148,11 +135,10 @@ export class CursorToolRelay {
 
   /**
    * The requestContext handshake answer: the caller's tools as MCP
-   * definitions, native names filtered.
+   * definitions, advertised verbatim.
    */
   buildRequestContextResult(id: number, execId: string | undefined): RelayAnswer {
     const tools: McpToolDefinition[] = this.#tools
-      .filter((tool) => !CURSOR_NATIVE_TOOL_NAMES.has(tool.name))
       .map((tool) => ({
         name: tool.name,
         // The provider identifier is ours to choose and is echoed back on
@@ -204,9 +190,24 @@ export class CursorToolRelay {
 
     const mcp = message.mcpArgs;
     if (mcp !== undefined) {
-      // A smart-mode approval probe is answered here and never executed.
-      if (mcp.smartModeApproval !== undefined) {
-        answers.push(this.#mcpAnswer(id, execId, { rejected: { reason: "approval probe" } }));
+      // A smart-mode approval-only frame is a gate probe, not a call: Cursor
+      // waits for the answer before emitting the real call, so an unanswered
+      // or blanket-rejected probe strands the tool turn before it starts.
+      // The caller declared the catalog, so an advertised tool is approved;
+      // anything unresolvable is rejected (reference behavior, and the
+      // pre-deletion provider's allowlist precheck rule).
+      if (mcp.smartModeApprovalOnly === true) {
+        const probe = decodeMcpCall(mcp);
+        const declared = probe !== undefined && this.#tools.some((tool) => tool.name === probe.toolName);
+        answers.push(
+          this.#mcpAnswer(
+            id,
+            execId,
+            declared
+              ? { approved: {} }
+              : { rejected: { reason: "tool not declared by the caller" } },
+          ),
+        );
         return answers;
       }
       const call = decodeMcpCall(mcp);
@@ -218,6 +219,9 @@ export class CursorToolRelay {
         );
         return answers;
       }
+      // A real call that also carries the approval oneof still holds: the
+      // caller's own declaration is the approval, and its result arrives
+      // with the next request.
       this.#held.set(call.callId, { id, execId, call, answered: false });
       this.#sink.onToolCall(call);
       return answers; // held open: the result comes with the next request
@@ -282,6 +286,18 @@ export class CursorToolRelay {
       held.answered = true;
       this.#held.delete(result.callId);
       this.#answeredCount += 1;
+    }
+    // The resumed turn starts a new step. When the handed-off step was
+    // server-declared, its listing already accounted for the just-answered
+    // calls, so the step counters reset — the next listing re-declares its
+    // own count, and keeping the old totals would satisfy it immediately,
+    // firing the next handoff before the whole new batch arrived. When the
+    // step was never declared (quiet-timer handoff), the totals stay so a
+    // late listing that still covers the same step reconciles.
+    if (this.#listed !== undefined) {
+      this.#listed = undefined;
+      this.#servedCount = 0;
+      this.#answeredCount = 0;
     }
     return answers;
   }
