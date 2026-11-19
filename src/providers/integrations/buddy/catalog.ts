@@ -23,7 +23,6 @@ export const BUDDY_INTL_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "glm-5.3": ["low", "high", "max"],
   hy3: ["low", "high"],
   hy4: ["high"],
-  hy4free: ["high"],
 };
 
 export const BUDDY_CN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
@@ -36,7 +35,6 @@ export const BUDDY_CN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   "glm-5.3-flash": ["low", "high", "max"],
   hy3: ["low", "high"],
   hy4: ["high"],
-  hy4free: ["high"],
 };
 
 const BUDDY_IMAGE_MODEL_IDS: readonly { id: string; endpoint: string; ctx: number; out: number }[] = [
@@ -257,7 +255,6 @@ export const BUDDY_SHARED_RAW: readonly BuddyRawEntry[] = [
   ["grok-4.7", "Grok 4.7", true, true, 500_000, 128_000],
   ["hy3", "Hy3", true, true, 192_000, 64_000, true],
   ["hy4", "Hy4", true, true, 1_000_000, 64_000, true],
-  ["hy4free", "Hy4 Free", true, true, 1_000_000, 64_000, true],
   ["kimi-k2.5", "Kimi K2.5", true, false, 164_000, 262_144],
   ["kimi-k2.6", "Kimi K2.6", true, false, 256_000, 262_144],
   ["kimi-k2.7", "Kimi K2.7", true, false, 256_000, 65_536],
@@ -452,7 +449,6 @@ export const CODEBUDDY_CN_RAW: readonly BuddyRawEntry[] = [
   ["kimi-k3.1-pro", "Kimi K3.1 Pro", true, true, 1_000_000, 32_000],
   ["hy3", "Hy3", true, true, 192_000, 64_000],
   ["hy4", "Hy4", true, true, 960_000, 64_000],
-  ["hy4free", "Hy4 Free", true, true, 960_000, 64_000],
   ["space-bunny", "Space Bunny", true, true, 1_000_000, 128_000],
   ["step-5-preview", "Step 5 Preview", true, true, 1_000_000, 64_000],
   ["deepseek-v4-pro", "DeepSeek V4 Pro", true, true, 1_000_000, 128_000],

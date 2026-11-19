@@ -9,7 +9,6 @@ import { providerBaseUrl } from "../../provider-metadata";
 import { getCachedModelDiscovery } from "../../operations/provider-caches";
 import { defineModel } from "../../provider-model-definition";
 import { clineReasoningReplayPrepares } from "../buddy/chat";
-import { clinePlatform, clinePlatformVersion } from "../../operations/cli-platform";
 import {
   getClineCliVersion,
   getClineSdkVersion,
@@ -38,6 +37,46 @@ export function workosToken(token: string): string {
 // API-key credentials use direct Bearer format (no workos prefix);
 // OAuth and scoped credentials retain the required workos: prefix.
 
+/**
+ * The client-identity headers Cline's gateway expects — the reference
+ * client's request layer (`sdk/packages/llms/src/providers/request-headers.ts`)
+ * mirrored exactly, including `x-client-type: cline-sdk` and the
+ * `x-is-multiroot` spelling, with one deliberate difference: the version
+ * values track npm latest through the shared version pooler instead of
+ * standing still. The gate accepted an arbitrary version string when probed,
+ * so the full set is the contract and the numbers are mirror fidelity, not a
+ * minimum.
+ *
+ * Two different versions on purpose: `x-client-version` is the Cline CLI
+ * (`cline` on npm, the 3.x line) and `x-core-version` is `@cline/sdk` (its
+ * own 0.x release line); sending one in both slots is an implausible identity.
+ * `x-platform-version` rides the CLI line like the reference mirror's pin
+ * (3.0.x class), not a Node runtime version.
+ *
+ * One set, both surfaces: dispatch here and the billing path in
+ * `cline-quota.ts` spread this same function, so one machine never speaks
+ * with two faces.
+ */
+export function clineClientHeaders(taskId?: string): Record<string, string> {
+  const clientVersion = getClineCliVersion();
+  return {
+    "user-agent": `Cline/${clientVersion}`,
+    // One spelling only. Header names are case-insensitive, so sending both
+    // `http-referer` and `HTTP-Referer` does not hedge against a case-sensitive
+    // check — it makes `Headers` merge them into the single value
+    // `https://cline.bot, https://cline.bot`.
+    "HTTP-Referer": "https://cline.bot",
+    "x-title": "Cline",
+    "x-is-multiroot": "false",
+    "x-client-type": "cline-sdk",
+    "x-client-version": clientVersion,
+    "x-platform": process.platform,
+    "x-platform-version": clientVersion,
+    "x-core-version": getClineSdkVersion(),
+    ...(taskId === undefined ? {} : { "x-task-id": taskId }),
+  };
+}
+
 async function clineExtraHeaders(context: ProviderDispatchContext): Promise<Record<string, string>> {
   let authOverride: Record<string, string> = {};
   const secret = context.credential.secret;
@@ -51,36 +90,14 @@ async function clineExtraHeaders(context: ProviderDispatchContext): Promise<Reco
       authOverride = { authorization: `Bearer ${token}` };
     }
   }
-  // The chat surface claims the CLI identity, matching the billing surface in
-  // `cline-quota.ts` and the reference client: `cline` (npm, bin `cline`) is a
-  // separate release line from the VS Code extension, so the client version
-  // must come from the CLI package, not the extension manifest. `@cline/sdk`
-  // is a dependency of the CLI, so its version stays the core version.
-  const clientVersion = getClineCliVersion();
-  const sdkVersion = getClineSdkVersion();
   // Cline's own client sends `X-Task-ID` on inference calls as the stable
   // prompt-cache/session key, and omits it on account and discovery calls
   // rather than inventing a per-request identity. `conversation_affinity` is
   // that same value here: stable across the retries of one conversation, so a
   // retried dispatch keeps its cache entry instead of starting a new one.
-  const taskId = context.conversation_affinity;
-
   return {
     ...authOverride,
-    "user-agent": `Cline/${clientVersion}`,
-    // One spelling only. Header names are case-insensitive, so sending both
-    // `http-referer` and `HTTP-Referer` does not hedge against a case-sensitive
-    // check — it makes `Headers` merge them into the single value
-    // `https://cline.bot, https://cline.bot`.
-    "HTTP-Referer": "https://cline.bot",
-    "x-platform": clinePlatform(),
-    "x-platform-version": clinePlatformVersion(),
-    "x-title": "Cline",
-    "x-client-type": "cline-cli",
-    "x-client-version": clientVersion,
-    "x-core-version": sdkVersion,
-    "x-is-multi-root": "false",
-    ...(taskId ? { "x-task-id": taskId } : {}),
+    ...clineClientHeaders(context.conversation_affinity),
     accept: "text/event-stream, application/json",
   };
 }
@@ -568,9 +585,8 @@ function clineRow(
  * Probed against `/ai/cline/recommended-models` with a live key, not inferred
  * from the OpenRouter listing. That matters because the two disagree: the
  * `/models` listing names 17 `:free` ids, while the account's own `free` bucket
- * names 5 and shares none of them. The listing is the upstream catalog; the
- * bucket is what this account can actually route, and only the second is a
- * fact worth seeding.
+ * names 5. The listing is the upstream catalog; the bucket is what this
+ * account can actually route, and only the second is a fact worth seeding.
  *
  * Two ids carry the `cline-free/` prefix. That prefix is Cline's own namespace,
  * not a tier marker — membership of the bucket is what makes a row free.
@@ -580,6 +596,9 @@ const CLINE_FREE_ROWS: readonly ClineSeedRow[] = [
   { id: "nvidia/nemotron-3.5-lightning-free", ctx: 1_000_000, out: 65_536 },
   { id: "cline-free/solar-mini4", ctx: 524_288, out: 131_072 },
   { id: "baidu/ernie-5.5-flash-preview:free", ctx: 1_000_000, out: 921_600 },
+  // Added by operator request (2026-11-19); limits mirror the shared free
+  // roster's row for the same id.
+  { id: "particle-ai/particle-1:free", ctx: 1_048_576, out: 131_072, vision: true },
 ];
 
 /**

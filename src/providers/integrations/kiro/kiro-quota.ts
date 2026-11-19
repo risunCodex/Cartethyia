@@ -181,7 +181,6 @@ export async function fetchKiroQuota(
   const managementHost = KIRO_MANAGEMENT_HOST_TEMPLATE.replace("{region}", auth.region);
 
   let sawAuthRefusal = false;
-  let profileMisconfigured = false;
   let lastError = "Unable to fetch Kiro usage right now.";
   try {
     const response = await fetcher(`${managementHost}/Get-Usage-Limits?${query.toString()}`, {
@@ -190,14 +189,16 @@ export async function fetchKiroQuota(
       signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
       if (response.status === 401 || response.status === 403) sawAuthRefusal = true;
-      // A 400 `Invalid profileArn` / `profileArn is required` means the
-      // account's profile is not resolved yet — a provisioning gap, not a
-      // verdict on the credential. It is reported as transient so the sweep
-      // retries it next pass instead of parking the account for hours; the
-      // OAuth refresh path populates `profileArn` when the vendor returns it.
-      if (response.status === 400 && /profileArn/i.test(body)) profileMisconfigured = true;
+      // A 400 refuses the query shape — an unresolved `profileArn`, the
+      // resourceType, the region — not the credential. The account stays ACTIVE
+      // and routable, so report it without an error: flagging `quota_fetch_failed`
+      // (and parking after three passes) cooled working accounts over a usage
+      // read they do not need to route. The sweep still retries next pass, and a
+      // resolved profile answers 200.
+      if (response.status === 400) {
+        return { source: "kiro", plan: null, windows: [], error: null };
+      }
       lastError = `management-get: HTTP ${response.status}`;
     } else {
       const payload = await response.json().catch(() => undefined);
@@ -223,6 +224,5 @@ export async function fetchKiroQuota(
     plan: null,
     windows: [],
     error: lastError,
-    ...(profileMisconfigured ? { transient: true } : {}),
   };
 }

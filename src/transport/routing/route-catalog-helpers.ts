@@ -28,7 +28,7 @@ import { providerHasAdapterUserAgent, providerUsesBespokeWire } from "../../prov
 
 const CLAUDE_MODEL_FAMILIES = new Set(["opus", "sonnet", "haiku", "fable", "mythos"]);
 
-/** Codex's built-in (non-routeable) model spellings worth matching. */
+/** Codex's built-in review-model spellings worth matching. */
 const CODEX_REVIEW_MODELS = new Set(["codex-auto-review"]);
 
 export function cliMappingSourceKeys(toolId: string, sourceModel: string): readonly string[] {

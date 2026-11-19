@@ -202,8 +202,8 @@ export async function recordAccountCheck(
       "model_unreachable",
       // `quota_fetch_failed` is the park reason when the quota surface itself
       // refused/errored. A successful read is direct counter-evidence that the
-      // last failure was transient or stale (e.g. Kiro's profile-400 before
-      // the account's profile resolved), so it must lift immediately instead of
+      // last failure was transient or stale (e.g. a usage surface that refused
+      // a query before the account's profile resolved), so it must lift immediately instead of
       // leaving the account parked for the whole fallback window.
       "quota_fetch_failed",
       // `auth_rejected` is the *recoverable* credential verdict: a quota fetch

@@ -776,22 +776,8 @@ function CustomProvidersSection({
 const FOUNDING_IDS = new Set(["inferhub"]);
 /** Free tiers with a small daily allowance rather than a standing free tier. */
 const FREE_LIMITED_IDS = new Set([
-  "grok",
   "opencode",
   "cline",
-  // Nous Research publishes a free allowance alongside its paid catalog, and
-  // its `/v1/models` marks those rows at zero price, so discovery can keep the
-  // list current instead of encoding it by hand.
-  "hermes",
-  // Kilo Code resells the OpenRouter catalog — `/api/openrouter`, the same
-  // upstream Cline fronts — and serves a `kilo-auto/free` routing alias
-  // alongside its paid rows, so its free allowance is metered against that
-  // one reseller rather than a standing free tier.
-  "kilo",
-  // Inception Labs ships a standing free tier — mercury-3 at zero price —
-  // rather than a daily allowance, but it belongs in the same section as the
-  // other free-limited providers an operator reaches for first.
-  "inception",
   // ZCode Start exposes account-specific, time-limited GLM grants.
   "zcode-start",
   // Free-pi is ad-funded: a daily USD/credit allowance (guest or GitHub
@@ -834,6 +820,9 @@ const WELL_KNOWN_API_KEY_IDS = new Set([
   "meta",
   "deepseek",
   "commandcode",
+  // Inception Labs: the Mercury diffusion-LLM house — a household name with a
+  // published API-key signup, reached for beside the other majors.
+  "inception",
   // Alibaba's OpenAI-compatible DashScope: a household-enough name that an
   // operator looks for beside the other majors rather than in "Other".
   "dashscope",

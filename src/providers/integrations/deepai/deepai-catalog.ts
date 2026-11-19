@@ -1,7 +1,9 @@
 // DeepAI model catalog + discovery.
 //
 // All 22 rows below were fetched live from `GET /deepai_code/models` on
-// 2026-11-11 (see `documentation/research/deepai/2026-11-11-deepai-code-live-wire-verification.md`).
+// 2026-11-11 (see `documentation/research/deepai/2026-11-11-deepai-code-live-wire-verification.md`);
+// `gpt-6.1-terra` and `claude-sonnet-5-5` were added by operator request on
+// 2026-11-19 with limits mirrored from their family's rows, not yet re-probed.
 // The 11 zero-Theos rows carry the daily free-tier allowance (`freeTier: true`
 // + `free: true` — they bill zero and do not draw from the balance). The
 // metered rows keep their `theosPerRequest` price as a per-request cost
@@ -48,11 +50,15 @@ const DEEPAI_ROSTER: readonly DeepAIRosterRow[] = [
   { id: "deepai-cyber", name: "DeepAI Cyber", reasoning: true, vision: false, ctx: 1_048_576, out: 131_072, theosPerRequest: 0 },
   { id: "minimax-m3", name: "MiniMax M3", reasoning: true, vision: false, ctx: 512_000, out: 131_000, theosPerRequest: 2 },
   { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", reasoning: true, vision: true, ctx: 1_048_576, out: 128_000, theosPerRequest: 10 },
+  // Added by operator request (2026-11-19); limits mirror their family's rows
+  // above (Sol / Opus 5.5), pending a re-probe of the live roster.
+  { id: "gpt-6.1-terra", name: "GPT-6.1 Terra", reasoning: true, vision: true, ctx: 1_048_576, out: 128_000, theosPerRequest: 10 },
   { id: "gemini-4-argon", name: "Gemini 4 Argon", reasoning: true, vision: true, ctx: 1_048_576, out: 131_072, theosPerRequest: 10 },
   { id: "glm-5.3", name: "GLM 5.3", reasoning: true, vision: false, ctx: 1_048_576, out: 131_072, theosPerRequest: 3 },
   { id: "kimi-k3", name: "Kimi K3", reasoning: true, vision: true, ctx: 1_048_576, out: 131_072, theosPerRequest: 3 },
   { id: "muse-spark-1.3", name: "Muse Spark 1.3", reasoning: true, vision: true, ctx: 1_048_576, out: 131_072, theosPerRequest: 6 },
   { id: "claude-opus-5-5", name: "Claude Opus 5.5", reasoning: true, vision: true, ctx: 1_000_000, out: 64_000, theosPerRequest: 15 },
+  { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", reasoning: true, vision: true, ctx: 1_000_000, out: 64_000, theosPerRequest: 10 },
   { id: "muse-wonder", name: "Muse Wonder", reasoning: true, vision: true, ctx: 1_048_576, out: 131_072, theosPerRequest: 15 },
   { id: "qwen-3.8-max-prime", name: "Qwen 3.8 Max Prime", reasoning: true, vision: true, ctx: 1_000_000, out: 131_072, theosPerRequest: 15 },
   { id: "claude-fable-5-2", name: "Claude Fable 5.2", reasoning: true, vision: true, ctx: 1_000_000, out: 64_000, theosPerRequest: 20 },

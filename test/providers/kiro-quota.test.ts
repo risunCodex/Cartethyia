@@ -3,10 +3,11 @@
  *
  * The control-plane `Get-Usage-Limits` surface is profile-scoped: with a
  * `profileArn` it answers 200 and the usage breakdown parses; without one it
- * answers 400 `Invalid profileArn.`. The 400 is a provisioning gap (the
- * account's profile is not resolved yet), not a verdict on the credential — so
- * it must be reported as `transient` so the sweep retries it next pass instead
- * of parking the account for hours.
+ * answers 400 `Invalid profileArn.`. A 400 refuses the query shape, not the
+ * credential — the account stays ACTIVE and routable — so it is reported without
+ * an error: the health surface must not flag `quota_fetch_failed` (or park the
+ * account) over a usage read the account does not need to route. Only an auth
+ * refusal (401/403) is a credential verdict.
  */
 import { describe, expect, test } from "bun:test";
 import { fetchKiroQuota } from "../../src/providers/integrations/kiro/kiro-quota";
@@ -49,26 +50,29 @@ describe("fetchKiroQuota", () => {
     expect(result.transient).toBeUndefined();
   });
 
-  test("a 400 Invalid profileArn is reported transient, not an account verdict", async () => {
+  test("a 400 Invalid profileArn is ignored, not an account verdict", async () => {
     const fetcher = (async () =>
       jsonResponse({ message: "Invalid profileArn.", missingPermissions: null, reason: null }, 400)) as unknown as typeof fetch;
     const result = await fetchKiroQuota("token", fetcher, { auth_state: { region: "us-east-1", authMethod: "google" } });
-    expect(result.error).toBe("management-get: HTTP 400");
-    expect(result.transient).toBe(true);
+    // The usage surface refused the query shape, not the credential: the account
+    // stays routable, so no error is reported and the health surface never flags
+    // `quota_fetch_failed` over it.
+    expect(result.error).toBeNull();
+    expect(result.transient).toBeUndefined();
   });
 
-  test("a 400 with profileArn wording is also transient", async () => {
+  test("a 400 with profileArn wording is ignored too", async () => {
     const fetcher = (async () =>
       jsonResponse({ message: "profileArn is required for this request." }, 400)) as unknown as typeof fetch;
     const result = await fetchKiroQuota("token", fetcher, { auth_state: { region: "us-east-1", authMethod: "google" } });
-    expect(result.transient).toBe(true);
+    expect(result.error).toBeNull();
   });
 
-  test("a non-profile 400 is a normal failure, not transient", async () => {
+  test("a non-profile 400 is ignored as well", async () => {
     const fetcher = (async () =>
       jsonResponse({ message: "Invalid resourceType." }, 400)) as unknown as typeof fetch;
     const result = await fetchKiroQuota("token", fetcher, { auth_state: AUTH });
-    expect(result.error).toBe("management-get: HTTP 400");
+    expect(result.error).toBeNull();
     expect(result.transient).toBeUndefined();
   });
 

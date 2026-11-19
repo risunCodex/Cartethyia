@@ -18,8 +18,30 @@ hash `8375c77d` (2.8.4 release) by cherry-picking the relevant provider
 modules, registrations, manifests, icons, tests, and documentation from that
 commit. This entry is the canonical restore anchor — do not delete it.
 
+### Added
+
+- **Codex (ChatGPT) catalog gains `codex-auto-review` and `gpt-reserve`.** Both
+  are Responses-wire rows at the 272k context / 128k output window the ChatGPT
+  model listing reports, so they are servable from the static catalog without
+  waiting on registry discovery.
+- **Operator-requested catalog rows.** `reflection/beam-free` joins the shared
+  kilo/OpenRouter free roster; `particle-ai/particle-1:free` joins Cline's free
+  bucket; DeepAI gains the metered `gpt-6.1-terra` and `claude-sonnet-5-5`. Limits
+  mirror each family's existing rows, pending a live re-probe.
+
 ### Changed
 
+- **Cline client identity mirrors the reference client's request layer.** The
+identity set now matches the vendor-blessed mirror the reference
+implementation ships (`x-client-type: cline-sdk`, `x-platform: process.platform`,
+the `x-is-multiroot` header name, `x-platform-version` on the CLI version line)
+— one shared `clineClientHeaders()` builder for both the dispatch and billing
+surfaces. The versions keep tracking npm latest through the version pooler
+(`x-client-version`/`User-Agent` = npm `cline` 3.x, `x-core-version` =
+`@cline/sdk` 0.x), which is the one deliberate difference from the reference's
+static pins. The earlier `cline-cli` claim (commit `c78c3a32`) fixed the
+version source but moved the client-type literal away from the real client's;
+this restores the literal and keeps the version fix.
 - **Built-in system prompt presets renamed.** `builtin-jinhsi-jgeneral` is now
   labeled **Jinxi General Agent** (id unchanged) and `builtin-general-jbreak` is
   now labeled **General Assistant** (id unchanged), so existing saved preset
@@ -54,12 +76,32 @@ commit. This entry is the canonical restore anchor — do not delete it.
 - **The legacy virtual `auto` id is back, bound to the balance tier.** Requesting
   `github/auto` enters the `/auto` flow pinned to balance, matching the upstream's
   own dynamic balance-tier decision.
+- **GitHub device-code login skips the account picker.** The verification link
+  handed to the operator now opens
+  `https://github.com/login/device?skip_account_picker=true`, landing directly on
+  the code form instead of the account chooser. Applied once where the device URI
+  is published, so every GitHub-backed flow (Copilot, clixad, free-pi) gets it;
+  non-GitHub device pages are untouched.
+- **Kiro usage HTTP 400 no longer flags the account.** A `management-get: HTTP 400`
+  from the Kiro usage surface refuses the query shape (an unresolved profile,
+  resourceType, region), not the credential — the account stays ACTIVE and
+  routable. It is now reported without an error, so the health surface stops
+  writing `quota_fetch_failed` and parking working accounts over a usage read they
+  do not need to route. Auth refusals (401/403) still name the credential.
+- **Dashboard provider sections regrouped.** Inception moves to *Well Known API
+  Key Providers*; Grok Build, Kilo Code and Nous Research Hermes move to *OAuth &
+  Agent Providers* — each has a registered device OAuth flow, so the behavioral
+  OAuth filter now places them there instead of Free Limited.
 
 ### Removed
 
 - **`builtin-jinhsi-agent` ("Jinhsi Agent by risun") system prompt preset.** The
   preset and its bundled prompt asset were removed from the dashboard's builtin
   prompt list.
+- **CodeBuddy `hy4free` withdrawn from both rosters.** The `hy4free` row is removed
+  from the international (`cb`) and CN (`cbcn`) catalogs and their effort ladders.
+- **`thinkingmachines/inkling-2-small:free` withdrawn** from the shared
+  kilo/OpenRouter free roster.
 
 ## [2.8.4] - 2026-11-18 · Codename Arc-en-Ciel
 

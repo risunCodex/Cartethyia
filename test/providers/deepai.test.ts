@@ -60,7 +60,9 @@ describe("DeepAI catalog", () => {
 
   test("metered rows are not free-tier", () => {
     const metered = DEEPAI_DEFAULT_MODELS.filter((m) => m.freeTier !== true);
-    expect(metered.length).toBe(11);
+    // Eleven live-probed rows plus `gpt-6.1-terra` / `claude-sonnet-5-5`
+    // (operator-added 2026-11-19, metered).
+    expect(metered.length).toBe(13);
     for (const model of metered) {
       expect(model.freeTier).not.toBe(true);
     }

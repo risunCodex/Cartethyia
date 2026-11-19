@@ -68,6 +68,31 @@ export interface OAuthExchangeResult extends OAuthAccountIdentity {
   readonly credentialKind?: "api_key" | "oauth";
 }
 
+/**
+ * Shapes a device-flow verification URI for the operator's browser.
+ *
+ * GitHub's `/login/device` page opens an account picker before the code form
+ * when the browser session holds more than one account; `skip_account_picker=true`
+ * lands directly on the form. The rewrite is scoped to GitHub's own device page
+ * (`github.com`) — every other host, including GitHub Enterprise domains and the
+ * non-GitHub device flows, is returned untouched. Applied once where the URI is
+ * handed to the operator, so every GitHub-backed device flow (Copilot, clixad,
+ * free-pi) gets it without each client repeating the rule.
+ */
+export function skipGithubAccountPicker(verificationUri: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(verificationUri);
+  } catch {
+    return verificationUri;
+  }
+  if (parsed.hostname !== "github.com" || parsed.pathname.replace(/\/+$/, "") !== "/login/device") {
+    return verificationUri;
+  }
+  parsed.searchParams.set("skip_account_picker", "true");
+  return parsed.href;
+}
+
 export interface OAuthDeviceStartResult {
   readonly verificationUri: string;
   readonly userCode: string;

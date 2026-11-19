@@ -1,26 +1,21 @@
 import type { FetchLike, ProviderQuotaResult, ProviderQuotaWindow } from "../../quota/quota-contracts";
 import { authCredential, getJson, record, text } from "../../quota/quota-contracts";
 import { parseLimitWindows } from "../../quota/quota-limit-windows";
-import { getClineCliVersion, getClineSdkVersion } from "../../operations/client-versions";
-import { clinePlatform, clinePlatformVersion } from "../../operations/cli-platform";
-import { workosToken } from "./cline";
+import { clineClientHeaders, workosToken } from "./cline";
 
 /**
- * Quota headers always carry the currently resolved CLI version.
+ * Quota headers carry the same client identity as the dispatch surface.
  *
- * The two version headers are two different versions and must stay that way.
- * `x-client-version` is the Cline CLI the operator is running (`cline` on npm),
- * from the shared pooler. `x-core-version` is the `@cline/sdk` version — a
- * separate npm package with its own release line, though one the CLI pins as a
- * dependency — sending the client version in both slots would tell the billing
- * surface our core was `4.1.23`, a vscode extension version
- * that `@cline/sdk` never published.
- *
- * Both surfaces send the same pairing (`cliVersion` / `sdkVersion`) and the
- * same `cline-cli` client type. A header the upstream can validate is not
- * cosmetic: an implausible core version is exactly what a "please update and
- * re-authenticate" refusal is shaped like, and it is indistinguishable from a
- * dead credential from the response alone.
+ * `clineClientHeaders()` is the one builder (the reference client's request
+ * layer mirrored, versions tracked to npm latest): the two version headers
+ * stay two different versions — `x-client-version` is the Cline CLI (`cline`
+ * on npm, the 3.x line) and `x-core-version` is `@cline/sdk`, a separate npm
+ * package with its own 0.x release line. Sending the client version in both
+ * slots would tell the billing surface our core was a version `@cline/sdk`
+ * never published. One set on every surface: two Cline surfaces disagreeing
+ * about the same machine is exactly the shape an upstream "please update and
+ * re-authenticate" refusal takes, and it is indistinguishable from a dead
+ * credential from the response alone.
  *
  * Header identity is not what gates these endpoints: probing `/users/me`,
  * `/users/me/plan` and `/users/me/plan/usage-limits` with no identity headers,
@@ -29,17 +24,12 @@ import { workosToken } from "./cline";
  * state, not a rejected client.
  */
 function clineQuotaHeaders(): Record<string, string> {
-  const version = getClineCliVersion();
+  // No `x-task-id`: account and billing calls omit it rather than inventing
+  // a per-request identity (the reference client does the same).
   return {
+    ...clineClientHeaders(),
     accept: "application/json",
     "content-type": "application/json",
-    "user-agent": `Cline/${version}`,
-    "x-platform": clinePlatform(),
-    "x-platform-version": clinePlatformVersion(),
-    "x-client-type": "cline-cli",
-    "x-client-version": version,
-    "x-core-version": getClineSdkVersion(),
-    "x-is-multiroot": "false",
   };
 }
 

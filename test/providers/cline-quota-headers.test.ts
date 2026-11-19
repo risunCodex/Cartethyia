@@ -100,25 +100,30 @@ describe("Cline quota headers", () => {
     expect(cliVersion).not.toBe(sdkVersion);
   });
 
-  test("the billing surface claims the CLI identity", async () => {
-    // Both surfaces now claim `cline-cli`: the CLI is the client this provider
-    // is read by, and the extension identity is not a substitute. Pinned here
-    // because the value is shared and must not drift back to `cline-sdk`.
+  test("the billing surface claims the reference client identity", async () => {
+    // Both surfaces share `clineClientHeaders()`: the reference client's
+    // request layer mirrored (`x-client-type: cline-sdk` — the SDK package is
+    // the layer that builds headers even for CLI callers), with versions
+    // tracked to npm latest. Pinned here because the value is shared and must
+    // not drift between surfaces.
     const { fetcher, seen } = capturingFetcher();
     await fetchClineQuota("workos:token", fetcher);
-    expect(seen()?.["x-client-type"]).toBe("cline-cli");
+    expect(seen()?.["x-client-type"]).toBe("cline-sdk");
+    expect(seen()?.["x-is-multiroot"]).toBe("false");
   });
 
   test("a resolved version is followed, so the pooler reaches this surface too", async () => {
     // The user's report was that the quota path did not follow the version
     // pooler. It does read the resolver; this is what proves it — seeding a
-    // discovered version changes what is sent.
+    // discovered version changes what is sent. `x-platform-version` rides the
+    // same CLI line and moves with it.
     _resetClineCliVersionCache("9.9.9");
     try {
       const { fetcher, seen } = capturingFetcher();
       await fetchClineQuota("workos:token", fetcher);
       expect(seen()?.["x-client-version"]).toBe("9.9.9");
       expect(seen()?.["user-agent"]).toBe("Cline/9.9.9");
+      expect(seen()?.["x-platform-version"]).toBe("9.9.9");
     } finally {
       _resetClineCliVersionCache();
     }
@@ -158,7 +163,7 @@ describe("Cline quota headers", () => {
 
     await fetchClineQuota(`${CLINE_API_KEY_PREFIX}sk_123`, fetcher);
 
-    expect(seen?.["x-client-type"]).toBe("cline-cli");
+    expect(seen?.["x-client-type"]).toBe("cline-sdk");
     expect(seen?.["x-client-version"]).toBeDefined();
     expect(seen?.["x-core-version"]).toBeDefined();
   });

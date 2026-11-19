@@ -73,16 +73,9 @@ describe("live Buddy CLI models on the shared roster", () => {
     expect(CODEBUDDY_MODELS.some((model) => model.modelId === "hy4-preview-f")).toBe(false);
   });
 
-  test("hy4free mirrors hy4 metadata on the international catalog", () => {
-    const free = CODEBUDDY_MODELS.find((model) => model.modelId === "hy4free");
-    const paid = CODEBUDDY_MODELS.find((model) => model.modelId === "hy4");
-    expect(free).toBeDefined();
-    expect(paid).toBeDefined();
-    expect(free?.contextLimit).toBe(paid?.contextLimit);
-    expect(free?.outputLimit).toBe(paid?.outputLimit);
-    expect(free?.reasoning).toBe(true);
-    expect(free?.toolCall).toBe(true);
-    expect(free?.modalities.input).toContain("image");
+  test("hy4free is withdrawn from the international catalog", () => {
+    // Removed by operator request (2026-11-19) from both the intl and CN rosters.
+    expect(CODEBUDDY_MODELS.some((model) => model.modelId === "hy4free")).toBe(false);
   });
 });
 
@@ -138,13 +131,7 @@ describe("gpt-6-luna on the buddy roster", () => {
     }
     // The rename: hy4-preview became hy4.
     expect(CODEBUDDY_CN_MODELS.some((model) => model.modelId === "hy4")).toBe(true);
-    // hy4free mirrors hy4 on the CN roster (960k/64k).
-    const cnHy4 = CODEBUDDY_CN_MODELS.find((model) => model.modelId === "hy4");
-    const cnHy4Free = CODEBUDDY_CN_MODELS.find((model) => model.modelId === "hy4free");
-    expect(cnHy4Free).toBeDefined();
-    expect(cnHy4Free?.contextLimit).toBe(cnHy4?.contextLimit);
-    expect(cnHy4Free?.outputLimit).toBe(cnHy4?.outputLimit);
-    for (const removed of ["uto", "hy4-preview-x", "hy4-preview", "hunyuan-chat", "glm-4.6", "default"]) {
+    for (const removed of ["uto", "hy4-preview-x", "hy4-preview", "hunyuan-chat", "glm-4.6", "default", "hy4free"]) {
       expect(CODEBUDDY_CN_MODELS.some((model) => model.modelId === removed)).toBe(false);
     }
     // Generation rows are published but not chat models: kept as generation.

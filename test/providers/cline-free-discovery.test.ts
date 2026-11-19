@@ -188,6 +188,7 @@ describe("the shared free roster", () => {
       "nvidia/nemotron-3-super-120b-a12b:free",
       "poolside/laguna-s-2.1:free",
       "poolside/laguna-xs-2.1:free",
+      "thinkingmachines/inkling-2-small:free", // withdrawn by operator 2026-11-19
       "thinkingmachines/inkling-small:free",
       "thinkingmachines/inkling:free",
       "xingchen-agi/xing4.0-29b-a4b:free",

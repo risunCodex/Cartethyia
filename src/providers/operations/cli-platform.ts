@@ -54,17 +54,6 @@ const KIMI_OS_VERSION = "macOS 15.6";
  */
 const KIMI_DEVICE_NAME = "MacBook-Pro.local";
 
-
-/**
- * Cline's `x-platform` / `x-platform-version`.
- *
- * Cline's own quota path already reports the literal `server` here, so the
- * dispatch path matches it rather than sending the host's `process.platform`
- * — two Cline surfaces disagreeing about the same machine is exactly the
- * split this module exists to close.
- */
-const CLINE_PLATFORM = "darwin";
-const CLINE_PLATFORM_VERSION = "v24.0.0";
 /** Grok's own vocabulary — lowercase OS name, and `aarch64` not `arm64`. */
 const GROK_OS = "macos";
 const GROK_ARCH = "aarch64";
@@ -157,14 +146,4 @@ export function qoderMachineHostname(): string {
   if (safe.length <= 96) return safe;
   const hash = createHash("sha256").update(safe, "utf8").digest("hex").slice(0, 8);
   return `${safe.slice(0, 96 - 1 - 8)}-${hash}`;
-}
-
-/** Cline's `x-platform`. */
-export function clinePlatform(): string {
-  return CLINE_PLATFORM;
-}
-
-/** Cline's `x-platform-version`: a Node version string. */
-export function clinePlatformVersion(): string {
-  return CLINE_PLATFORM_VERSION;
 }

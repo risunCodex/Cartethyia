@@ -116,10 +116,25 @@ describe("cline chat identity headers", () => {
     expect(headers.get("http-referer")).toBe("https://cline.bot");
   });
 
-  test("the chat surface claims the CLI identity", async () => {
+  test("the chat surface mirrors the reference client's identity set", async () => {
+    // The reference client's request layer (`sdk/packages/llms` mirror) sends
+    // `x-client-type: cline-sdk` with the CLI's own 3.x version — the SDK
+    // package is the layer that builds the headers even for CLI callers. The
+    // version class is asserted structurally: the CLI line is 3.x while the
+    // extension is 4.x and `@cline/sdk` is 0.x; only the CLI line may appear
+    // in `x-client-version`.
     const headers = await dispatch();
-    expect(headers.get("x-client-type")).toBe("cline-cli");
-    // The extension's 4.x line is a different release; the CLI is 3.x.
+    expect(headers.get("x-client-type")).toBe("cline-sdk");
     expect(headers.get("x-client-version")?.startsWith("3.")).toBe(true);
+    // `x-platform-version` rides the same CLI line (the reference mirror's
+    // pin is a 3.0.x app version, not a Node runtime version).
+    expect(headers.get("x-platform-version")).toBe(headers.get("x-client-version"));
+    // `x-platform` is the host's real platform, like the reference client's
+    // `process.platform` — the two surfaces (chat and billing) share this
+    // builder, so they can never disagree about the machine.
+    expect(headers.get("x-platform")).toBe(process.platform);
+    // The multiroot flag keeps the reference's exact header name.
+    expect(headers.get("x-is-multiroot")).toBe("false");
+    expect(headers.get("x-is-multi-root")).toBeNull();
   });
 });

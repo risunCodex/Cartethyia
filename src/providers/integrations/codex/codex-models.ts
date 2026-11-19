@@ -70,6 +70,10 @@ export const CODEX_MODELS: readonly ModelDefinition[] = [
   codexResponsesModel("gpt-5.6-terra", 1_000_000, 128_000),
   codexResponsesModel("gpt-5.6-luna", 1_000_000, 128_000),
   codexResponsesModel("gpt-5.5", 272_000, 128_000),
+  // Added by operator request (2026-11-19) from the ChatGPT model listing:
+  // Responses-wire rows at the 272k context / 128k output the listing reports.
+  codexResponsesModel("codex-auto-review", 272_000, 128_000),
+  codexResponsesModel("gpt-reserve", 272_000, 128_000),
   // Dedicated image tools plus the `-image` variants of chat models, all
   // served on the same Responses endpoint.
   codexResponsesModel("gpt-image-2.5", 400_000, 128_000, true),

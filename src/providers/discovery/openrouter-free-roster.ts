@@ -63,14 +63,16 @@ const FREE_ROWS: readonly FreeRow[] = [
   { id: "nvidia/nemotron-3-ultra-550b-a55b:free", ctx: 1_000_000, out: 65_536 },
   { id: "nvidia/nemotron-3.5-lightning:free", ctx: 1_000_000, out: 65_536 },
   { id: "nvidia/nemotron-3.5-super-vl:free", ctx: 1_000_000, out: 131_072, vision: true },
-  // Last verified against OpenRouter's `/api/v1/models` 2026-11-18. All five
+  // Last verified against OpenRouter's `/api/v1/models` 2026-11-18. All four
   // declare `tools` and reasoning in `supported_parameters`; `vision` mirrors
   // `architecture.input_modalities`.
   { id: "baidu/ernie-5.5-flash-preview:free", ctx: 1_024_000, out: 921_600 },
   { id: "inclusionai/ling-3.2-flash:free", ctx: 1_048_576, out: 262_144, vision: true },
   { id: "particle-ai/particle-1:free", ctx: 1_048_576, out: 131_072, vision: true },
   { id: "recursive/flint-v1.0:free", ctx: 262_144, out: 235_929 },
-  { id: "thinkingmachines/inkling-2-small:free", ctx: 1_048_576, out: 131_072, vision: true },
+  // Added by operator request (id as spelled on kilo); limits are the roster's
+  // common values, pending a re-probe against the serving catalog.
+  { id: "reflection/beam-free", ctx: 1_048_576, out: 131_072 },
 ];
 
 /** Builds this roster for one provider, since each spells its own endpoint. */

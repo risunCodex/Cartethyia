@@ -2,7 +2,7 @@
 // credential import. The route handlers in `routes.ts` delegate here.
 
 import type { OAuthDevicePollResult, OAuthDeviceStartResult, OAuthLoginClient } from "../../../providers/authentication/oauth-flow-store";
-import { generateOAuthState, generatePkcePair } from "../../../providers/authentication/oauth-flow-store";
+import { generateOAuthState, generatePkcePair, skipGithubAccountPicker } from "../../../providers/authentication/oauth-flow-store";
 import type { OAuthFlowStorage } from "../../../providers/authentication/oauth-flow-store";
 import type { OAuthDevicePollResponse } from "../catalog/contracts";
 import { providerJwtVerification } from "../../../providers/provider-metadata";
@@ -404,7 +404,7 @@ export function createOAuthLoginOperations(config: OAuthLoginConfig) {
           ...pickDefined({ providerState }),
           ...pickDefined({ parameters }),
         });
-        return publicStarted;
+        return { ...publicStarted, verificationUri: skipGithubAccountPicker(publicStarted.verificationUri) };
       },
     async pollDevice(
         access: AccessDecision | undefined,
