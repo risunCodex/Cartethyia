@@ -123,6 +123,8 @@ describe("GitHub Copilot device-login entitlement gate", () => {
     expect(poll.result.auth_state).toEqual({ github_copilot_profile: "vscode-client-real" });
     expect(poll.result.refresh).toBe("github-token");
     expect(poll.result.accountLabel).toBe("octocat");
+    // The login is reported as structured identity, not only a display label.
+    expect(poll.result.accountName).toBe("octocat");
   });
 
   test("an entitlement lookup failure does not lock out an approved account", async () => {
@@ -193,6 +195,8 @@ describe("GitHub Copilot device-login entitlement gate", () => {
     expect(poll.result.auth_state).toEqual({ github_copilot_profile: "opencode-copilot" });
     expect(poll.result.refresh).toBe("github-token");
     expect(poll.result.accountLabel).toBe("octocat");
+    // The login is reported as structured identity, not only a display label.
+    expect(poll.result.accountName).toBe("octocat");
   });
 
   test("default login client follows the complete profile's OAuth app ID", async () => {

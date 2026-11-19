@@ -104,6 +104,50 @@ test("WorkOS email/name learned at login is stored before the identity sweep", a
   }
 });
 
+test("device accounts sharing one email but different userIds stay separate rows", async () => {
+  // The clixad overwrite: its gateway reports one email for several accounts, so
+  // a fingerprint on the email merged them — adding the second account replaced
+  // the first. The provider's userId is the identity; the store must keep both.
+  const dir = mkdtempSync(join(tmpdir(), "cartethyia-oauth-clixad-"));
+  const sqlite = createSqliteDatabase(join(dir, "cartethyia.sqlite"));
+  try {
+    await applySqliteMigrations(sqlite);
+    const db = buildSqliteHandle(sqlite).db;
+    const tenantId = randomUUID();
+    await db.insert(tenants).values({ id: tenantId, name: "Operator", status: "active" });
+    await db.insert(providers).values({ id: "clixad" });
+    const store = new DrizzleOAuthAccountStore(db);
+
+    const login = (userId: string) => ({
+      label: "shared@example.com",
+      access: `adg_${userId}`,
+      refresh: `adg_${userId}`,
+      expiresAt: new Date(Date.now() + 60_000),
+      accountLabel: "shared@example.com",
+      accountName: userId,
+    });
+    const first = await store.persistAccount(tenantId, "clixad", login("u1"));
+    const second = await store.persistAccount(tenantId, "clixad", login("u2"));
+    expect(second.accountId).not.toBe(first.accountId);
+
+    // A re-login of the same userId replaces its own row, not the sibling's.
+    const again = await store.persistAccount(tenantId, "clixad", login("u1"));
+    expect(again.accountId).toBe(first.accountId);
+
+    const rows = await db
+      .select({ label: providerAccounts.label })
+      .from(providerAccounts)
+      .where(eq(providerAccounts.providerId, "clixad"));
+    expect(rows).toHaveLength(2);
+  } finally {
+    try {
+      sqlite.close();
+    } finally {
+      removeDir(dir);
+    }
+  }
+});
+
 test("an OAuth flow that mints an API credential files the account as api_key", async () => {
   const dir = mkdtempSync(join(tmpdir(), "cartethyia-oauth-kind-"));
   const sqlite = createSqliteDatabase(join(dir, "cartethyia.sqlite"));

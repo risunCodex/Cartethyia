@@ -67,6 +67,20 @@ describe("oauth re-login identity", () => {
     expect(oauthIdentityFingerprint({ ...a, providerId: "cursor" })).not.toBe(oauthIdentityFingerprint({ ...b, providerId: "cursor" }));
   });
 
+  test("structured accountName distinguishes accounts that share a display label", () => {
+    // The clixad bug: one email (or one linked GitHub login) fronts several
+    // accounts, so the display label collides and a second account replaced the
+    // first. The provider's unique per-account id, reported as accountName, is
+    // the identity — two accounts must stay two rows.
+    const base = { providerId: "clixad", label: "shared@example.com", access: "a", refresh: "a", expiresAt: new Date(0) };
+    const a = { ...base, accountName: "u1" };
+    const b = { ...base, accountName: "u2" };
+    expect(oauthIdentityFingerprint(a)).not.toBe(oauthIdentityFingerprint(b));
+    // A re-login of the same account coalesces even as its tokens rotate.
+    const a2 = { ...base, accountName: "u1", access: "a2", refresh: "a2" };
+    expect(oauthIdentityFingerprint(a)).toBe(oauthIdentityFingerprint(a2));
+  });
+
   test("an unresolved label that falls back to the provider id is not an identity", () => {
     // The Cursor bug, reproduced: the flow resolves no email, so `label` is
     // filled with the provider id. Every login then hashes to the same value,

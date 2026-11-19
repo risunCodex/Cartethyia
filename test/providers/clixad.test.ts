@@ -245,6 +245,8 @@ describe("ClixadOAuthClient", () => {
     if (poll.status === "complete") {
       expect(poll.result.access).toBe("adg_complete");
       expect(poll.result.accountLabel).toBe("a@b.c");
+      // The unique per-account identity is userId, not the shared email/login.
+      expect(poll.result.accountName).toBe("u1");
       expect(poll.result.auth_state?.["userId"]).toBe("u1");
       expect(poll.result.auth_state?.["login"]).toBe("github-user");
     }

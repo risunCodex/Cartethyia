@@ -106,6 +106,15 @@ this restores the literal and keeps the version fix.
 - **`thinkingmachines/inkling-2-small:free` withdrawn** from the shared
   kilo/OpenRouter free roster.
 
+### Fixed
+
+- **Device-code logins no longer overwrite a different account.** Clixad used the
+  account email as its identity, but one email (or one linked GitHub login) can
+  front several clixad accounts, so adding a second account replaced the first.
+  The identity is now clixad's unique `userId` — stable across re-login — and
+  GitHub Copilot reports its login as structured identity. Distinct accounts add
+  as separate rows; a re-login of the same account still replaces its own row.
+
 ## [2.8.4] - 2026-11-18 · Codename Arc-en-Ciel
 
 ### Added

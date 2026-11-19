@@ -63,6 +63,14 @@ export class ClixadOAuthClient extends OAuthClient {
     const status = String(body["status"] ?? "");
     if (status === "complete") {
       const token = String(body["token"] ?? "");
+      // The account identity is clixad's own `userId`, not the email/login it
+      // also reports: one email (or one linked GitHub login) can front several
+      // clixad accounts, so fingerprinting on it made a second account replace
+      // the first. `userId` is unique per account and stable across re-login, so
+      // it is what the console store matches on; email/login stay display-only.
+      const userId = body["userId"] == null ? "" : String(body["userId"]).trim();
+      const login = typeof body["login"] === "string" ? body["login"].trim() : "";
+      const accountName = userId.length > 0 ? userId : login.length > 0 ? login : undefined;
       return {
         status: "complete",
         result: {
@@ -73,6 +81,7 @@ export class ClixadOAuthClient extends OAuthClient {
           refresh: token,
           expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
           accountLabel: String(body["email"] ?? body["login"] ?? ""),
+          ...(accountName === undefined ? {} : { accountName }),
           auth_state: {
             userId: body["userId"],
             email: body["email"],

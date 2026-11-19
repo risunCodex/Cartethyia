@@ -671,7 +671,11 @@ export class GithubOAuthClient extends OAuthDeviceFlow implements OAuthTokenRefr
       refresh: githubToken,
       expiresAt,
       auth_state: { github_copilot_profile: profile },
-      ...(label === undefined ? {} : { accountLabel: label }),
+      // The GitHub login is the unique, stable per-account identity. Report it
+      // as structured `accountName` (not only the display label) so the console
+      // store fingerprints the account itself rather than falling back to the
+      // refresh token when the label path is unresolved.
+      ...(label === undefined ? {} : { accountLabel: label, accountName: label }),
     };
     return { status: "complete", result };
   }
