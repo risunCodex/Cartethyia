@@ -75,6 +75,33 @@ function danglingTagPrefix(text: string): string {
   return longestDanglingPrefix(text, ALL_TAGS);
 }
 
+/** Length of the trailing backtick run of `text` (0 when it does not end in one). */
+function trailingBacktickRun(text: string): number {
+  let run = 0;
+  while (run < text.length && text[text.length - 1 - run] === "`") run += 1;
+  return run;
+}
+
+/**
+ * Length of the longest suffix of `text` that a next append could still turn
+ * into a think tag: a *proper* prefix of some tag spelling. Unlike the
+ * hold-back rule (`danglingTagPrefix`), a complete trailing tag does not count
+ * — no longer tag spelling starts with a shorter one's full spelling, so its
+ * bytes are already settled and the scanner must cross them (a scan bound that
+ * stopped at such a tag would defer its match to the next push).
+ */
+function unsafeTagPrefixLen(text: string): number {
+  const limit = Math.min(
+    ALL_TAGS.reduce((max, tag) => Math.max(max, tag.length - 1), 0),
+    text.length,
+  );
+  for (let length = limit; length > 0; length -= 1) {
+    const suffix = text.slice(-length);
+    if (ALL_TAGS.some((tag) => tag.length > length && tag.startsWith(suffix))) return length;
+  }
+  return 0;
+}
+
 /**
  * Code-span state the scanner carries between positions. Backtick runs open
  * an inline span (a single backtick) or a fence (three or more); a newline
@@ -96,6 +123,26 @@ interface TagMatch {
   readonly kind: "open" | "close";
   readonly codeTicks: number;
   readonly codeFenced: boolean;
+}
+
+/**
+ * Saved scan position for an open span's tag search: the buffer offset and the
+ * code state a full rescan would stand at there. Valid only while the buffer
+ * grows by appends; every other buffer change clears it.
+ */
+interface ScanBookmark {
+  readonly from: number;
+  readonly ticks: number;
+  readonly fenced: boolean;
+}
+
+/**
+ * A stream tag search: the first wanted tag, plus — when the search found none
+ * — where the next scan of the same append-only buffer should resume.
+ */
+interface TagSearch {
+  readonly match: TagMatch | undefined;
+  readonly resume: ScanBookmark | undefined;
 }
 
 /**
@@ -137,20 +184,21 @@ function matchThinkTag(
 }
 
 /**
- * The first think tag at or after `from` that is *not* inside a code span or
- * fence, scanning left to right so code state is tracked exactly once per
- * position. `state` carries the code position in from earlier scans and is
- * advanced through every byte examined — including the matched tag's own
+ * The first think tag at or after `from` and before `end` that is *not* inside
+ * a code span or fence, scanning left to right so code state is tracked exactly
+ * once per position. `state` carries the code position in from earlier scans
+ * and is advanced through every byte examined — including the matched tag's own
  * bytes, which never carry code state — so it is exact for the next call.
- * Returns `undefined` when no tag exists.
+ * Returns `undefined` when no tag exists in the range.
  */
 function scanThinkTag(
   value: string,
   from: number,
   state: CodeState,
   strict: boolean,
+  end: number,
 ): TagMatch | undefined {
-  for (let i = from; i < value.length; i++) {
+  for (let i = from; i < end; i++) {
     const char = value[i]!;
     if (char === "`") {
       let run = 1;
@@ -188,6 +236,58 @@ function scanThinkTag(
 }
 
 /**
+ * The earliest occurrence of any of `tags` in `buffer` outside a code span or
+ * fence — the one tag search both stream splitters run. Scanning left to right
+ * tracks the code state exactly once per position; a tag of the other frontier
+ * is literal content and skipped, matching the historical per-tag scan.
+ *
+ * `bookmark` resumes a previous search of the same append-only buffer instead
+ * of rewalking bytes already examined; the outcome is identical to a scan from
+ * the start because the skipped prefix is unchanged and holds no match for
+ * `tags`. When no wanted tag is found, the search also returns the next resume
+ * point: the start of the buffer's unsafe tail — the trailing backtick run or
+ * an uncompleted tag prefix, whose bytes can still grow into a run or a tag on
+ * the next append, so no complete tag can start or end inside it — together
+ * with the code state at that offset. The caller persists it across pushes and
+ * clears it on any non-append buffer change; a found match clears it too,
+ * since the caller consumes the tag and rewrites the buffer next.
+ */
+function findTagInBuffer(
+  buffer: string,
+  tags: readonly string[],
+  codeTicks: number,
+  codeFenced: boolean,
+  bookmark?: ScanBookmark | undefined,
+): TagSearch {
+  const state: CodeState =
+    bookmark === undefined
+      ? { ticks: codeTicks, fenced: codeFenced }
+      : { ticks: bookmark.ticks, fenced: bookmark.fenced };
+  // No complete tag can start or end inside the unsafe tail, so the scan stops
+  // at its start; the tail is rewalked — with the state carried to it — once
+  // the next append has settled it.
+  const tail = Math.max(trailingBacktickRun(buffer), unsafeTagPrefixLen(buffer));
+  const safe = buffer.length - tail;
+  let from = bookmark === undefined ? 0 : bookmark.from;
+  for (;;) {
+    const match = scanThinkTag(buffer, from, state, true, safe);
+    if (match === undefined) {
+      // `state` now stands exactly at `safe`.
+      return {
+        match: undefined,
+        resume: { from: safe, ticks: state.ticks, fenced: state.fenced },
+      };
+    }
+    if (tags.includes(buffer.slice(match.index, match.index + match.length))) {
+      return { match, resume: undefined };
+    }
+    // A tag of the other frontier: skip it and keep scanning. `state` already
+    // sits just past its bytes, and the tag cannot end past `safe`.
+    from = match.index + match.length;
+  }
+}
+
+/**
  * Removes visible thinking tags, leaving any that sit inside a code span or
  * fence alone — and leaving any tag that is not part of a complete pair alone
  * too, since an unpaired tag is the subject of the answer rather than markup
@@ -208,7 +308,7 @@ export function stripThinkingTags(value: string): string {
   const state: CodeState = { ticks: 0, fenced: false };
   let i = 0;
   while (i < value.length) {
-    const match = scanThinkTag(value, i, state, false);
+    const match = scanThinkTag(value, i, state, false, value.length);
     if (match === undefined) {
       out += value.slice(i);
       break;
@@ -229,7 +329,7 @@ export function stripThinkingTags(value: string): string {
     let close: TagMatch | undefined;
     let from = tagEnd;
     for (;;) {
-      const next = scanThinkTag(value, from, state, false);
+      const next = scanThinkTag(value, from, state, false, value.length);
       if (next === undefined) break;
       if (next.kind === "close") {
         close = next;
@@ -282,6 +382,8 @@ export class ThinkingTagStripper {
   #inUnclosedSpan = false;
   /** The opening tag currently held, restored verbatim on fail-open/flush. */
   #openMarker = "";
+  /** Saved close-scan position while the span is unclosed; see `ScanBookmark`. */
+  #scanBookmark: ScanBookmark | undefined;
 
   /** Feeds a chunk; returns settled content with paired tags removed, in order. */
   push(chunk: string): string {
@@ -289,21 +391,23 @@ export class ThinkingTagStripper {
     let out = "";
     for (;;) {
       if (this.#inUnclosedSpan) {
-        const closed = this.#findTag(CLOSE_TAGS);
+        const closed = this.#findClose();
         if (closed === undefined) break;
         out += this.#buffer.slice(0, closed.index);
         this.#buffer = this.#buffer.slice(closed.index + closed.length);
+        this.#scanBookmark = undefined;
         this.#codeTicks = closed.codeTicks;
         this.#codeFenced = closed.codeFenced;
         this.#inUnclosedSpan = false;
         this.#openMarker = "";
         continue;
       }
-      const opened = this.#findTag(OPEN_TAGS);
+      const opened = this.#findOpen();
       if (opened === undefined) break;
       out += this.#buffer.slice(0, opened.index);
       this.#openMarker = this.#buffer.slice(opened.index, opened.index + opened.length);
       this.#buffer = this.#buffer.slice(opened.index + opened.length);
+      this.#scanBookmark = undefined;
       this.#codeTicks = opened.codeTicks;
       this.#codeFenced = opened.codeFenced;
       this.#inUnclosedSpan = true;
@@ -315,6 +419,7 @@ export class ThinkingTagStripper {
       if (this.#buffer.length > MAX_THINK_BLOCK_BYTES) {
         out += this.#openMarker + this.#buffer;
         this.#buffer = "";
+        this.#scanBookmark = undefined;
         this.#inUnclosedSpan = false;
         this.#openMarker = "";
       }
@@ -323,6 +428,7 @@ export class ThinkingTagStripper {
     const held = danglingTagPrefix(this.#buffer);
     const settled = held.length > 0 ? this.#buffer.slice(0, -held.length) : this.#buffer;
     this.#buffer = held;
+    this.#scanBookmark = undefined;
     return out + settled;
   }
 
@@ -330,6 +436,7 @@ export class ThinkingTagStripper {
   flush(): string {
     const rest = this.#buffer;
     this.#buffer = "";
+    this.#scanBookmark = undefined;
     this.#codeTicks = 0;
     this.#codeFenced = false;
     if (this.#inUnclosedSpan) {
@@ -343,20 +450,28 @@ export class ThinkingTagStripper {
     return rest;
   }
 
-  /** The earliest tag in `tags` outside code, with the code state at it. */
-  #findTag(tags: readonly string[]): TagMatch | undefined {
-    const state: CodeState = { ticks: this.#codeTicks, fenced: this.#codeFenced };
-    let from = 0;
-    for (;;) {
-      const match = scanThinkTag(this.#buffer, from, state, true);
-      if (match === undefined) return undefined;
-      // A tag of the other frontier is literal content here: resume after it.
-      // `state` already sits just past its bytes.
-      if (tags.includes(this.#buffer.slice(match.index, match.index + match.length))) {
-        return match;
-      }
-      from = match.index + match.length;
-    }
+  /**
+   * The first open tag outside code. The open search never resumes: outside an
+   * unclosed span each push ends by trimming the buffer to a dangling tag
+   * prefix, so a fresh scan from the start is cheap.
+   */
+  #findOpen(): TagMatch | undefined {
+    return findTagInBuffer(this.#buffer, OPEN_TAGS, this.#codeTicks, this.#codeFenced).match;
+  }
+
+  /** The first close tag outside code, resuming from the saved scan position. */
+  #findClose(): TagMatch | undefined {
+    const search = findTagInBuffer(
+      this.#buffer,
+      CLOSE_TAGS,
+      this.#codeTicks,
+      this.#codeFenced,
+      this.#scanBookmark,
+    );
+    // Persist the resume point after a scan that found nothing; a found match
+    // clears it — the caller consumes the tag and rewrites the buffer next.
+    this.#scanBookmark = search.resume;
+    return search.match;
   }
 }
 
@@ -398,6 +513,8 @@ export class ThinkSplitter {
   /** Whether `#codeTicks` opened a fenced block (closes on its own line) rather
    *  than an inline span. */
   #codeFenced = false;
+  /** Saved close-scan position while the span is open; see `ScanBookmark`. */
+  #scanBookmark: ScanBookmark | undefined;
   /** Span characters already reported as `pendingReasoning`; only the fresh
    *  tail of the open span is reported per chunk. */
   #reportedSpanLen = 0;
@@ -415,6 +532,7 @@ export class ThinkSplitter {
         text += this.#consumeUpTo(opened);
         const openTag = this.#buffer.slice(opened.index, opened.index + opened.length);
         this.#buffer = this.#buffer.slice(opened.index + opened.length);
+        this.#scanBookmark = undefined;
         this.#inReasoning = true;
         this.#openMarker = openTag;
         continue;
@@ -423,6 +541,7 @@ export class ThinkSplitter {
       if (closed === undefined) break;
       reasoning += this.#consumeUpTo(closed);
       this.#buffer = this.#buffer.slice(closed.index + closed.length);
+      this.#scanBookmark = undefined;
       this.#inReasoning = false;
       this.#openMarker = "";
       this.#reportedSpanLen = 0;
@@ -439,10 +558,12 @@ export class ThinkSplitter {
       if (settled.length > MAX_THINK_BLOCK_BYTES) {
         text += this.#openMarker + settled;
         this.#buffer = held;
+        this.#scanBookmark = undefined;
         this.#inReasoning = false;
         this.#openMarker = "";
         this.#reportedSpanLen = 0;
       } else {
+        // Content-identical reassembly: the saved scan position stays valid.
         this.#buffer = settled + held;
         // Fresh span content this chunk added — visible to a loop guard, never
         // to a renderer (the span has not closed).
@@ -453,6 +574,7 @@ export class ThinkSplitter {
     } else {
       text += stripThinkingTags(settled);
       this.#buffer = held;
+      this.#scanBookmark = undefined;
     }
     return { text, reasoning, pendingReasoning };
   }
@@ -461,6 +583,7 @@ export class ThinkSplitter {
   flush(): ThinkSplit {
     const rest = this.#buffer;
     this.#buffer = "";
+    this.#scanBookmark = undefined;
     this.#codeTicks = 0;
     this.#codeFenced = false;
     this.#reportedSpanLen = 0;
@@ -482,33 +605,27 @@ export class ThinkSplitter {
     return this.#buffer.slice(0, match.index);
   }
 
-  #findOpen(): TagMatch | undefined {
-    return this.#findTag(OPEN_TAGS);
-  }
-
-  #findClose(): TagMatch | undefined {
-    return this.#findTag(CLOSE_TAGS);
-  }
-
   /**
-   * The earliest occurrence of any of `tags` that is *not* inside a code span
-   * or fence, scanning left to right so code state is tracked exactly once per
-   * position. Returns the match and the code state at it, so `push` can commit
-   * that state when it consumes the tag. Tags of the other frontier are
-   * literal content and skipped, matching the historical per-tag scan.
+   * The first open tag outside code. The open search never resumes: outside a
+   * span each push ends by trimming the buffer to a dangling tag prefix, so a
+   * fresh scan from the start stays cheap.
    */
-  #findTag(tags: readonly string[]): TagMatch | undefined {
-    const state: CodeState = { ticks: this.#codeTicks, fenced: this.#codeFenced };
-    let from = 0;
-    for (;;) {
-      const match = scanThinkTag(this.#buffer, from, state, true);
-      if (match === undefined) return undefined;
-      if (tags.includes(this.#buffer.slice(match.index, match.index + match.length))) {
-        return match;
-      }
-      // A tag of the other frontier: skip it and keep scanning. `state`
-      // already sits just past its bytes.
-      from = match.index + match.length;
-    }
+  #findOpen(): TagMatch | undefined {
+    return findTagInBuffer(this.#buffer, OPEN_TAGS, this.#codeTicks, this.#codeFenced).match;
+  }
+
+  /** The first close tag outside code, resuming from the saved scan position. */
+  #findClose(): TagMatch | undefined {
+    const search = findTagInBuffer(
+      this.#buffer,
+      CLOSE_TAGS,
+      this.#codeTicks,
+      this.#codeFenced,
+      this.#scanBookmark,
+    );
+    // Persist the resume point after a scan that found nothing; a found match
+    // clears it — the caller consumes the tag and rewrites the buffer next.
+    this.#scanBookmark = search.resume;
+    return search.match;
   }
 }

@@ -361,8 +361,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         provider: "claude",
       });
     }
-    const outboundBody =
-      patchedBody === undefined ? requestBody : new TextDecoder().decode(patchedBody);
+    const outboundBody = patchedBody ?? requestBody;
     // Fallback-credit redemption: a previous refusal of *this exact body* may
     // have left a token that buys one free replay. Keyed by the frozen body
     // because the donor binds the token to the request that was refused
@@ -506,7 +505,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       };
       yield* sendOnce(
         retryHeaders,
-        retryBody === undefined ? outboundBody : new TextDecoder().decode(retryBody),
+        retryBody === undefined ? outboundBody : retryBody,
       );
     }
   }

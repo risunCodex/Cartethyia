@@ -45,6 +45,7 @@
  * fails trying to inflate them.
  */
 import { gzipSync } from "node:zlib";
+import { fastPathname } from "../transport/pathname";
 
 /**
  * Header a route sets to say "do not compress this", popped before the
@@ -150,7 +151,7 @@ export async function gzipResponse(request: Request, response: Response): Promis
   // Scoped to the paths this module documents. Instance-level scoping is not
   // available here: the wrap's `hoc` propagates to the root app, so every
   // route in the process — `/v1/*` included — reaches this function.
-  const pathname = new URL(request.url).pathname;
+  const pathname = fastPathname(request.url);
   if (!pathname.startsWith("/console/api/") && pathname !== "/metrics") return response;
   if (request.method === "HEAD") return response;
   if (response.status === 204 || response.status === 304) return response;

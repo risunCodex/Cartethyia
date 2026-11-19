@@ -1,5 +1,5 @@
 import type { CanonicalEvent } from "../../protocol/canonical-model";
-import type { AttemptLeaseOwnership, ValidatedOutboundFetch, ValidatedOutboundHttp2Bidi } from "../../providers/provider-contracts";
+import type { AttemptLeaseOwnership, ProviderDispatchContext, ResolvedCredential, ValidatedOutboundFetch, ValidatedOutboundHttp2Bidi } from "../../providers/provider-contracts";
 import type { ProviderCaptureExchange } from "../../providers/provider-contracts";
 import { GATEWAY_SECURITY_HEADERS } from "../../security/outbound-headers";
 import type { ValidatedNetworkBindingFactory } from "../../network/egress/factory";
@@ -98,7 +98,7 @@ export async function buildDispatchNetworkBindings(input: {
 }
 
 export function buildUpstreamDispatchContext(input: {
-  readonly credential: unknown;
+  readonly credential: ResolvedCredential;
   readonly deadline: number;
   readonly signal: AbortSignal;
   readonly headers: Record<string, string>;
@@ -133,11 +133,8 @@ export function buildUpstreamDispatchContext(input: {
   readonly tenantSystemPrompt?: string;
   /** Opaque identity shared by retries of one logical gateway request. */
   readonly requestIdentity?: object;
-}): Record<string, unknown> {
-  const credentialKind =
-    typeof input.credential === "object" && input.credential !== null && "credential_kind" in input.credential
-      ? input.credential.credential_kind
-      : undefined;
+}): ProviderDispatchContext {
+  const credentialKind = input.credential.credential_kind;
   const userAgent = credentialKind === "oauth" || credentialKind === "scoped_access_token"
     ? undefined
     : input.userAgent;
@@ -177,7 +174,7 @@ export function buildUpstreamDispatchContext(input: {
       ? {}
       : { tenant_system_prompt: input.tenantSystemPrompt }),
     ...(input.requestIdentity ? { request_identity: input.requestIdentity } : {}),
-  } as Record<string, unknown>;
+  };
 }
 
 /**

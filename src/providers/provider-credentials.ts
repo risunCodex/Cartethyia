@@ -17,6 +17,9 @@ const ENVELOPE_PREFIXES: Record<TokenEnvelope, string> = {
   provider: "provider:",
 };
 
+const TEXT_ENCODER = new TextEncoder();
+const TEXT_DECODER = new TextDecoder();
+
 /**
  * Removes one explicitly identified envelope so adapters never emit
  * `Bearer Bearer`. The bearer branch strips case-insensitively with
@@ -28,16 +31,16 @@ export function unwrapProviderToken(
   value: string | Uint8Array,
   envelope?: TokenEnvelope,
 ): Uint8Array {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
-  const text = new TextDecoder().decode(bytes);
+  const bytes = typeof value === "string" ? TEXT_ENCODER.encode(value) : value;
+  const text = TEXT_DECODER.decode(bytes);
   if (envelope === "bearer") {
     const trimmed = text.trim();
     const match = /^bearer\s+(.+)$/is.exec(trimmed);
-    return new TextEncoder().encode((match?.[1] ?? trimmed).trim());
+    return TEXT_ENCODER.encode((match?.[1] ?? trimmed).trim());
   }
   const prefix = envelope === undefined ? undefined : ENVELOPE_PREFIXES[envelope];
   if (prefix !== undefined && text.toLowerCase().startsWith(prefix.toLowerCase())) {
-    return new TextEncoder().encode(text.slice(prefix.length));
+    return TEXT_ENCODER.encode(text.slice(prefix.length));
   }
   return new Uint8Array(bytes);
 }

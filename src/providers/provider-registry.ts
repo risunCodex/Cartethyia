@@ -231,7 +231,16 @@ export class ProviderRegistry {
    * rather than a cached instance.
    */
   async resolve(providerId: string, opts: { readonly force?: boolean } = {}): Promise<ProviderAdapter | undefined> {
-    const normalized = parseProviderId(providerId);
+    // Fast path: registration keys are canonical (register/upsert parse
+    // before every set), so a raw membership hit skips the re-normalizing
+    // parse on the per-attempt dispatch path. A miss still normalizes below,
+    // and the `force` cache check keys the same canonical maps either way.
+    let normalized: ProviderId;
+    if (this.#registrations.has(providerId as ProviderId)) {
+      normalized = providerId as ProviderId;
+    } else {
+      normalized = parseProviderId(providerId);
+    }
     if (!opts.force) {
       const cached = this.#loaded.get(normalized);
       if (cached !== undefined) return cached;
@@ -404,6 +413,12 @@ export class ProviderRegistry {
    * immediately (the live-read the caller depends on).
    */
   upstreamHostFor(providerId: string): { readonly hostname: string; readonly port: number } | undefined {
+    // Fast path: registration keys are canonical (register/upsert parse
+    // before every set), so a raw hit answers without the re-normalizing
+    // parse on the per-candidate dispatch path. A miss still parses on the
+    // fallback below, preserving the malformed-slug → `undefined` contract.
+    const rawRegistration = this.#registrations.get(providerId as ProviderId);
+    if (rawRegistration !== undefined) return rawRegistration.upstream_host;
     let normalized: ProviderId;
     try {
       normalized = parseProviderId(providerId);

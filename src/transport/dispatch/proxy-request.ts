@@ -92,30 +92,15 @@ export async function handleProviderProxyRequest(
   if (!prepared)
     throw new GatewayError("route_unavailable", 503, "The request was not prepared, so no route can be dialed (request {requestId}). Resend the request. The bouncer stepped out — resend shortly 🚪");
   const canonicalRequest = await applyTenantPreferences(prepared, deps.db);
-  // Tenant system-prompt injection, resolved once per request. For providers
-  // whose upstream validates the fixed system prompt as a channel identity
-  // (the buddy family), the text cannot ride the canonical `system` array —
-  // the adapter replaces it — so it travels through dispatch context and the
-  // adapter folds it into its fixed turn, wrapped in the gateway's markers.
-  // `override` degrades to wrapped append there: stripping the identity would
-  // have the upstream refuse the request outright.
-  const candidateForPrompt = prepared.candidate;
-  const tenantSystemPromptText =
-    canonicalRequest.skipTenantSystemPrompt === true
-      ? undefined
-      : isWrappedInjectionProvider(candidateForPrompt.provider_id)
-        ? resolveTenantSystemPrompt(
-            await readTenantSystemPromptsForDispatch(
-              deps.db,
-              prepared.authorization.snapshot.tenant_id,
-            ),
-            {
-              providerId: candidateForPrompt.provider_id,
-              modelId: candidateForPrompt.model_id,
-              requestedModel: prepared.plan?.requested_model ?? candidateForPrompt.model_id,
-            },
-          )?.text
-        : undefined;
+  // Tenant system-prompt injection data is read once per request. The effective
+  // text is resolved per candidate below because provider/model scopes differ;
+  // failover must not reuse the first candidate's prompt.
+  const tenantSystemPrompts = canonicalRequest.skipTenantSystemPrompt === true
+    ? undefined
+    : await readTenantSystemPromptsForDispatch(
+        deps.db,
+        prepared.authorization.snapshot.tenant_id,
+      );
   // Per-tenant timeout, applied as soon as the tenant is known. The deadline
   // was armed at admission with the deployment default; this re-arms it.
   await applyTenantDeadlineOverride(
@@ -167,14 +152,7 @@ export async function handleProviderProxyRequest(
           "This route has no usable credential (request {requestId}). Save one on the account, or route to a provider whose account is configured. Wrong key, right door — check the credential 🔑",
         );
       const credential = candidate.provider_account_id
-        ? await resolveCredentialForAccount(
-            deps.db,
-            candidate.provider_id,
-            candidate.provider_account_id,
-            deps.oauthRefreshService && deps.resolveOAuthRefresher
-              ? { refreshService: deps.oauthRefreshService, resolveRefresher: deps.resolveOAuthRefresher }
-              : undefined,
-          )
+        ? await resolveCredentialForAccount(deps.db, candidate.provider_id, candidate.provider_account_id)
         : {
             provider_id: candidate.provider_id as ProviderId,
             credential_kind: "none" as const,
@@ -218,29 +196,14 @@ export async function handleProviderProxyRequest(
         candidateRequest,
         routeCapabilitiesFor(candidate),
       );
-      const dispatchContextBase = buildUpstreamDispatchContext({
-        credential,
-        deadline: state.deadlineMs,
-        signal: state.abortController.signal,
-        headers: inboundHeaders,
-        requestId: state.requestId,
-        requestIdentity: state,
-        ...(state.imageClampMaxBytes === undefined
-          ? {}
-          : { imageClampMaxBytes: state.imageClampMaxBytes }),
-        ...(conversationAffinity ? { conversationAffinity } : {}),
-        ...(tenantSystemPromptText === undefined ? {} : { tenantSystemPrompt: tenantSystemPromptText }),
-        ...(candidate.user_agent === undefined ? {} : { userAgent: candidate.user_agent }),
-        ...(providerCapture ? { providerCapture } : {}),
-        ...(await buildDispatchNetworkBindings({
-          deps,
-          networkPoolId,
-          tenantId: prepared.authorization.snapshot.tenant_id,
-          providerCapture,
-          state,
-        })),
-        ...(leaseOwnership === undefined ? {} : { leaseOwnership }),
-      });
+      const tenantSystemPromptText =
+        tenantSystemPrompts !== undefined && isWrappedInjectionProvider(candidate.provider_id)
+          ? resolveTenantSystemPrompt(tenantSystemPrompts, {
+              providerId: candidate.provider_id,
+              modelId: candidate.model_id,
+              requestedModel: prepared.plan?.requested_model ?? candidate.model_id,
+            })?.text
+          : undefined;
       if (dispatchRequest.stream) {
         return dispatchStreamingAttempt({
           state,
@@ -265,6 +228,34 @@ export async function handleProviderProxyRequest(
           ...(leaseOwnership === undefined ? {} : { leaseOwnership }),
           });
       }
+      // Built only on the non-streaming branch: `dispatchStreamingAttempt`
+      // assembles its own dispatch context and the same three egress bindings
+      // (streaming/stream.ts), so a context constructed before the stream
+      // check was allocated and discarded on every streamed attempt — the
+      // gateway's hottest path.
+      const dispatchContextBase = buildUpstreamDispatchContext({
+        credential,
+        deadline: state.deadlineMs,
+        signal: state.abortController.signal,
+        headers: inboundHeaders,
+        requestId: state.requestId,
+        requestIdentity: state,
+        ...(state.imageClampMaxBytes === undefined
+          ? {}
+          : { imageClampMaxBytes: state.imageClampMaxBytes }),
+        ...(conversationAffinity ? { conversationAffinity } : {}),
+        ...(tenantSystemPromptText === undefined ? {} : { tenantSystemPrompt: tenantSystemPromptText }),
+        ...(candidate.user_agent === undefined ? {} : { userAgent: candidate.user_agent }),
+        ...(providerCapture ? { providerCapture } : {}),
+        ...(await buildDispatchNetworkBindings({
+          deps,
+          networkPoolId,
+          tenantId: prepared.authorization.snapshot.tenant_id,
+          providerCapture,
+          state,
+        })),
+        ...(leaseOwnership === undefined ? {} : { leaseOwnership }),
+      });
       // Pool slot ownership belongs to the candidate attempt: the slot was
       // acquired atomically with selection above, and `proxySlot` is
       // released in the `finally` below. Acquiring again here (including
@@ -280,7 +271,7 @@ export async function handleProviderProxyRequest(
         for await (const event of adapter.dispatch(
           input,
           providerRouteCandidate as never,
-          dispatchContextBase as never,
+          dispatchContextBase,
         )) {
           if (firstContentDeltaAtMs === undefined && event.type === "content_delta") {
             firstContentDeltaAtMs = Date.now();

@@ -38,8 +38,10 @@ export interface ResolvedCredential {
   readonly auth_state?: Readonly<Record<string, unknown>> | undefined;
 }
 
+const TEXT_DECODER = new TextDecoder();
+
 export function readCredentialSecret(credential: ResolvedCredential, errorMessage?: string): string {
-  const raw = credential.secret ? new TextDecoder().decode(credential.secret).trim() : "";
+  const raw = credential.secret ? TEXT_DECODER.decode(credential.secret).trim() : "";
   if (!raw) {
     throw new GatewayError(
       "authentication_failed",
@@ -443,12 +445,20 @@ function normalizeProviderSlug(id: string): string {
 
 /** Returns true for one of Cartethyia's reserved builtin IDs, case-insensitively. */
 export function isBundledProviderId(value: string): value is BundledProviderId {
+  // Fast path: canonical IDs are set members verbatim, so hot registry and
+  // dispatch lookups skip the re-normalization; anything else still
+  // normalizes below, keeping case/whitespace tolerance unchanged.
+  if (BUNDLED_PROVIDER_IDS.has(value as BundledProviderId)) return true;
   const normalized = value.trim().toLowerCase();
   return BUNDLED_PROVIDER_IDS.has(normalized as BundledProviderId);
 }
 
 /** Normalizes a provider identifier before persistence or registry lookup. */
 export function parseProviderId(value: string): ProviderId {
+  // Fast path: canonical IDs are bundled-set members verbatim, so they skip
+  // normalization entirely; anything else keeps the full slug validation —
+  // and its error — below.
+  if (BUNDLED_PROVIDER_IDS.has(value as BundledProviderId)) return value as BundledProviderId;
   const normalized = normalizeProviderSlug(value);
   return isBundledProviderId(normalized) ? normalized : normalized as CustomProviderId;
 }

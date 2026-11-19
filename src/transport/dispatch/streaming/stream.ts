@@ -218,7 +218,7 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
     adapter.dispatch(
       dispatchRequest,
       providerRouteCandidate as never,
-      dispatchContext as never,
+      dispatchContext,
     );
   const streamOptions = {
     created: Date.now() / 1000,

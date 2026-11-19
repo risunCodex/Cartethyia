@@ -158,12 +158,8 @@ export function registerConsoleDomains(
 ): AnyElysia {
   const observabilityStore = new DrizzleObservabilityStore(ctx.db, ctx.redis);
   const auditReadStore = new DrizzleAuditReadStore(ctx.db);
-  /** Refresh-aware credential resolution for quota routes. */
-  const resolveCredential = createAccountSecretResolver({
-    db: ctx.db,
-    resolveRefresher: (id) => ctx.providerRegistry.resolveRefresher(id),
-    refreshService: ctx.oauthRefreshService,
-  });
+  /** Credential resolution for quota routes. */
+  const resolveCredential = createAccountSecretResolver({ db: ctx.db });
   const resolveExportCredentials = createAccountExportCredentialsResolver({
     db: ctx.db,
     resolveRefresher: (id) => ctx.providerRegistry.resolveRefresher(id),

@@ -39,6 +39,7 @@ import type { TrustedProxyBoundary } from "../config/network";
 import type { IpAbuseStore } from "../security/abuse";
 import { gzipResponse } from "./response-compression";
 import { beginConsoleActivity } from "../shared/invoke-guard";
+import { fastPathname } from "../transport/pathname";
 
 export interface ConsoleApiCompositionDeps {
   readonly db: CartethyiaDatabase;
@@ -168,7 +169,7 @@ export function createConsoleRouter(deps: ConsoleApiCompositionDeps): AnyElysia 
       // and never read `accessResolver`, so resolving here too would repeat the
       // session lookup plus its user query on every login/session/logout call
       // for a decision nothing consumes. Skip them.
-      if (new URL(request.url).pathname.startsWith("/console/api/auth/")) return;
+      if (fastPathname(request.url).startsWith("/console/api/auth/")) return;
       const access = await resolveConsoleAccess(db, sessionService, request);
       if (access) {
         sessionAccessCache.set(request, access);

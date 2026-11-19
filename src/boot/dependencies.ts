@@ -605,11 +605,7 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
     run: refreshProviderClientVersions,
   });
 
-  const quotaResolveCredential = createAccountSecretResolver({
-    db,
-    resolveRefresher: (providerId) => registry.resolveRefresher(providerId),
-    refreshService: oauthRefreshService,
-  });
+  const quotaResolveCredential = createAccountSecretResolver({ db });
   // Keeps every account's cached quota warm so opening the Quota page is a
   // cache read. Without this the only refreshes are user-triggered, so the
   // first open after an expiry always blocks on the provider.

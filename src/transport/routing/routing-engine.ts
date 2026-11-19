@@ -468,8 +468,17 @@ export class RoutingEngine {
       decisions.set(evaluation.candidate, evaluation.decision);
     }
     // Saturation is read once (inflight counters) and merged into the same
-    // decision map rather than a second sort pass.
-    const saturated = await this.saturatedCandidates(matching);
+    // decision map rather than a second sort pass. The read must run on the
+    // *stamped* candidates, because `decisions` is keyed by them: every
+    // account-bearing candidate (the only kind carrying a `max_inflight`
+    // ceiling) was copied by `applyUsageFloorToCandidate`, so matching against
+    // the snapshot's original objects would never find a decision and the
+    // merge would be dead. The copies preserve `provider_id`/`model_id`/
+    // `provider_account_id`/`owner_tenant_id`, so `admissionKey` resolves to
+    // the same bucket admission enforces.
+    const saturated = await this.saturatedCandidates(
+      evaluations.map((evaluation) => evaluation.candidate),
+    );
     for (const candidate of saturated) {
       const existing = decisions.get(candidate);
       if (existing !== undefined) {

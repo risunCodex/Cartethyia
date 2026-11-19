@@ -30,7 +30,7 @@ export function hasScope(scopes: readonly string[] | undefined, name: string): b
  * credential. Shared by every native handler's `prepare`.
  */
 export async function resolveAttemptCredential(
-  deps: Pick<GatewayHandlerDeps, "db" | "oauthRefreshService" | "resolveOAuthRefresher">,
+  deps: Pick<GatewayHandlerDeps, "db">,
   candidate: { readonly provider_id: string; readonly provider_account_id?: string },
 ): Promise<ResolvedCredential> {
   if (!candidate.provider_account_id) {
@@ -39,14 +39,7 @@ export async function resolveAttemptCredential(
       credential_kind: "none" as const,
     };
   }
-  return resolveCredentialForAccount(
-    deps.db,
-    candidate.provider_id,
-    candidate.provider_account_id,
-    deps.oauthRefreshService && deps.resolveOAuthRefresher
-      ? { refreshService: deps.oauthRefreshService, resolveRefresher: deps.resolveOAuthRefresher }
-      : undefined,
-  );
+  return resolveCredentialForAccount(deps.db, candidate.provider_id, candidate.provider_account_id);
 }
 
 /** The outbound-fetch context fragment native handlers spread into the dispatch context. */

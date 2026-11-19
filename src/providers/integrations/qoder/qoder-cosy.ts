@@ -27,6 +27,17 @@ const QODER_APPCODE = "cosy";
 const QODER_SIG_SECRET = "d2FyLCB3YXIgbmV2ZXIgY2hhbmdlcw==";
 const QODER_STANDARD_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const QODER_ALPHABET = "_doRTgHZBKcGVjlvpC,@aFSx#DPuNJme&i*MzLOEn)sUrthbf%Y^w.(kIQyXqWA!";
+/**
+ * Per-character translation for `transformQoderBody`: standard base64 → the
+ * scrambled alphabet, `=` → `$`. Built once at module init — the previous
+ * per-character `indexOf` was a 64-slot linear scan for every character of
+ * the entire request body. Characters outside the standard alphabet fall
+ * through unchanged, exactly like the `indexOf` → `-1` → `?? char` path.
+ */
+const QODER_CHAR_TRANSLATION = new Map<string, string>(
+  [...QODER_STANDARD_ALPHABET].map((char, index): [string, string] => [char, QODER_ALPHABET[index] ?? char]),
+);
+QODER_CHAR_TRANSLATION.set("=", "$");
 const QODER_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDA8iMH5c02LilrsERw9t6Pv5Nc
 4k6Pz1EaDicBMpdpxKduSZu5OANqUq8er4GM95omAGIOPOh+Nx0spthYA2BqGz+l
@@ -69,8 +80,7 @@ export function transformQoderBody(plaintext: string): Uint8Array {
   const reordered = base64.slice(base64.length - third) + base64.slice(third, base64.length - third) + base64.slice(0, third);
   let encoded = "";
   for (const char of reordered) {
-    if (char === "=") encoded += "$";
-    else encoded += QODER_ALPHABET[QODER_STANDARD_ALPHABET.indexOf(char)] ?? char;
+    encoded += QODER_CHAR_TRANSLATION.get(char) ?? char;
   }
   return Buffer.from(encoded, "latin1");
 }

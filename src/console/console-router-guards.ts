@@ -19,6 +19,15 @@ import { parseCookieValue, SESSION_COOKIE_NAME, isCsrfValid } from "../security/
 const AUTH_ROUTE_SUFFIXES = ["/auth/login", "/auth/setup", "/auth/setup/restore", "/auth/session"] as const;
 
 /**
+ * Unsafe methods for {@link isProtectedConsoleMutation}. Hoisted beside
+ * `AUTH_ROUTE_SUFFIXES`: the predicate runs twice per console request (CSRF
+ * and the mutation limiter), so a per-call array literal was pure allocation.
+ * Annotated `ReadonlySet<string>` so `.has` accepts `request.method`, whose
+ * declared type is `string`.
+ */
+const UNSAFE_METHODS: ReadonlySet<string> = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
  * Whether `request` is a protected console mutation: a `/console/api/*` route
  * in an unsafe method, excluding the auth-route suffixes. Shared by the CSRF
  * and mutation-limiter guards so a change to the protected set lands in both.
@@ -27,7 +36,7 @@ function isProtectedConsoleMutation(request: Request): boolean {
   const path = fastPathname(request.url);
   return (
     path.startsWith("/console/api/") &&
-    ["POST", "PUT", "PATCH", "DELETE"].includes(request.method) &&
+    UNSAFE_METHODS.has(request.method) &&
     !AUTH_ROUTE_SUFFIXES.some((suffix) => path.endsWith(suffix))
   );
 }

@@ -6,7 +6,7 @@
  * time, so input is priced in characters (÷4) with flat reserves for parts
  * that carry no text.
  */
-import type { CanonicalRequest, ContentPart } from "../../protocol/canonical-model";
+import type { CanonicalMessage, CanonicalRequest, ContentPart } from "../../protocol/canonical-model";
 
 /** Reserved output budget when the request names no explicit ceiling. */
 export const DEFAULT_ESTIMATED_OUTPUT_TOKENS = 1024;
@@ -72,11 +72,29 @@ function partChars(part: ContentPart): number {
   }
 }
 
-export function estimateInputTokens(request: CanonicalRequest): number {
+/**
+ * Chars priced for one message's content, the same walk `estimateInputTokens`
+ * performs. Exported so callers that accumulate a message list incrementally
+ * (e.g. the vision-handoff context selection) can add one message's weight per
+ * step instead of re-estimating the whole request per step — integer
+ * addition is associative, so the totals are identical.
+ */
+export function estimateMessageChars(message: CanonicalMessage): number {
+  let chars = 0;
+  for (const part of message.content) chars += partChars(part);
+  return chars;
+}
+
+/** Chars priced for a request's constant system + instructions turns. */
+export function estimateStaticChars(request: CanonicalRequest): number {
   let chars = 0;
   for (const part of request.system ?? []) chars += partChars(part);
   for (const part of request.instructions ?? []) chars += partChars(part);
-  for (const message of request.messages)
-    for (const part of message.content) chars += partChars(part);
+  return chars;
+}
+
+export function estimateInputTokens(request: CanonicalRequest): number {
+  let chars = estimateStaticChars(request);
+  for (const message of request.messages) chars += estimateMessageChars(message);
   return Math.max(1, Math.ceil(chars / 4));
 }

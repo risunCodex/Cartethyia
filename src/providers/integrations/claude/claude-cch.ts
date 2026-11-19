@@ -8,6 +8,10 @@ const PRIME4 = 0x85ebca77c2b2ae63n;
 const PRIME5 = 0x27d4eb2f165667c5n;
 const CCH_SEED = 0x4d659218e32a3268n;
 const PLACEHOLDER = "cch=00000";
+/** Serialized anchor: the billing text opens the first system block. */
+const MARKER = '"system":[{"type":"text","text":"x-anthropic-billing-header:';
+/** Bounded placeholder search distance from the marker end, in bytes. */
+const MARKER_WINDOW = 150;
 const encoder = new TextEncoder();
 
 function round(acc: bigint, input: bigint): bigint {
@@ -21,23 +25,19 @@ function mergeRound(acc: bigint, value: bigint): bigint {
   return (result * PRIME1 + PRIME4) & MASK;
 }
 
-function read32(bytes: Uint8Array, offset: number): bigint {
-  return (
-    BigInt(bytes[offset] ?? 0) |
-    (BigInt(bytes[offset + 1] ?? 0) << 8n) |
-    (BigInt(bytes[offset + 2] ?? 0) << 16n) |
-    (BigInt(bytes[offset + 3] ?? 0) << 24n)
-  );
+function read32(view: DataView, offset: number): bigint {
+  // BigInt wrap: getUint32 yields a number, and the caller multiplies by a bigint.
+  return BigInt(view.getUint32(offset, true));
 }
 
-function read64(bytes: Uint8Array, offset: number): bigint {
-  let value = 0n;
-  for (let index = 0; index < 8; index += 1)
-    value |= BigInt(bytes[offset + index] ?? 0) << BigInt(index * 8);
-  return value;
+function read64(view: DataView, offset: number): bigint {
+  return view.getBigUint64(offset, true);
 }
 
 function xxHash64(bytes: Uint8Array, seed: bigint): bigint {
+  // Every read below is guarded by the loop bounds, so the DataView's own
+  // RangeError can never fire; one view per hash replaces per-byte BigInt work.
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let offset = 0;
   let hash: bigint;
   if (bytes.length >= 32) {
@@ -46,10 +46,10 @@ function xxHash64(bytes: Uint8Array, seed: bigint): bigint {
     let v3 = seed & MASK;
     let v4 = (seed - PRIME1) & MASK;
     while (offset <= bytes.length - 32) {
-      v1 = round(v1, read64(bytes, offset));
-      v2 = round(v2, read64(bytes, offset + 8));
-      v3 = round(v3, read64(bytes, offset + 16));
-      v4 = round(v4, read64(bytes, offset + 24));
+      v1 = round(v1, read64(view, offset));
+      v2 = round(v2, read64(view, offset + 8));
+      v3 = round(v3, read64(view, offset + 16));
+      v4 = round(v4, read64(view, offset + 24));
       offset += 32;
     }
     hash =
@@ -65,13 +65,13 @@ function xxHash64(bytes: Uint8Array, seed: bigint): bigint {
   } else hash = (seed + PRIME5) & MASK;
   hash = (hash + BigInt(bytes.length)) & MASK;
   while (offset <= bytes.length - 8) {
-    const value = round(0n, read64(bytes, offset));
+    const value = round(0n, read64(view, offset));
     hash ^= value;
     hash = (((hash << 27n) | (hash >> 37n)) * PRIME1 + PRIME4) & MASK;
     offset += 8;
   }
   if (offset <= bytes.length - 4) {
-    hash ^= (read32(bytes, offset) * PRIME1) & MASK;
+    hash ^= (read32(view, offset) * PRIME1) & MASK;
     hash = (((hash << 23n) | (hash >> 41n)) * PRIME2 + PRIME3) & MASK;
     offset += 4;
   }
@@ -90,34 +90,6 @@ function xxHash64(bytes: Uint8Array, seed: bigint): bigint {
 /** Computes Claude Code's five-hex-digit CCH from the exact outgoing body bytes. */
 export function computeClaudeCch(body: Uint8Array): string {
   return (xxHash64(body, CCH_SEED) & 0xfffffn).toString(16).padStart(5, "0");
-}
-
-/** Replaces the anchored Claude billing placeholder in a mutable body before sending. */
-export function patchClaudeCch(body: Uint8Array): boolean {
-  const marker = encoder.encode('"system":[{"type":"text","text":"x-anthropic-billing-header:');
-  const placeholder = encoder.encode(PLACEHOLDER);
-  let markerIndex = -1;
-  outer: for (let index = 0; index <= body.length - marker.length; index += 1) {
-    for (let j = 0; j < marker.length; j += 1) if (body[index + j] !== marker[j]) continue outer;
-    markerIndex = index;
-    break;
-  }
-  if (markerIndex < 0) return false;
-  const start = markerIndex + marker.length;
-  const end = Math.min(body.length - placeholder.length, start + 150);
-  for (let index = start; index <= end; index += 1) {
-    let found = true;
-    for (let j = 0; j < placeholder.length; j += 1)
-      if (body[index + j] !== placeholder[j]) {
-        found = false;
-        break;
-      }
-    if (!found) continue;
-    const cch = encoder.encode(computeClaudeCch(body));
-    body.set(cch, index + 4);
-    return true;
-  }
-  return false;
 }
 
 /** Harness identity instruction, sent on OAuth dispatch. */
@@ -141,8 +113,29 @@ export function createClaudeBillingText(userText: string, version: string): stri
   return `x-anthropic-billing-header: cc_version=${version}.${suffix}; cc_entrypoint=cli; cch=00000;`;
 }
 
-/** Patches a string request body and returns its encoded bytes, or undefined when no billing block exists. */
-export function patchClaudeCchBody(body: string): Uint8Array | undefined {
-  const bytes = encoder.encode(body);
-  return patchClaudeCch(bytes) ? bytes : undefined;
+/**
+ * Patches the five-hex-digit CCH into a string request body and returns the
+ * patched string, or undefined when no billing block exists. The CCH is
+ * computed over the encoded placeholder-bearing bytes — the exact bytes that
+ * will be sent — before the digits are spliced in, so the hash input is
+ * unchanged.
+ */
+export function patchClaudeCchBody(body: string): string | undefined {
+  const markerIndex = body.indexOf(MARKER);
+  if (markerIndex < 0) return undefined;
+  const start = markerIndex + MARKER.length;
+  const relative = body
+    .slice(start, start + MARKER_WINDOW + PLACEHOLDER.length)
+    .indexOf(PLACEHOLDER);
+  if (relative < 0) return undefined;
+  const placeholderIndex = start + relative;
+  // The assembled marker-to-placeholder span is ASCII, so char distance equals
+  // byte distance there; a crafted non-ASCII span keeps the byte window of the
+  // scan this replaced: too far means unanchored.
+  if (encoder.encode(body.slice(start, placeholderIndex)).length > MARKER_WINDOW)
+    return undefined;
+  const cch = computeClaudeCch(encoder.encode(body));
+  return (
+    body.slice(0, placeholderIndex + 4) + cch + body.slice(placeholderIndex + PLACEHOLDER.length)
+  );
 }

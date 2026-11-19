@@ -340,7 +340,15 @@ export function buildQoderRequest(
       ...(role === "assistant" ? qoderReasoningEcho(m, modelId, hasReasoningTrace) : {}),
     });
   }
-  const latestUserMessage = [...qoderMessages].reverse().find((m) => m["role"] === "user");
+  // Last user message, scanned backwards — same element (or `undefined`) as
+  // the previous copy+reverse+find, without allocating a reversed copy.
+  let latestUserMessage: Record<string, unknown> | undefined;
+  for (let i = qoderMessages.length - 1; i >= 0; i--) {
+    if (qoderMessages[i]!["role"] === "user") {
+      latestUserMessage = qoderMessages[i];
+      break;
+    }
+  }
   const latestUserText = typeof latestUserMessage?.["content"] === "string" ? (latestUserMessage["content"] as string) : "";
   /**
    * The model's output ceiling, computed once. A fixed 32k fallback would

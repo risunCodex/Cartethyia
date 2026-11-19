@@ -124,6 +124,34 @@ describe("resolveTenantSystemPrompt", () => {
     ).toBe("model-prompt");
   });
 
+  test("failover candidates resolve distinct provider and model scopes", () => {
+    const failoverPrompts = prompts({
+      global: globalCustom("global-prompt"),
+      providers: { buddy: { kind: "custom", setting: setting("buddy-prompt") } },
+      models: {
+        [systemPromptModelKey("openai", "model-b")]: {
+          kind: "custom",
+          setting: setting("openai-model-prompt"),
+        },
+      },
+    });
+
+    expect(
+      resolveTenantSystemPrompt(failoverPrompts, {
+        providerId: "buddy",
+        modelId: "model-a",
+        requestedModel: "combo-fast",
+      })?.text,
+    ).toBe("buddy-prompt");
+    expect(
+      resolveTenantSystemPrompt(failoverPrompts, {
+        providerId: "openai",
+        modelId: "model-b",
+        requestedModel: "combo-fast",
+      })?.text,
+    ).toBe("openai-model-prompt");
+  });
+
   test("unconfigured provider falls back to global", () => {
     expect(resolveTenantSystemPrompt(base, { providerId: "other", modelId: "m" })?.text).toBe("global-prompt");
   });

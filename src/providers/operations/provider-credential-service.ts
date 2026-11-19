@@ -283,7 +283,6 @@ export async function resolveCredentialForAccount(
   db: CartethyiaDatabase,
   providerId: string,
   accountId: string,
-  _oauth?: ResolveCredentialOAuth,
 ): Promise<ResolvedCredential> {
   // Cache hit: skip DB round-trip + AES-GCM decrypt.
   // Don't cache OAuth credentials whose token is due for refresh soon —
@@ -371,9 +370,8 @@ async function resolveAccountSecretString(
   db: CartethyiaDatabase,
   providerId: string,
   accountId: string,
-  oauth?: ResolveCredentialOAuth,
 ): Promise<string> {
-  const credential = await resolveCredentialForAccount(db, providerId, accountId, oauth);
+  const credential = await resolveCredentialForAccount(db, providerId, accountId);
   return credential.secret ? new TextDecoder().decode(credential.secret) : "";
 }
 
@@ -440,17 +438,14 @@ export function createAccountExportCredentialsResolver(deps: {
 }
 
 /**
- * Binds refresh-aware credential resolution for quota routes and the background
- * quota sweep, avoiding a stale-token fallback when OAuth refresh is due.
+ * Binds credential resolution for quota routes and the background quota sweep.
+ *
+ * The request path no longer refreshes inline (see `resolveCredentialForAccount`),
+ * so the OAuth collaborators the factory once took are gone — refresh happens
+ * in the scheduled sweep and the dispatch attempt-loop, never here.
  */
 export function createAccountSecretResolver(deps: {
   readonly db: CartethyiaDatabase;
-  readonly resolveRefresher: (providerId: string) => Promise<OAuthTokenRefresher | undefined>;
-  readonly refreshService: Pick<OAuthRefreshService, "ensureFreshAccessToken">;
 }): (providerId: string, accountId: string) => Promise<string> {
-  return (providerId, accountId) =>
-    resolveAccountSecretString(deps.db, providerId, accountId, {
-      resolveRefresher: deps.resolveRefresher,
-      refreshService: deps.refreshService,
-    });
+  return (providerId, accountId) => resolveAccountSecretString(deps.db, providerId, accountId);
 }

@@ -27,7 +27,7 @@ import { buildUpstreamDispatchContext } from "./dispatch/upstream";
 import type { GatewayHandlerDeps } from "./dispatch/handler-deps";
 import type { ByokUpstreamHost } from "../providers/operations/provider-catalog-service";
 import type { PreparedProxyRequest } from "./request/preparer";
-import { estimateInputTokens } from "./request/token-estimate";
+import { estimateMessageChars, estimateStaticChars } from "./request/token-estimate";
 import { getCachedVisionDescription, setCachedVisionDescription } from "./vision-handoff-cache";
 import { modelsDevCatalog } from "../providers/discovery/models-dev-catalog";
 
@@ -119,6 +119,13 @@ function lastRealImageCarryingUserTurnIndex(request: CanonicalRequest): number {
  * overflows a small-context vision model. Walking backwards from the image turn
  * and estimating tokens keeps the sub-request within the model's context without
  * guessing.
+ *
+ * The estimate is accumulated incrementally: the parent's system/instructions
+ * chars are constant, so each backward step adds one message's weight instead
+ * of re-estimating the whole accumulated context (which made this selection
+ * quadratic in the message count). Integer sums are order-independent, so every
+ * estimated value — and every break decision — is identical to the
+ * whole-request estimate this replaces.
  */
 function selectVisionContextMessages(parent: CanonicalRequest): CanonicalMessage[] {
   const index = lastRealImageCarryingUserTurnIndex(parent);
@@ -138,16 +145,19 @@ function selectVisionContextMessages(parent: CanonicalRequest): CanonicalMessage
 
   const contextLimit = visionModelContextLimit(parent);
   const budget = Math.max(1, contextLimit - VISION_HANDOFF_CONTEXT_HEADROOM_TOKENS);
-  const messages: CanonicalMessage[] = [activeTurn];
+  let chars = estimateStaticChars(parent) + estimateMessageChars(activeTurn);
+  const older: CanonicalMessage[] = [];
   for (let i = index - 1; i >= 0; i -= 1) {
     const message = parent.messages[i]!;
-    const candidateMessages = [message, ...messages];
-    const estimated = estimateInputTokens({ ...parent, messages: candidateMessages });
-    if (estimated > budget) break;
-    messages.length = 0;
-    messages.push(...candidateMessages);
+    const withMessage = chars + estimateMessageChars(message);
+    if (Math.max(1, Math.ceil(withMessage / 4)) > budget) break;
+    chars = withMessage;
+    older.push(message);
   }
-  return messages;
+  // `older` was collected backwards; restore parent order ahead of the turn.
+  older.reverse();
+  older.push(activeTurn);
+  return older;
 }
 
 /**
@@ -170,19 +180,31 @@ function visionModelContextLimit(parent: CanonicalRequest): number {
 }
 
 /** Deterministic cache key: the exact context the vision model will see. */
-function visionContextCacheKey(parent: CanonicalRequest): string {
-  const messages = selectVisionContextMessages(parent);
+function visionContextCacheKey(messages: readonly CanonicalMessage[]): string {
   const serialized = JSON.stringify(messages);
   return createHash("sha256").update(serialized).digest("hex");
 }
 
 /**
- * Builds the sub-request sent to one vision model.
+ * Builds the sub-request sent to one vision model from the hoisted context
+ * selection. `selected` is `undefined` exactly when the parent has no
+ * image-carrying user turn; re-running the selection then raises the same
+ * GatewayError the selection itself throws, so each per-model trial still
+ * records the skip with the same reason and its child-state initialize/
+ * cleanup still runs.
  */
-function buildVisionSubRequest(parent: CanonicalRequest, model: string): CanonicalRequest {
+function buildVisionSubRequest(
+  parent: CanonicalRequest,
+  model: string,
+  selected: readonly CanonicalMessage[] | undefined,
+): CanonicalRequest {
+  const messages = selected ?? selectVisionContextMessages(parent);
   return {
     model,
-    messages: selectVisionContextMessages(parent),
+    // A fresh shallow copy per sub-request: each parallel trial must receive
+    // its own array identity, exactly as it did when the selection ran per
+    // trial.
+    messages: [...messages],
     generation_controls: {},
     stream: true,
     source_surface: "chat",
@@ -202,22 +224,35 @@ export async function tryVisionHandoff(
   input: VisionHandoffCall,
   models: readonly string[],
 ): Promise<readonly VisionHandoffResult[]> {
+  // The vision context is selected once per handoff: the cache key and every
+  // model trial below consume the same selection instead of each re-walking
+  // the conversation backwards. A request with no image-carrying user turn
+  // selects to `undefined`; the cache is skipped and every trial fails inside
+  // `buildVisionSubRequest` with the same error the selection itself throws,
+  // so the per-model skip logs and state cleanup are unchanged.
+  let selected: CanonicalMessage[] | undefined;
+  try {
+    selected = selectVisionContextMessages(input.canonicalRequest);
+  } catch {
+    selected = undefined;
+  }
   // The cache key covers the full vision context (active image turn plus the
   // trailing history we actually send), so a changed conversation re-describes
-  // the same attachment instead of serving a stale description. A malformed
-  // request that cannot build a vision context simply skips the cache.
+  // the same attachment instead of serving a stale description.
   let cacheHash = "";
-  try {
-    cacheHash = visionContextCacheKey(input.canonicalRequest);
-  } catch {
-    cacheHash = "";
+  if (selected !== undefined) {
+    try {
+      cacheHash = visionContextCacheKey(selected);
+    } catch {
+      cacheHash = "";
+    }
   }
   const cached = cacheHash.length > 0 ? getCachedVisionDescription(cacheHash) : undefined;
   if (cached !== undefined && cached.trim().length > 0) {
     return [{ description: cached.trim(), model: models[0] ?? "cache" }];
   }
 
-  const results: readonly VisionHandoffResult[] = await trialModelsInParallel(deps, input, models);
+  const results: readonly VisionHandoffResult[] = await trialModelsInParallel(deps, input, models, selected);
   if (cacheHash.length > 0 && results.length > 0) {
     setCachedVisionDescription(cacheHash, results[0]!.description);
   }
@@ -229,6 +264,7 @@ async function trialModelsInParallel(
   deps: VisionHandoffDeps,
   input: VisionHandoffCall,
   models: readonly string[],
+  selected: readonly CanonicalMessage[] | undefined,
 ): Promise<readonly VisionHandoffResult[]> {
   if (models.length === 0) return [];
   const remaining = input.deadlineMs - Date.now();
@@ -239,7 +275,7 @@ async function trialModelsInParallel(
     VISION_HANDOFF_PER_MODEL_TIMEOUT_MS,
   );
   const decided = await Promise.all(
-    models.map((model) => trialOneModel(deps, input, model, perModelBudget)),
+    models.map((model) => trialOneModel(deps, input, model, perModelBudget, selected)),
   );
   return decided.filter(
     (result): result is VisionHandoffResult => result !== null,
@@ -252,6 +288,7 @@ async function trialOneModel(
   input: VisionHandoffCall,
   model: string,
   budgetMs: number,
+  selected: readonly CanonicalMessage[] | undefined,
 ): Promise<VisionHandoffResult | null> {
   const childRequest = new Request("http://cartethyia.invalid/vision-handoff", {
     method: "POST",
@@ -263,7 +300,7 @@ async function trialOneModel(
     let prepared: PreparedProxyRequest;
     try {
       prepared = await deps.proxyPreparer.prepare({
-        canonicalRequest: buildVisionSubRequest(input.canonicalRequest, model),
+        canonicalRequest: buildVisionSubRequest(input.canonicalRequest, model, selected),
         authorization: input.authorization,
         deadlineMs: budgetMs,
         // The sub-request itself must never trigger a nested handoff.
@@ -316,14 +353,7 @@ async function trialOneModel(
           );
         }
         const credential = candidate.provider_account_id
-          ? await resolveCredentialForAccount(
-              deps.db,
-              candidate.provider_id,
-              candidate.provider_account_id,
-              deps.oauthRefreshService && deps.resolveOAuthRefresher
-                ? { refreshService: deps.oauthRefreshService, resolveRefresher: deps.resolveOAuthRefresher }
-                : undefined,
-            )
+          ? await resolveCredentialForAccount(deps.db, candidate.provider_id, candidate.provider_account_id)
           : {
               provider_id: candidate.provider_id as ProviderAdapter["provider_id"],
               credential_kind: "none" as const,
@@ -375,7 +405,7 @@ async function trialOneModel(
         for await (const event of adapter.dispatch(
           attemptRequest,
           providerRouteCandidate as never,
-          dispatchContextBase as never,
+          dispatchContextBase,
         )) {
           events.push(event);
         }

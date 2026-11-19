@@ -14,17 +14,42 @@
  */
 // ── byte writer / reader ──
 
+// Shared coder instances: every encode/decode in this file is single-shot
+// (never `{ stream: true }`), so reusing one encoder/decoder yields identical
+// bytes and text without allocating per string field.
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+// Scratch for `double`: setFloat64 writes here and the 8 bytes are copied
+// into the writer, avoiding an ArrayBuffer/DataView pair per value.
+const floatScratchView = new DataView(new ArrayBuffer(8));
+const floatScratchBytes = new Uint8Array(floatScratchView.buffer);
+
 class ByteWriter {
-  readonly #chunks: number[][] = [];
+  readonly #bytes: number[] = [];
 
   varint(value: number): this {
-    let bits = BigInt(Math.trunc(value));
+    const truncated = Math.trunc(value);
+    // Non-negative safe integers encode identically without BigInt. Every
+    // other case (negative two's complement, |value| >= 2^53, NaN/Infinity,
+    // which BigInt rejects) keeps the BigInt branch and its exact bytes.
+    if (Number.isSafeInteger(truncated) && value >= 0) {
+      let n = truncated;
+      do {
+        let byte = n & 0x7f;
+        n = Math.floor(n / 128);
+        if (n !== 0) byte |= 0x80;
+        this.#bytes.push(byte);
+      } while (n !== 0);
+      return this;
+    }
+    let bits = BigInt(truncated);
     if (value < 0) bits = bits + 0x100000000000000000n; // two's complement, 64-bit
     do {
       let byte = Number(bits & 0x7fn);
       bits >>= 7n;
       if (bits !== 0n) byte |= 0x80;
-      this.#chunks.push([byte]);
+      this.#bytes.push(byte);
     } while (bits !== 0n);
     return this;
   }
@@ -34,30 +59,23 @@ class ByteWriter {
   }
 
   double(value: number): this {
-    const buffer = new ArrayBuffer(8);
-    new DataView(buffer).setFloat64(0, value, true);
-    this.#chunks.push(Array.from(new Uint8Array(buffer)));
+    floatScratchView.setFloat64(0, value, true);
+    this.#bytes.push(...floatScratchBytes);
     return this;
   }
 
   lengthDelimited(bytes: Uint8Array): this {
     this.varint(bytes.byteLength);
-    this.#chunks.push(Array.from(bytes));
+    for (const byte of bytes) this.#bytes.push(byte);
     return this;
   }
 
   string(value: string): this {
-    return this.lengthDelimited(new TextEncoder().encode(value));
+    return this.lengthDelimited(textEncoder.encode(value));
   }
 
   finish(): Uint8Array {
-    const out = new Uint8Array(this.#chunks.reduce((total, chunk) => total + chunk.length, 0));
-    let offset = 0;
-    for (const chunk of this.#chunks) {
-      out.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return out;
+    return new Uint8Array(this.#bytes);
   }
 }
 
@@ -115,7 +133,7 @@ function readValue(data: Uint8Array): unknown {
         break;
       }
       case 3:
-        value = new TextDecoder().decode(data.subarray(contentStart, end));
+        value = textDecoder.decode(data.subarray(contentStart, end));
         break;
       case 4:
         value = scalar !== undefined && scalar !== 0n;
@@ -140,7 +158,7 @@ function readValue(data: Uint8Array): unknown {
             const len = readVarint(entry, fieldTag.offset);
             const fieldEnd = len.offset + Number(len.value);
             if (fieldNumber === 1) {
-              key = new TextDecoder().decode(entry.subarray(len.offset, fieldEnd));
+              key = textDecoder.decode(entry.subarray(len.offset, fieldEnd));
             } else if (fieldNumber === 2) {
               if (key === undefined) throw new Error("struct value precedes its key");
               fields[key] = readValue(entry.subarray(len.offset, fieldEnd));
@@ -240,7 +258,7 @@ export function decodeProtoJsonValue(data: Uint8Array): unknown {
   } catch {
     // Not a Value message; fall through to text.
   }
-  const text = new TextDecoder().decode(data);
+  const text = textDecoder.decode(data);
   try {
     return JSON.parse(text) as unknown;
   } catch {
