@@ -321,6 +321,18 @@ export const quotaExhaustedRule: AccountErrorRule = {
   },
 };
 
+/**
+ * A stated rate-limit window shorter than this is a "retry shortly" nudge, not
+ * a parking window. The recovery sweep runs on a 30-second cadence, so a
+ * cooldown below one tick expires before the health machine can honor or clean
+ * it up: the flag would outlive the window it names and linger on the row with
+ * no deadline behind it — the "Rate limited" pill with no time. Below this
+ * floor, and when the upstream states nothing at all, the verdict is a skip
+ * instead: nothing about the account is parked, and only the audit row records
+ * the refusal.
+ */
+export const MIN_FLAGGED_RATE_LIMIT_WINDOW_MS = 30_000;
+
 export const rateLimitRule: AccountErrorRule = {
   name: "rate-limit",
   match: (s) =>
@@ -335,28 +347,36 @@ export const rateLimitRule: AccountErrorRule = {
       s.lower.includes("tpm limit") ||
       s.lower.includes("rpm limit")),
   decide: (s) => {
-    const fallbackMs = DEFAULT_RATE_LIMIT_COOLDOWN_MS();
-    // A provider-stated window still wins when it is *longer* than the
-    // configured cooldown, but a trivially short `retry_after` (OpenRouter's
-    // `retry_after_seconds: 1`) is not a real reset window — honoring it
-    // verbatim expired the cooldown before the sweep's next tick and left the
-    // account churning active → cooldown → active with no visible backoff.
-    // The configured rate-limit cooldown is therefore a floor, not just a
-    // fallback. The raw stated value still rides on the classification
-    // (`statedCooldownMs`) so the auto-disable gate's sub-5-minute exemption
-    // keeps reading the provider's own number.
-    const cooldownMs =
-      s.statedCooldownMs === null
-        ? fallbackMs
-        : Math.max(s.statedCooldownMs, fallbackMs);
-    // Same per-account reasoning as quota above: the failing account (or
-    // its model, when modelId is present) backs off so routing tries the
-    // next candidate instead of hammering the same key.
+    const stated = s.statedCooldownMs;
+    // A rate limit the upstream gives no usable time for is never cooled and
+    // never flagged. The old behavior parked the account on a 15-minute
+    // fallback (or floored a trivial `retry_after: 1` up to it), which stamped
+    // a "Rate limited" pill that outlived any window and read as a ban with no
+    // expiry. Without a stated window there is nothing to wait out: the
+    // request fails over, the account stays `active`, and the audit row is the
+    // only record. `mutatesAccount: false` is the whole verdict — the writer's
+    // non-mutating path touches no account column.
+    if (stated === null || stated < MIN_FLAGGED_RATE_LIMIT_WINDOW_MS) {
+      return s.result(
+        "rate_limit_transient",
+        // Shape only — never applied, because the verdict does not mutate.
+        "cooldown",
+        0,
+        null,
+        s.reason("Provider rate limit with no usable window stated; account left active"),
+        false,
+      );
+    }
+    // A window the account can actually wait out is honored verbatim. The
+    // provider's own number is the flag's time — "Cooldown (in Xm)" names the
+    // window the upstream stated — so no floor invented here may stretch it.
+    // (The raw value also rides on `statedCooldownMs` for the auto-disable
+    // gate's sub-5-minute exemption.)
     return s.result(
       "rate_limit_transient",
       "cooldown",
-      cooldownMs,
-      new Date(Date.now() + cooldownMs),
+      stated,
+      new Date(Date.now() + stated),
       s.reason("Provider rate limit"),
       s.origin === "upstream",
     );

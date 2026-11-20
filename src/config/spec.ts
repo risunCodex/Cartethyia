@@ -275,7 +275,11 @@ export const CONFIG_SPEC = {
 
   // Account/pool health cooldown delays. Each is the fallback used when the
   // upstream error states no explicit reset window; an upstream
-  // `Retry-After`/reset header or message always wins over these.
+  // `Retry-After`/reset header or message always wins over these. The one
+  // exception is the account rate-limit knob: a rate limit that states no
+  // usable window is a skip (no cooldown, no flag) rather than a fallback, so
+  // this value serves only deadline-less cooldown verdicts at the write seam
+  // and the `validation_required` arm.
   CARTETHYIA_ACCOUNT_RATE_LIMIT_COOLDOWN_MS: { kind: "int", default: 900_000, min: 0, max: 86_400_000 },
   CARTETHYIA_ACCOUNT_QUOTA_COOLDOWN_MS: { kind: "int", default: 3_600_000, min: 0, max: 86_400_000 },
   CARTETHYIA_ACCOUNT_MODEL_CAPACITY_COOLDOWN_MS: { kind: "int", default: 120_000, min: 0, max: 86_400_000 },

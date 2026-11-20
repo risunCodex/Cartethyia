@@ -89,6 +89,65 @@ async function withTransaction<T>(
   }
 }
 
+/**
+ * How long an identical non-mutating failure is compressed into the first
+ * audit row. Non-mutating verdicts fire per request — a fleet-wide throttle
+ * with no stated window, a saturated gateway — so without a floor one busy
+ * minute floods the log with identical rows. This is the same duplication the
+ * model-scoped path's `alreadyCooling` check exists to prevent, applied to the
+ * arm that has no cooldown to check against. Process-local and best-effort:
+ * the log is an audit surface, not a contract.
+ */
+const NON_MUTATING_EVENT_DEDUPE_MS = 5 * 60_000;
+
+/** Last write per `${accountId}:${category}` for the dedupe window above. */
+const nonMutatingEventStamps = new Map<string, number>();
+
+/**
+ * True when an identical non-mutating failure was already recorded inside the
+ * dedupe window and the repeat should not be written again. Records the stamp
+ * when the event does go out.
+ */
+function suppressRepeatedAccountEvent(accountId: string, category: string): boolean {
+  const key = `${accountId}:${category}`;
+  const now = Date.now();
+  const last = nonMutatingEventStamps.get(key);
+  if (last !== undefined && now - last < NON_MUTATING_EVENT_DEDUPE_MS) return true;
+  if (nonMutatingEventStamps.size > 8192) {
+    for (const [staleKey, at] of nonMutatingEventStamps) {
+      if (now - at >= NON_MUTATING_EVENT_DEDUPE_MS) nonMutatingEventStamps.delete(staleKey);
+    }
+  }
+  nonMutatingEventStamps.set(key, now);
+  return false;
+}
+
+/** Drops the dedupe stamps for one account so a fresh failure logs again. */
+function clearNonMutatingEventStamps(accountId: string): void {
+  for (const key of nonMutatingEventStamps.keys()) {
+    if (key.startsWith(`${accountId}:`)) nonMutatingEventStamps.delete(key);
+  }
+}
+
+/** The account's own status, for rendering a failure that did not move it. */
+async function readAccountStatus(
+  db: CartethyiaDatabase,
+  accountId: string,
+): Promise<"active" | "cooldown" | "disabled" | undefined> {
+  try {
+    const rows = await db
+      .select({ status: providerAccounts.status })
+      .from(providerAccounts)
+      .where(eq(providerAccounts.id, accountId))
+      .limit(1);
+    return rows[0]?.status as "active" | "cooldown" | "disabled" | undefined;
+  } catch {
+    // A failed read must not lose the audit row: fall back to the
+    // classification's shape, exactly as this branch rendered before.
+    return undefined;
+  }
+}
+
 /** Persists one classified failure to the account row and appends a health event. */
 export async function recordAccountFailure(
   db: CartethyiaDatabase,
@@ -100,30 +159,40 @@ export async function recordAccountFailure(
   /**
    * Logged even when the classification does not mutate the account.
    *
-   * `rate_limit_transient` seen on a stream frame carries no credential
-   * detail, so it classifies at provider scope and `mutatesAccount` is false
-   * — nothing is cooled and the account stays `active`. That part is correct:
-   * the upstream's own remedy ("switch to the other models") only works if the
-   * account keeps serving. But this returned without writing anything, so a
+   * `rate_limit_transient` with no usable stated window is a skip verdict: the
+   * account is not parked and not flagged, so without this branch a
    * rate-limited request showed up in the request log while the account's
    * health log stayed empty — a symptom with no recorded cause.
    *
-   * The row is the whole point of this branch: it records the failure without
-   * moving the account. Both status sides are the classification's own, so the
-   * dialog names the cause without claiming a transition that never happened.
+   * The row records the failure without moving the account, so its status
+   * sides are the *account's own* — read here, not taken from the
+   * classification. The classification's `status` names the shape the verdict
+   * would have applied ("cooldown" for every throttle arm), and rendering that
+   * on a never-mutated row claimed cooldowns that never happened: the dialog
+   * showed "Account status: ACTIVE" above `logged · cooldown` rows. One
+   * projected read — the same read the mutating path already pays — buys the
+   * honest rendering for every non-mutating arm.
    */
   if (!classification.mutatesAccount) {
-    void writeHealthEvent(db, {
-      entityKind: "account",
-      accountId,
-      fromStatus: classification.status,
-      toStatus: classification.status,
-      reason: classification.reason,
-      errorCategory: classification.category,
-      modelId: options?.modelId ?? null,
-      createdAt: new Date(),
-    }).catch(() => undefined);
-    return classification;
+    const accountStatus = await readAccountStatus(db, accountId);
+    if (!suppressRepeatedAccountEvent(accountId, classification.category)) {
+      void writeHealthEvent(db, {
+        entityKind: "account",
+        accountId,
+        fromStatus: accountStatus ?? classification.status,
+        toStatus: accountStatus ?? classification.status,
+        reason: classification.reason,
+        errorCategory: classification.category,
+        modelId: options?.modelId ?? null,
+        createdAt: new Date(),
+      }).catch(() => undefined);
+    }
+    // The classifier's `routesVisible` default is deliberately conservative;
+    // the writer owns the honest answer. This branch wrote no column routing
+    // reads — no status, no deadline, no model cooldown — so a skip verdict
+    // must not trigger a snapshot rebuild, or a fleet-wide unstated throttle
+    // would rebuild the routing snapshot once per request.
+    return { ...classification, routesVisible: false };
   }
 
   const persist = async (client: CartethyiaDatabase): Promise<AccountErrorClassification | null> => {
@@ -467,6 +536,10 @@ export async function recordAccountSuccess(
     // the reference gateways' too.
     const blockHits = account.modelBlockHits as Record<string, number> | null;
     const hasBlockHits = blockHits !== null && Object.keys(blockHits).length > 0;
+    // A success between failures is a real flap, not a continuing storm: drop
+    // this account's non-mutating dedupe stamps so the next refusal logs a
+    // fresh row instead of being compressed into the earlier one.
+    if (hadFailures) clearNonMutatingEventStamps(accountId);
     await client
       .update(providerAccounts)
       .set({

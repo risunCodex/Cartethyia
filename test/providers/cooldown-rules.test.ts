@@ -252,10 +252,13 @@ describe("recordAccountFailure tier-rule precedence", () => {
     expect(deadline - Date.now()).toBeLessThanOrEqual(DAY);
   });
 
-  test("Vertex/Antigravity 429 without a stated reset stays the 15m fallback", async () => {
+  test("Vertex/Antigravity 429 without a stated reset is a skip — no pair is cooled", async () => {
     const accountId = await insertTraeAccount(null);
     // Exact upstream body captured 2026-11-09 (Antigravity/Vertex Gemini route):
-    // "Resource has been exhausted (e.g. check quota)." names no window.
+    // "Resource has been exhausted (e.g. check quota)." names no window. An
+    // unstated rate limit parks nothing: there is no window to wait out, so
+    // neither the tier rules nor a fallback cooldown apply and the (account,
+    // model) pair stays routable.
     const raw = JSON.stringify({
       error: {
         code: 429,
@@ -272,10 +275,11 @@ describe("recordAccountFailure tier-rule precedence", () => {
       modelId: "gemini-3.8-flash",
     });
     expect(classification?.providerStated).toBe(false);
+    expect(classification?.mutatesAccount).toBe(false);
     const row = await rowOf(accountId);
+    expect(row.status).toBe("active");
     const cooldowns = row.modelCooldowns as Record<string, string>;
-    const deadline = Date.parse(cooldowns["gemini-3.8-flash"] ?? "");
-    expect(deadline - Date.now()).toBeGreaterThan(14 * MINUTE);
-    expect(deadline - Date.now()).toBeLessThanOrEqual(15 * MINUTE);
+    expect(cooldowns["gemini-3.8-flash"]).toBeUndefined();
+    expect(row.lastErrorCategory).toBeNull();
   });
 });

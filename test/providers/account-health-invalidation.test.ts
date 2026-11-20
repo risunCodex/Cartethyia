@@ -45,14 +45,16 @@ function upstream(message: string, extra: Record<string, unknown> = {}): Gateway
 }
 
 describe("account error classification", () => {
-  test("a model-scoped throttle reports itself as not routing-visible", () => {
+  test("a rate limit with a stated window reports itself as mutating", () => {
     // Rate limits are (account, model) scoped in this module: the account
     // stays routable for every other model, so `status` and `cooldownUntil`
-    // never move.
+    // never move. The stated window is what makes the verdict mutate at all —
+    // an unstated one is a skip (see below).
     const classification = classifyAccountError(upstream("rate limit exceeded"), {
       origin: "upstream",
       scope: "account",
       credentialEvidence: true,
+      retryAfterMs: 120_000,
     });
     expect(classification.category).toBe("rate_limit_transient");
     expect(classification.mutatesAccount).toBe(true);
@@ -71,15 +73,29 @@ describe("account error classification", () => {
     expect(classification.routesVisible).toBe(true);
   });
 
-  test("a non-mutating classification is still reported", () => {
-    // Scope "provider" with no credential evidence: recognised, but nothing is
-    // written, so there is nothing for routing to learn.
+  test("an unstated 429 is a skip at any scope", () => {
+    // Scope "provider" with no credential evidence and no stated window: the
+    // upstream named no time to wait out, so the account is neither parked nor
+    // flagged — the audit row is the only record.
     const classification = classifyAccountError(upstream("rate limit exceeded"), {
       origin: "upstream",
       scope: "provider",
     });
-    // A rate limit mutates at provider scope too: the streak must advance or
-    // the most common throttle never escalates.
+    expect(classification.mutatesAccount).toBe(false);
+    expect(classification.cooldownMs).toBe(0);
+    expect(classification.retryAt).toBeNull();
+  });
+
+  test("a provider-scoped stated window still mutates", () => {
+    // The streak must advance for the most common throttle, and provider
+    // scope is what a stream frame with no credential detail classifies as —
+    // the stated window is what makes that frame park its (account, model)
+    // pair instead of being discarded.
+    const classification = classifyAccountError(upstream("rate limit exceeded"), {
+      origin: "upstream",
+      scope: "provider",
+      retryAfterMs: 120_000,
+    });
     expect(classification.mutatesAccount).toBe(true);
   });
 });
@@ -120,6 +136,9 @@ describe("model cooldown route snapshot invalidation", () => {
         scope: "provider",
         providerId: "some-provider",
         statusCode: 429,
+        // A stated window is what makes a rate-limit verdict mutate at all —
+        // an unstated one is a skip, and no pair would be cooled here.
+        retryAfterMs: 300_000,
       },
       snapshotService: routeService,
     });
@@ -507,25 +526,27 @@ describe("a reset window the upstream stated in structured fields", () => {
     expect(classification.cooldownMs).toBeGreaterThan(900_000);
   });
 
-  test("a stated window below the rate-limit floor is raised to it", () => {
-    // `resets_in_seconds: 600` is a real statement, but it is shorter than the
-    // configured 15-minute rate-limit cooldown — and a trivially short window
-    // is exactly what let accounts churn with no visible backoff. The floor
-    // wins; the raw stated value stays visible on the classification.
+  test("a stated window is honored verbatim, not floored up to the fallback", () => {
+    // `resets_in_seconds: 600` is the provider's own statement, and the flag
+    // must carry that time: "Cooldown (in 10m)" names a window the upstream
+    // actually stated, instead of a 15-minute floor invented here. The raw
+    // stated value stays visible on the classification too.
     const classification = classifyAccountError(
       new GatewayError("upstream_error" as never, 429, "rate limit exceeded"),
       { ...evidence, statusCode: 429, upstreamBody: { resets_in_seconds: 600 } },
     );
-    expect(classification.cooldownMs).toBe(900_000);
+    expect(classification.cooldownMs).toBe(600_000);
     expect(classification.statedCooldownMs).toBe(600_000);
     expect(classification.providerStated).toBe(true);
+    expect(classification.mutatesAccount).toBe(true);
   });
 
-  test("a one-second retry_after is floored to the rate-limit cooldown", () => {
-    // The reported OpenRouter shape: `retry_after_seconds: 1` produced a
-    // one-second cooldown that expired before the sweep's next tick, so the
-    // account read active again almost immediately and the health log showed
-    // no cooldown at all.
+  test("a one-second retry_after is a skip, not a cooldown", () => {
+    // The reported OpenRouter shape: `retry_after_seconds: 1` is a "retry
+    // shortly" nudge, not a parking window. Flooring it up to the configured
+    // cooldown once flagged the account "Rate limited" for a window ten times
+    // longer than the upstream named — and the pill outlived the cooldown with
+    // no time behind it. Below one sweep tick the verdict is a skip.
     const classification = classifyAccountError(
       new GatewayError("upstream_error" as never, 429, "rate limit exceeded"),
       {
@@ -535,26 +556,32 @@ describe("a reset window the upstream stated in structured fields", () => {
       },
     );
     expect(classification.category).toBe("rate_limit_transient");
-    expect(classification.cooldownMs).toBe(900_000);
+    expect(classification.mutatesAccount).toBe(false);
+    expect(classification.cooldownMs).toBe(0);
+    expect(classification.retryAt).toBeNull();
     expect(classification.statedCooldownMs).toBe(1_000);
   });
 
   test("a reset already in the past is not a window", () => {
     // A stale `resets_at` would otherwise compute a negative delay and, at
-    // worst, return the account to rotation immediately.
+    // worst, return the account to rotation immediately. With no usable window
+    // stated the verdict is a skip — there is no fallback cooldown to fall
+    // back to anymore.
     const classification = classifyAccountError(
       withRawBody("rate limit exceeded", JSON.stringify({ error: { resets_at: 1 } })),
       { ...evidence, statusCode: 429 },
     );
-    expect(classification.cooldownMs).toBe(900_000);
+    expect(classification.mutatesAccount).toBe(false);
+    expect(classification.cooldownMs).toBe(0);
   });
 
-  test("a body that is not JSON keeps the fallback", () => {
+  test("a body that is not JSON states no window, so the verdict is a skip", () => {
     const classification = classifyAccountError(
       withRawBody("rate limit exceeded", "<html>not json</html>"),
       { ...evidence, statusCode: 429 },
     );
-    expect(classification.cooldownMs).toBe(900_000);
+    expect(classification.mutatesAccount).toBe(false);
+    expect(classification.cooldownMs).toBe(0);
   });
 });
 

@@ -142,7 +142,7 @@ never contradict each other (a cancel always carries `transport_closed`).
 | Category | Account verdict | Cooldown |
 | --- | --- | --- |
 | `quota_exhausted` | cooldown | provider-stated reset, else 1h fallback (Grok: 24h rolling) |
-| `rate_limit_transient` | cooldown (model-scoped when frequency-limit) | header/message/body-stated reset, else fallback |
+| `rate_limit_transient` | cooldown (model-scoped when frequency-limit) | provider-stated window ≥ 30s, honored verbatim; unstated or shorter — a skip (no cooldown, no flag, audit row only) |
 | `model_capacity` | cooldown (model-scoped) | model-capacity constant |
 | `model_unreachable` | cooldown | 6h (model unsupported: escalating 6h→24h) |
 | `auth_invalidated` | disabled / cooldown (static token → cooldown) | auth-rejected config |

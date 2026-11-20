@@ -48,7 +48,23 @@ test("it is not claimed by the rate-limit arm, whatever scope it arrives with", 
   }
 });
 
-test("a real upstream rate limit still cools the account", () => {
+test("a real upstream rate limit with a stated window still cools the account", () => {
+  for (const message of ["Rate limit reached for requests", "Too many requests"]) {
+    const classification = classifyAccountError(new Error(message), {
+      origin: "upstream",
+      scope: "provider",
+      statusCode: 429,
+      retryAfterMs: 120_000,
+    });
+    expect(classification.category).toBe("rate_limit_transient");
+    expect(classification.mutatesAccount).toBe(true);
+    expect(classification.cooldownMs).toBe(120_000);
+  }
+});
+
+test("an unstated rate limit is a skip, not a cooldown", () => {
+  // No window stated means nothing to wait out: the account is neither parked
+  // nor flagged, and only the audit row records the refusal.
   for (const message of ["Rate limit reached for requests", "Too many requests"]) {
     const classification = classifyAccountError(new Error(message), {
       origin: "upstream",
@@ -56,8 +72,8 @@ test("a real upstream rate limit still cools the account", () => {
       statusCode: 429,
     });
     expect(classification.category).toBe("rate_limit_transient");
-    expect(classification.mutatesAccount).toBe(true);
-    expect(classification.cooldownMs).toBeGreaterThan(0);
+    expect(classification.mutatesAccount).toBe(false);
+    expect(classification.cooldownMs).toBe(0);
   }
 });
 

@@ -6,6 +6,10 @@
  * (status `disabled`) with the marker reason `auto-disable (rate-limited): …`
  * and the configured recovery window. The recovery sweep is the only automatic
  * path back (D03); an operator disable stays terminal.
+ *
+ * Only verdicts that mutate reach the intercept, and a rate limit mutates only
+ * when the upstream stated a usable window — an unstated (or sub-sweep-tick)
+ * 429 is a skip that parks nothing, so it can never auto-disable either.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -143,6 +147,10 @@ const upstream429Evidence = {
   scope: "account" as const,
   statusCode: 429,
   credentialEvidence: true,
+  // A rate-limit verdict only mutates when the upstream states a usable
+  // window — an unstated (or sub-sweep-tick) 429 is a skip that touches no
+  // column, so the intercept tests state one the account can wait out.
+  retryAfterMs: 30 * 60_000,
 };
 
 /** An upstream quota verdict that classifies as `quota_exhausted`, mutating. */

@@ -95,6 +95,22 @@ this restores the literal and keeps the version fix.
   Key Providers*; Grok Build, Kilo Code and Nous Research Hermes move to *OAuth &
   Agent Providers* — each has a registered device OAuth flow, so the behavioral
   OAuth filter now places them there instead of Free Limited.
+- **A rate limit without a usable time is a skip, never a cooldown.** A 429 the
+  upstream states no window for (OpenRouter's shared-pool
+  `fleet_capacity_exhausted`, bare rate-limit refusals) and a stated window
+  shorter than one 30-second sweep tick (the `retry_after_seconds: 1` nudge)
+  used to park the account on an invented 15-minute fallback and stamp a
+  "Rate limited" pill with no expiry behind it — a flag the operator had to
+  clear by hand. Both now mutate nothing: the request fails over, the account
+  stays `active`, and the audit row is the only record. A stated window the
+  account *can* wait out is honored verbatim, so a flagged cooldown always
+  carries the provider's own time instead of a floor invented here; the
+  auto-disable toggle therefore only fires on rate limits that name a real
+  window (≥ 5 minutes, per its existing sub-5-minute exemption). Audit rows
+  for non-mutating verdicts now render the account's own status (no more
+  `logged · cooldown` rows above an ACTIVE account) and repeats of the same
+  category are compressed for five minutes so a skip storm cannot flood the
+  log.
 
 ### Removed
 
