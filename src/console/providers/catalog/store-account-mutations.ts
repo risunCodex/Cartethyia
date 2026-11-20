@@ -124,13 +124,37 @@ export async function createAccountRow(
    * batch path passes it; a lone create always reads fresh labels.
    */
   labelCache?: Map<string, readonly string[]>,
-): Promise<ProviderAccountResponse> {
-  // Callers inside an existing transaction pass it in so the account lands in
-  // that unit of work (the batch path); otherwise this opens its own.
-  const run = async (
-    tx: DbTx,
+  ): Promise<ProviderAccountResponse> {
+    // The kind and the secret must agree: a credential-requiring kind with no
+    // secret would persist an account that dispatches an empty credential, and
+    // a `none` account with one would silently send it. A credential-less
+    // (`none`) account is the "Public Key" row a no-key custom provider
+    // registers — no secret, and the adapter reads `none` and sends no auth
+    // header.
+    const secretTrimmed = request.secret?.trim() ?? "";
+    if (request.credentialKind === "none" && secretTrimmed.length > 0) {
+      throw new ConsoleDomainError(
+        "invalid_request",
+        400,
+        "A credential-less (none) account must not carry a secret",
+      );
+    }
+    if (
+      (request.credentialKind === "api_key" || request.credentialKind === "oauth") &&
+      secretTrimmed.length === 0
+    ) {
+      throw new ConsoleDomainError(
+        "invalid_request",
+        400,
+        `credentialKind ${request.credentialKind} requires a secret`,
+      );
+    }
+    // Callers inside an existing transaction pass it in so the account lands in
+    // that unit of work (the batch path); otherwise this opens its own.
+    const run = async (
+      tx: DbTx,
   ): Promise<ProviderAccountResponse> => {
-    let effectiveSecret = request.secret;
+    let effectiveSecret = secretTrimmed;
     let effectiveCredentialKind = request.credentialKind;
     const requestedCredentialMode: CredentialMode = request.credentialMode ?? "auto";
     let effectiveCredentialMode: CredentialMode = requestedCredentialMode;
@@ -143,9 +167,9 @@ export async function createAccountRow(
 
     if (
       (request.credentialKind === "oauth" || request.credentialKind === "api_key") &&
-      request.secret.trim().length > 0
+      secretTrimmed.length > 0
     ) {
-      const trimmed = request.secret.trim();
+      const trimmed = secretTrimmed;
       const parts = parsePastedOAuthCredential(trimmed);
       pastedAuthState = parts.authState;
       const hasRefreshToken = parts.refreshToken !== parts.accessToken;
@@ -217,7 +241,12 @@ export async function createAccountRow(
         tenantId,
         sortIndex: nextSortIndex,
         label,
-        credentialCiphertext: encryptCredential(effectiveSecret),
+        // A credential-less account carries no ciphertext — the adapter reads
+        // the `none` kind and sends no auth header. `encryptCredential("")`
+        // would store a real ciphertext for an empty secret and read as "a
+        // secret exists" to anything that only checks the column.
+        credentialCiphertext:
+          effectiveCredentialKind === "none" ? null : encryptCredential(effectiveSecret),
         ...(credentialFingerprint ? { credentialFingerprint } : {}),
         credentialKind: effectiveCredentialKind,
         status: "active",

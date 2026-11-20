@@ -145,6 +145,13 @@ export async function handleProviderProxyRequest(
     resolveHost: (candidate) => deps.byokUpstreamHosts?.get(candidate.provider_id),
     exhaustedError: new GatewayError("route_unavailable", 503, "No account could be leased for this request (request {requestId}). Retry shortly; if it persists, add an account or check that one is healthy. The bouncer stepped out — come back shortly 🚪"),
     prepare: async (candidate) => {
+      // Only a candidate that carries NO account is rejected here. An account
+      // with `credential_kind: "none"` is a legitimate routing unit — the
+      // credential-less "Public Key" row a public/no-key custom provider adds
+      // — and the credential resolver returns the `"none"` credential for it,
+      // which stamps no auth header at the adapter. Rejecting it kept every
+      // public-key account permanently unusable ("no usable credential") no
+      // matter how the upstream answered.
       if (!candidate.provider_account_id && candidate.requires_account !== false)
         throw new GatewayError(
           "route_unavailable",

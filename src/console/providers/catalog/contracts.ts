@@ -153,6 +153,12 @@ export interface CreateProviderRequest {
   compatibilityProfile?: CompatibilityProfile;
   /** BYOK-only: model ids to register for this provider (one `models` row per entry). */
   models?: readonly string[];
+  /**
+   * BYOK-only: the upstream answers without any credential, so no account
+   * (or a credential-less "Public Key" account) is required. Omitted means
+   * the default (`true`) — every custom provider still requires an account.
+   */
+  requiresAccount?: boolean;
 }
 export interface ModelCatalogResponse {
   modelId: string;
@@ -289,7 +295,13 @@ export interface CreateProviderAccountRequest {
   label?: string;
   credentialKind: CredentialKind;
   credentialMode?: CredentialMode;
-  secret: string;
+  /**
+   * Omitted for a credential-less (`none`) account — the "Public Key" row a
+   * no-key custom provider registers sends no credential at all. Required for
+   * `api_key`/`oauth` at the store, which rejects an account whose kind claims
+   * a credential but carries none.
+   */
+  secret?: string;
   /**
    * Non-secret upstream auth configuration for this account — auth method,
    * region, the upstream profile it is bound to. Optional: most providers
@@ -559,9 +571,13 @@ export interface ProviderResponse {
   activeAccountCount?: number;
   /** Enabled model rows the tenant can see for the provider. Present on list items. */
   modelCount?: number;
-  /** `false` only for a genuinely credential-less provider (OpenCode Free) —
-   * the dashboard hides account creation for it since none is usable. */
+  /** `false` only for a genuinely credential-less provider (OpenCode Free).
+   * For a custom provider, the "Public Key" account still routes it, so the
+   * dashboard keeps account creation available rather than hiding the card. */
   requiresAccount: boolean;
+  /** The provider was created with the "Public Key" switch: no credential is
+   * sent, and the registered account is the credential-less "Public Key" row. */
+  publicKey?: boolean;
   /** Whether its built-in adapter constructs a User-Agent header itself. */
   hasAdapterUserAgent: boolean;
   /**

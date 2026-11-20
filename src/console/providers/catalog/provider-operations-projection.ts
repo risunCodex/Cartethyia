@@ -84,7 +84,15 @@ async function attachProviderCapabilities(
   const supportsDiscovery =
     !response.isBuiltIn || (await registry.resolveModelDiscovery(response.providerId)) !== undefined;
   const client = await registry.resolveLoginClient(response.providerId);
-  if (!client) return { ...response, supportsModelDiscovery: supportsDiscovery };
+  if (!client)
+    return {
+      ...response,
+      supportsModelDiscovery: supportsDiscovery,
+      // A credential-less custom provider is exactly that: it was created with
+      // the "Public Key" switch, so the dashboard names the account row and
+      // keeps account management reachable.
+      ...(response.requiresAccount === false ? { publicKey: true } : {}),
+    };
   // Capability is a static property of the client's methods, never of one URL
   // build: a client whose `buildAuthorizeUrl` can throw must still report the
   // browser flow it genuinely supports, otherwise the Login with browser button
@@ -107,6 +115,7 @@ async function attachProviderCapabilities(
   return {
     ...response,
     supportsModelDiscovery: supportsDiscovery,
+    ...(response.requiresAccount === false ? { publicKey: true } : {}),
     oauthFlows: {
       browser: hasBrowserFlow,
       device: client.supportsDeviceCode === true && typeof client.startDeviceAuth === "function",

@@ -61,6 +61,7 @@ const createProviderBody = t.Object({
   baseUrl: t.Optional(t.String()),
   compatibilityProfile: t.Optional(compatibilityProfileSchema),
   models: t.Optional(t.Array(t.String())),
+  requiresAccount: t.Optional(t.Boolean()),
 });
 const updateProviderBody = t.Partial(
   t.Object({
@@ -75,7 +76,9 @@ const createAccountBody = t.Object({
   label: t.Optional(t.String()),
   credentialKind: literalUnion(CREDENTIAL_KINDS),
   credentialMode: t.Optional(literalUnion(CREDENTIAL_MODES)),
-  secret: t.String(),
+  // Optional so a credential-less (`none`) account — the "Public Key" row —
+  // can be created; `api_key`/`oauth` still require one (store-side check).
+  secret: t.Optional(t.String()),
   authState: t.Optional(t.Record(t.String(), t.Unknown())),
 });
 /**

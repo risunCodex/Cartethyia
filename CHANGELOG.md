@@ -20,6 +20,18 @@ commit. This entry is the canonical restore anchor — do not delete it.
 
 ### Added
 
+- **Custom OpenAI/Anthropic providers can be Public Key (no credential).** The
+  Add Compatible Provider modal gains a "Public Key — no API key needed" switch:
+  the API-key field disables, the provider is created with
+  `requiresAccount: false`, and a credential-less account labelled **Public
+  Key** is registered to route it. The account stores no ciphertext and the
+  adapter sends no auth header, so a public/no-key upstream (e.g.
+  `https://srv1.howtofix.id/v1`) serves unauthenticated. Provider detail keeps
+  account management reachable for a public-key provider and the row badge
+  reads "Public Key". `CreateProviderAccountRequest.secret` is now optional so
+  a `none` account can be created, with a store-side check that the kind and
+  the secret agree (no credential-requiring account without a secret, no
+  credential-less account carrying one).
 - **Codex (ChatGPT) catalog gains `codex-auto-review` and `gpt-reserve`.** Both
   are Responses-wire rows at the 272k context / 128k output window the ChatGPT
   model listing reports, so they are servable from the static catalog without

@@ -147,14 +147,57 @@ function pastedEndpointRoot(value: string): string | null {
 
 // ── Custom Compatible Provider Modal ──────────────────────────────────────────
 
-function AddCompatibleModal({
+/** The wire values the create-provider request is built from. */
+export interface CompatibleProviderRequestInput {
+  readonly providerId: string;
+  readonly label: string;
+  readonly baseUrl: string;
+  readonly wireFamily: WireFamily;
+  readonly sendCliIdentity: boolean;
+  readonly publicKey: boolean;
+  readonly serviceKinds: readonly ServiceKind[] | undefined;
+  readonly extraHeaders: Readonly<Record<string, string>>;
+}
+
+/**
+ * Builds the create-provider request for one modal submission.
+ *
+ * Pure and exported so the suite can pin the request shape directly: the
+ * modal's submit runs through `useCreateProvider`, and happy-dom cannot drive
+ * the text inputs that fill it.
+ */
+export function buildCompatibleProviderRequest(
+  input: CompatibleProviderRequestInput,
+): CreateProviderRequest {
+  return {
+    providerId: input.providerId,
+    label: input.label,
+    baseUrl: input.baseUrl,
+    wireFamily: input.wireFamily,
+    // "Public Key" means the upstream answers without any credential: the
+    // provider needs no account (routing emits its credential-less candidate)
+    // and the modal registers a `none` account named "Public Key" so the
+    // operator sees the route in the account list.
+    requiresAccount: input.publicKey === true ? false : undefined,
+    compatibilityProfile: {
+      cli_identity: input.sendCliIdentity,
+      ...(input.serviceKinds !== undefined ? { service_kinds: input.serviceKinds } : {}),
+      ...(Object.keys(input.extraHeaders).length > 0 ? { extra_headers: input.extraHeaders } : {}),
+    },
+  };
+}
+
+export function AddCompatibleModal({
   variant,
   open,
   onClose,
+  /** Test seam: pre-set the Public Key switch without driving the control. */
+  publicKey: initialPublicKey = false,
 }: {
   variant: "openai-compatible" | "anthropic-compatible";
   open: boolean;
   onClose: () => void;
+  publicKey?: boolean;
 }): ReactNode {
   const create = useCreateProvider();
   const createAccount = useCreateProviderAccount();
@@ -164,6 +207,7 @@ function AddCompatibleModal({
   const [providerId, setProviderId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [credential, setCredential] = useState("");
+  const [publicKey, setPublicKey] = useState(initialPublicKey);
   const [autoFetchModels, setAutoFetchModels] = useState(false);
   const [sendCliIdentity, setSendCliIdentity] = useState(true);
   const [headerPairs, setHeaderPairs] = useState<readonly HeaderPair[]>([]);
@@ -192,6 +236,7 @@ function AddCompatibleModal({
     if (!open) return;
     setLabel("");
     setCredential("");
+    setPublicKey(false);
     setWireFamily(defaultWire);
     setBaseUrl("");
     setAutoFetchModels(false);
@@ -265,9 +310,27 @@ function AddCompatibleModal({
       setError("Base URL is required");
       return;
     }
+    // A public-key provider registers its credential-less "Public Key"
+    // account, which is not optional — that row is what routing dials.
+    if (publicKey) {
+      setError(null);
+      await runCreate({ providerId: providerId.trim().toLowerCase() }, true);
+      return;
+    }
+    if (!credential.trim()) {
+      setError("API Key is required — or enable “Public Key” for a no-key endpoint");
+      return;
+    }
+    await runCreate({ providerId: providerId.trim().toLowerCase() }, false);
+  };
+
+  const runCreate = async (
+    ids: { readonly providerId: string },
+    asPublicKey: boolean,
+  ): Promise<void> => {
 
     const extraHeaders = pairsToHeaders(headerPairs);
-    const id = providerId.trim().toLowerCase();
+    const id = ids.providerId;
     // Advanced capabilities: send the narrowed kind list only when the
     // operator opened the section and changed it. Absent = the historical
     // default (every kind enabled).
@@ -276,19 +339,24 @@ function AddCompatibleModal({
     setSubmitting(true);
     setError(null);
     try {
-      const req: CreateProviderRequest = {
-        providerId: id,
-        label: label.trim(),
-        baseUrl: baseUrl.trim(),
-        wireFamily,
-        compatibilityProfile: {
-          cli_identity: sendCliIdentity,
-          ...(advancedKinds !== undefined ? { service_kinds: advancedKinds } : {}),
-          ...(Object.keys(extraHeaders).length > 0 ? { extra_headers: extraHeaders } : {}),
-        },
-      };
-      await create.mutateAsync(req);
-      if (credential.trim()) {
+      await create.mutateAsync(
+        buildCompatibleProviderRequest({
+          providerId: id,
+          label: label.trim(),
+          baseUrl: baseUrl.trim(),
+          wireFamily,
+          sendCliIdentity,
+          publicKey: asPublicKey,
+          serviceKinds: advancedKinds,
+          extraHeaders,
+        }),
+      );
+      if (asPublicKey) {
+        await createAccount.mutateAsync({
+          providerId: id,
+          request: { credentialKind: "none", label: "Public Key" },
+        });
+      } else {
         await createAccount.mutateAsync({
           providerId: id,
           request: { credentialKind: "api_key", secret: credential.trim() },
@@ -387,7 +455,9 @@ function AddCompatibleModal({
           <label className="form-label" htmlFor="compat-credential">
             <span>API Key</span>
             <span className="form-hint">
-              Optional — saved with this provider and used to authenticate every request.
+              {publicKey
+                ? "Off — this is a Public Key endpoint: requests go out with no credential at all."
+                : "Optional — saved with this provider and used to authenticate every request."}
             </span>
           </label>
           <Inline gap="8px">
@@ -398,6 +468,8 @@ function AddCompatibleModal({
                 placeholder="sk-..."
                 value={credential}
                 onChange={(e) => setCredential(e.target.value)}
+                disabled={publicKey}
+                aria-describedby="compat-public-key-hint"
               />
             </div>
             <Button
@@ -412,6 +484,17 @@ function AddCompatibleModal({
               Paste
             </Button>
           </Inline>
+          <ListRow
+            actions={<Switch checked={publicKey} onChange={setPublicKey} id="compat-public-key" />}
+          >
+            <div>
+              <div className="text-body font-semibold">Public Key — no API key needed</div>
+              <div className="mt-1 text-badge text-text-tertiary" id="compat-public-key-hint">
+                The upstream answers without a credential. Requests go out unauthenticated,
+                and a "Public Key" account is registered to route this provider.
+              </div>
+            </div>
+          </ListRow>
           {testResult ? (
             <>
               <div

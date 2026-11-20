@@ -41,6 +41,10 @@ function ModelCooldownChip({
 function credentialFamily(account: ProviderAccountResponse): string | undefined {
   if (account.credentialKind === "oauth") return "OAuth";
   if (account.credentialMode === "jwt") return "JWT";
+  // A credential-less account is the "Public Key" row a no-key custom
+  // provider registers; naming it keeps the row honest instead of rendering
+  // the default "API key" family for an account that sends no credential.
+  if (account.credentialKind === "none") return "Public Key";
   return undefined;
 }
 

@@ -532,7 +532,9 @@ export default function ProviderDetail(): ReactNode {
       <UsageActivityMatrixCard providerId={id} />
       {/* Accounts */}
       <div id="provider-accounts" tabIndex={-1}>
-        {provider.requiresAccount === false && accounts.length === 0 ? (
+        {/* A public-key custom provider still routes through its "Public Key"
+            account, so only a truly account-less provider hides this card. */}
+        {provider.requiresAccount === false && provider.publicKey !== true && accounts.length === 0 ? (
           <Card>
             <CardHeader title="Accounts" icon={<Cable size={16} />} />
             <CardBody>
@@ -594,7 +596,7 @@ export default function ProviderDetail(): ReactNode {
                       : "Add API key"}
                   </Button>
                 )}
-                {!provider.requiresAccount === false ? (
+                {provider.requiresAccount !== false || provider.publicKey === true ? (
                   <Button
                     variant="primary"
                     size="sm"

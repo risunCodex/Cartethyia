@@ -218,7 +218,15 @@ function createProviderOperations(config: ProviderCatalogConfig) {
           isBuiltIn: false,
           supportsModelDiscovery: true,
           // the two builtin credential-less routes get `false`, set at seed time.
-          requiresAccount: true,
+          // A custom provider may also be credential-less: the operator enables
+          // the modal's "Public Key" switch when the upstream answers without
+          // any key. `false` alone is not enough to serve it — the routing
+          // catalog emits the public no-key candidate only when the provider
+          // has no account rows, so this same request registers a
+          // credential-less "Public Key" account to route through (see
+          // `registerPublicKeyAccount` below), unless the operator supplied a
+          // real key.
+          requiresAccount: request.requiresAccount ?? true,
           ...pickDefined({ label: request.label }),
           ...(request.capabilityProfile === undefined
             ? {}

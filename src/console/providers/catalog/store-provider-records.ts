@@ -71,6 +71,10 @@ export async function createProvider(
     id: record.providerId,
     tenantId: record.tenantId ?? null,
     enabled: record.enabled,
+    // A custom provider may be credential-less ("Public Key"); without this the
+    // column default (`true`) would override the record and the route catalog
+    // would stamp the provider disabled for having no account.
+    requiresAccount: record.requiresAccount ?? true,
     ...(record.wireFamilyDefault ? { wireFamilyDefault: record.wireFamilyDefault } : {}),
     capabilityProfile: record.capabilityProfile ?? null,
     baseUrl: record.baseUrl ?? null,
