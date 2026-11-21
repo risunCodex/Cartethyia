@@ -1,7 +1,7 @@
 /**
  * Kiro management usage fetch (`fetchKiroQuota`).
  *
- * The control-plane `Get-Usage-Limits` surface is profile-scoped: with a
+ * The management-host `getUsageLimits` surface is profile-scoped: with a
  * `profileArn` it answers 200 and the usage breakdown parses; without one it
  * answers 400 `Invalid profileArn.`. A 400 refuses the query shape, not the
  * credential — the account stays ACTIVE and routable — so it is reported without

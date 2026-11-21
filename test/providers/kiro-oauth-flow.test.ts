@@ -117,7 +117,7 @@ describe("Kiro portal social flow", () => {
           { status: 200 },
         );
       }
-      if (url.includes("/Get-Usage-Limits")) {
+      if (url.includes("/getUsageLimits")) {
         return new Response(
           JSON.stringify({
             subscriptionInfo: { subscriptionTitle: "KIRO FREE" },
@@ -136,7 +136,7 @@ describe("Kiro portal social flow", () => {
       "google",
     );
     expect(result.accountLabel).toBe("user@gmail.com");
-    expect(calls.some((url) => url.includes("/Get-Usage-Limits"))).toBe(true);
+    expect(calls.some((url) => url.includes("/getUsageLimits"))).toBe(true);
   });
 
   test("social exchange keeps the family fallback when the usage surface is unavailable", async () => {
@@ -337,7 +337,7 @@ describe("Kiro portal social flow", () => {
           { status: 200 },
         );
       }
-      if (url.includes("/Get-Usage-Limits")) {
+      if (url.includes("/getUsageLimits")) {
         return new Response(
           JSON.stringify({
             subscriptionInfo: { subscriptionTitle: "KIRO FREE" },
@@ -360,7 +360,7 @@ describe("Kiro portal social flow", () => {
       }),
     });
     expect(result.accountLabel).toBe("builder@example.com");
-    expect(calls.some((url) => url.includes("/Get-Usage-Limits"))).toBe(true);
+    expect(calls.some((url) => url.includes("/getUsageLimits"))).toBe(true);
   });
 
   test("OIDC phase-2 exchanges the code with the stored registration and PKCE verifier", async () => {

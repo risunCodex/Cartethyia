@@ -1,5 +1,5 @@
 /**
- * Kiro adapter — 1.4.62 wire protocol.
+ * Kiro adapter — 1.4.x new-service wire protocol.
  *
  * The unpacked IDE (agent v1.1.641) talks to the Kiro control plane and runtime
  * services, not the legacy `q.{region}.amazonaws.com` / `codewhisperer.*` AWS
@@ -7,7 +7,9 @@
  *   - generation → `https://runtime.{region}.kiro.dev/generateAssistantResponse`
  *     (Smithy awsJson1_0, `x-amz-target: KiroRuntimeService.GenerateAssistantResponse`)
  *   - discovery/quota → `https://management.{region}.kiro.dev/List-Available-Models`
- *     and `/Get-Usage-Limits` (`KiroControlPlaneBearerService.*`)
+ *     (`KiroControlPlaneBearerService.*`) and `/getUsageLimits` (the
+ *     CodeWhisperer-runtime usage read, measured on the management host
+ *     2026-11-15; the 1.4.62-era `/Get-Usage-Limits` spelling is refused)
  *   - device identity → `KiroIDE-{version}-{machineId}` UA plus `x-kiro-machineid`
  *   - auth labelling → `TokenType` header (`API_KEY`/`EXTERNAL_IDP`/`SSO_OIDC`)
  */
@@ -128,7 +130,10 @@ describe("Kiro quota (control plane)", () => {
       { auth_state: { region: "us-east-1", authMethod: "idc", profileArn: "arn:aws:codewhisperer:us-east-1:1:profile/A" } } as never,
     );
     expect(method).toBe("GET");
-    expect(url).toContain("https://management.us-east-1.kiro.dev/Get-Usage-Limits");
+    // Measured on the management host 2026-11-15: the CodeWhisperer-runtime
+    // usage read lives at `/getUsageLimits`; the 1.4.62-era
+    // `/Get-Usage-Limits` spelling is refused outright.
+    expect(url).toContain("https://management.us-east-1.kiro.dev/getUsageLimits");
     expect(url).toContain(encodeURIComponent("arn:aws:codewhisperer:us-east-1:1:profile/A"));
     expect(url).toContain("origin=AI_EDITOR");
     expect(url).toContain("resourceType=AGENTIC_REQUEST");

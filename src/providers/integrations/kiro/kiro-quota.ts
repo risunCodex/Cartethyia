@@ -1,9 +1,13 @@
 // Kiro (Kiro Control Plane) quota.
 //
-// Billing lives on the Kiro control-plane (management) service — in the
-// 1.4.62 build `GetUsageLimits` is `GET /Get-Usage-Limits` on
-// `https://management.{region}.kiro.dev`. The legacy `codewhisperer.*` /
-// `q.*` AWS usage surfaces are no longer used.
+// The usage surface follows the official IDE 1.4.x new-service identity, as
+// measured on the wire 2026-11-15: `GET /getUsageLimits` on
+// `https://management.{region}.kiro.dev` (`?origin=AI_EDITOR&resourceType=
+// AGENTIC_REQUEST[&profileArn=…]`, no `isEmailRequired`). The 1.4.62-era
+// `GET /Get-Usage-Limits` spelling this module once captured is no longer
+// answered — requests against it are refused outright, which read as a
+// credential rejection and parked working accounts. The legacy
+// `codewhisperer.*` / `q.*` AWS usage surfaces are gone entirely.
 //
 // The account's region and profile matter here for the same reason they matter
 // at dispatch: the request is scoped to them, and an account-bound credential
@@ -81,7 +85,7 @@ function usageHeaders(credential: string, auth: KiroQuotaAuth): Record<string, s
     authorization: `Bearer ${credential}`,
     accept: "application/json",
     connection: "close",
-    "amz-sdk-request": "attempt=1; max=1",
+    "amz-sdk-request": "attempt=1; max=3",
     "amz-sdk-invocation-id": crypto.randomUUID(),
     "x-amz-user-agent": buildKiroAmzUserAgent(version, auth.machineId),
     "user-agent": buildKiroRuntimeUserAgent(version, auth.machineId),
@@ -167,15 +171,19 @@ export async function fetchKiroQuota(
   if (token.length === 0) throw new Error("Kiro credential is empty.");
   const auth = quotaAuth(context);
   const headers = usageHeaders(token, auth);
+  // The measured wire carries `origin` and `resourceType` only; the email
+  // adoption below still parses `userInfo.email` when the upstream reports it.
   const query = new URLSearchParams({
-    isEmailRequired: "true",
     origin: "AI_EDITOR",
     resourceType: "AGENTIC_REQUEST",
   });
-  // The 1.4.62 client sends the profile in the query (`GetUsageLimitsCommand`
-  // with `{origin, profileArn, resourceType, isEmailRequired}`). Without it the
-  // upstream answers 400 `Invalid profileArn.` — and there is no POST surface;
-  // the legacy `codewhisperer.*`/`q.*` AWS usage paths are gone.
+  // The roster keeps `profileArn` in the query (`GetUsageLimitsCommand` with
+  // `{origin, profileArn, resourceType[, isEmailRequired]}`): accounts that
+  // resolved their own profile answer only with it, and the sign-in families
+  // without one carry the vendor default. An omitted field answers
+  // `400 Invalid profileArn.`; a profile the credential does not own is
+  // refused outright. Social and Builder ID identities carry the offline
+  // default, matching the reference client.
   if (auth.profileArn.length > 0) query.set("profileArn", auth.profileArn);
 
   const managementHost = KIRO_MANAGEMENT_HOST_TEMPLATE.replace("{region}", auth.region);
@@ -183,7 +191,7 @@ export async function fetchKiroQuota(
   let sawAuthRefusal = false;
   let lastError = "Unable to fetch Kiro usage right now.";
   try {
-    const response = await fetcher(`${managementHost}/Get-Usage-Limits?${query.toString()}`, {
+    const response = await fetcher(`${managementHost}/getUsageLimits?${query.toString()}`, {
       method: "GET",
       headers,
       signal: AbortSignal.timeout(15_000),

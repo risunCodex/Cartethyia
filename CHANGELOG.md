@@ -18,6 +18,19 @@ hash `8375c77d` (2.8.4 release) by cherry-picking the relevant provider
 modules, registrations, manifests, icons, tests, and documentation from that
 commit. This entry is the canonical restore anchor — do not delete it.
 
+### Fixed
+
+- **Kiro usage reads answer on the new-service path.** The quota sweep and the
+  account Test button called the 1.4.62-era `GET /Get-Usage-Limits` spelling on
+  the management host; the upstream no longer answers it and refuses the request
+  outright, which read as a credential rejection — `quota_fetch_failed` with
+  "Kiro rejected the stored credential for usage" — and parked working accounts.
+  The usage call now uses the measured new-service shape (`GET
+  /getUsageLimits?origin=AI_EDITOR&resourceType=AGENTIC_REQUEST[&profileArn=…]`,
+  no `isEmailRequired`, `amz-sdk-request: attempt=1; max=3`), keeping the
+  profileArn query discipline (account-own ARN, or the sign-in family's vendor
+  default) and the frozen machine-id identity shared with dispatch.
+
 ### Added
 
 - **Antigravity catalog refreshed to the Antigravity CLI (agy 1.5.12) roster.**
