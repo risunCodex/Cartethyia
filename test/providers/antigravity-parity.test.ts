@@ -21,7 +21,10 @@ import {
   normalizeAntigravityToolSchemas,
 } from "../../src/providers/integrations/antigravity/antigravity-protocol";
 import { buildAntigravityEnvelope } from "../../src/providers/integrations/antigravity/antigravity";
-import { ANTIGRAVITY_MODELS } from "../../src/providers/integrations/antigravity/antigravity-models";
+import {
+  ANTIGRAVITY_FREE_TIER_MODEL_IDS,
+  ANTIGRAVITY_MODELS,
+} from "../../src/providers/integrations/antigravity/antigravity-models";
 import { buildGeminiPayload } from "../../src/protocol/request/gemini";
 import type { CanonicalRequest } from "../../src/protocol/canonical-model";
 
@@ -491,18 +494,24 @@ describe("Antigravity effort-tier vocabulary (single owner)", () => {
   });
 });
 
-describe("Antigravity catalog is all free tier", () => {
-  test("every published row bills zero and carries the free-tier marker", () => {
-    // `loadCodeAssist` reports every probe account on the upstream `free-tier`
-    // plan, so the whole static roster is served free. The marker pair mirrors
-    // the other free catalogs: `free` zeroes the per-token cost, `freeTier`
-    // groups the row in the Free Limited section.
+describe("Antigravity catalog free-tier marking", () => {
+  test("only rows published on the probed free-tier account are marked free", () => {
+    // Source of truth is the 2026-11-21 `fetchAvailableModels` probe: 18 wire
+    // deployments collapsed to the ids in ANTIGRAVITY_FREE_TIER_MODEL_IDS.
+    // Other static rows are discoverable but were not published on that free
+    // plan, so they must NOT be grouped as free or priced at zero.
     expect(ANTIGRAVITY_MODELS.length).toBeGreaterThan(0);
     for (const model of ANTIGRAVITY_MODELS) {
-      expect(model.freeTier).toBe(true);
-      expect(model.cost.input).toBe(0);
-      expect(model.cost.output).toBe(0);
+      if (ANTIGRAVITY_FREE_TIER_MODEL_IDS.has(model.modelId)) {
+        expect(model.freeTier).toBe(true);
+        expect(model.cost.input).toBe(0);
+        expect(model.cost.output).toBe(0);
+      } else {
+        expect(model.freeTier).toBeUndefined();
+      }
     }
+    // Guard against an empty allowlist silently unflagging everything.
+    expect(ANTIGRAVITY_FREE_TIER_MODEL_IDS.size).toBeGreaterThan(0);
   });
 
   test("gemini-4-hydrogen-sonar is catalogued at live-measured limits", () => {

@@ -8,6 +8,8 @@
 import { providerBaseUrl } from "../../provider-metadata";
 import { defineModel, FREE_TIER_COST, type ModelDefinition } from "../../provider-model-definition";
 import { isRecord } from "../../../protocol/codecs";
+import { modelsDevCatalog } from "../../discovery/models-dev-catalog";
+import { ANTIGRAVITY_FREE_TIER_MODEL_IDS } from "./antigravity-models";
 import {
   antigravityTierSuffix,
   getAntigravityUserAgent,
@@ -85,11 +87,12 @@ function normalizeAntigravityDiscoveryModels(
       modalities: { input: ["text", "image"], output: ["text"] },
       reasoning: model.supportsThinking === true,
       toolCall: true,
-      // Antigravity serves its whole catalog on the upstream `free-tier` plan
-      // (confirmed by `loadCodeAssist`); live-discovered rows carry the same
-      // zero cost and Free Limited marker as the static roster.
-      freeTier: true,
-      cost: FREE_TIER_COST,
+      // Only rows the probed free-tier account actually published belong in
+      // Free Limited. Other discovered ids may be paid-only on this plan, so
+      // they keep their priced catalog cost and carry no free marker.
+      ...(ANTIGRAVITY_FREE_TIER_MODEL_IDS.has(logicalId)
+        ? { freeTier: true, cost: FREE_TIER_COST }
+        : { cost: modelsDevCatalog.costFor("antigravity", logicalId) }),
     };
     const existing = byId.get(logicalId);
     if (
