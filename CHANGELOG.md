@@ -20,6 +20,16 @@ commit. This entry is the canonical restore anchor — do not delete it.
 
 ### Added
 
+- **Antigravity catalog refreshed to the agy 1.5.12 roster (oh-my-pi reference).**
+  `gemini-4-neon` joins the catalog (1,048,576 context / 262,144 output; sessions
+  fall back to it when an account no longer offers Carbon), Carbon and Hydrogen
+  ship their real 262,144 output cap (they were cataloged at the Argon-shaped
+  65,536), and the Gemini 4 family gains explicit low/medium/high effort rows —
+  `antigravity/gemini-4-{argon,carbon,hydrogen,neon}-low|medium|high` — alongside
+  the bare ids, which route through the roster's own defaults (Argon, Carbon,
+  Hydrogen open at effort medium; Neon at high). Tier ids pass through to the
+  upstream deployment untouched, so selecting `-high` pins that tier instead of
+  relying on the bare id's default.
 - **Custom OpenAI/Anthropic providers can be Public Key (no credential).** The
   Add Compatible Provider modal gains a "Public Key — no API key needed" switch:
   the API-key field disables, the provider is created with

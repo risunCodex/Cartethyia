@@ -403,12 +403,18 @@ describe("7. tool schemas survive the envelope", () => {
 
 describe("Antigravity wire model mapping & variant collapse", () => {
   test("resolves logical model ids to upstream wire deployments", () => {
-    expect(antigravityWireModelId("gemini-4-argon")).toBe("gemini-4-argon-low");
+    // Defaults follow the agy 1.5.12 roster reference: the Gemini 4 family
+    // opens at effort medium, Neon at high.
+    expect(antigravityWireModelId("gemini-4-argon")).toBe("gemini-4-argon-medium");
+    expect(antigravityWireModelId("gemini-4-carbon")).toBe("gemini-4-carbon-medium");
     expect(antigravityWireModelId("gemini-4-hydrogen")).toBe("gemini-4-hydrogen-medium");
+    expect(antigravityWireModelId("gemini-4-neon")).toBe("gemini-4-neon-high");
     expect(antigravityWireModelId("gemini-3.8-flash")).toBe("gemini-3.8-flash-low");
     expect(antigravityWireModelId("claude-opus-4-6")).toBe("claude-opus-4-6-thinking");
     expect(antigravityWireModelId("gemini-3.1-pro")).toBe("gemini-pro-agent");
     expect(antigravityWireModelId("gemini-2.5-flash")).toBe("gemini-2.5-flash");
+    // Tier rows are already deployment ids and pass through untouched.
+    expect(antigravityWireModelId("gemini-4-carbon-high")).toBe("gemini-4-carbon-high");
   });
 
   test("collapses effort variants back to logical catalog model ids", () => {
@@ -461,8 +467,10 @@ describe("Antigravity effort-tier vocabulary (single owner)", () => {
       ["gemini-3.6-flash", "low"],
       ["gemini-3.7-flash", "low"],
       ["gemini-3.8-flash", "low"],
-      ["gemini-4-argon", "low"],
+      ["gemini-4-argon", "medium"],
+      ["gemini-4-carbon", "medium"],
       ["gemini-4-hydrogen", "medium"],
+      ["gemini-4-neon", "high"],
       ["gpt-oss-120b", "medium"],
     ] as const) {
       const wire = antigravityWireModelId(logical);

@@ -161,7 +161,9 @@ const ANTIGRAVITY_MODEL_WIRE_PROFILES: Readonly<
     modelEnum: "MODEL_PLACEHOLDER_M322",
     maxOutputTokens: 65536,
   },
-  // Gemini 4 Argon effort tiers (real deployment names).
+  // Gemini 4 effort tiers (deployment names per the agy 1.5.12 roster
+  // reference). Argon caps at 65,536; Carbon, Hydrogen, and Neon ship
+  // 262,144 — matching each family's catalog row.
   "gemini-4-argon-low": {
     maxOutputTokens: 65536,
   },
@@ -171,15 +173,34 @@ const ANTIGRAVITY_MODEL_WIRE_PROFILES: Readonly<
   "gemini-4-argon-high": {
     maxOutputTokens: 65536,
   },
-  // Gemini 4 Hydrogen effort tiers — same deployment shape as Argon.
+  "gemini-4-carbon-low": {
+    maxOutputTokens: 262144,
+  },
+  "gemini-4-carbon-medium": {
+    maxOutputTokens: 262144,
+  },
+  "gemini-4-carbon-high": {
+    maxOutputTokens: 262144,
+  },
+  // Gemini 4 Hydrogen effort tiers — same deployment shape as Carbon.
   "gemini-4-hydrogen-low": {
-    maxOutputTokens: 65536,
+    maxOutputTokens: 262144,
   },
   "gemini-4-hydrogen-medium": {
-    maxOutputTokens: 65536,
+    maxOutputTokens: 262144,
   },
   "gemini-4-hydrogen-high": {
-    maxOutputTokens: 65536,
+    maxOutputTokens: 262144,
+  },
+  // Gemini 4 Neon effort tiers — same deployment shape as Hydrogen.
+  "gemini-4-neon-low": {
+    maxOutputTokens: 262144,
+  },
+  "gemini-4-neon-medium": {
+    maxOutputTokens: 262144,
+  },
+  "gemini-4-neon-high": {
+    maxOutputTokens: 262144,
   },
   // GPT-OSS via Antigravity (verified live).
   "gpt-oss-120b-medium": {
@@ -230,12 +251,22 @@ const ANTIGRAVITY_TIER_THINKING_BUDGET: Readonly<Record<string, number>> = Objec
  * Default effort tier each logical id deploys as at dispatch (the wire id is
  * `<id>-<tier>`). Ids not listed here are already wire ids and pass through.
  */
+/**
+ * Default effort tier each logical id deploys as at dispatch (the wire id is
+ * `<id>-<tier>`). Ids not listed here are already wire ids and pass through.
+ *
+ * Defaults follow the agy 1.5.12 roster reference (oh-my-pi
+ * `providers/antigravity-cli.kdl`): the Gemini 4 family opens at effort
+ * medium, and Neon — the family's newest SKU — opens at high.
+ */
 const ANTIGRAVITY_DEFAULT_TIER: Readonly<Record<string, AntigravityEffortSuffix>> = Object.freeze({
   "gemini-3.6-flash": "low",
   "gemini-3.7-flash": "low",
   "gemini-3.8-flash": "low",
-  "gemini-4-argon": "low",
+  "gemini-4-argon": "medium",
+  "gemini-4-carbon": "medium",
   "gemini-4-hydrogen": "medium",
+  "gemini-4-neon": "high",
   "gpt-oss-120b": "medium",
 });
 
