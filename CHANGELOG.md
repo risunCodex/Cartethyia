@@ -8,7 +8,7 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [2.8.7] - 2026-11-21
 
 ### Fixed
 
@@ -19,6 +19,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   the row healthy, the operator saw no quota pill at all, and nothing ever
   retried. An empty read now reports an error so the sweep retries and the
   account's real state is visible.
+
+> Also carries the 2.8.6 fix, which never reached npm: **Kiro quota reads
+> leave through the account's own egress** (the per-account pool rotation the
+> check-in leg already used), fixing the `quota_fetch_failed` parks that came
+> from an egress mismatch rather than a rejected credential.
 
 ## [2.8.6] - 2026-11-21
 
