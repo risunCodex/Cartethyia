@@ -83,13 +83,11 @@ function usageHeaders(credential: string, auth: KiroQuotaAuth): Record<string, s
   const version = getKiroVersion();
   const headers: Record<string, string> = {
     authorization: `Bearer ${credential}`,
-    accept: "application/json",
     connection: "close",
     "amz-sdk-request": "attempt=1; max=3",
     "amz-sdk-invocation-id": crypto.randomUUID(),
     "x-amz-user-agent": buildKiroAmzUserAgent(version, auth.machineId),
     "user-agent": buildKiroRuntimeUserAgent(version, auth.machineId),
-    "x-kiro-machineid": auth.machineId,
   };
   const tokenType = kiroTokenTypeHeader(auth.authMethod);
   if (tokenType !== undefined) headers["TokenType"] = tokenType;

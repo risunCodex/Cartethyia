@@ -40,8 +40,8 @@ import {
 } from "../../../protocol/upstream-errors";
 import type { ProviderAdapter, ProviderDispatchContext, ProviderDispatchTarget } from "../../provider-contracts";
 import {
-  buildKiroAmzUserAgent,
-  buildKiroUserAgent,
+  buildKiroIdeAmzUserAgent,
+  buildKiroIdeUserAgent,
   getKiroVersion,
 } from "../../operations/client-versions";
 import { FrameBuffer } from "../shared/connect";
@@ -72,9 +72,6 @@ export { KIRO_PROVIDER_ID };
 
 /** Longest single message this adapter will buffer before treating the stream as corrupt. */
 const KIRO_MAX_STREAM_BUFFER_BYTES = 24 * 1024 * 1024;
-
-/** Response header the upstream sets on a streaming answer. */
-const KIRO_STREAM_ACCEPT = "application/vnd.amazon.eventstream";
 
 /** Non-secret per-account auth configuration, as stored on the account. */
 interface KiroAuthState {
@@ -179,25 +176,35 @@ export function kiroEndpoint(authState: KiroAuthState | undefined): string {
 
 /**
  * AWS JSON 1.0 target for the runtime generation operation. The service name
- * and operation are what the 1.4.62 client sends in `x-amz-target` (it is a
- * Smithy `awsJson1_0` client with serviceTarget `KiroRuntimeService`).
+ * and operation are what the 1.4.62 client sent in `x-amz-target`; the new
+ * service identity (1.4.x default) addresses the operation by the REST path
+ * alone and sends no target header — see `kiroHeaders`.
  */
 export const KIRO_RUNTIME_AWS_JSON_TARGET = "KiroRuntimeService.GenerateAssistantResponse" as const;
 
 /**
- * Builds the request headers.
+ * Builds the request headers for the new runtime service, following the
+ * official 1.4.x IDE identity measured on the wire (2026-11-15):
  *
- * Every field is load-bearing on the observed client's wire:
- *
+ *  * Plain `application/json` framing with **no `x-amz-target`** — the REST
+ *    path carries the operation; the awsJson header was the old host's shape.
  *  * `connection: close` — one request per connection, so a single TCP session
  *    never carries two accounts' tokens.
- *  * `user-agent` / `x-amz-user-agent` — the SDK identity plus the
- *    `KiroIDE-{version}-{machineId}` device marker the upstream correlates on.
+ *  * `user-agent` / `x-amz-user-agent` — the `api/kiroruntime` SDK identity
+ *    plus the `KiroIDE-{version}-{machineId}-KAS/<agent> acp-client/kiro-ide`
+ *    device+runtime marker the upstream correlates on. The machine id lives
+ *    here; the new service path carries no separate machine-id header.
  *  * `x-amzn-codewhisperer-optout` — the observed client opts out of data
  *    collection on every generation request.
- *  * `x-amzn-kiro-agent-mode` — the agent mode the observed client declares.
+ *  * `x-amzn-kiro-agent-mode` / `x-amzn-kiro-attempt` — the agent mode and the
+ *    attempt framing the observed client declares.
  *  * `TokenType` — an API key or enterprise token is labelled so the upstream
- *    can tell it apart from an OAuth access token.
+ *    can tell it apart from an OAuth access token; social/Builder-ID sessions
+ *    send none.
+ *
+ * The subscription profile rides in the request body (`payload.profileArn`),
+ * not in a header — the `x-amzn-kiro-profile-arn` header is the web-search
+ * (MCP) surface's shape, which this gateway does not implement.
  */
 export function kiroHeaders(
   secret: string,
@@ -208,25 +215,20 @@ export function kiroHeaders(
   const authMethod = authState?.authMethod;
   const version = getKiroVersion();
   const headers: Record<string, string> = {
-    "content-type": "application/x-amz-json-1.0",
-    accept: KIRO_STREAM_ACCEPT,
+    "content-type": "application/json",
     connection: "close",
-    "x-amz-target": KIRO_RUNTIME_AWS_JSON_TARGET,
     "x-amzn-codewhisperer-optout": "true",
     "x-amzn-kiro-agent-mode": agentMode,
-    "x-kiro-machineid": machineId,
     "amz-sdk-request": "attempt=1; max=3",
     "amz-sdk-invocation-id": crypto.randomUUID(),
-    "user-agent": buildKiroUserAgent(version, machineId),
-    "x-amz-user-agent": buildKiroAmzUserAgent(version, machineId),
+    "x-amzn-kiro-attempt": "1;max=3",
+    "user-agent": buildKiroIdeUserAgent(version, machineId),
+    "x-amz-user-agent": buildKiroIdeAmzUserAgent(version, machineId),
     authorization: `Bearer ${secret}`,
   };
   const tokenType = kiroTokenTypeHeader(authMethod);
   if (tokenType !== undefined) {
     headers["TokenType"] = tokenType;
-  }
-  if (authState?.profileArn !== undefined && authState.profileArn.length > 0) {
-    headers["x-amzn-kiro-profile-arn"] = authState.profileArn;
   }
   return headers;
 }

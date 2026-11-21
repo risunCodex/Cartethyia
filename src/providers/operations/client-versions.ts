@@ -641,6 +641,41 @@ export const getClaudeSdkVersion = accessor("claudeSdk").get;
 export const getKiroVersion = accessor("kiro").get;
 
 /**
+ * The agent runtime (KAS) build bundled in the official 1.4.178 IDE. The
+ * new-service User-Agent tail names it (`KiroIDE-<ide>-<machine>-KAS/<agent>`),
+ * so an identity claiming IDE 1.4.178 must also claim this runtime version —
+ * the pair is what the wire actually carries.
+ */
+export const KIRO_AGENT_VERSION = "0.66.102-hotfix.1" as const;
+
+/** UA tail for the new runtime service: device marker + agent runtime + client affiliation. */
+function kiroIdeRuntimeSuffix(version: string, machineId: string): string {
+  return `KiroIDE-${version}-${machineId}-KAS/${KIRO_AGENT_VERSION} acp-client/kiro-ide`;
+}
+
+/**
+ * Builds the `x-amz-user-agent` companion for the new runtime service
+ * (`runtime.generateAssistantResponse`, the official 1.4.x IDE identity).
+ * Measured wire: `aws-sdk-js/1.0.0 <suffix>`.
+ */
+export function buildKiroIdeAmzUserAgent(version = getKiroVersion(), machineId = ""): string {
+  return `aws-sdk-js/1.0.0 ${kiroIdeRuntimeSuffix(version, machineId)}`;
+}
+
+/**
+ * Builds the full `user-agent` for the new runtime service. Measured wire:
+ * SDK framing, the OS and node segments, `api/kiroruntime#1.0.0 m/N`, then the
+ * device+runtime+affiliation suffix. The machine id lives here — the new
+ * service path carries no separate machine-id header.
+ */
+export function buildKiroIdeUserAgent(version = getKiroVersion(), machineId = ""): string {
+  return (
+    `aws-sdk-js/1.0.0 ua/2.1 os/${KIRO_SYSTEM_VERSION} lang/js md/nodejs#${KIRO_NODE_VERSION} ` +
+    `api/kiroruntime#1.0.0 m/N ${kiroIdeRuntimeSuffix(version, machineId)}`
+  );
+}
+
+/**
  * Builds the `x-amz-user-agent` companion header for the generation surface.
  *
  * The upstream pairs this with `user-agent` on every generation request; the

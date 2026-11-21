@@ -20,16 +20,27 @@ commit. This entry is the canonical restore anchor — do not delete it.
 
 ### Fixed
 
-- **Kiro usage reads answer on the new-service path.** The quota sweep and the
-  account Test button called the 1.4.62-era `GET /Get-Usage-Limits` spelling on
-  the management host; the upstream no longer answers it and refuses the request
-  outright, which read as a credential rejection — `quota_fetch_failed` with
-  "Kiro rejected the stored credential for usage" — and parked working accounts.
-  The usage call now uses the measured new-service shape (`GET
-  /getUsageLimits?origin=AI_EDITOR&resourceType=AGENTIC_REQUEST[&profileArn=…]`,
-  no `isEmailRequired`, `amz-sdk-request: attempt=1; max=3`), keeping the
-  profileArn query discipline (account-own ARN, or the sign-in family's vendor
-  default) and the frozen machine-id identity shared with dispatch.
+- **Kiro dispatch and usage reads move to the official 1.4.x new-service
+  identity.** Two surfaces still carried the 1.4.62-era hybrid shape and the
+  upstream has been retiring it — first observed as the quota sweep and the
+  account Test button failing with `quota_fetch_failed` ("Kiro rejected the
+  stored credential for usage") on the retired `GET /Get-Usage-Limits` route.
+  Measured against the official IDE 1.4.178 wire (2026-11-15):
+  - **Usage** — `GET management/getUsageLimits?origin=AI_EDITOR&
+    resourceType=AGENTIC_REQUEST[&profileArn=…]` (no `isEmailRequired`,
+    `amz-sdk-request: attempt=1; max=3`), keeping the profileArn query
+    discipline (account-own ARN, or the sign-in family's vendor default) and
+    the frozen machine-id identity shared with dispatch.
+  - **Conversation** — plain `application/json` framing on the REST path with
+    no `x-amz-target` and no `Accept`; the `api/kiroruntime#1.0.0` User-Agent
+    carries the device marker as
+    `KiroIDE-<ide>-<machine>-KAS/0.66.102-hotfix.1 acp-client/kiro-ide` (plus
+    `x-amzn-kiro-attempt: 1;max=3`), replacing the old awsJson
+    `codewhispererstreaming` framing, the separate machine-id header, and the
+    `x-amzn-kiro-profile-arn` header. The subscription profile keeps riding in
+    the request body (`payload.profileArn`) — the profile-arn header is the
+    web-search surface's shape. TokenType labelling is unchanged
+    (API_KEY / EXTERNAL_IDP / SSO_OIDC; social sends none).
 
 ### Added
 
