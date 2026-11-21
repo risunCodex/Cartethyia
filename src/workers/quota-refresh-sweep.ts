@@ -11,7 +11,7 @@
 // credential and a second timer would duplicate that work.
 import { log } from "../observability/logger";
 import {
-  QUOTA_REFRESH_TIMEOUT_MS,
+  QUOTA_REFRESH_TOTAL_TIMEOUT_MS,
   listQuotaRefreshTargets,
   quotaFetcherFor,
   refreshAccountQuota,
@@ -489,7 +489,7 @@ export async function quotaRefreshSweep(deps: QuotaRefreshSweepDeps): Promise<vo
           { fetcherFor: deps.checkinFetcherFor },
           entry.target.accountId,
           entry.target.tenantId,
-          AbortSignal.timeout(QUOTA_REFRESH_TIMEOUT_MS),
+          AbortSignal.timeout(QUOTA_REFRESH_TOTAL_TIMEOUT_MS),
         ),
       );
       quotaOutcomes.set(entry.target.accountId, outcome);

@@ -77,6 +77,19 @@ const EXTENDED_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
   "max",
 ];
 
+/**
+ * Extended ladder without `max` — for upstreams whose top tier stops at
+ * `xhigh`. A `max` request clamps down to `xhigh`; every lower tier passes
+ * through unchanged.
+ */
+const NO_MAX_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+];
+
 /** Standard 4-tier scale (Gemini, Qwen). */
 const BASE_SUPPORTED_EFFORTS: readonly ReasoningEffortLevel[] = [
   "minimal",
@@ -180,6 +193,17 @@ const THINKING_LADDER_RULES: readonly ThinkingLadderRule[] = [
   },
   // Any other Claude row: extended ladder, budget-era transport.
   { id: /claude/, efforts: EXTENDED_SUPPORTED_EFFORTS },
+  // Clixad's DeepSeek row advertises `max`, but the gateway answers a `max`
+  // turn with a single empty SSE frame: billed output tokens, no live deltas.
+  // Capping at `xhigh` keeps the strongest effort that still streams. Scoped to
+  // this provider/model pair so other DeepSeek resellers keep the full ladder.
+  {
+    provider: /^clixad$/,
+    id: /^deepseek-v4\.1-flash/,
+    efforts: NO_MAX_SUPPORTED_EFFORTS,
+    defaultLevel: DEEPSEEK_DEFAULT_EFFORT,
+    reasoningReplay: true,
+  },
   // F-30: the DeepSeek chat contract — the upstream demands a `thinking`
   // object and defaults the effort — stated as a ladder rule so the injection
   // helpers gate on the resolved flag instead of a raw model-string prefix.

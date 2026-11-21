@@ -8,6 +8,36 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.8.8] - 2026-11-21
+
+### Fixed
+
+- **Quota refresh no longer parks healthy accounts over a slow or shared
+  fetch budget.** The quota wrappers overwrote each collector's own per-fetch
+  deadline with one outer signal, and callers capped a whole multi-surface read
+  at a single fetch's 15-second budget — Antigravity reads up to five surfaces,
+  so a healthy account was stamped `quota_fetch_failed` with "quota surfaces
+  did not answer". The wrappers now compose both deadlines, the total refresh
+  budget is 60 seconds as a safety net, and bulk refresh gives every account a
+  fresh deadline instead of one shared signal that expired while the batch
+  drained.
+- **Clixad streaming: `max` reasoning effort no longer bursts the whole answer
+  in one frame.** Live probes showed `deepseek-v4.1-flash` answers a `max` turn
+  with a single empty SSE frame (billed tokens, no deltas) while `high` and
+  `xhigh` stream normally. The catalog now advertises `xhigh` as its top tier
+  and dispatch clamps `max` to `xhigh` for that provider/model pair only.
+- **Antigravity catalog matches the live roster.** The whole catalog is marked
+  free-tier, `gemini-4-hydrogen-sonar` is registered at its live-measured
+  1,048,576-in / 65,536-out limits, and the six Claude 5.5 effort deployments
+  plus `tab_jump_flash_lite_preview` carry their live wire ids and output caps —
+  bare Claude 5.5 ids previously 404'd upstream.
+
+### Tests
+
+- Added quota-signal composition, Clixad effort clamp, and Antigravity wire
+  profile regressions; removed a DNS dependency from the validated-fetch seam
+  test so the full suite is deterministic offline.
+
 ## [2.8.7] - 2026-11-21
 
 ### Fixed

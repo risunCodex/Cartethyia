@@ -4,7 +4,7 @@ import type { ProviderQuotaResult } from "../../providers/quota/quota-contracts"
 import { log } from "../../observability/logger";
 import { GLOBAL_QUOTA_LENS } from "../../providers/quota/cache";
 import {
-  QUOTA_REFRESH_TIMEOUT_MS,
+  QUOTA_REFRESH_TOTAL_TIMEOUT_MS,
   quotaFetcherFor,
   refreshAccountQuota,
   type QuotaRefreshDeps,
@@ -66,7 +66,7 @@ function drainBackgroundQuotaRefreshes(): void {
         job.deps,
         job.target.accountId,
         job.target.tenantId,
-        AbortSignal.timeout(QUOTA_REFRESH_TIMEOUT_MS),
+        AbortSignal.timeout(QUOTA_REFRESH_TOTAL_TIMEOUT_MS),
       );
       return refreshAccountQuota(job.deps, job.target, fetcher);
     })()

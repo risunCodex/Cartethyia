@@ -6,9 +6,8 @@
  * and the tier-suffix vocabulary from the protocol module — a one-way edge.
  */
 import { providerBaseUrl } from "../../provider-metadata";
-import { defineModel, type ModelDefinition } from "../../provider-model-definition";
+import { defineModel, FREE_TIER_COST, type ModelDefinition } from "../../provider-model-definition";
 import { isRecord } from "../../../protocol/codecs";
-import { modelsDevCatalog } from "../../discovery/models-dev-catalog";
 import {
   antigravityTierSuffix,
   getAntigravityUserAgent,
@@ -86,7 +85,11 @@ function normalizeAntigravityDiscoveryModels(
       modalities: { input: ["text", "image"], output: ["text"] },
       reasoning: model.supportsThinking === true,
       toolCall: true,
-      cost: modelsDevCatalog.costFor("antigravity", logicalId),
+      // Antigravity serves its whole catalog on the upstream `free-tier` plan
+      // (confirmed by `loadCodeAssist`); live-discovered rows carry the same
+      // zero cost and Free Limited marker as the static roster.
+      freeTier: true,
+      cost: FREE_TIER_COST,
     };
     const existing = byId.get(logicalId);
     if (

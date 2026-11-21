@@ -111,6 +111,34 @@ const ANTIGRAVITY_MODEL_WIRE_PROFILES: Readonly<
     modelEnum: "MODEL_PLACEHOLDER_M35",
     maxOutputTokens: 64000,
   },
+  // Claude 5.5 ships as three effort deployments per family, each capped at
+  // 128,000 output tokens (live `fetchAvailableModels` 2026-11-21). The bare
+  // `claude-*-5-5` ids are NOT accepted upstream (404); `ANTIGRAVITY_DEFAULT_TIER`
+  // resolves them to a live tier before dispatch.
+  "claude-opus-5-5-low": {
+    modelEnum: "MODEL_PLACEHOLDER_M400",
+    maxOutputTokens: 128000,
+  },
+  "claude-opus-5-5-medium": {
+    modelEnum: "MODEL_PLACEHOLDER_M401",
+    maxOutputTokens: 128000,
+  },
+  "claude-opus-5-5-high": {
+    modelEnum: "MODEL_PLACEHOLDER_M402",
+    maxOutputTokens: 128000,
+  },
+  "claude-sonnet-5-5-low": {
+    modelEnum: "MODEL_PLACEHOLDER_M403",
+    maxOutputTokens: 128000,
+  },
+  "claude-sonnet-5-5-medium": {
+    modelEnum: "MODEL_PLACEHOLDER_M404",
+    maxOutputTokens: 128000,
+  },
+  "claude-sonnet-5-5-high": {
+    modelEnum: "MODEL_PLACEHOLDER_M405",
+    maxOutputTokens: 128000,
+  },
   // Gemini SKUs, as the live roster publishes them (2026-11-03).
   "gemini-2.5-flash": {
     modelEnum: "MODEL_GOOGLE_GEMINI_2_5_FLASH",
@@ -182,6 +210,11 @@ const ANTIGRAVITY_MODEL_WIRE_PROFILES: Readonly<
   "gemini-4-carbon-high": {
     maxOutputTokens: 262144,
   },
+  // Sonar is a standalone Hydrogen deployment (not an effort tier): live
+  // `/v1internal:fetchAvailableModels` publishes 65,536 output tokens.
+  "gemini-4-hydrogen-sonar": {
+    maxOutputTokens: 65536,
+  },
   // Gemini 4 Hydrogen effort tiers — same deployment shape as Carbon.
   "gemini-4-hydrogen-low": {
     maxOutputTokens: 262144,
@@ -210,6 +243,10 @@ const ANTIGRAVITY_MODEL_WIRE_PROFILES: Readonly<
   // Tab (laptop-class) preview SKU.
   "tab_flash_lite_preview": {
     modelEnum: "MODEL_PLACEHOLDER_M19",
+    maxOutputTokens: 4096,
+  },
+  "tab_jump_flash_lite_preview": {
+    modelEnum: "MODEL_PLACEHOLDER_M28",
     maxOutputTokens: 4096,
   },
 });
@@ -260,6 +297,9 @@ const ANTIGRAVITY_TIER_THINKING_BUDGET: Readonly<Record<string, number>> = Objec
  * SKU — opens at high.
  */
 const ANTIGRAVITY_DEFAULT_TIER: Readonly<Record<string, AntigravityEffortSuffix>> = Object.freeze({
+  // Claude 5.5 is only served as effort deployments upstream (bare ids 404).
+  "claude-opus-5-5": "high",
+  "claude-sonnet-5-5": "high",
   "gemini-3.6-flash": "low",
   "gemini-3.7-flash": "low",
   "gemini-3.8-flash": "low",

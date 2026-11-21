@@ -40,10 +40,12 @@ export class ValidatedNetworkBindingFactory {
     fetchFn?: typeof fetch,
     private readonly poolResolver?: PoolAgentResolver,
     tlsProfile: TlsProfile = "default",
+    resolveFn?: (hostname: string, signal: AbortSignal) => Promise<readonly string[]>,
   ) {
     this.directFetch = createValidatedFetch({
       policy,
       ...(fetchFn ? { fetchFn } : {}),
+      ...(resolveFn ? { resolveFn } : {}),
       tlsProfile,
     });
     this.tlsProfile = tlsProfile;

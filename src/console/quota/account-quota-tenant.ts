@@ -20,7 +20,7 @@ import {
 } from "../../providers/quota/cache";
 import { readQuotaSnapshot, readQuotaSnapshots } from "../../providers/quota/snapshot";
 import {
-  QUOTA_REFRESH_TIMEOUT_MS,
+  QUOTA_REFRESH_TOTAL_TIMEOUT_MS,
   quotaFetcherFor,
   refreshAccountQuota,
   timeoutSignal,
@@ -336,7 +336,7 @@ export function registerAccountQuotaTenantRoutes(
           credentialKind: account.credentialKind,
           authState: account.authState,
         },
-        await quotaFetcherFor(refreshDeps, accountId, account.tenantId, timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS)),
+        await quotaFetcherFor(refreshDeps, accountId, account.tenantId, timeoutSignal(request.signal, QUOTA_REFRESH_TOTAL_TIMEOUT_MS)),
       );
       const fresh = await getCachedQuotaEntry(access.tenantId, accountId, redis);
       return {
@@ -383,7 +383,7 @@ export function registerAccountQuotaTenantRoutes(
         {
           tenantId: access.tenantId,
           providerId: account.providerId,
-          signal: timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS),
+          signal: timeoutSignal(request.signal, QUOTA_REFRESH_TOTAL_TIMEOUT_MS),
         },
       );
       let outcome;
@@ -457,11 +457,19 @@ export function registerAccountQuotaTenantRoutes(
         // succeeded with no quota, never as failures.
         const refreshable = accounts.filter((account) => providerRegistry.hasQuotaCollector(account.providerId));
 
-        const signal = timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS);
-        // Each account leaves through its own egress (the tenant's active pool,
-        // rotated); the signal is bound onto whichever fetch the account got.
+        // A fresh deadline per account, not one for the whole batch: a single
+        // 15s signal minted at request entry expired while the workers drained
+        // later accounts, so every account past the first few got an already-
+        // aborted fetch and was parked `quota_fetch_failed` over a batch budget,
+        // not a credential problem. The request signal still cancels the whole
+        // batch when the operator navigates away.
         const egressFor = (target: { readonly accountId: string; readonly tenantId: string | null }): Promise<typeof fetch> =>
-          quotaFetcherFor(refreshDeps, target.accountId, target.tenantId, signal);
+          quotaFetcherFor(
+            refreshDeps,
+            target.accountId,
+            target.tenantId,
+            timeoutSignal(request.signal, QUOTA_REFRESH_TOTAL_TIMEOUT_MS),
+          );
         const failures: Array<{
           accountId: string;
           code: QuotaRefreshFailureCode;

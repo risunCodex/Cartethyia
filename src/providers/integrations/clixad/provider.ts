@@ -112,7 +112,7 @@ export const CLIXAD_DEFAULT_MODELS: readonly ModelDefinition[] = [
     toolCall: true,
     free: true,
     freeTier: true,
-    reasoningEfforts: ["off", "low", "high", "max"]
+    reasoningEfforts: ["off", "low", "high", "xhigh"]
   }),
   defineModel({
     id: "glm-5.3-flash",

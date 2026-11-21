@@ -108,6 +108,18 @@ describe("clampThinkingLevelForModel", () => {
     expect(clampThinkingLevelForModel(extended, "max")).toBe("max");
     expect(clampThinkingLevelForModel(extended, "high")).toBe("high");
   });
+
+  test("clixad deepseek caps max at xhigh; other resellers keep max", () => {
+    // Clixad answers a `max` turn with one empty SSE frame — billed tokens,
+    // no live deltas. The cap is provider+model scoped so other DeepSeek
+    // resellers are untouched.
+    const clixad = resolveThinkingForModel("deepseek-v4.1-flash", "clixad", "chat");
+    expect(clampThinkingLevelForModel(clixad, "max")).toBe("xhigh");
+    expect(clampThinkingLevelForModel(clixad, "xhigh")).toBe("xhigh");
+    expect(clampThinkingLevelForModel(clixad, "high")).toBe("high");
+    const other = resolveThinkingForModel("deepseek-v4.1-flash", "deepseek", "chat");
+    expect(clampThinkingLevelForModel(other, "max")).toBe("max");
+  });
 });
 
 describe("golden wire payloads stay byte-identical for defaults", () => {
@@ -123,6 +135,15 @@ describe("golden wire payloads stay byte-identical for defaults", () => {
     request.reasoning = { effort: "max" };
     const payload = canonicalToChatPayload(request);
     expect(payload["reasoning_effort"]).toBe("max");
+  });
+
+  test("chat reasoning effort for clixad deepseek (max) clamps to xhigh", () => {
+    // The wire codec reads the configured provider id, so the same bare model
+    // name resolves to a different ladder on clixad than on other resellers.
+    const request = req("deepseek-v4.1-flash");
+    request.reasoning = { effort: "max" };
+    const payload = canonicalToChatPayload(request, { thinking: resolveThinkingForModel("deepseek-v4.1-flash", "clixad", "chat") });
+    expect(payload["reasoning_effort"]).toBe("xhigh");
   });
 
   test("responses reasoning effort for gpt-5.5 (xhigh) passes through, (max) clamps", () => {

@@ -7,7 +7,12 @@ describe("ValidatedNetworkBindingFactory", () => {
       return new Response("{}", { status: 200 });
     }) as typeof fetch;
 
-    const factory = new ValidatedNetworkBindingFactory({}, fetchFn, undefined, "default");
+    // Inject a resolver so this offline test never depends on host DNS: a real
+    // `example.com` lookup stalls or fails under full-suite load, which made an
+    // otherwise deterministic seam test flake. Only the injected fetch matters
+    // here — it must be used for a validated direct dial.
+    const resolver = async () => ["93.184.216.34"];
+    const factory = new ValidatedNetworkBindingFactory({}, fetchFn, undefined, "default", resolver);
     const dial = factory.fetch();
     expect(dial).toBeFunction();
     const res = await dial("https://example.com/", { method: "GET" });

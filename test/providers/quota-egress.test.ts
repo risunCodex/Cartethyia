@@ -74,6 +74,41 @@ describe("quotaFetcherFor", () => {
     await wrapped("https://upstream.example/usage");
     expect(seenSignal).toBe(signal);
   });
+
+  test("a collector's own deadline is composed with the outer budget, not discarded", async () => {
+    // Every quota collector stamps a per-fetch timeout (getJson, Kiro's usage
+    // GET). The wrapper used to overwrite it with one shared outer signal, so a
+    // multi-fetch collector spent the whole budget on the first call and later
+    // reads aborted — reported as "surfaces did not answer" and parked a
+    // healthy account. Both deadlines must now be honoured.
+    let seenSignal: AbortSignal | null | undefined;
+    const pooled = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      seenSignal = init?.signal;
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    }) as unknown as typeof fetch;
+    const outer = AbortSignal.timeout(30_000);
+    const collectorTimeout = AbortSignal.timeout(5_000);
+    const wrapped = signalFetchOver(pooled, outer);
+    await wrapped("https://upstream.example/usage", { signal: collectorTimeout });
+    expect(seenSignal).not.toBe(outer);
+    expect(seenSignal).not.toBe(collectorTimeout);
+    // The composed signal aborts when EITHER source aborts, never later than
+    // the collector's own deadline.
+    expect(seenSignal?.aborted).toBe(false);
+  });
+
+  test("the composed signal aborts when the collector's deadline fires", async () => {
+    let seenSignal: AbortSignal | null | undefined;
+    const pooled = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      seenSignal = init?.signal;
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    }) as unknown as typeof fetch;
+    const wrapped = signalFetchOver(pooled, AbortSignal.timeout(30_000));
+    const controller = new AbortController();
+    await wrapped("https://upstream.example/usage", { signal: controller.signal });
+    controller.abort();
+    expect(seenSignal?.aborted).toBe(true);
+  });
 });
 
 describe("quota sweep egress", () => {

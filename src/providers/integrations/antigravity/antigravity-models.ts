@@ -19,6 +19,10 @@ export const ANTIGRAVITY_BASE_URL = providerBaseUrl("antigravity");
 export const GENERATE_PATH = "/v1internal:generateContent" as const;
 export const STREAM_GENERATE_PATH = "/v1internal:streamGenerateContent?alt=sse" as const;
 
+// Antigravity is served on the upstream's `free-tier` plan (confirmed by
+// `loadCodeAssist` on every probe), so every row it publishes bills zero and
+// belongs in the Free Limited group. Same marker pair the other free-tier
+// catalogs use: `free` zeroes the per-token cost, `freeTier` groups the row.
 const antigravityModel = (
   modelId: string,
   contextLimit: number,
@@ -34,6 +38,8 @@ const antigravityModel = (
     out: outputLimit,
     vision: true,
     reasoning,
+    free: true,
+    freeTier: true,
     ...(image
       ? { serviceKind: "imageGeneration" as const, output: ["image"] as const, toolCall: false }
       : { toolCall: true }),
@@ -76,6 +82,11 @@ export const ANTIGRAVITY_MODELS: readonly ModelDefinition[] = [
   antigravityModel("gemini-4-hydrogen-low", 1_048_576, 262_144, true),
   antigravityModel("gemini-4-hydrogen-medium", 1_048_576, 262_144, true),
   antigravityModel("gemini-4-hydrogen-high", 1_048_576, 262_144, true),
+  // Sonar is a standalone deployment id, not an effort tier of Hydrogen: the
+  // gateway answers `modelVersion: gemini-4-hydrogen-sonar` when addressed
+  // directly (verified live 2026-11-21). Published limits are 1,048,576 in /
+  // 65,536 out.
+  antigravityModel("gemini-4-hydrogen-sonar", 1_048_576, 65_536, true),
   // Neon opens at effort high by default (agy 1.5.12) and is the family's
   // newest SKU; it is also the slot sessions fall back to when an account no
   // longer offers Carbon.
@@ -83,8 +94,10 @@ export const ANTIGRAVITY_MODELS: readonly ModelDefinition[] = [
   antigravityModel("gemini-4-neon-low", 1_048_576, 262_144, true),
   antigravityModel("gemini-4-neon-medium", 1_048_576, 262_144, true),
   antigravityModel("gemini-4-neon-high", 1_048_576, 262_144, true),
-  // Tab (laptop-class) preview SKU.
+  // Tab (laptop-class) preview SKUs. Both are standalone wire ids (verified
+  // live 2026-11-21: `tab_jump_flash_lite_preview` answers 200 directly).
   antigravityModel("tab_flash_lite_preview", 16_000, 4_000, true),
+  antigravityModel("tab_jump_flash_lite_preview", 16_000, 4_000, true),
   // Gemini image generation. `gemini-3-pro-image` uses the same catalog
   // limits/capabilities as the existing `gemini-3.1-flash-image` row.
   antigravityModel("gemini-3.1-flash-image", 65_536, 65_536, false, true),

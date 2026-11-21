@@ -47,6 +47,17 @@ export interface QuotaRefreshOutcome {
 
 /** Abort budget for one upstream quota fetch. */
 export const QUOTA_REFRESH_TIMEOUT_MS = 15_000;
+/**
+ * Total budget for one account's whole quota refresh. A collector can make
+ * several sequential fetches (Antigravity reads up to five surfaces on two
+ * hosts), each already bounded by {@link QUOTA_REFRESH_TIMEOUT_MS} at the
+ * collector. Capping the *whole refresh* at one fetch's budget aborted a
+ * healthy multi-surface read partway through and was stamped
+ * `quota_fetch_failed` — what the operator saw as a good account parked after
+ * "quota surfaces did not answer". The outer budget is only a safety net for a
+ * collector that hangs without its own deadline.
+ */
+export const QUOTA_REFRESH_TOTAL_TIMEOUT_MS = 60_000;
 
 /**
  * Consecutive quota refusals before an account is parked. One refusal can be
@@ -110,7 +121,17 @@ export function signalFetch(signal: AbortSignal): typeof fetch {
   const wrapped = (
     url: Parameters<typeof fetch>[0],
     init?: Parameters<typeof fetch>[1],
-  ): Promise<Response> => fetch(url, { ...init, signal });
+  ): Promise<Response> => {
+    // Compose with the collector's own deadline — see {@link signalFetchOver}.
+    // The direct path had the same overwrite bug: one 15s outer signal replaced
+    // every per-fetch deadline, so a multi-fetch collector ran out of budget on
+    // its first calls and later reads aborted as `quota_fetch_failed`.
+    const collectorSignal = init?.signal;
+    const effective = collectorSignal == null
+      ? signal
+      : AbortSignal.any([collectorSignal, signal]);
+    return fetch(url, { ...init, signal: effective });
+  };
   return Object.assign(wrapped, {
     preconnect: (...args: Parameters<typeof fetch.preconnect>): void =>
       fetch.preconnect(...args),
@@ -135,7 +156,20 @@ export function signalFetchOver(
   const wrapped = (
     url: Parameters<typeof fetch>[0],
     init?: Parameters<typeof fetch>[1],
-  ): Promise<Response> => fetchImpl(url, { ...init, signal });
+  ): Promise<Response> => {
+    // Compose with the collector's own deadline instead of replacing it. Every
+    // quota collector stamps a per-fetch timeout (`getJson`, Kiro's usage GET);
+    // overwriting it with one shared outer signal turned a slow-but-healthy read
+    // into `quota_fetch_failed` — a multi-fetch collector spent its whole budget
+    // on the first call, and a bulk refresh reused one expired signal for every
+    // later account. `any` honours both budgets: neither can shorten the other
+    // below the caller's own timeout.
+    const collectorSignal = init?.signal;
+    const effective = collectorSignal == null
+      ? signal
+      : AbortSignal.any([collectorSignal, signal]);
+    return fetchImpl(url, { ...init, signal: effective });
+  };
   return Object.assign(wrapped, {
     preconnect: (...args: Parameters<typeof fetch.preconnect>): void =>
       globalThis.fetch.preconnect(...args),
