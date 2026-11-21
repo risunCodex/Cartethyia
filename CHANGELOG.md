@@ -8,6 +8,22 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.8.6] - 2026-11-21
+
+### Fixed
+
+- **Kiro quota reads leave through the account's own egress.** Live probes
+  with a failing account's exported grant answered 200 from one network and
+  401/403 from the VPS — the credential and the request shape were fine, the
+  egress is what AWS refuses. The usage surface must leave through the same
+  egress family the account's other traffic uses, but the sweep and the
+  console Test button fetched direct from the host IP while the check-in leg
+  already rode the per-account pool rotation. The quota legs (sweep, tenant
+  and global refresh, bulk refresh, background fill) now resolve the same
+  per-account pooled fetch the check-in leg uses and bind the refresh budget
+  onto it; direct egress stays the fallback when no pool exists or the
+  resolution fails, so hosts without the binding factory are unchanged.
+
 ## [2.8.5] - 2026-11-21 · Codename Arc-en-Ciel
 
 ### Notes
