@@ -140,4 +140,17 @@ describe("antigravity per-model quota", () => {
     expect(claude[0]?.label).toBe("Claude & GPT (Weekly)");
     expect(claude[0]?.remainingPercent).toBe(70);
   });
+
+  test("both quota surfaces failing is a reported error, not a silent empty success", async () => {
+    // The silent no-pill bug: both surfaces refused (a burst of concurrent
+    // accounts on one datacenter egress throttles exactly like this) and the
+    // result still said `error: null`, so the sweep stamped the row healthy,
+    // the operator saw no quota at all, and nothing ever retried.
+    const result = await fetchAntigravityQuota(
+      JSON.stringify({ access_token: "token", projectId: "p" }),
+      (async () => new Response("Internal error", { status: 500 })) as unknown as typeof fetch,
+    );
+    expect(result.windows).toHaveLength(0);
+    expect(result.error).not.toBeNull();
+  });
 });

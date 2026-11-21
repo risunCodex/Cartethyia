@@ -331,9 +331,27 @@ export async function fetchAntigravityQuota(
       );
       plan = plan ?? text(models.tier) ?? text(models.plan);
       break;
-    } catch {
-      // Fall through to the next host.
+    } catch (error) {
+      // Fall through to the next host. Logged: a summary that already covered
+      // every family makes this a downgrade, but a run where *nothing*
+      // answered is only visible through this line.
+      log.warn("antigravity: quota models fetch failed", { error: String(error) });
     }
+  }
+  // Empty windows with no error was the silent no-pill bug: both quota
+  // surfaces refused or throttled the read (a burst of concurrent accounts on
+  // one datacenter egress does exactly this), and reporting it as a successful
+  // read stamped the row healthy while the operator saw no quota at all — the
+  // sweep then never retried, because nothing had failed. An empty read is a
+  // failed read: report it so the sweep retries and the operator sees the
+  // account's real state.
+  if (windows.length === 0) {
+    return {
+      source: "antigravity",
+      plan: plan ?? "Antigravity",
+      windows: [],
+      error: "Antigravity quota surfaces did not answer for this account; the next sweep retries.",
+    };
   }
   return {
     source: "antigravity",

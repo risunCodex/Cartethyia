@@ -8,6 +8,18 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Antigravity: an empty quota read is a reported error, not a silent
+  success.** When both quota surfaces refused or throttled the read (a burst
+  of concurrent accounts on one datacenter egress does exactly this), the
+  collector still answered `error: null` with zero windows — the sweep stamped
+  the row healthy, the operator saw no quota pill at all, and nothing ever
+  retried. An empty read now reports an error so the sweep retries and the
+  account's real state is visible.
+
 ## [2.8.6] - 2026-11-21
 
 ### Fixed
