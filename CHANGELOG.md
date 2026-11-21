@@ -44,6 +44,17 @@ commit. This entry is the canonical restore anchor — do not delete it.
 
 ### Added
 
+- **Kiro gains native web search.** `/v1/search` on Kiro now routes to the
+  upstream's MCP surface (`POST runtime/mcp`, JSON-RPC `tools/call` on
+  `web_search`) — the server-side search tool the official IDE uses. The wire
+  follows the measured new-service identity with its own header shapes: the
+  subscription profile rides in the `x-amzn-kiro-profile-arn` header (the one
+  surface that carries it there), without the conversation-only opt-out and
+  agent-mode headers. The results JSON is embedded in `result.content[0].text`
+  and is normalized into the unified search envelope (title, URL, snippet,
+  epoch-millis page age → ISO timestamp), capped by the caller's `max_results`.
+  A `websearch` service-kind row (`kiro/auto`) joins the catalog so the route
+  can address it.
 - **Antigravity catalog refreshed to the Antigravity CLI (agy 1.5.12) roster.**
   `gemini-4-neon` joins the catalog (1,048,576 context / 262,144 output; sessions
   fall back to it when an account no longer offers Carbon), Carbon and Hydrogen

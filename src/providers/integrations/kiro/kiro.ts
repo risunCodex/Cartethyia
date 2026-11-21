@@ -38,7 +38,14 @@ import { GatewayError } from "../../../protocol/gateway-error";
 import {
   mapUpstreamHttpError,
 } from "../../../protocol/upstream-errors";
-import type { ProviderAdapter, ProviderDispatchContext, ProviderDispatchTarget } from "../../provider-contracts";
+import type {
+  ProviderAdapter,
+  ProviderDispatchContext,
+  ProviderDispatchTarget,
+  WebSearchOutcome,
+  WebSearchResult,
+} from "../../provider-contracts";
+import { parseWebsearchRequest } from "../shared/gemini-wire";
 import {
   buildKiroIdeAmzUserAgent,
   buildKiroIdeUserAgent,
@@ -234,6 +241,92 @@ export function kiroHeaders(
 }
 
 /**
+ * Headers for the MCP web-search surface. Same identity pair and connection
+ * discipline as the conversation surface, plus the profile-arn header this
+ * surface alone carries, and without the conversation-only opt-out and
+ * agent-mode headers.
+ */
+export function kiroMcpHeaders(
+  secret: string,
+  authState: KiroAuthState | undefined,
+  machineId: string,
+  version: string,
+  profileArn: string,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    connection: "close",
+    "amz-sdk-request": "attempt=1; max=3",
+    "amz-sdk-invocation-id": crypto.randomUUID(),
+    "x-amz-user-agent": buildKiroIdeAmzUserAgent(version, machineId),
+    "user-agent": buildKiroIdeUserAgent(version, machineId),
+    authorization: `Bearer ${secret}`,
+  };
+  if (profileArn.length > 0) headers["x-amzn-kiro-profile-arn"] = profileArn;
+  const tokenType = kiroTokenTypeHeader(authState?.authMethod);
+  if (tokenType !== undefined) headers["TokenType"] = tokenType;
+  return headers;
+}
+
+/** One hit inside the MCP web-search payload (`results[]`). */
+interface KiroWebSearchHit {
+  readonly title?: unknown;
+  readonly url?: unknown;
+  readonly snippet?: unknown;
+  /** Epoch milliseconds, when the upstream knows the page age. */
+  readonly published_date?: unknown;
+}
+
+/**
+ * Parses the MCP `tools/call` envelope into normalized search hits.
+ *
+ * The results JSON is embedded in `result.content[0].text` — a second parse
+ * inside the envelope — so a missing envelope, a non-text block, or a text
+ * block that is not the results object all mean "payload not recognized"
+ * rather than zero results. Returns `undefined` for unrecognized shapes and an
+ * array (possibly empty) for a recognized one.
+ */
+function parseKiroWebSearchResults(payload: unknown): WebSearchResult[] | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const result = (payload as Record<string, unknown>)["result"];
+  if (typeof result !== "object" || result === null) return undefined;
+  const content = (result as Record<string, unknown>)["content"];
+  if (!Array.isArray(content) || content.length === 0) return undefined;
+  const first = content[0];
+  if (typeof first !== "object" || first === null) return undefined;
+  const block = first as Record<string, unknown>;
+  if (block["type"] !== "text" || typeof block["text"] !== "string") return undefined;
+  let inner: unknown;
+  try {
+    inner = JSON.parse(block["text"]);
+  } catch {
+    return undefined;
+  }
+  if (typeof inner !== "object" || inner === null) return undefined;
+  const list = (inner as Record<string, unknown>)["results"];
+  if (!Array.isArray(list)) return undefined;
+  const results: WebSearchResult[] = [];
+  for (const entry of list) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const hit = entry as KiroWebSearchHit;
+    const title = typeof hit.title === "string" ? hit.title : "";
+    const url = typeof hit.url === "string" ? hit.url : "";
+    if (title.length === 0 || url.length === 0) continue;
+    const published =
+      typeof hit.published_date === "number" && Number.isFinite(hit.published_date)
+        ? new Date(hit.published_date).toISOString()
+        : null;
+    results.push({
+      title,
+      url,
+      snippet: typeof hit.snippet === "string" ? hit.snippet : "",
+      ...(published === null ? {} : { published_at: published }),
+    });
+  }
+  return results;
+}
+
+/**
  * Builds the canonical usage record from what the upstream reported.
  *
  * The upstream sends no token field at all — only `contextUsageEvent`, whose
@@ -416,6 +509,76 @@ class KiroAdapter implements ProviderAdapter {
     }
 
     yield* this.#stream(response.body, built.value, request, conversationId, modelId);
+  }
+
+  /**
+   * Native web search over the Kiro MCP surface (`POST runtime/mcp`).
+   *
+   * The upstream exposes `web_search` as a server-side tool through JSON-RPC
+   * (`tools/call`), and the wire here differs from the conversation surface in
+   * three measured ways: the subscription profile rides in the
+   * `x-amzn-kiro-profile-arn` **header** (the conversation body's shape), the
+   * `x-amzn-codewhisperer-optout` / `x-amzn-kiro-agent-mode` headers are
+   * absent, and the result payload is JSON embedded in `result.content[0].text`
+   * — a second parse inside the envelope. Headers mirror the dispatch
+   * identity otherwise: same frozen machine id, same UA pair, same connection
+   * discipline, `TokenType` for the credential-scoped families.
+   */
+  async websearch(
+    body: Record<string, unknown>,
+    _candidate: ProviderDispatchTarget,
+    context: ProviderDispatchContext,
+  ): Promise<WebSearchOutcome> {
+    const { query, maxResults } = parseWebsearchRequest(body);
+    const secret = context.credential.secret
+      ? new TextDecoder().decode(context.credential.secret).trim()
+      : "";
+    if (secret.length === 0) {
+      throw new GatewayError("authentication_failed", 401, "Missing Kiro credential (request {requestId}). Wrong key, right door — check the credential 🔑", {
+        providerId: KIRO_PROVIDER_ID,
+      });
+    }
+    const authState = readAuthState(context);
+    const machineId = resolveAccountMachineId(context);
+    const profileArn = resolveProfileArn(context);
+    const region = safeRegion(authState);
+    const version = getKiroVersion();
+    const outboundFetch = (context.outbound_fetch as unknown as typeof fetch | undefined) ?? this.#fetch;
+    const response = await outboundFetch(
+      `${KIRO_RUNTIME_HOST_TEMPLATE.replace("{region}", region)}/mcp`,
+      {
+        method: "POST",
+        headers: kiroMcpHeaders(secret, authState, machineId, version, profileArn),
+        body: JSON.stringify({
+          id: crypto.randomUUID(),
+          jsonrpc: "2.0",
+          method: "tools/call",
+          params: { name: "web_search", arguments: { query } },
+        }),
+        signal: context.abort_signal,
+      },
+    );
+    if (!response.ok) throw await mapUpstreamHttpError(response, KIRO_PROVIDER_ID);
+    const payload = (await response.json().catch(() => undefined)) as unknown;
+    const results = parseKiroWebSearchResults(payload);
+    if (results === undefined) {
+      throw new GatewayError(
+        "platform_unavailable",
+        502,
+        "Kiro search returned an unrecognized payload (request {requestId}). The upstream came back empty-handed — retry 🌙",
+        { providerId: KIRO_PROVIDER_ID },
+      );
+    }
+    const clamped = results.slice(0, maxResults);
+    if (clamped.length === 0) {
+      throw new GatewayError(
+        "platform_unavailable",
+        502,
+        "Kiro search returned no results (request {requestId}). The upstream came back empty-handed — retry 🌙",
+        { providerId: KIRO_PROVIDER_ID },
+      );
+    }
+    return { results: clamped, total_results: clamped.length };
   }
 
   /**

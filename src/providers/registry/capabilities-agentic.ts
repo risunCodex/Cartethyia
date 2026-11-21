@@ -21,7 +21,10 @@ export const AGENTIC_CAPABILITIES = {
   },
   kiro: {
     loadAdapter: async () => (await import("../integrations/kiro/kiro")).kiroAdapter,
-    loadModels: async () => (await import("../integrations/kiro/kiro-catalog")).KIRO_MODELS,
+    loadModels: async () => {
+      const { KIRO_MODELS, KIRO_SEARCH_MODELS } = await import("../integrations/kiro/kiro-catalog");
+      return [...KIRO_MODELS, ...KIRO_SEARCH_MODELS];
+    },
     loadAuthentication: oauthCapability(() => import("../integrations/kiro/kiro-oauth"), "kiroOAuthClient", {
       withRefresher: true,
     }),

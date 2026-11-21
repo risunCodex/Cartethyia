@@ -128,6 +128,30 @@ export const KIRO_MODELS: readonly ModelDefinition[] = [
 ];
 
 /**
+ * The web-search row behind the adapter's MCP surface (`POST runtime/mcp`,
+ * `tools/call` `web_search`).
+ *
+ * The search is a server-side tool, not a model: the row only needs to exist
+ * so `/v1/search` can route, and the empty endpoint keeps it distinct from the
+ * `auto` llm row in the (provider, model, endpoint) unique key — the same
+ * shape the Antigravity and Codex search rows use.
+ */
+export const KIRO_SEARCH_MODELS: readonly ModelDefinition[] = [
+  defineModel({
+    id: "auto",
+    providerId: KIRO_PROVIDER_ID,
+    serviceKind: "websearch",
+    wireFamily: "chat",
+    endpoint: "",
+    ctx: 200_000,
+    out: 32_000,
+    vision: false,
+    reasoning: false,
+    toolCall: false,
+  }),
+];
+
+/**
  * The context window of a model id, as this catalog declares it.
  *
  * The upstream reports prompt size only as a *percentage* of the model's window
