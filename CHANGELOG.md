@@ -8,7 +8,7 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [UNRELEASED]  · Codename Arc-en-Ciel
+## [2.8.5] - 2026-11-21 · Codename Arc-en-Ciel
 
 ### Notes
 
