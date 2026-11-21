@@ -50,10 +50,10 @@ export const ANTIGRAVITY_MODELS: readonly ModelDefinition[] = [
   antigravityModel("claude-sonnet-5-5", 1_000_000, 128_000, true),
   antigravityModel("claude-opus-5-5", 1_000_000, 128_000, true),
   // Gemini text SKUs. Limits from the Antigravity CLI (agy 1.5.12) roster
-  // reference (oh-my-pi `providers/antigravity-cli.kdl`): context is the
-  // `usage_update.size` the CLI reports (1,048,576 across the Gemini 4
-  // family), and the output caps are what the CLI sends upstream — Argon and
-  // 3.8-flash cap at 65,536, while Carbon, Hydrogen, and Neon ship 262,144.
+  // reference: context is the `usage_update.size` the CLI reports (1,048,576
+  // across the Gemini 4 family), and the output caps are what the CLI sends
+  // upstream — Argon and 3.8-flash cap at 65,536, while Carbon, Hydrogen, and
+  // Neon ship 262,144.
   antigravityModel("gemini-2.5-flash", 1_000_000, 65_535, true),
   antigravityModel("gemini-2.5-flash-thinking", 1_000_000, 65_535, true),
   antigravityModel("gemini-2.5-flash-lite", 1_000_000, 65_535, true),
@@ -62,7 +62,7 @@ export const ANTIGRAVITY_MODELS: readonly ModelDefinition[] = [
   antigravityModel("gemini-3.5-flash-lite", 1_000_000, 65_535, true),
   antigravityModel("gemini-3.8-flash", 1_000_000, 65_536, true),
   // Gemini 4 family. The bare id routes through `ANTIGRAVITY_DEFAULT_TIER`
-  // (omp: effort default medium, Neon high); the tier rows address a specific
+  // (roster effort default medium, Neon high); the tier rows address a specific
   // effort directly and pass through to the upstream deployment untouched.
   antigravityModel("gemini-4-argon", 1_048_576, 65_536, true),
   antigravityModel("gemini-4-argon-low", 1_048_576, 65_536, true),

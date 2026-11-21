@@ -255,9 +255,9 @@ const ANTIGRAVITY_TIER_THINKING_BUDGET: Readonly<Record<string, number>> = Objec
  * Default effort tier each logical id deploys as at dispatch (the wire id is
  * `<id>-<tier>`). Ids not listed here are already wire ids and pass through.
  *
- * Defaults follow the agy 1.5.12 roster reference (oh-my-pi
- * `providers/antigravity-cli.kdl`): the Gemini 4 family opens at effort
- * medium, and Neon — the family's newest SKU — opens at high.
+ * Defaults follow the Antigravity CLI (agy 1.5.12) roster reference: the
+ * Gemini 4 family opens at effort medium, and Neon — the family's newest
+ * SKU — opens at high.
  */
 const ANTIGRAVITY_DEFAULT_TIER: Readonly<Record<string, AntigravityEffortSuffix>> = Object.freeze({
   "gemini-3.6-flash": "low",
@@ -343,7 +343,7 @@ export function normalizeAntigravityToolSchema(schema: unknown): unknown {
  * `oneOf` / multi-type `type: [...]` declaration — even a degenerate
  * `anyOf` of two identical string schemas, and even at the root. The Gemini
  * builder's sanitizer keeps those constructs (Gemini itself accepts them), so
- * a tool that declares a union (e.g. OMP's `task` tool's `model` field)
+ * a tool that declares a union (e.g. a client's `task` tool's `model` field)
  * ships an invalid schema and the upstream 400s the whole request with
  * `tools.N.custom.input_schema: JSON schema is invalid`.
  *
@@ -447,7 +447,7 @@ export function normalizeAntigravityToolSchemas(request: CanonicalRequest): Cano
  * The Claude-route upstream requires every `thinking` block in a replayed
  * assistant turn to carry a `signature`; an unsigned block is rejected with
  * `400 messages.N.content.0.thinking.signature: Field required`. Chat-surface
- * clients (e.g. OMP) replay reasoning as a bare `reasoning_content` string
+ * clients (e.g. a chat-surface agent client) replay reasoning as a bare `reasoning_content` string
  * that has no signature — there is nothing to forward, and sending it as an
  * unsigned `thought` part guarantees the 400.
  *

@@ -238,7 +238,7 @@ describe("6. parametersJsonSchema normalization", () => {
   test("flattenAntigravitySchema removes anyOf/oneOf and multi-type unions", () => {
     // The Antigravity Claude-route upstream validates tool schemas as strict
     // JSON Schema draft 2020-12 and refuses every `anyOf` / `oneOf` /
-    // multi-type `type: [...]` — verified live 2026-11-05 (OMP's `task`
+    // multi-type `type: [...]` — verified live 2026-11-05 (a client's `task`
     // tool: `tools.7.custom.input_schema: JSON schema is invalid`).
     const schema = {
       type: "object",

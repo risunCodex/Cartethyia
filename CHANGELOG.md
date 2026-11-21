@@ -20,7 +20,7 @@ commit. This entry is the canonical restore anchor — do not delete it.
 
 ### Added
 
-- **Antigravity catalog refreshed to the agy 1.5.12 roster (oh-my-pi reference).**
+- **Antigravity catalog refreshed to the Antigravity CLI (agy 1.5.12) roster.**
   `gemini-4-neon` joins the catalog (1,048,576 context / 262,144 output; sessions
   fall back to it when an account no longer offers Carbon), Carbon and Hydrogen
   ship their real 262,144 output cap (they were cataloged at the Argon-shaped
@@ -1016,7 +1016,7 @@ disable and the quota-refresh parking path both converge on
 `applyAccountVerdict` (status, last error, cooldown, health event, operator
 disable preserved).
 - **Cursor: held-Run idle TTL raised to 30 minutes.** A live Run now waits
-30 minutes (matching the oh-my-pi donor) for the client's next tool-result
+30 minutes (matching the reference client donor) for the client's next tool-result
 request before expiring, so a slow human-approved tool round no longer goes
 cold mid-approval and forces a full-conversation resend.
 - **Account error labels: `quota_unknown` and `plan_gate`.** Both are
@@ -1090,7 +1090,7 @@ a reasoning stream like `thought A <think>inner</think> thought B` reads
 schema dropped invented fields that have no wire meaning (`unknown_flag`,
 `field_12`, `run_id`, `conversation_group_id`, `selected_subagent_models`) and
 gained `model_details` (#3), `mcp_file_system_options` (#6), and `skill_options`
-(#7), matching the donor `oh-my-pi` proto. `CancelAction` is now sent empty per
+(#7), matching the donor client's proto. `CancelAction` is now sent empty per
 the proto (the oneof presence is the signal). Proto vendored at
 `vendor/proto/cursor/agent.proto`.
 - **Cursor mixed-run tool-result replays rebase instead of refusing.** A
@@ -1182,7 +1182,7 @@ protocol. Highlights:
   consolidated to one canonical series.
   - Protocol: completion reasoning-effort parsing routes through shared
   `parseReasoningIntent` (accepts `"instant"`); `reasoningTextForReplay`
-  single-sourced with summary-first precedence; the DSML/OMP/Qwen markup
+  single-sourced with summary-first precedence; the DSML/Qwen markup
   parser scaffold unified behind `MarkupStreamParser<T>`.
   - Validation: `tsc --noEmit` zero errors; full backend suite 4735 pass /
   1 skip / 0 fail. 59 findings executed (56 CONFIRMED, including M-44/M-62
@@ -1519,7 +1519,8 @@ model, usage, stop reason, status). Credential headers (`authorization`,
 before dispatch.** The upstream (Claude-route) validates tool schemas as
 strict JSON Schema draft 2020-12 and rejects *every* `anyOf` / `oneOf` /
 multi-type `type: [...]` declaration — even a degenerate `anyOf` of two
-identical string schemas — with `tools.N.custom.input_schema: JSON schema is invalid`, failing the whole request. Tools declaring unions (e.g. OMP's
+identical string schemas — with `tools.N.custom.input_schema: JSON schema is invalid`, failing the whole request. Tools declaring unions (e.g. a
+client's
 `task` tool's `model` field) now ship the most permissive single type
 (string when a choice is a string), recursively through `properties` and
 `items`.
