@@ -39,7 +39,7 @@ import {
   buildSqliteHandle,
   createSqliteDatabase,
 } from "../../src/persistence/db-sqlite";
-import { models, providers, tenants } from "../../src/persistence/schema";
+import { models, providerAccounts, providers, tenants } from "../../src/persistence/schema";
 import { DrizzleProviderCatalogStore } from "../../src/console/providers/catalog/store";
 
 const PROVIDER_ID = "groq";
@@ -132,6 +132,120 @@ describe("model sync without a stored account", () => {
     // nothing.
     for (const row of createDefaultProviderRegistry().registrations()) {
       expect(Object.keys(row as object)).not.toContain("modelDiscoveryRequiresCredential");
+    }
+  });
+});
+
+describe("model sync for a credential-less (Public Key) account", () => {
+  test("a none account is a complete answer: sync reaches the resolver", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "carte-sync-public-key-"));
+    const sqlite = createSqliteDatabase(join(dir, "cartethyia.sqlite"));
+    try {
+      await applySqliteMigrations(sqlite);
+      const db = buildSqliteHandle(sqlite).db;
+      const [tenant] = await db
+        .insert(tenants)
+        .values({ name: "public-key-tenant", status: "active" })
+        .returning({ id: tenants.id });
+      await db.insert(providers).values({
+        id: PROVIDER_ID,
+        tenantId: tenant!.id,
+        enabled: true,
+        requiresAccount: false,
+      });
+      // The credential-less "Public Key" account: no ciphertext, kind none.
+      await db.insert(providerAccounts).values({
+        providerId: PROVIDER_ID,
+        tenantId: tenant!.id,
+        label: "Public Key",
+        credentialKind: "none",
+        status: "active",
+      });
+
+      let called = false;
+      const service = new ProviderProbingService({
+        db,
+        telemetryBuffer: undefined,
+        defaultEndpoints: {
+          chat: "/chat/completions",
+          responses: "/responses",
+          messages: "/v1/messages",
+          gemini: "/api/llm/g/v1/generate",
+        },
+        bundledModelCatalog: new Map(),
+        outboundFetchFor: async () => ({ fetch: globalThis.fetch }),
+        snapshotInvalidator: { invalidate: () => {} },
+        providerRegistry: {
+          resolveModelDiscovery: async (providerId: string) =>
+            providerId === PROVIDER_ID
+              ? async () => {
+                  called = true;
+                  return null;
+                }
+              : undefined,
+        } as unknown as ProviderRegistry,
+      });
+
+      const error = await service
+        .syncModels(tenant!.id, PROVIDER_ID)
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown as { message?: string });
+
+      // The account is usable, so the sync runs; the stub resolver's null
+      // makes it fail upstream-shaped, which is only reachable after the
+      // credential prerequisite is satisfied.
+      expect(called).toBe(true);
+      expect(error?.message).toMatch(/discovery failed/i);
+      expect(error?.message).not.toMatch(/Add an account/i);
+    } finally {
+      sqlite.close();
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // Windows holds the file briefly after close; the temp dir is disposable.
+      }
+    }
+  });
+
+  test("a provider with no account at all still names the add-one prerequisite", async () => {
+    // The prerequisite only surfaces when discovery is *unsupported* — no
+    // resolver and no base URL — so a custom id with neither is the harness.
+    const CUSTOM_ID = "acme-no-account";
+    const dir = mkdtempSync(join(tmpdir(), "carte-sync-no-account-"));
+    const sqlite = createSqliteDatabase(join(dir, "cartethyia.sqlite"));
+    try {
+      await applySqliteMigrations(sqlite);
+      const db = buildSqliteHandle(sqlite).db;
+      await db.insert(tenants).values({ id: "tenant-no-account", name: "no-account", status: "active" });
+      await db.insert(providers).values({ id: CUSTOM_ID, tenantId: "tenant-no-account", enabled: true });
+      const service = new ProviderProbingService({
+        db,
+        telemetryBuffer: undefined,
+        defaultEndpoints: {
+          chat: "/chat/completions",
+          responses: "/responses",
+          messages: "/v1/messages",
+          gemini: "/api/llm/g/v1/generate",
+        },
+        bundledModelCatalog: new Map(),
+        outboundFetchFor: async () => ({ fetch: globalThis.fetch }),
+        snapshotInvalidator: { invalidate: () => {} },
+        providerRegistry: {
+          resolveModelDiscovery: async () => undefined,
+        } as unknown as ProviderRegistry,
+      });
+      const error = await service
+        .syncModels("tenant-no-account", CUSTOM_ID)
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown as { message?: string });
+      expect(error?.message).toMatch(/Add an account for acme-no-account first/);
+    } finally {
+      sqlite.close();
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // Windows holds the file briefly after close; the temp dir is disposable.
+      }
     }
   });
 });

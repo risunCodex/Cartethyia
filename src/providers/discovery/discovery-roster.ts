@@ -51,6 +51,18 @@ import {
  * auth configuration. Selection is unchanged — first usable row, preferring a
  * tenant-owned one — so discovery and dispatch agree on which account answered.
  */
+  /**
+   * The account a model-listing fetch will use, with its non-secret auth
+   * configuration. Selection is unchanged — first usable row, preferring a
+   * tenant-owned one — so discovery and dispatch agree on which account
+   * answered.
+   *
+   * A credential-less (`none`) account IS a usable selection: it is the
+   * "Public Key" row a no-key custom provider registers, and returning it lets
+   * discovery list that upstream's models with no credential. Only a row that
+   * claims a credential but stores none stays unusable — that one would send an
+   * empty `Authorization` header.
+   */
 async function usableAccount(
   db: CartethyiaDatabase,
   tenantId: string,
@@ -70,7 +82,17 @@ async function usableAccount(
       ),
     );
   const usable = selectUsableAccount(rows);
-  if (!usable?.credentialCiphertext) return undefined;
+  if (!usable) return undefined;
+  if (usable.credentialKind === "none") {
+    return {
+      secret: "",
+      ...(typeof usable.label === "string" ? { label: usable.label } : {}),
+      ...(isRecord(usable.authState)
+        ? { authState: usable.authState as Readonly<Record<string, unknown>> }
+        : {}),
+    };
+  }
+  if (!usable.credentialCiphertext) return undefined;
   const authState = isRecord(usable.authState) ? usable.authState as Readonly<Record<string, unknown>> : undefined;
   return {
     secret: decryptCredentialToString(usable.credentialCiphertext),
@@ -191,10 +213,14 @@ export class ProbeDiscovery {
             baseUrl: modelsBaseUrl,
             providerId,
             headers: {
+              // `"none"` makes `authHeaders` emit no auth header at all, so a
+              // public-key provider lists its models without a credential —
+              // a hardcoded `"api_key"` sent `Bearer ` (empty) and read as an
+              // auth failure upstream.
               ...authHeaders(
                 wireProfile.authHeaderShape,
                 new TextEncoder().encode(account?.secret ?? ""),
-                "api_key",
+                account === undefined ? "api_key" : account.secret.length > 0 ? "api_key" : "none",
               ),
             },
             ...(discoveryFetch ? { fetcher: discoveryFetch as typeof fetch } : {}),
@@ -240,12 +266,12 @@ export class ProbeDiscovery {
       fresh: readonly ModelDefinition[],
     ) => readonly ModelDefinition[],
     source?: "manual",
-    unsupportedError?: (accountExists: boolean) => GatewayError,
+    unsupportedError?: (account: Awaited<ReturnType<typeof usableAccount>>) => GatewayError,
   ): Promise<{ synced: number }> {
     const fresh = await this.discoverModels(tenantId, providerId);
     if (!fresh.supported) {
       if (unsupportedError) {
-        throw unsupportedError((await usableAccount(this.db, tenantId, providerId)) !== undefined);
+        throw unsupportedError(await usableAccount(this.db, tenantId, providerId));
       }
       throw new GatewayError(
         "capability_unsupported",
@@ -279,8 +305,12 @@ export class ProbeDiscovery {
       providerId,
       (fresh) => fresh,
       undefined,
-      (accountExists) => {
-        if (!isBundledProviderId(providerId) || !accountExists) {
+      (account) => {
+        // `account` is the discovery context, not just "has a credential": a
+        // credential-less ("Public Key") account is a complete answer, so the
+        // listing proceeds and `authHeaders` stamps no auth header. Only a
+        // provider with NO usable row at all still gets the add-one diagnostic.
+        if (account === undefined) {
           const prefix = isBundledProviderId(providerId)
             ? `Add an account for ${providerId} before fetching its models`
             : `Add an account for ${providerId} first — model listing needs a credential`;
