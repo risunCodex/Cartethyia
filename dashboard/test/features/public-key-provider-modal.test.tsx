@@ -13,7 +13,6 @@ import { createElement } from "react";
 import { mount, renderMarkup } from "../helpers/render";
 import { registerDom } from "../helpers/dom";
 import {
-  AddCompatibleModal,
   buildCompatibleProviderRequest,
   default as Providers,
 } from "../../src/features/providers/ProvidersPage";
