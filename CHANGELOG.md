@@ -8,6 +8,20 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.8.9] - 2026-11-21
+
+### Fixed
+
+- **Antigravity free-tier marking now follows the live roster instead of the
+  account's plan label.** Only the 14 model ids the probed free-tier account
+  actually published stay in Free Limited; the rest of the static roster
+  (Argon/Carbon/Hydrogen/Neon tiers, Claude 5.5, and other undiscovered rows)
+  keeps its normal cost and no free marker. Live discovery applies the same
+  allowlist, so a discovered row that was not published on the free plan is no
+  longer priced at zero.
+- **`gemini-3-pro-image` removed from the Antigravity catalog.** The upstream
+  does not serve this id; it appeared in the roster but could not be used.
+
 ## [3.8.8] - 2026-11-21
 
 ### Fixed
