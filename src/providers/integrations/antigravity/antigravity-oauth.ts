@@ -50,6 +50,13 @@ export const ANTIGRAVITY_SCOPES = [
   "https://www.googleapis.com/auth/userinfo.profile",
   "https://www.googleapis.com/auth/cclog",
   "https://www.googleapis.com/auth/experimentsandconfigs",
+  // The Cloud Code Assist inference surface is gated on this scope. Without it
+  // a grant can still read `fetchAvailableModels` and the quota summary but is
+  // refused at `streamGenerateContent` (429 RESOURCE_EXHAUSTED / 403 license).
+  // The native desktop client requests all six scopes on this same OAuth
+  // client id, so a login missing it produces a token that looks valid but
+  // cannot serve a model call.
+  "https://www.googleapis.com/auth/aicode",
 ].join(" ");
 export const ANTIGRAVITY_USERINFO_URL =
   "https://www.googleapis.com/oauth2/v1/userinfo?alt=json";

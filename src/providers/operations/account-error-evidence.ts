@@ -105,7 +105,14 @@ function parseUpstreamBodyReset(body: unknown): number | null {
     const relative =
       candidate["resets_in_seconds"] ??
       candidate["reset_in_seconds"] ??
-      candidate["retry_after_seconds"];
+      candidate["retry_after_seconds"] ??
+      // Some OpenRouter-compatible bridges (Hermes's fair-share refusal)
+      // state the wait as a bare `retry_after` in seconds. Without it the
+      // window reads as unknown, the rate-limit rule takes its "no usable
+      // time" skip arm, and the account stays active but every call is
+      // refused — the operator sees "Rate limited" with no time and cannot
+      // invoke the account. Same unit as `retry_after_seconds`: seconds.
+      candidate["retry_after"];
     if (typeof relative === "number" && Number.isFinite(relative) && relative > 0) {
       consider(relative * 1000);
     }

@@ -8,6 +8,30 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.9.0] - 2026-11-21
+
+### Fixed
+
+- **Antigravity OAuth now requests the full native scope set.** The login flow
+  asked for five Google scopes but omitted `https://www.googleapis.com/auth/
+  aicode`, which gates the Cloud Code Assist inference surface. A grant without
+  it still reads the model list and quota summary, so the account looked healthy
+  while `streamGenerateContent` refused every call with 429/403 — the account
+  appeared active but could not be invoked. The six-scope set now matches the
+  desktop client on the same OAuth client id. Accounts already logged in with
+  the old scope set must re-authenticate to pick up the new grant.
+- **Rate limits that state a bare `retry_after` now carry a real cooldown.**
+  Hermes's fair-share 429 body uses `retry_after: 422` (seconds) rather than
+  `retry_after_seconds`. The unrecognized spelling read the window as unknown,
+  so the no-time skip left the account `ACTIVE` with a "Rate limited" pill and
+  no deadline while every request was still refused. The bare spelling is now
+  parsed as seconds and the account cools for the provider's own window.
+
+### Tests
+
+- Added regressions for the six-scope OAuth set and the bare `retry_after`
+  window.
+
 ## [3.8.9] - 2026-11-21
 
 ### Fixed

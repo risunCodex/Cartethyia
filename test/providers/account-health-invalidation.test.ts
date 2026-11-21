@@ -562,6 +562,27 @@ describe("a reset window the upstream stated in structured fields", () => {
     expect(classification.statedCooldownMs).toBe(1_000);
   });
 
+  test("a bare retry_after (Hermes fair-share) states a usable window", () => {
+    // Hermes's 429 body carries `retry_after: 422` (seconds), not the
+    // `retry_after_seconds` spelling. Missing it read the window as unknown,
+    // so the rate-limit rule took its no-time skip arm: the account stayed
+    // ACTIVE with a "Rate limited" pill, but every request was still refused —
+    // there was no cooldown to wait out or recover. The bare spelling must be
+    // honored verbatim just like `retry_after_seconds`.
+    const classification = classifyAccountError(
+      new GatewayError("upstream_error" as never, 429, "rate limit exceeded"),
+      {
+        ...evidence,
+        statusCode: 429,
+        upstreamBody: { reason: "rate_limited", retry_after: 422 },
+      },
+    );
+    expect(classification.category).toBe("rate_limit_transient");
+    expect(classification.statedCooldownMs).toBe(422_000);
+    expect(classification.cooldownMs).toBe(422_000);
+    expect(classification.mutatesAccount).toBe(true);
+  });
+
   test("a reset already in the past is not a window", () => {
     // A stale `resets_at` would otherwise compute a negative delay and, at
     // worst, return the account to rotation immediately. With no usable window
