@@ -21,8 +21,8 @@ import {
 import { readQuotaSnapshot, readQuotaSnapshots } from "../../providers/quota/snapshot";
 import {
   QUOTA_REFRESH_TIMEOUT_MS,
+  quotaFetcherFor,
   refreshAccountQuota,
-  signalFetch,
   timeoutSignal,
   type QuotaRefreshDeps,
   type QuotaRefreshFailureCode,
@@ -336,7 +336,7 @@ export function registerAccountQuotaTenantRoutes(
           credentialKind: account.credentialKind,
           authState: account.authState,
         },
-        signalFetch(timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS)),
+        await quotaFetcherFor(refreshDeps, accountId, account.tenantId, timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS)),
       );
       const fresh = await getCachedQuotaEntry(access.tenantId, accountId, redis);
       return {
@@ -457,7 +457,11 @@ export function registerAccountQuotaTenantRoutes(
         // succeeded with no quota, never as failures.
         const refreshable = accounts.filter((account) => providerRegistry.hasQuotaCollector(account.providerId));
 
-        const timedFetch = signalFetch(timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS));
+        const signal = timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS);
+        // Each account leaves through its own egress (the tenant's active pool,
+        // rotated); the signal is bound onto whichever fetch the account got.
+        const egressFor = (target: { readonly accountId: string; readonly tenantId: string | null }): Promise<typeof fetch> =>
+          quotaFetcherFor(refreshDeps, target.accountId, target.tenantId, signal);
         const failures: Array<{
           accountId: string;
           code: QuotaRefreshFailureCode;
@@ -471,7 +475,7 @@ export function registerAccountQuotaTenantRoutes(
             async () => {
               while (cursor < refreshable.length) {
                 const target = refreshable[cursor++]!;
-                const outcome = await refreshAccountQuota(refreshDeps, target, timedFetch);
+                const outcome = await refreshAccountQuota(refreshDeps, target, await egressFor(target));
                 if (outcome.failure !== null) {
                   failures.push({
                     accountId: target.accountId,

@@ -5,8 +5,8 @@ import { log } from "../../observability/logger";
 import { GLOBAL_QUOTA_LENS } from "../../providers/quota/cache";
 import {
   QUOTA_REFRESH_TIMEOUT_MS,
+  quotaFetcherFor,
   refreshAccountQuota,
-  signalFetch,
   type QuotaRefreshDeps,
   type QuotaRefreshTarget,
 } from "../../providers/quota/refresh";
@@ -58,11 +58,18 @@ function drainBackgroundQuotaRefreshes(): void {
     if (!job) return;
     queuedBackgroundQuotaRefreshes.delete(job.key);
     activeBackgroundQuotaRefreshes.add(job.target.accountId);
-    void refreshAccountQuota(
-      job.deps,
-      job.target,
-      signalFetch(AbortSignal.timeout(QUOTA_REFRESH_TIMEOUT_MS)),
-    )
+    // The egress resolution is async (the tenant's pool table), so the whole
+    // task runs inside one async wrapper; the bookkeeping below stays in its
+    // `finally`.
+    void (async () => {
+      const fetcher = await quotaFetcherFor(
+        job.deps,
+        job.target.accountId,
+        job.target.tenantId,
+        AbortSignal.timeout(QUOTA_REFRESH_TIMEOUT_MS),
+      );
+      return refreshAccountQuota(job.deps, job.target, fetcher);
+    })()
       .catch((error: unknown) => {
         log.error(
           `[quota] background refresh failed for account=${job.target.accountId}`,

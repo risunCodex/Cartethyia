@@ -16,8 +16,8 @@ import {
 import {
   QUOTA_REFRESH_TIMEOUT_MS,
   loadQuotaTarget,
+  quotaFetcherFor,
   refreshAccountQuota,
-  signalFetch,
   timeoutSignal,
   type QuotaRefreshDeps,
 } from "../../providers/quota/refresh";
@@ -245,7 +245,7 @@ export function registerAccountQuotaGlobalRoutes(
       const outcome = await refreshAccountQuota(
         refreshDeps,
         target,
-        signalFetch(timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS)),
+        await quotaFetcherFor(refreshDeps, target.accountId, target.tenantId, timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS)),
       );
       if (outcome.failure === "missing_credential") {
         set.status = 400;

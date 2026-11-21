@@ -13,8 +13,8 @@ import { log } from "../observability/logger";
 import {
   QUOTA_REFRESH_TIMEOUT_MS,
   listQuotaRefreshTargets,
+  quotaFetcherFor,
   refreshAccountQuota,
-  signalFetch,
   targetLens,
   type QuotaRefreshDeps,
   type QuotaRefreshOutcome,
@@ -477,7 +477,20 @@ export async function quotaRefreshSweep(deps: QuotaRefreshSweepDeps): Promise<vo
         // account costs one resolution per pass, not two (W3).
         { ...deps, resolveCredential: resolveCredentialCached },
         entry.target,
-        signalFetch(AbortSignal.timeout(QUOTA_REFRESH_TIMEOUT_MS)),
+        // The quota leg leaves through the same per-account egress the
+        // check-in leg uses: a usage read that departs from the host's own
+        // address while the account's traffic rides a pool is refused by the
+        // upstream (Kiro reads it as a credential mismatch) and parked the
+        // account over an egress problem, not a credential one.
+        await quotaFetcherFor(
+          // The sweep's egress resolver is named for the check-in leg; it is
+          // the same per-account pool rotation, so hand it to the quota leg
+          // under the name the refresh helper reads.
+          { fetcherFor: deps.checkinFetcherFor },
+          entry.target.accountId,
+          entry.target.tenantId,
+          AbortSignal.timeout(QUOTA_REFRESH_TIMEOUT_MS),
+        ),
       );
       quotaOutcomes.set(entry.target.accountId, outcome);
       // A fetch that threw is still a failure the operator must see, so it is

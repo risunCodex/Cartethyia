@@ -5,7 +5,7 @@ import type { ConsoleAccessResolver } from "../auth/access";
 import type { AuditRecorder } from "../auth/audit-recorder";
 import { type QuotaRefreshDeps } from "../../providers/quota/refresh";
 import type { AccountTestEgressDeps } from "./account-test-egress";
-import { DAILY_CHECKIN_PROVIDER_IDS } from "../../workers/daily-checkin";
+import { DAILY_CHECKIN_PROVIDER_IDS, dailyCheckinEgressForPass } from "../../workers/daily-checkin";
 
 /** Daily check-in only exists on the buddy billing facade; everything else 400s with intent. */
 export function supportsAccountCheckin(providerId: string): boolean {
@@ -146,5 +146,17 @@ export function createQuotaRefreshDeps(deps: AccountQuotaRoutesDeps): QuotaRefre
     resolveCredential: deps.resolveCredential,
     ...(deps.snapshotInvalidator ? { snapshotInvalidator: deps.snapshotInvalidator } : {}),
     markApiKeyCredential: markProviderApiKeyCredential,
+    // Quota reads leave through the account's own egress (the tenant's active
+    // pool, rotated) — Kiro correlates a credential with its egress and
+    // refuses a usage read that arrives from an address its traffic never uses.
+    // Direct egress stays the fallback when no factory (or pool) exists.
+    ...(deps.networkBindingFactory
+      ? {
+          fetcherFor: dailyCheckinEgressForPass({
+            db: deps.db,
+            networkBindingFactory: deps.networkBindingFactory,
+          }),
+        }
+      : {}),
   };
 }
