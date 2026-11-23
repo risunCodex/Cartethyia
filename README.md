@@ -50,7 +50,11 @@ npm uninstall -g cartethyia # uninstall
 | Command | What it does |
 | --- | --- |
 | `carte` | Start the gateway in the background, then show a terminal menu (console, reset password, backup, update, exit) — works over SSH / headless |
-| `carte --tray` | Start with a system-tray icon instead (needs a graphical session) |
+| `carte --tray` | Start with a system-tray icon instead (needs a graphical session). While a tray runs, this also brings a hidden icon back |
+| `carte tray hide` | Remove the tray icon and keep the gateway running |
+| `carte tray show` | Put the tray icon back |
+| `carte tray toggle` | Flip the icon's visibility |
+| `carte tray status` | Report whether a tray is running and whether its icon is hidden |
 | `cartethyia menu` | Re-attach the arrow-key menu to a running gateway |
 | `cartethyia start` | Start the gateway without a menu |
 | `cartethyia stop` | Stop the detached gateway (also `./carte stop` after an install) |
@@ -60,6 +64,13 @@ npm uninstall -g cartethyia # uninstall
 | `cartethyia admin reset-lockout <username> <clientIp>` | Unlock a locked console account |
 | `cartethyia admin reset-lockout --all` | Unlock every locked console account |
 | `cartethyia telemetry reconcile --apply` / `--verify` | Reconcile telemetry state |
+
+Hiding the tray icon does not stop Cartethyia: the gateway keeps serving, and
+`carte tray show`, or running `carte --tray` again, brings the icon back. The
+tray menu offers the same action as **Hide icon**, and the console's
+**Settings → Tray** section reports the icon's state and hides or restores it.
+Both work only from the machine running the gateway. See
+[Tray icon control](documentation/features/11-tray-icon.md).
 
 Full guide (modes, Docker, VPS, systemd, one-shot script):
 [installation](documentation/installation.md).
@@ -104,6 +115,7 @@ and change routing without restarting anything.
 </tr>
 <tr>
 <td align="center"><img src="documentation/assets/screenshots/customization.webp" width="100%" alt="Customization" /><br /><b>Customization</b><br /><sub>Background, transparency, and per-surface blur</sub></td>
+<td align="center"><img src="documentation/assets/screenshots/tray.webp" width="100%" alt="Tray" /><br /><b>Tray</b><br /><sub>Hide or restore the menu bar icon without stopping the gateway</sub></td>
 </tr>
 </table>
 

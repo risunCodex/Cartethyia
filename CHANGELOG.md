@@ -8,6 +8,20 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- **The tray icon can be hidden without stopping the gateway.** `carte tray
+  hide|show|toggle|status`, a `Hide icon` row in the tray menu, and a
+  `Settings → Tray` card in the console all reach the same control channel.
+  Hiding keeps the gateway and the tray process running; `carte tray show`, a
+  second `carte --tray`, or the console card puts the icon back. The console
+  endpoints are admin-only and refuse a browser that is not on the gateway's
+  machine, so a request from elsewhere cannot hide an icon the operator there
+  cannot restore. A refused request is reported inside the card rather than
+  bouncing the console to the lockout page.
+
 ## [3.9.0] - 2026-11-21
 
 ### Fixed
