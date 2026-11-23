@@ -1,6 +1,7 @@
 import { resolvePort } from "../../src/config/runtime";
 import { ensureDrainToken } from "./instance";
-import { clearInstanceLock, pidAlive, readInstanceLock, writeInstanceLock } from "./instance";
+import { clearInstanceLock, readInstanceLock, writeInstanceLock } from "./instance";
+import { pidAlive } from "../../src/shared/process";
 import { blockedPortMessage, listenPortErrorMessage, probeListenPort } from "./port";
 
 /**

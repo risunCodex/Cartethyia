@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promise
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { statSync } from "node:fs";
-import { pidAlive } from "../cli/instance";
+import { pidAlive } from "../../src/shared/process";
 
 export interface HostResult { code: number; stdout: string; stderr: string; }
 export interface HostExecutor {

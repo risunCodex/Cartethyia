@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { pidAlive } from "./instance";
+import { pidAlive } from "../../src/shared/process";
 
 /** A menu or tray that exclusively owns this installation's interactive UI. */
 export type ControllerKind = "menu" | "tray";

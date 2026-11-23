@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pidAlive } from "../../src/shared/process";
 
 const RUNTIME_STATE_FILE = "runtime.json";
 
@@ -139,27 +140,6 @@ export function clearInstanceLock(): void {
     unlinkSync(path);
   } catch {
     // Already gone, or the directory is read-only.
-  }
-}
-
-/** Whether a process id is alive. `0` is never a real pid. */
-export function pidAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  if (process.platform === "win32") {
-    // Bun's process.kill(pid, 0) reports dead Windows PIDs as alive. That
-    // leaves controller.json pinning a closed carte forever. tasklist is the
-    // OS authority and needs no process handle or elevated privilege.
-    const result = Bun.spawnSync(["tasklist.exe", "/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    return result.exitCode === 0 && result.stdout.toString().startsWith('"');
-  }
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 }
 

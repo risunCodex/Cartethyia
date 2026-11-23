@@ -2,10 +2,10 @@ import { openSync, statSync } from "node:fs";
 import {
   clearInstanceLock,
   fingerprint,
-  pidAlive,
   readInstanceLock,
   writeInstanceLock,
 } from "./instance";
+import { pidAlive } from "../../src/shared/process";
 import { join } from "node:path";
 import { PACKAGE_ROOT, compiledBinaryPath, resolvePackagePath } from "../../src/config/package-paths";
 import { spawn as spawnDetached, type ChildProcess } from "node:child_process";
