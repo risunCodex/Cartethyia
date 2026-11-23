@@ -318,3 +318,11 @@ export type {
   CliMappingInput,
   CliMappingSettings,
 } from "../../../src/console/cli-tools/contracts";
+// Tray control re-exports the backend's own action tuple and response shape.
+// Both live in a pure module (no Elysia, no Node), so the panel cannot offer an
+// action the route would reject, and no second copy of the shape can drift.
+export { TRAY_VISIBILITY_ACTIONS } from "../../../src/console/tray/contracts";
+export type {
+  TrayStatusResponse,
+  TrayVisibilityAction,
+} from "../../../src/console/tray/contracts";
