@@ -19,6 +19,7 @@
  */
 import { timingSafeEqual } from "node:crypto";
 import { GatewayError } from "../protocol/gateway-error";
+import { isLoopbackPeer } from "../shared/peer";
 
 interface DrainEndpointDeps {
   /** Shared secret; the route is registered only when this is set. */
@@ -27,19 +28,6 @@ interface DrainEndpointDeps {
   readonly triggerDrain: () => void;
   /** Peer address of the request, resolved by the composition root. */
   readonly resolvePeerAddress: (request: Request) => string | null;
-}
-
-/**
- * Whether the peer is loopback. Accepts the IPv4-mapped IPv6 spelling Bun uses
- * on Windows (`::ffff:127.0.0.1`) and the whole `127.0.0.0/8` block, so the
- * check matches however the socket reports a local caller.
- */
-export function isLoopbackPeer(peer: string | null): boolean {
-  if (peer === null || peer.length === 0) return false;
-  const normalized = peer.toLowerCase().split("%", 1)[0] ?? "";
-  if (normalized === "::1") return true;
-  const bare = normalized.startsWith("::ffff:") ? normalized.slice("::ffff:".length) : normalized;
-  return bare === "127.0.0.1" || bare.startsWith("127.");
 }
 
 /** Constant-time token comparison; length mismatch short-circuits safely. */
