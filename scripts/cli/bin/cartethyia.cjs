@@ -16,7 +16,13 @@ const configDir = process.env.CARTETHYIA_CONFIG_DIR || (
       ? path.join(os.homedir(), "Library", "Application Support", "Cartethyia")
       : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "Cartethyia")
 );
-const trayMode = process.argv[2] === "tray";
+// `carte tray` starts a tray and waits for its startup signal.
+// `carte tray hide|show|toggle|status` asks the tray that is already running for
+// something and must run in the foreground, so the subcommand decides which of
+// the two this is. Treating every `tray` argv as tray mode made those commands
+// detach, print "Loading Cartethyia…", and fail after the CLI exited 0.
+const TRAY_SUBCOMMANDS = new Set(["hide", "show", "toggle", "status"]);
+const trayMode = process.argv[2] === "tray" && !TRAY_SUBCOMMANDS.has(process.argv[3]);
 // The compiled gateway binary resolves its assets from this. A compiled Bun
 // executable has a virtual `import.meta.dir` (`B:/~BUN/root/cartethyia`), so
 // without it the package root falls back to `B:\` and startup dies with
@@ -102,7 +108,7 @@ if (trayMode) {
   console.log("Loading Cartethyia…");
   let settled = false;
   const deadline = Date.now() + 60_000;
-  const finish = (error, url) => {
+  const finish = (error, readyMessage) => {
     if (settled) return;
     settled = true;
     try {
@@ -125,7 +131,7 @@ if (trayMode) {
       if (child.exitCode === null) child.kill();
       return;
     }
-    console.log(`Cartethyia is ready at ${url}`);
+    console.log(readyMessage);
     // The gateway child is already detached and unref'd; this Node process is
     // the only thing still holding the launching terminal open. Exit once the
     // URL has been shown so the shell prompt comes back.
@@ -137,7 +143,13 @@ if (trayMode) {
       try {
         const signal = JSON.parse(fs.readFileSync(startupSignalPath, "utf8"));
         if (signal.status === "ready" && typeof signal.url === "string") {
-          finish(null, signal.url);
+          finish(null, `Cartethyia is ready at ${signal.url}`);
+          return;
+        }
+        // A tray was already running and this command only asked it for its
+        // icon: success with no URL, not a start that never finished.
+        if (signal.status === "already-running") {
+          finish(null, "Cartethyia is already running; tray icon shown.");
           return;
         }
         if (signal.status === "failed" && typeof signal.message === "string") {

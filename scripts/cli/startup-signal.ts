@@ -10,6 +10,12 @@ import { writeFileSync } from "node:fs";
  */
 export type TrayStartupSignal =
   | { readonly status: "ready"; readonly url: string }
+  /**
+   * A tray was already running and its icon was shown. There is no URL to
+   * report: the gateway was started by the tray that is already up, and this
+   * process only asked it for its icon.
+   */
+  | { readonly status: "already-running" }
   | { readonly status: "failed"; readonly message: string };
 
 export function reportTrayStartup(signal: TrayStartupSignal): void {

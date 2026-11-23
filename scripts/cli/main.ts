@@ -26,6 +26,10 @@ const HELP = (minimumBunVersion: string) => `Cartethyia ${minimumBunVersion}+ (B
 Usage:
   carte                  start, then show an arrow-key menu (no GUI needed)
   carte --tray           start with a system-tray icon instead
+  carte tray hide        remove the tray icon, keep the gateway running
+  carte tray show        put the tray icon back
+  carte tray toggle      flip the icon's visibility
+  carte tray status      report whether the tray is running and what it shows
   cartethyia setup [--non-interactive]
   cartethyia start
   cartethyia stop
@@ -42,6 +46,8 @@ Exit. Arrow keys and Enter; no desktop environment needed, so it works over SSH
 and headless. A menu started by this command drains its child gateway on Exit;
 leaving a menu attached to an existing gateway only detaches. Use stop for that.
 carte --tray uses a system-tray icon instead, which needs a graphical session.
+Hiding the icon is not stopping Cartethyia: the gateway keeps serving, and
+carte tray show (or another carte --tray) brings the icon back.
 Stop a detached gateway with cartethyia stop (or the install's ./carte stop).
 Setup explains Lite (embedded SQLite) and Full (external PostgreSQL), then saves
 configuration under the current user's Cartethyia config directory.
@@ -117,6 +123,41 @@ async function main(): Promise<void> {
       return;
     }
     case "tray": {
+      // A subcommand asks the running tray for something; a bare `tray` starts
+      // one. Checked before the import so `carte tray hide` never drags the
+      // gateway, the dashboard and the database driver into memory.
+      const subcommand = process.argv[3]?.trim();
+      if (subcommand === "hide" || subcommand === "show" || subcommand === "toggle" || subcommand === "status") {
+        const { runTrayCommand } = await import("./tray/commands");
+        await runTrayCommand(subcommand);
+        return;
+      }
+      // A tray that already runs owns this install, and the usual way back to
+      // a hidden icon is to retype the command that started it. So a second
+      // `carte --tray` shows the icon instead of failing; a menu owner still
+      // falls through to the error, because two interactive UIs cannot share
+      // one gateway.
+      const { inheritedControllerHandoff } = await import("./controller");
+      if (inheritedControllerHandoff() === undefined) {
+        const { showIconOnExistingTray } = await import("./tray/commands");
+        const { reportTrayStartup } = await import("./startup-signal");
+        try {
+          if (await showIconOnExistingTray()) {
+            // The launcher spawned this process detached and is waiting for a
+            // signal; without one it reports a failed start for a command that
+            // succeeded, because this process never had a URL to hand back.
+            reportTrayStartup({ status: "already-running" });
+            console.log("Cartethyia tray is already running; icon shown.");
+            return;
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "unknown error";
+          reportTrayStartup({ status: "failed", message });
+          console.error(`Cartethyia tray is already running, but the icon could not be shown: ${message}`);
+          process.exitCode = 1;
+          return;
+        }
+      }
       const { startTray } = await import("./tray");
       await startTray();
       return;
