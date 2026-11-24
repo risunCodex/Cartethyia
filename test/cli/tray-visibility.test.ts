@@ -6,7 +6,7 @@
  * `CARTETHYIA_CONFIG_DIR` at a temp directory and never touch the operator's
  * real config — the same isolation `test/cli/controller.test.ts` uses.
  */
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { ChildProcess } from "node:child_process";
@@ -19,6 +19,7 @@ import {
   consumeTrayRequest,
   readTrayPreference,
   readTrayState,
+  writeTrayPreference,
   writeTrayRequest,
   writeTrayState,
 } from "../../src/console/tray/control";
@@ -35,6 +36,7 @@ import {
   applyTrayVisibility,
   requestTrayVisibility,
   respondToTrayRequest,
+  runTrayCommand,
   showIconOnExistingTray,
 } from "../../scripts/cli/tray/commands";
 
@@ -556,6 +558,44 @@ test("answering a request the tray could not apply leaves the old state alone", 
   await expect(respondToTrayRequest(tray, request)).rejects.toThrow("refused");
   expect(readTrayState()?.hidden).toBe(false);
   expect(readTrayState()?.nonce).toBeUndefined();
+});
+
+// ---------------------------------------------------------------------------
+// `carte tray status` with no live tray
+//
+// The icon can now be hidden across restarts, so "no tray is running" alone
+// would leave the operator staring at a menu bar with no icon and no reason.
+// ---------------------------------------------------------------------------
+
+/** Runs a command and returns what it printed, without touching the real console. */
+async function capturedOutput(run: () => Promise<void>): Promise<string> {
+  const lines: string[] = [];
+  const spy = spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  });
+  try {
+    await run();
+  } finally {
+    spy.mockRestore();
+  }
+  return lines.join("\n");
+}
+
+test("status names the last icon state when no tray is running", async () => {
+  writeTrayPreference(true);
+  const recorded = readTrayPreference()!;
+
+  const output = await capturedOutput(() => runTrayCommand("status"));
+
+  expect(output).toContain("No Cartethyia tray is running.");
+  expect(output).toContain("Last icon state: hidden");
+  expect(output).toContain(recorded.updatedAt);
+});
+
+test("status keeps its old line when nothing was ever recorded", async () => {
+  const output = await capturedOutput(() => runTrayCommand("status"));
+
+  expect(output).toBe("No Cartethyia tray is running.");
 });
 
 // ---------------------------------------------------------------------------

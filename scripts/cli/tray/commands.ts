@@ -1,5 +1,6 @@
 import {
   awaitTrayChange,
+  readTrayPreference,
   readTrayState,
   writeTrayRequest,
   writeTrayState,
@@ -97,7 +98,19 @@ export async function runTrayCommand(command: TrayVisibilityRequest | "status"):
   if (command === "status") {
     const state = readTrayState();
     if (state === null) {
-      console.log("No Cartethyia tray is running.");
+      // A hidden icon survives a restart now, so "no tray is running" on its own
+      // would leave the operator with a bare menu bar and no explanation. The
+      // recorded state says whether that is expected, and the timestamp says how
+      // stale it is.
+      const preference = readTrayPreference();
+      if (preference === null) {
+        console.log("No Cartethyia tray is running.");
+        return;
+      }
+      const icon = preference.hidden ? "hidden" : "visible";
+      console.log(
+        `No Cartethyia tray is running. Last icon state: ${icon} (recorded ${preference.updatedAt}).`,
+      );
       return;
     }
     console.log(`Cartethyia tray is running (PID ${state.pid}); icon ${state.hidden ? "hidden" : "visible"}.`);

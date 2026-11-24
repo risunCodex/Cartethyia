@@ -30,9 +30,11 @@ import {
   TrayChangeTimeoutError,
   TrayControlUnavailableError,
   awaitTrayChange,
+  readTrayPreference,
   readTrayState,
   writeTrayRequest,
   type TrayChangeOptions,
+  type TrayPreference,
   type TrayState,
 } from "./control";
 
@@ -47,10 +49,15 @@ export interface TrayRoutesConfig extends ConsoleRouteConfig {
   readonly changeOptions?: TrayChangeOptions;
 }
 
-/** Projects the channel's record onto the console's response shape. */
-function statusResponse(state: TrayState | null): TrayStatusResponse {
-  if (state === null) return { running: false, hidden: false, pid: null };
-  return { running: true, hidden: state.hidden, pid: state.pid };
+/** Projects the channel's records onto the console's response shape. */
+function statusResponse(state: TrayState | null, preference: TrayPreference | null): TrayStatusResponse {
+  return {
+    running: state !== null,
+    hidden: state?.hidden ?? false,
+    pid: state?.pid ?? null,
+    lastHidden: preference?.hidden ?? null,
+    lastChangedAt: preference?.updatedAt ?? null,
+  };
 }
 
 /**
@@ -81,7 +88,9 @@ export function createTrayRoutes(config: TrayRoutesConfig): AnyElysia {
     .get("/status", ({ request }) => {
       requireGlobalAdmin(accessResolver(request));
       try {
-        return statusResponse(readTrayState());
+        // Both records are read: the live one decides the buttons, the
+        // remembered one explains a menu bar with no icon on it.
+        return statusResponse(readTrayState(), readTrayPreference());
       } catch (error) {
         return trayError(error);
       }
@@ -114,9 +123,11 @@ export function createTrayRoutes(config: TrayRoutesConfig): AnyElysia {
           // Asking for the state the tray is already in is answered from the
           // record: writing a request for it would wake the tray to do nothing
           // and would report a failure if the tray were busy.
-          if (current.hidden === (action === "hide")) return statusResponse(current);
+          if (current.hidden === (action === "hide")) {
+            return statusResponse(current, readTrayPreference());
+          }
           const confirmed = await awaitTrayChange(action, writeTrayRequest(action), changeOptions);
-          return statusResponse(confirmed);
+          return statusResponse(confirmed, readTrayPreference());
         } catch (error) {
           return trayError(error);
         }

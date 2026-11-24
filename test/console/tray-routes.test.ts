@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Elysia, type AnyElysia } from "elysia";
 import { createTrayRoutes, type TrayRoutesConfig } from "../../src/console/tray/routes";
-import { consumeTrayRequest, writeTrayState } from "../../src/console/tray/control";
+import { consumeTrayRequest, writeTrayPreference, writeTrayState } from "../../src/console/tray/control";
 import { createAccessDecision, type AccessScope } from "../../src/security/access-control";
 
 let configDir: string;
@@ -92,7 +92,25 @@ test("status reports no tray when no state file exists", async () => {
   const response = await app().handle(get());
 
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ running: false, hidden: false, pid: null });
+  expect(await response.json()).toEqual({
+    running: false,
+    hidden: false,
+    pid: null,
+    lastHidden: null,
+    lastChangedAt: null,
+  });
+});
+
+test("status reports the last icon state while no tray is running", async () => {
+  // The icon can stay hidden across restarts, so a stopped tray has to be able
+  // to say where it left it: otherwise the panel offers nothing and the
+  // operator has no reason for the missing icon.
+  writeTrayPreference(true);
+
+  const body = (await (await app().handle(get())).json()) as Record<string, unknown>;
+
+  expect(body).toMatchObject({ running: false, hidden: false, pid: null, lastHidden: true });
+  expect(Number.isNaN(Date.parse(String(body.lastChangedAt)))).toBe(false);
 });
 
 test("status reports the running tray and its visibility", async () => {
@@ -101,7 +119,12 @@ test("status reports the running tray and its visibility", async () => {
   const response = await app().handle(get());
 
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ running: true, hidden: true, pid: process.pid });
+  expect(await response.json()).toMatchObject({
+    running: true,
+    hidden: true,
+    pid: process.pid,
+    lastHidden: true,
+  });
 });
 
 test("status treats a dead pid as no tray rather than an icon that is not there", async () => {
@@ -111,7 +134,7 @@ test("status treats a dead pid as no tray rather than an icon that is not there"
 
   const body = await (await app().handle(get())).json();
 
-  expect(body).toEqual({ running: false, hidden: false, pid: null });
+  expect(body).toMatchObject({ running: false, hidden: false, pid: null });
   expect(existsSync(join(configDir, "tray-state.json"))).toBe(false);
 });
 
@@ -129,7 +152,7 @@ test("hide writes a request and answers only after the tray confirms it", async 
   const response = await server.handle(post("hide"));
 
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ running: true, hidden: true, pid: process.pid });
+  expect(await response.json()).toMatchObject({ running: true, hidden: true, pid: process.pid });
   // A request left behind would act on the tray again minutes later.
   expect(existsSync(requestPath())).toBe(false);
 });
@@ -162,7 +185,7 @@ test("asking for the state the tray is already in answers from the record", asyn
   const response = await app().handle(post("hide"));
 
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ running: true, hidden: true, pid: process.pid });
+  expect(await response.json()).toMatchObject({ running: true, hidden: true, pid: process.pid });
   // No request: waking the tray to do nothing would report a failure the
   // operator cannot act on.
   expect(existsSync(requestPath())).toBe(false);
@@ -250,5 +273,5 @@ test("a corrupt state file reads as no tray", async () => {
 
   const body = await (await app().handle(get())).json();
 
-  expect(body).toEqual({ running: false, hidden: false, pid: null });
+  expect(body).toMatchObject({ running: false, hidden: false, pid: null });
 });
