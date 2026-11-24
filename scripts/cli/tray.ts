@@ -15,6 +15,7 @@ import {
   clearTrayRequest,
   clearTrayState,
   consumeTrayRequest,
+  readTrayPreference,
   writeTrayState,
 } from "../../src/console/tray/control";
 
@@ -108,6 +109,10 @@ async function runTray(): Promise<void> {
   let resetArmed = false;
   let closePromise: Promise<void> | undefined;
 
+  // What the icon showed when this installation last ran. `false` when nothing
+  // was ever recorded, which is the right default: a first start shows it.
+  const startHidden = readTrayPreference()?.hidden ?? false;
+
   const tray = createTray({
     iconPath: resolvePackagePath(
       "scripts",
@@ -117,6 +122,9 @@ async function runTray(): Promise<void> {
       process.platform === "win32" ? "cartethyia.ico" : "cartethyia.png",
     ),
     tooltip: `Cartethyia ${currentVersion}`,
+    // The operator's last choice, so a restart does not undo it. Read before the
+    // icon is built: a tray that starts hidden must never draw one first.
+    startHidden,
     items: [
       // Version row is informational; clicking it opens the releases page so
       // the operator can decide for themselves. No background check: the tray
@@ -236,12 +244,24 @@ async function runTray(): Promise<void> {
     // cannot read our stdio, because the tray is detached. Without this write
     // it waits out its 60 s deadline and reports a failure for a tray that is
     // running fine.
-    reportTrayStartup({ status: "ready", url: dashboardUrl });
+    //
+    // A hidden start travels the same way: an icon that is deliberately absent
+    // looks exactly like a broken install, so the line the operator reads has to
+    // say which one it is and how to undo it.
+    reportTrayStartup({
+      status: "ready",
+      url: dashboardUrl,
+      note: startHidden ? "The tray icon is hidden; restore it with carte tray show." : undefined,
+    });
     console.log(`Cartethyia is running at ${dashboardUrl}`);
     // Before the first poll: `carte tray status` must see a live tray as soon as
     // the icon exists, and a command run right after startup must not be told
     // that no tray is running.
-    writeTrayState({ pid: process.pid, hidden: false });
+    //
+    // `hidden` is the state this tray actually started in, not `false`: the
+    // write also records the preference, so a hardcoded `false` here would
+    // resurrect the icon on every restart and undo the operator's choice.
+    writeTrayState({ pid: process.pid, hidden: startHidden });
 
     // A second loop, on its own cadence: the health poll asks the gateway
     // whether it is alive every 10 s, while a visibility request has to be

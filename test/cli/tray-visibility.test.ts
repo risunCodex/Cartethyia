@@ -17,6 +17,7 @@ import {
   clearTrayRequest,
   clearTrayState,
   consumeTrayRequest,
+  readTrayPreference,
   readTrayState,
   writeTrayRequest,
   writeTrayState,
@@ -147,6 +148,64 @@ test("an unresolved config directory fails with a clear message, not a parse err
 });
 
 // ---------------------------------------------------------------------------
+// The preference: what the icon last showed, kept across restarts
+//
+// `tray-state.json` answers "is a tray alive" and dies with its process. The
+// preference answers "where did the icon end up" and must outlive everything,
+// which is why the two are separate files with separate lifetimes.
+// ---------------------------------------------------------------------------
+
+const preferencePath = (): string => join(configDir, "tray-preference.json");
+
+test("no preference is recorded until an icon state is written", () => {
+  expect(readTrayPreference()).toBeNull();
+});
+
+test("writing the icon state also records it as the preference, owner-only", () => {
+  writeTrayState({ pid: process.pid, hidden: true });
+
+  const preference = readTrayPreference();
+  expect(preference?.hidden).toBe(true);
+  expect(Number.isNaN(Date.parse(String(preference?.updatedAt)))).toBe(false);
+  expect(statSync(preferencePath()).mode & 0o777).toBe(0o600);
+});
+
+test("the preference outlives the state record it was written with", () => {
+  writeTrayState({ pid: process.pid, hidden: true });
+
+  clearTrayState();
+
+  expect(existsSync(statePath())).toBe(false);
+  expect(readTrayPreference()?.hidden).toBe(true);
+});
+
+test("a preference written by a tray that has since exited is still the last icon state", async () => {
+  const pid = await deadPid();
+  writeTrayState({ pid, hidden: true });
+
+  // Liveness decides the state record, not the preference: a dead pid says the
+  // tray is gone, and says nothing about where its icon was left.
+  expect(readTrayState()).toBeNull();
+  expect(readTrayPreference()?.hidden).toBe(true);
+});
+
+test("a corrupt preference reads as nothing recorded instead of throwing", () => {
+  writeFileSync(preferencePath(), "{ this is not json", "utf8");
+
+  expect(readTrayPreference()).toBeNull();
+});
+
+test("a preference whose hidden flag is not a boolean is not trusted", () => {
+  writeFileSync(
+    preferencePath(),
+    JSON.stringify({ hidden: "yes", updatedAt: new Date().toISOString() }),
+    "utf8",
+  );
+
+  expect(readTrayPreference()).toBeNull();
+});
+
+// ---------------------------------------------------------------------------
 // Tray visibility: macOS/Linux helper lifecycle
 //
 // The helper is faked here rather than spawned: a real `systray2` helper draws
@@ -232,7 +291,10 @@ const VISIBILITY_ROWS: readonly TrayItem[] = [
   { kind: "action", id: "exit", title: "Exit" },
 ];
 
-function unixTray(harness: UnixHarness): { tray: Tray; selected: string[]; exits: () => number } {
+function unixTray(
+  harness: UnixHarness,
+  options: { readonly startHidden?: boolean } = {},
+): { tray: Tray; selected: string[]; exits: () => number } {
   const selected: string[] = [];
   let exitCount = 0;
   const tray = createTray(
@@ -240,6 +302,7 @@ function unixTray(harness: UnixHarness): { tray: Tray; selected: string[]; exits
       iconPath: "/tmp/cartethyia-test.png",
       tooltip: "Cartethyia test",
       items: VISIBILITY_ROWS,
+      startHidden: options.startHidden,
       onSelect: (id) => selected.push(id),
       onExit: () => {
         exitCount += 1;
@@ -314,6 +377,44 @@ test("rows updated after a show target the new helper's numbering", async () => 
   tray.update("hide", "Hide icon \u00b7 again");
 
   expect(harness.created[1]?.updates.map((item) => item.title)).toEqual(["Hide icon \u00b7 again"]);
+});
+
+test("a tray told to start hidden draws no icon until one is asked for", async () => {
+  const harness = unixHarness();
+  const { tray } = unixTray(harness, { startHidden: true });
+  await tray.ready();
+
+  // No helper at all: the icon is a helper process on these platforms, so
+  // "hidden at start" means never starting one rather than starting and hiding.
+  expect(harness.created).toHaveLength(0);
+  expect(tray.isVisible()).toBe(false);
+
+  await tray.show();
+
+  expect(harness.created).toHaveLength(1);
+  expect(tray.isVisible()).toBe(true);
+  expect(harness.created[0]?.menu[1]?.title).toBe("Hide icon");
+});
+
+test("updating a row while the icon is hidden at start is a no-op, not a crash", async () => {
+  const harness = unixHarness();
+  const { tray } = unixTray(harness, { startHidden: true });
+  await tray.ready();
+
+  tray.update("hide", "Hide icon \u00b7 again");
+  tray.setTooltip("Cartethyia test");
+
+  expect(harness.created).toHaveLength(0);
+});
+
+test("closing a tray that started hidden and never showed ends without a helper", async () => {
+  const harness = unixHarness();
+  const { tray } = unixTray(harness, { startHidden: true });
+  await tray.ready();
+
+  await tray.close();
+
+  expect(harness.created).toHaveLength(0);
 });
 
 test("a click still resolves the right id after two hide/show cycles", async () => {

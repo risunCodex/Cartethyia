@@ -22,6 +22,14 @@ export interface TrayOptions {
   readonly iconPath: string;
   readonly tooltip: string;
   readonly items: readonly TrayItem[];
+  /**
+   * Start with no icon on screen.
+   *
+   * The operator's last choice, not a temporary state: a tray that starts
+   * hidden must not flash an icon first, which is why this is a construction
+   * option rather than a `hide()` right after `ready()`.
+   */
+  readonly startHidden?: boolean | undefined;
   readonly onSelect: (id: string) => void;
   readonly onExit: () => void;
 }
@@ -283,14 +291,22 @@ class WindowsTray implements Tray {
  *
  * `systray2` has no visibility control, so hiding ends the helper and showing
  * starts a new one. The gateway is a separate, detached process: neither
- * direction touches it.
+ * direction touches it. A tray that starts hidden starts with no helper at all,
+ * so the icon never appears even for a frame.
  */
 class UnixTray implements Tray {
   readonly #options: TrayOptions;
   readonly #createHelper: UnixHelperFactory;
   readonly #onSelect: (id: string) => void;
   readonly #onExit: () => void;
-  #helper: TrayHelper;
+  /**
+   * The helper that draws the icon, or `null` while no icon is on screen.
+   *
+   * `null` only happens when the tray starts hidden: on these platforms the
+   * icon *is* a helper process, so "hidden at start" means never starting one
+   * rather than starting and hiding. `show()` builds the first one.
+   */
+  #helper: TrayHelper | null;
   /** Row objects kept by reference: a click hands back the object, not the id. */
   #items: Map<string, IdentifiedItem>;
   #ready: Promise<void>;
@@ -311,6 +327,16 @@ class UnixTray implements Tray {
     this.#createHelper = createHelper;
     this.#onSelect = options.onSelect;
     this.#onExit = options.onExit;
+    if (options.startHidden === true) {
+      // Nothing to attach: the rows are built with the helper that draws them,
+      // and `show()` builds both. An update sent in between would target a
+      // numbering that does not exist yet, which `update()` already ignores.
+      this.#helper = null;
+      this.#items = new Map();
+      this.#visible = false;
+      this.#ready = Promise.resolve();
+      return;
+    }
     const started = this.#build();
     this.#helper = started.helper;
     this.#items = started.items;
@@ -381,7 +407,9 @@ class UnixTray implements Tray {
     // systray2 then rewrites the first row instead of this one.
     if (item?.__id === undefined) return;
     const next: IdentifiedItem = { title, tooltip: title, enabled, __id: item.__id };
-    void this.#helper.sendAction({ type: "update-item", item: next });
+    // `__id` only exists once a helper numbered the row, so a missing helper
+    // here means there is nothing on screen to update.
+    void this.#helper?.sendAction({ type: "update-item", item: next });
   }
 
   setTooltip(text: string): void {
@@ -391,10 +419,11 @@ class UnixTray implements Tray {
   }
 
   async hide(): Promise<void> {
-    if (!this.#visible || this.#closed) return;
+    const helper = this.#helper;
+    if (!this.#visible || this.#closed || helper === null) return;
     this.#hiding = true;
     try {
-      await this.#end(this.#helper);
+      await this.#end(helper);
     } finally {
       // Only this awaited kill is a hide. A helper that dies later is a crash
       // and must still be reported.
@@ -439,8 +468,10 @@ class UnixTray implements Tray {
     if (this.#closed) return;
     this.#closed = true;
     this.#visible = false;
+    const helper = this.#helper;
+    if (helper === null) return;
     try {
-      await this.#end(this.#helper);
+      await this.#end(helper);
     } catch {
       // The helper may already be gone; this process is exiting either way.
     }

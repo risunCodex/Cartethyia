@@ -6,15 +6,16 @@ import { pidAlive } from "../../shared/process";
  * The channel a CLI command or a console route uses to change a running tray's
  * icon.
  *
- * Two small files in the config directory instead of a socket: the process that
- * hides or shows the icon is usually not the tray's parent, and a file needs no
- * port, no handshake, and no dependency. The tray polls the request file and
- * answers through the state file, so a caller can wait for the change it asked
- * for instead of assuming it happened.
+ * Three small files in the config directory instead of a socket: the process
+ * that hides or shows the icon is usually not the tray's parent, and a file
+ * needs no port, no handshake, and no dependency. The tray polls the request
+ * file and answers through the state file, so a caller can wait for the change
+ * it asked for instead of assuming it happened; the preference file remembers
+ * where the icon was left, so a restart does not undo the operator's choice.
  *
- * Both files are advisory. A missing, truncated, or hand-edited file is read as
- * "nothing to do" and discarded — a tray must never die because the operator
- * edited a JSON file.
+ * All three are advisory. A missing, truncated, or hand-edited file is read as
+ * "nothing to do" (or "nothing recorded") and discarded — a tray must never die
+ * because the operator edited a JSON file.
  *
  * Lives under `src/console/` because the console route and the CLI share it, and
  * `src/` must not import from `scripts/`. The tray itself imports it from here.
@@ -46,6 +47,19 @@ export interface TrayState {
 }
 
 /**
+ * What the tray last showed, kept across restarts.
+ *
+ * Not part of {@link TrayState}: that record answers "is a tray alive", and a
+ * preference has to outlive the process that wrote it. Keeping them apart is
+ * what lets `clearTrayState` remove a dead tray's record without forgetting
+ * where the icon was left.
+ */
+export interface TrayPreference {
+  readonly hidden: boolean;
+  readonly updatedAt: string;
+}
+
+/**
  * Raised when the gateway has no config directory to write to.
  *
  * Its own type so a caller can report "tray control is unavailable here"
@@ -61,6 +75,7 @@ export class TrayControlUnavailableError extends Error {
 
 const REQUEST_FILE = "tray-request.json";
 const STATE_FILE = "tray-state.json";
+const PREFERENCE_FILE = "tray-preference.json";
 
 /**
  * How long a caller waits for the tray to confirm it acted.
@@ -186,6 +201,19 @@ function parseState(value: unknown): TrayState | null {
   return { pid, hidden, updatedAt, ...(nonce === undefined ? {} : { nonce }) };
 }
 
+/**
+ * A preference carries no pid, so there is nothing to check it against: a
+ * record left by a tray that exited is still the last thing the operator saw.
+ */
+function parsePreference(value: unknown): TrayPreference | null {
+  if (value === null || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const { hidden, updatedAt } = record;
+  if (typeof hidden !== "boolean") return null;
+  if (typeof updatedAt !== "string") return null;
+  return { hidden, updatedAt };
+}
+
 /** Asks the running tray to change its icon. Overwrites any pending request. */
 export function writeTrayRequest(request: TrayVisibilityRequest): TrayRequest {
   const next: TrayRequest = {
@@ -216,19 +244,47 @@ export function clearTrayRequest(): void {
   discard(join(configDir(), REQUEST_FILE));
 }
 
-/** Records what the tray is showing, for `carte tray status` and any caller's wait. */
+/**
+ * Records what the tray is showing, for `carte tray status` and any caller's wait.
+ *
+ * This is also the one place that records the preference: every caller here —
+ * a confirmed change, a tray starting, the menu's own `Hide icon` row — has
+ * just learned where the icon is, and a second write site would be a second
+ * chance to forget one of them. A change that threw never reaches this
+ * function, so a failed hide is never remembered as a hidden icon.
+ */
 export function writeTrayState(state: {
   readonly pid: number;
   readonly hidden: boolean;
   readonly nonce?: string;
 }): void {
+  const updatedAt = new Date().toISOString();
   const next: TrayState = {
     pid: state.pid,
     hidden: state.hidden,
-    updatedAt: new Date().toISOString(),
+    updatedAt,
     ...(state.nonce === undefined ? {} : { nonce: state.nonce }),
   };
+  // The state record first: it is the acknowledgement a waiting caller is
+  // polling for, so it must exist even if the preference write below fails.
   writeAtomic(join(configDir(), STATE_FILE), next);
+  writeAtomic(join(configDir(), PREFERENCE_FILE), { hidden: state.hidden, updatedAt });
+}
+
+/** Reads the last icon state. `null` when nothing usable was recorded. */
+export function readTrayPreference(): TrayPreference | null {
+  return parsePreference(readJson(join(configDir(), PREFERENCE_FILE)));
+}
+
+/**
+ * Records the last icon state without a live tray behind it.
+ *
+ * Normal changes go through {@link writeTrayState}; this exists for the
+ * composition that has no state record to write, and for tests that need a
+ * recorded preference with no tray running.
+ */
+export function writeTrayPreference(hidden: boolean): void {
+  writeAtomic(join(configDir(), PREFERENCE_FILE), { hidden, updatedAt: new Date().toISOString() });
 }
 
 /**
@@ -248,7 +304,12 @@ export function readTrayState(): TrayState | null {
   return state;
 }
 
-/** Removes the state record, so no later caller reads a dead tray's icon. */
+/**
+ * Removes the state record, so no later caller reads a dead tray's icon.
+ *
+ * The preference is left alone on purpose: "this tray is gone" is not "the
+ * operator wants the icon back".
+ */
 export function clearTrayState(): void {
   discard(join(configDir(), STATE_FILE));
 }

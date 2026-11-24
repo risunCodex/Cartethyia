@@ -143,7 +143,11 @@ if (trayMode) {
       try {
         const signal = JSON.parse(fs.readFileSync(startupSignalPath, "utf8"));
         if (signal.status === "ready" && typeof signal.url === "string") {
-          finish(null, `Cartethyia is ready at ${signal.url}`);
+          // A start that needs explaining — a tray whose icon is deliberately
+          // hidden — carries its line here, because the tray's own stdout goes
+          // nowhere once it is detached.
+          const note = typeof signal.note === "string" ? `\n${signal.note}` : "";
+          finish(null, `Cartethyia is ready at ${signal.url}${note}`);
           return;
         }
         // A tray was already running and this command only asked it for its

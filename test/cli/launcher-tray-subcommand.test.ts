@@ -93,6 +93,19 @@ test("carte --tray still starts a tray and waits for readiness", async () => {
   expect(output).toContain("ready at http://127.0.0.1:12800/console");
 });
 
+test("carte --tray reports a hidden start with the way back", async () => {
+  // The tray is detached with no stdio, so the launcher's own line is the only
+  // place the operator can be told the icon they cannot see is deliberate.
+  const { output } = await runCarte(["--tray"], {
+    status: "ready",
+    url: "http://127.0.0.1:12800/console",
+    note: "The tray icon is hidden; restore it with carte tray show.",
+  });
+
+  expect(output).toContain("ready at http://127.0.0.1:12800/console");
+  expect(output).toContain("carte tray show");
+});
+
 test("carte --tray with a tray already running reports success, not a failed start", async () => {
   // The CLI showed the existing tray's icon and had nothing to start, so it
   // exits 0 without a URL. The launcher used to call that "exited before
