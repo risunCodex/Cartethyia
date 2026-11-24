@@ -39,6 +39,7 @@ import {
   runTrayCommand,
   showIconOnExistingTray,
 } from "../../scripts/cli/tray/commands";
+import { createShutdownPause } from "../../scripts/cli/tray/lifecycle";
 
 let configDir: string;
 let originalConfigDir: string | undefined;
@@ -599,6 +600,45 @@ test("status keeps its old line when nothing was ever recorded", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Shutdown: the pause a closing tray stops waiting on
+//
+// The two poll loops are the only thing holding this process open while the
+// icon is hidden. A plain sleep also keeps it open after it stopped being
+// useful, which is how a tray that had already deleted its state record went on
+// reading as a live icon for up to one poll interval.
+// ---------------------------------------------------------------------------
+
+test("a pause that is never interrupted resolves on its own", async () => {
+  const gate = createShutdownPause();
+  const startedAt = Date.now();
+
+  await gate.pause(20);
+
+  expect(Date.now() - startedAt).toBeGreaterThanOrEqual(15);
+});
+
+test("interrupting a pause releases it at once instead of waiting out the interval", async () => {
+  const gate = createShutdownPause();
+  const startedAt = Date.now();
+  const paused = gate.pause(30_000);
+
+  gate.interrupt();
+  await paused;
+
+  expect(Date.now() - startedAt).toBeLessThan(1_000);
+});
+
+test("a pause taken after the interrupt does not wait at all", async () => {
+  const gate = createShutdownPause();
+  gate.interrupt();
+  const startedAt = Date.now();
+
+  await gate.pause(30_000);
+
+  expect(Date.now() - startedAt).toBeLessThan(1_000);
+});
+
+// ---------------------------------------------------------------------------
 // `carte --tray` when a tray already runs
 // ---------------------------------------------------------------------------
 
@@ -656,6 +696,18 @@ test("a stale controller record does not count as a running tray", async () => {
   writeControllerRecord("tray", await deadPid());
 
   expect(await showIconOnExistingTray()).toBe(false);
+});
+
+test("a tray that is still shutting down is not asked for its icon", async () => {
+  // The lease outlives the state record for the last moments of a shutdown, so
+  // this pair is exactly what a `carte --tray` typed into that window sees. It
+  // used to be answered with "no tray is running; start one", which is the
+  // command the operator had just run.
+  writeControllerRecord("tray", process.pid);
+
+  await expect(showIconOnExistingTray()).rejects.toThrow("still shutting down");
+  // Nothing may be left behind for a tray that will never read it.
+  expect(existsSync(requestPath())).toBe(false);
 });
 
 // ---------------------------------------------------------------------------

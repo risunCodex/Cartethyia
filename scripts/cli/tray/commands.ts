@@ -83,6 +83,14 @@ export async function requestTrayVisibility(
 export async function showIconOnExistingTray(options: TrayCommandOptions = {}): Promise<boolean> {
   const owner = readControllerOwner();
   if (owner === null || owner.kind !== "tray") return false;
+  // The lease outlives the state record for the last moments of a shutdown,
+  // deliberately: clearing the record while still owning the controller is what
+  // stops a new tray starting in the middle of the old one's cleanup. So a lease
+  // with no icon state means "on its way out" — asking it for the icon would
+  // wait out the confirmation deadline and report a failure nobody can act on.
+  if (readTrayState() === null) {
+    throw new Error("The Cartethyia tray is still shutting down; try again in a moment");
+  }
   await requestTrayVisibility("show", options);
   return true;
 }

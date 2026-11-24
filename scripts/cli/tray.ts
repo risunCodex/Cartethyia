@@ -6,6 +6,7 @@ import { stopGateway } from "./gateway";
 import { readInstalledVersion } from "./version";
 import { reportTrayStartup } from "./startup-signal";
 import { createTray } from "./tray/index";
+import { createShutdownPause } from "./tray/lifecycle";
 import { openUrl } from "./background";
 import { exportBackup, resetConsoleAccount } from "./admin";
 import { acquireController, inheritedControllerHandoff } from "./controller";
@@ -109,6 +110,16 @@ async function runTray(): Promise<void> {
   let resetArmed = false;
   let closePromise: Promise<void> | undefined;
 
+  /**
+   * Wakes the poll loops when the tray closes.
+   *
+   * Both loops sleep in one long interval; letting a shutdown wait that out
+   * would keep the controller lease — and the tray — alive after its files are
+   * already gone, so the next `carte --tray` would find a live tray with no
+   * icon to show.
+   */
+  const shutdown = createShutdownPause();
+
   // What the icon showed when this installation last ran. `false` when nothing
   // was ever recorded, which is the right default: a first start shows it.
   const startHidden = readTrayPreference()?.hidden ?? false;
@@ -148,6 +159,9 @@ async function runTray(): Promise<void> {
   const close = (exitCode = 0): Promise<void> => {
     if (closePromise) return closePromise;
     closing = true;
+    // Before anything is awaited: a loop sleeping in its interval would
+    // otherwise hold the process open past the point where its records are gone.
+    shutdown.interrupt();
     closePromise = (async () => {
       const current: Bun.Subprocess | null = gateway;
       gateway = null;
@@ -156,6 +170,12 @@ async function runTray(): Promise<void> {
       await tray.close();
       // A tray that exited must not leave a record another process reads as a
       // live icon, nor a request nobody will ever consume.
+      //
+      // The controller lease is released after this, on the way out, and that
+      // order is deliberate: it is what stops a new tray starting while these
+      // files are still being cleared. The cost is that a lease can briefly
+      // outlive its state record, which `showIconOnExistingTray` reports as
+      // "still shutting down" rather than "no tray is running".
       clearTrayState();
       clearTrayRequest();
       process.exitCode = exitCode;
@@ -268,7 +288,7 @@ async function runTray(): Promise<void> {
     // answered within the second the operator is waiting on.
     const visibilityLoop = (async (): Promise<void> => {
       while (!closing) {
-        await Bun.sleep(TRAY_VISIBILITY_POLL_MS);
+        await shutdown.pause(TRAY_VISIBILITY_POLL_MS);
         if (closing) return;
         const request = consumeTrayRequest();
         if (request === null) continue;
@@ -298,7 +318,7 @@ async function runTray(): Promise<void> {
     // detaching it. The probe is the same one startup used, so a gateway that
     // is up reads as up regardless of who spawned it.
     while (!closing) {
-      await Bun.sleep(TRAY_HEALTH_POLL_MS);
+      await shutdown.pause(TRAY_HEALTH_POLL_MS);
       if (closing || gateway === null && adoptedGateway === null) continue;
       const alive = await fetch(`http://127.0.0.1:${port}/health`, {
         signal: AbortSignal.timeout(TRAY_HEALTH_PROBE_TIMEOUT_MS),

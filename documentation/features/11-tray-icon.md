@@ -77,6 +77,26 @@ visible) and is discarded. A state record whose pid is no longer alive reads as
 "no tray running" and is deleted, so no surface reports an icon that is not
 there.
 
+### Shutdown releases the lease last
+
+A tray clears its state record and any pending request while it still owns the
+`controller.json` lease, and releases the lease on the way out. That order is
+deliberate: releasing first would let a new tray start while the old one is still
+clearing those files, and the old one's cleanup would then delete the new tray's
+record.
+
+The visible cost is a trailing moment where the lease names a live tray whose
+state record is already gone. A `carte --tray` typed into it is told the tray is
+still shutting down, not that none is running — the second reading would advise
+running the command the operator had just run.
+
+Shutdown must not wait out a poll interval either. Both loops sleep in one
+interval, and those timers are the only thing keeping the process alive while the
+icon is hidden, so they stay referenced during normal running and are cleared
+when closing starts (`scripts/cli/tray/lifecycle.ts`). A shutdown that waited out
+a 10 s health interval held the lease for 10 s after its files were gone, which
+made that confusing window most of the shutdown.
+
 ## Platform behavior
 
 macOS and Linux use `systray2`, which has no visibility control: hiding ends the
@@ -144,6 +164,7 @@ runs. `carte tray status` prints the same distinction in one line.
 | Concern | File |
 |---|---|
 | The channel (files, preference, nonce wait, liveness check) | `src/console/tray/control.ts` |
+| The pause a shutdown interrupts | `scripts/cli/tray/lifecycle.ts` |
 | Console routes and their error mapping | `src/console/tray/routes.ts` |
 | Console wire types | `src/console/tray/contracts.ts` |
 | CLI commands and the second-launch path | `scripts/cli/tray/commands.ts` |

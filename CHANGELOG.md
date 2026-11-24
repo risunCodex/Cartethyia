@@ -23,6 +23,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   the next start is visible. Nothing else about hiding changed: the gateway and
   the tray process keep running either way.
 
+### Fixed
+
+- **A stopped tray no longer keeps looking alive while it shuts down.** The tray
+  cleared its state record and then waited out its poll interval — up to 10 s —
+  before exiting, so for that whole window a `carte --tray` found a live tray
+  lease with no icon state and failed with "No Cartethyia tray is running; start
+  one with carte --tray", which is the command that had just been run. Shutdown
+  now wakes both poll loops, so the process exits as soon as its files are
+  cleared, and the trailing moment where the lease outlives the state record is
+  reported as "the tray is still shutting down; try again in a moment". Retyping
+  `carte --tray` straight after stopping a tray now starts a new one.
+
 ### Added
 
 - **The tray icon can be hidden without stopping the gateway.** `carte tray
