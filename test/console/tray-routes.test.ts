@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Elysia, type AnyElysia } from "elysia";
 import { createTrayRoutes, type TrayRoutesConfig } from "../../src/console/tray/routes";
-import { consumeTrayRequest, writeTrayPreference, writeTrayState } from "../../src/console/tray/control";
+import { consumeTrayRequest, clearTrayState, writeTrayState } from "../../src/console/tray/control";
 import { createAccessDecision, type AccessScope } from "../../src/security/access-control";
 
 let configDir: string;
@@ -105,7 +105,8 @@ test("status reports the last icon state while no tray is running", async () => 
   // The icon can stay hidden across restarts, so a stopped tray has to be able
   // to say where it left it: otherwise the panel offers nothing and the
   // operator has no reason for the missing icon.
-  writeTrayPreference(true);
+  writeTrayState({ pid: process.pid, hidden: true });
+  clearTrayState();
 
   const body = (await (await app().handle(get())).json()) as Record<string, unknown>;
 

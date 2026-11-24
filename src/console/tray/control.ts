@@ -277,17 +277,6 @@ export function readTrayPreference(): TrayPreference | null {
 }
 
 /**
- * Records the last icon state without a live tray behind it.
- *
- * Normal changes go through {@link writeTrayState}; this exists for the
- * composition that has no state record to write, and for tests that need a
- * recorded preference with no tray running.
- */
-export function writeTrayPreference(hidden: boolean): void {
-  writeAtomic(join(configDir(), PREFERENCE_FILE), { hidden, updatedAt: new Date().toISOString() });
-}
-
-/**
  * Reads the tray's last known visibility.
  *
  * A record owned by a process that is no longer alive is a leftover from a tray

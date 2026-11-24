@@ -19,7 +19,6 @@ import {
   consumeTrayRequest,
   readTrayPreference,
   readTrayState,
-  writeTrayPreference,
   writeTrayRequest,
   writeTrayState,
 } from "../../src/console/tray/control";
@@ -583,7 +582,10 @@ async function capturedOutput(run: () => Promise<void>): Promise<string> {
 }
 
 test("status names the last icon state when no tray is running", async () => {
-  writeTrayPreference(true);
+  // Exactly what a tray that exited leaves behind: the state record is gone,
+  // the recorded choice is not.
+  writeTrayState({ pid: process.pid, hidden: true });
+  clearTrayState();
   const recorded = readTrayPreference()!;
 
   const output = await capturedOutput(() => runTrayCommand("status"));
