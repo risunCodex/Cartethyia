@@ -10,6 +10,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+
+- **A hidden tray icon now stays hidden across restarts.** The last icon state
+  is recorded in `tray-preference.json` next to the other tray files, so a tray
+  started after a gateway restart, a `carte stop`, or a reboot with autostart
+  comes back the way it was left — including with no icon. The tray starts in
+  that state rather than hiding itself afterwards, so no icon flashes on the way.
+  `carte tray status` and `Settings → Tray` report the last state when no tray is
+  running, and a hidden start prints the command that restores the icon
+  (`carte tray show`). Deleting `tray-preference.json` forgets the choice and
+  the next start is visible. Nothing else about hiding changed: the gateway and
+  the tray process keep running either way.
+
 ### Added
 
 - **The tray icon can be hidden without stopping the gateway.** `carte tray
