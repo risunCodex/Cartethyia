@@ -70,6 +70,12 @@ export function TrayPanel(): ReactNode {
             ) : (
               <>
                 Start one with <code>carte tray</code> to control its icon from here.
+                {/* The last state outlives the tray, so a start that comes back
+                    with no icon is the operator's own earlier choice — said here
+                    so it does not read as a broken install. */}
+                {status.data.lastHidden === null
+                  ? null
+                  : ` It will start with the icon ${status.data.lastHidden ? "hidden" : "visible"}, as you left it.`}
               </>
             )}
           </span>

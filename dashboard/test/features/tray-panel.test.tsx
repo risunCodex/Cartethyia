@@ -34,9 +34,17 @@ beforeAll(() => {
   }
 });
 
-const RUNNING_VISIBLE = { running: true, hidden: false, pid: 4242 };
-const RUNNING_HIDDEN = { running: true, hidden: true, pid: 4242 };
-const NOT_RUNNING = { running: false, hidden: false, pid: null };
+const RUNNING_VISIBLE = { running: true, hidden: false, pid: 4242, lastHidden: false, lastChangedAt: null };
+const RUNNING_HIDDEN = { running: true, hidden: true, pid: 4242, lastHidden: true, lastChangedAt: null };
+const NOT_RUNNING = { running: false, hidden: false, pid: null, lastHidden: null, lastChangedAt: null };
+/** A tray that exited after the operator hid its icon. */
+const STOPPED_AFTER_HIDING = {
+  running: false,
+  hidden: false,
+  pid: null,
+  lastHidden: true,
+  lastChangedAt: "2026-11-20T09:00:00.000Z",
+};
 
 let mounted: Mounted | undefined;
 let restore: (() => void) | undefined;
@@ -95,6 +103,27 @@ describe("Tray panel", () => {
     expect(panel.text()).toContain("carte tray");
     expect(button(panel, "Hide icon")?.disabled).toBe(true);
     expect(button(panel, "Show icon")?.disabled).toBe(true);
+  });
+
+  test("a stopped tray that was left hidden says the next start will be hidden", async () => {
+    // Without this line the panel reads as "nothing is wrong, start one", and
+    // the operator is surprised by a start with no icon.
+    const { panel } = await mountPanel([
+      { match: "GET /console/api/tray/status", json: STOPPED_AFTER_HIDING },
+    ]);
+
+    expect(panel.text()).toContain("will start with the icon hidden");
+    // The state is a memory, not a live icon: neither button may be offered.
+    expect(button(panel, "Hide icon")?.disabled).toBe(true);
+    expect(button(panel, "Show icon")?.disabled).toBe(true);
+  });
+
+  test("a stopped tray with nothing recorded says nothing about a last state", async () => {
+    const { panel } = await mountPanel([
+      { match: "GET /console/api/tray/status", json: NOT_RUNNING },
+    ]);
+
+    expect(panel.text()).not.toContain("will start with the icon");
   });
 
   test("hiding posts the hide action and toasts the confirmed result", async () => {
