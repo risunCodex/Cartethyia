@@ -54,7 +54,7 @@ npm uninstall -g cartethyia # uninstall
 | `carte tray hide` | Remove the tray icon and keep the gateway running |
 | `carte tray show` | Put the tray icon back |
 | `carte tray toggle` | Flip the icon's visibility |
-| `carte tray status` | Report whether a tray is running and whether its icon is hidden |
+| `carte tray status` | Report whether a tray is running and, when none is, the icon state it was left in |
 | `cartethyia menu` | Re-attach the arrow-key menu to a running gateway |
 | `cartethyia start` | Start the gateway without a menu |
 | `cartethyia stop` | Stop the detached gateway (also `./carte stop` after an install) |
@@ -71,6 +71,12 @@ tray menu offers the same action as **Hide icon**, and the console's
 **Settings → Tray** section reports the icon's state and hides or restores it.
 Both work only from the machine running the gateway. See
 [Tray icon control](documentation/features/11-tray-icon.md).
+
+The choice survives restarts. A tray started after a gateway restart, a
+`carte stop`, or a reboot with autostart comes back in the state it was left in,
+including with no icon; the start says so and names the command that restores
+it, and `carte tray status` reports the last state while no tray runs. Deleting
+`tray-preference.json` from the config directory forgets it.
 
 Full guide (modes, Docker, VPS, systemd, one-shot script):
 [installation](documentation/installation.md).

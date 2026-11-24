@@ -71,7 +71,7 @@ icon moved: a confirmed change, a tray starting, and the menu's own `Hide icon`
 row all pass through it, and a change that threw never reaches it. A failed hide
 therefore cannot be remembered as a hidden icon.
 
-Both files are advisory. A missing, truncated, or hand-edited file reads as
+All three files are advisory. A missing, truncated, or hand-edited file reads as
 nothing to do (or, for the preference, nothing recorded — which starts the icon
 visible) and is discarded. A state record whose pid is no longer alive reads as
 "no tray running" and is deleted, so no surface reports an icon that is not
