@@ -632,9 +632,15 @@ interface FakeWindowsHelper {
   emit(event: Record<string, unknown>): void;
 }
 
-function windowsHarness(): { spawn: WindowsHelperFactory; created: FakeWindowsHelper[] } {
+function windowsHarness(): {
+  spawn: WindowsHelperFactory;
+  created: FakeWindowsHelper[];
+  spawned: { readonly startHidden: boolean }[];
+} {
   const created: FakeWindowsHelper[] = [];
-  const spawn: WindowsHelperFactory = () => {
+  const spawned: { readonly startHidden: boolean }[] = [];
+  const spawn: WindowsHelperFactory = (options) => {
+    spawned.push({ startHidden: options.startHidden });
     const stdout = new PassThrough();
     const stdinChunks: string[] = [];
     const stdin = new PassThrough();
@@ -668,10 +674,13 @@ function windowsHarness(): { spawn: WindowsHelperFactory; created: FakeWindowsHe
     created.push(record);
     return record.process;
   };
-  return { spawn, created };
+  return { spawn, created, spawned };
 }
 
-async function windowsTray(harness: ReturnType<typeof windowsHarness>): Promise<{
+async function windowsTray(
+  harness: ReturnType<typeof windowsHarness>,
+  options: { readonly startHidden?: boolean } = {},
+): Promise<{
   tray: Tray;
   exits: () => number;
   selected: string[];
@@ -683,6 +692,7 @@ async function windowsTray(harness: ReturnType<typeof windowsHarness>): Promise<
       iconPath: "C:\\cartethyia.ico",
       tooltip: "Cartethyia test",
       items: VISIBILITY_ROWS,
+      startHidden: options.startHidden,
       onSelect: (id) => selected.push(id),
       onExit: () => {
         exitCount += 1;
@@ -767,4 +777,50 @@ test("the windows script understands hide and show and answers with an ack", () 
   const hideBlock = script.slice(script.indexOf('"hide"        {'), script.indexOf('"show"        {'));
   expect(hideBlock).toContain("$script:notifyIcon.Visible = $false");
   expect(hideBlock).not.toContain("Dispose");
+});
+
+// ---------------------------------------------------------------------------
+// Windows: starting hidden
+//
+// The helper keeps running either way — it owns the message loop — so the only
+// difference is whether the NotifyIcon is ever made visible. Creating it hidden
+// is what keeps a rebooted machine from flashing an icon it was told to hide.
+// ---------------------------------------------------------------------------
+
+test("windows asks the helper for a hidden icon when starting hidden", async () => {
+  const harness = windowsHarness();
+  const { tray } = await windowsTray(harness, { startHidden: true });
+
+  expect(harness.spawned[0]?.startHidden).toBe(true);
+  expect(tray.isVisible()).toBe(false);
+});
+
+test("windows still starts visible when nothing was recorded", async () => {
+  const harness = windowsHarness();
+  const { tray } = await windowsTray(harness);
+
+  expect(harness.spawned[0]?.startHidden).toBe(false);
+  expect(tray.isVisible()).toBe(true);
+});
+
+test("windows show after a hidden start sends the show action and waits for its ack", async () => {
+  const harness = windowsHarness();
+  const { tray } = await windowsTray(harness, { startHidden: true });
+
+  const shown = tray.show();
+  expect(harness.created[0]?.sent.at(-1)).toEqual({ action: "show" });
+  // Not visible until the helper says the icon is on screen.
+  expect(tray.isVisible()).toBe(false);
+
+  harness.created[0]?.emit({ type: "shown" });
+  await shown;
+
+  expect(tray.isVisible()).toBe(true);
+});
+
+test("the windows script creates its icon hidden when asked, and visible otherwise", () => {
+  const script = readFileSync(join(import.meta.dir, "../../scripts/cli/tray/windows.ps1"), "utf8");
+
+  expect(script).toContain("[switch]$StartHidden");
+  expect(script).toContain("$script:notifyIcon.Visible = -not $StartHidden");
 });

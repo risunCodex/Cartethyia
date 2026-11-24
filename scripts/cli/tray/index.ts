@@ -84,7 +84,12 @@ export interface UnixHelperOptions {
 export type UnixHelperFactory = (options: UnixHelperOptions) => TrayHelper;
 
 /** Starts the Windows helper. Injected so tests never spawn PowerShell. */
-export type WindowsHelperFactory = (options: { readonly iconPath: string; readonly tooltip: string }) => ChildProcess;
+export type WindowsHelperFactory = (options: {
+  readonly iconPath: string;
+  readonly tooltip: string;
+  /** Create the NotifyIcon with `Visible = $false` instead of showing it first. */
+  readonly startHidden: boolean;
+}) => ChildProcess;
 
 export interface TrayDependencies {
   /** Builds the macOS/Linux helper. Defaults to a real `systray2` instance. */
@@ -129,8 +134,16 @@ class WindowsTray implements Tray {
   constructor(options: TrayOptions, spawnHelper: WindowsHelperFactory) {
     this.#onSelect = options.onSelect;
     this.#onExit = options.onExit;
+    // The helper always runs — it owns the message loop the menu needs — but a
+    // hidden start creates its icon already hidden, so nothing flashes on a
+    // machine whose operator asked for no icon.
+    this.#visible = options.startHidden !== true;
 
-    this.#process = spawnHelper({ iconPath: options.iconPath, tooltip: options.tooltip });
+    this.#process = spawnHelper({
+      iconPath: options.iconPath,
+      tooltip: options.tooltip,
+      startHidden: options.startHidden === true,
+    });
 
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     this.#ready = promise;
@@ -496,8 +509,15 @@ function startSystray(options: UnixHelperOptions): TrayHelper {
  *
  * `-WindowStyle Hidden` plus `windowsHide` is what keeps Windows Terminal from
  * keeping an empty tab open for the tray's whole lifetime.
+ *
+ * `-StartHidden` is separate: it decides whether the icon is ever shown, not
+ * whether a window exists.
  */
-function startWindowsHelper(options: { readonly iconPath: string; readonly tooltip: string }): ChildProcess {
+function startWindowsHelper(options: {
+  readonly iconPath: string;
+  readonly tooltip: string;
+  readonly startHidden: boolean;
+}): ChildProcess {
   return spawn(
     "powershell.exe",
     [
@@ -517,6 +537,7 @@ function startWindowsHelper(options: { readonly iconPath: string; readonly toolt
       options.iconPath,
       "-Tooltip",
       options.tooltip,
+      ...(options.startHidden ? ["-StartHidden"] : []),
     ],
     { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
   );
