@@ -53,6 +53,7 @@ export function createWebsearchHandler(deps: WebsearchHandlerDeps) {
     // thinking suffix is stripped for the same reason the canonical preparer
     // strips it: it is not part of any registered id.
     const { bareModel, body: searchBody } = stripThinkingSuffix(search.model, search);
+    state.requestedModel = bareModel;
     if (!hasScope(authorization?.snapshot.scopes, "search:invoke")) {
       throw new GatewayError("policy_rejected", 403, "search not allowed for this key (request {requestId}) — enable search:invoke on the API key. Not allowed by policy — no hard feelings 🫂");
     }
@@ -68,6 +69,8 @@ export function createWebsearchHandler(deps: WebsearchHandlerDeps) {
       ...(state.abortController.signal ? { signal: state.abortController.signal } : {}),
       ...(state.clientUserAgent === undefined ? {} : { clientUserAgent: state.clientUserAgent }),
     });
+    state.requestedModel = prepared.plan.requested_model;
+    state.routedModel = prepared.plan.resolved_model;
     return runAttemptLoop<Response, WebsearchAdapter>({
       state,
       deps,

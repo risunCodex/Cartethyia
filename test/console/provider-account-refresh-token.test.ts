@@ -55,7 +55,10 @@ interface AppFixture {
   readonly cleanup: () => void;
 }
 
-async function fixture(): Promise<AppFixture> {
+async function fixture(options: {
+  readonly scopes?: AccessDecision["scopes"];
+  readonly tenantId?: string | null;
+} = {}): Promise<AppFixture> {
   const dir = mkdtempSync(join(tmpdir(), "carte-refresh-token-"));
   const sqlite = createSqliteDatabase(join(dir, "cartethyia.sqlite"));
   await applySqliteMigrations(sqlite);
@@ -76,8 +79,8 @@ async function fixture(): Promise<AppFixture> {
   });
   const access: AccessDecision = {
     id: "operator",
-    tenantId,
-    scopes: ["dashboard:write"],
+    tenantId: options.tenantId === undefined ? tenantId : options.tenantId,
+    scopes: options.scopes ?? ["dashboard:write"],
     admissionIdentity: "operator",
   };
   const refreshService = new OAuthRefreshService(db);
@@ -116,7 +119,7 @@ async function fixture(): Promise<AppFixture> {
 async function addOauthAccount(
   db: CartethyiaDatabase,
   providerId: string,
-  tenantId: string,
+  tenantId: string | null,
   options: { status?: "active" | "disabled"; staticToken?: boolean; refreshToken?: string | null } = {},
 ): Promise<string> {
   const [row] = await db
@@ -262,6 +265,66 @@ describe("POST /providers/:providerId/accounts/:accountId/refresh-token", () => 
       });
       const response = await postRefresh(fx.app, fx.providerId, accountId);
       expect(response.status).toBe(404);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("404 for a shared/global (tenant_id = NULL) account when caller is not platform:admin", async () => {
+    const fx = await fixture();
+    try {
+      const accountId = await addOauthAccount(fx.db, fx.providerId, null, {
+        status: "active",
+        refreshToken: "rt",
+      });
+      const response = await postRefresh(fx.app, fx.providerId, accountId);
+      expect(response.status).toBe(404);
+      const body = (await response.json()) as { code?: string };
+      expect(body.code).toBe("account_not_found");
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("200 for a shared/global (tenant_id = NULL) account when caller has platform:admin", async () => {
+    const fx = await fixture({
+      scopes: ["dashboard:write", "platform:admin"],
+    });
+    try {
+      const accountId = await addOauthAccount(fx.db, fx.providerId, null, {
+        status: "active",
+        refreshToken: "rt",
+      });
+      const response = await postRefresh(fx.app, fx.providerId, accountId);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { ok: boolean; tokenRefreshed?: boolean };
+      expect(body.ok).toBe(true);
+      expect(body.tokenRefreshed).toBe(true);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("200 for global refresh route with tenantId=null platform:admin session", async () => {
+    const fx = await fixture({
+      tenantId: null,
+      scopes: ["platform:admin"],
+    });
+    try {
+      const accountId = await addOauthAccount(fx.db, fx.providerId, null, {
+        status: "active",
+        refreshToken: "rt",
+      });
+      const response = await fx.app.handle(
+        new Request(
+          `http://localhost/providers/platform/global/${fx.providerId}/accounts/${accountId}/refresh-token`,
+          { method: "POST" },
+        ),
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { ok: boolean; tokenRefreshed?: boolean };
+      expect(body.ok).toBe(true);
+      expect(body.tokenRefreshed).toBe(true);
     } finally {
       fx.cleanup();
     }

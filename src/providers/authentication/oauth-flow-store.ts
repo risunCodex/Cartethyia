@@ -2,7 +2,12 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { base64url, decodeJwt } from "jose";
-import { asRecord as record, asTrimmedString as nonEmptyTrimmedString } from "../../shared/coerce";
+import {
+  asJsonbRecord,
+  asRecord as record,
+  asTrimmedString as nonEmptyTrimmedString,
+  firstNonEmptyString,
+} from "../../shared/coerce";
 import type { RedisClient } from "../../persistence/redis";
 import { TtlCache } from "../../persistence/ttl-cache";
 import type { FetchLike } from "../provider-contracts";
@@ -535,6 +540,110 @@ export function oauthAccountIdentity(payload: unknown): OAuthAccountIdentity {
   return {
     ...(email === undefined ? {} : { accountEmail: email }),
     ...(accountName === undefined ? {} : { accountName }),
+  };
+}
+
+/** Parsed fields from a pasted OAuth credential JSON export or bare refresh token. */
+export interface ImportedOAuthMaterial {
+  readonly refreshToken: string;
+  readonly accessToken?: string;
+  readonly idToken?: string;
+  readonly email?: string;
+  readonly expiresAt?: Date;
+  readonly authState: Readonly<Record<string, unknown>>;
+}
+
+const IMPORT_ACCESS_FIELDS = ["accessToken", "access_token", "access", "token"] as const;
+const IMPORT_REFRESH_FIELDS = ["refreshToken", "refresh_token", "refresh"] as const;
+
+function parseImportExpiry(value: unknown): Date | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const ms = value < 1e12 ? value * 1000 : value;
+    const date = new Date(ms);
+    return Number.isFinite(date.getTime()) ? date : undefined;
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber)) return parseImportExpiry(asNumber);
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Parses an operator-pasted OAuth export (flat JSON, `{ data: ... }`, Codex CLI
+ * `{ tokens: ... }`, or a bare refresh token) for providers whose `importCredential`
+ * flow restores migrated tokens.
+ */
+export function parseImportedOAuthMaterial(
+  raw: string,
+  providerLabel: string,
+): ImportedOAuthMaterial {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    throw new Error(`${providerLabel} credential material is required`);
+  }
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return { refreshToken: trimmed, authState: {} };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error(
+      `Paste a ${providerLabel} OAuth JSON export (with refresh_token) or a bare refresh token`,
+    );
+  }
+  const root = record(parsed);
+  if (root === undefined) {
+    throw new Error(
+      `Paste a ${providerLabel} OAuth JSON export (with refresh_token) or a bare refresh token`,
+    );
+  }
+  const nested = record(root["data"]) ?? record(root["tokens"]);
+  const refreshToken =
+    firstNonEmptyString(root, IMPORT_REFRESH_FIELDS) ??
+    (nested ? firstNonEmptyString(nested, IMPORT_REFRESH_FIELDS) : undefined);
+  if (refreshToken === undefined) {
+    throw new Error(
+      `Paste a ${providerLabel} OAuth JSON export (with refresh_token) or a bare refresh token`,
+    );
+  }
+  const accessToken =
+    firstNonEmptyString(root, IMPORT_ACCESS_FIELDS) ??
+    (nested ? firstNonEmptyString(nested, IMPORT_ACCESS_FIELDS) : undefined);
+  const idToken =
+    firstNonEmptyString(root, ["id_token", "idToken"]) ??
+    (nested ? firstNonEmptyString(nested, ["id_token", "idToken"]) : undefined);
+  const email =
+    firstNonEmptyString(root, ["email", "accountEmail", "accountLabel"]) ??
+    (nested ? firstNonEmptyString(nested, ["email", "accountEmail", "accountLabel"]) : undefined);
+  const accessClaims = accessToken !== undefined ? decodeJwtPayload(accessToken) : undefined;
+  const expiresAt =
+    parseImportExpiry(
+      root["expiresAt"] ??
+        root["expires_at"] ??
+        root["expires"] ??
+        nested?.["expiresAt"] ??
+        nested?.["expires_at"] ??
+        nested?.["expires"],
+    ) ?? parseImportExpiry(accessClaims?.["exp"]);
+  const authState: Record<string, unknown> = {
+    ...(asJsonbRecord(root["providerSpecificData"]) ?? {}),
+    ...(asJsonbRecord(root["authState"]) ?? {}),
+    ...(asJsonbRecord(nested?.["authState"]) ?? {}),
+  };
+  delete authState.credentialMode;
+  delete authState.tokenExpiresAt;
+  delete authState.jwtIssuer;
+  return {
+    refreshToken,
+    ...(accessToken === undefined ? {} : { accessToken }),
+    ...(idToken === undefined ? {} : { idToken }),
+    ...(email === undefined ? {} : { email }),
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+    authState,
   };
 }
 

@@ -166,11 +166,8 @@ export function parsePastedOAuthCredential(raw: string): {
       authState: {},
     };
   }
-  // A nested `data` object is unwrapped the same way the dashboard's parser does.
-  const nested =
-    record["data"] !== null && typeof record["data"] === "object" && !Array.isArray(record["data"])
-      ? (record["data"] as Record<string, unknown>)
-      : undefined;
+  // Unwrap nested `data` or Codex CLI `tokens` envelopes alongside flat exports.
+  const nested = asRecord(record["data"]) ?? asRecord(record["tokens"]);
   const accessToken =
     firstString(record, OAUTH_ACCESS_FIELDS) ??
     (nested ? firstString(nested, OAUTH_ACCESS_FIELDS) : undefined) ??

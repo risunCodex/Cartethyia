@@ -70,6 +70,7 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
     if (typeof countBody.model !== "string" || countBody.model.trim().length === 0) {
       throw new GatewayError("invalid_request", 400, "A model is required (request {requestId}): it names the provider to count with. Check the shape of what you sent — then resend 🪞");
     }
+    state.requestedModel = countBody.model.trim();
     if (!Array.isArray(countBody.messages)) {
       throw new GatewayError("invalid_request", 400, "messages must be an array (request {requestId}) — there is nothing to count without it. Check the shape of what you sent — then resend 🪞");
     }
@@ -89,6 +90,8 @@ export function createTokenCountHandler(deps: TokenCountHandlerDeps) {
         ...(state.abortController.signal ? { signal: state.abortController.signal } : {}),
         ...(state.clientUserAgent === undefined ? {} : { clientUserAgent: state.clientUserAgent }),
       });
+      state.requestedModel = prepared.plan.requested_model;
+      state.routedModel = prepared.plan.resolved_model;
     } catch (error) {
       // Only "this model has no Messages route" falls back to estimating. A
       // model whose accounts are cooling or saturated must still answer its

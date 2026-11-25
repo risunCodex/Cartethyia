@@ -278,11 +278,12 @@ export interface ModelMetadataOverride {
   readonly warnings?: readonly ModelWarning[] | null;
 }
 
-/** Register payload: model ids plus optional operator metadata. */
+/** Register payload: model ids plus optional operator metadata and service kind. */
 export interface RegisterModelsRequest {
   readonly modelIds: readonly string[];
   readonly wireFamily?: string;
   readonly metadata?: ModelMetadataOverride;
+  readonly serviceKind?: ServiceKind;
 }
 
 /** Update payload for one existing model row. */

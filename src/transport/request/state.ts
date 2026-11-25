@@ -94,6 +94,10 @@ export interface ProxyRequestState {
   authorization?: ResolvedApiKey;
   canonicalRequest?: CanonicalRequest;
   preparedRequest?: PreparedProxyRequest;
+  /** Model requested on non-canonical/native routes (never backfilled as `"unknown"` when present). */
+  requestedModel?: string;
+  /** Resolved target model id on non-canonical/native routes. */
+  routedModel?: string;
   outcome?: ProxyRequestOutcome;
   /**
    * Payload capture for this request, stashed so a rejection that never

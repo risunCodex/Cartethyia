@@ -24,7 +24,9 @@ import type { ServiceKind } from "../../protocol/canonical-model";
 import { metrics } from "../../observability/metrics";
 import type { ProxyRequestState } from "../request/state";
 import { completeAttempt, estimatedUsage, nativeCompletionBase } from "./attempt-finalize";
+import { captureProviderExchange } from "./capture-payload";
 import { runAttemptLoop } from "./attempt-loop";
+import { repriceUsage, usageFromProvider } from "../../providers/provider-usage";
 import {
   forwardUpstreamResponse,
   hasScope,
@@ -194,6 +196,7 @@ function createNativeSurfaceHandler(
     if (typeof generation.model !== "string" || generation.model.trim().length === 0) {
       throw new GatewayError("invalid_request", 400, `A model is required (request {requestId}): it names the ${noun} provider to use. Check the shape of what you sent — then resend 🪞`);
     }
+    state.requestedModel = generation.model.trim();
     if (!hasScope(authorization?.snapshot.scopes, "routing:invoke")) {
       throw new GatewayError(
         "policy_rejected",
@@ -230,6 +233,8 @@ function createNativeSurfaceHandler(
       ...(state.abortController.signal ? { signal: state.abortController.signal } : {}),
       ...(state.clientUserAgent === undefined ? {} : { clientUserAgent: state.clientUserAgent }),
     });
+    state.requestedModel = prepared.plan.requested_model;
+    state.routedModel = prepared.plan.resolved_model;
     if (!authorization) {
       throw new GatewayError("invalid_request", 400, "authentication required (request {requestId})");
     }
@@ -282,12 +287,24 @@ function createNativeSurfaceHandler(
         const finish = async (
           response: Record<string, unknown> | ImageGenerationOutcome,
         ): Promise<Response> => {
+          // Read upstream attribution and usage from the raw response before
+          // wrapping it with `candidate.model_id`: an omitted `model` must stay
+          // undefined in telemetry rather than being backfilled from the route.
+          const rawRecord = response as Record<string, unknown>;
+          const rawModel = rawRecord["model"];
+          const reportedModel =
+            typeof rawModel === "string" && rawModel.trim().length > 0
+              ? rawModel.trim()
+              : undefined;
+          const reportedUsage = usageFromProvider(rawRecord["usage"]);
+          const usage = reportedUsage
+            ? repriceUsage(reportedUsage, candidate.provider_id, candidate.model_id)
+            : estimatedUsage(0, 0);
           const payload = {
             provider: candidate.provider_id,
             model: candidate.model_id,
             ...response,
           };
-          const usage = estimatedUsage(0, 0);
           await completeAttempt(state, {
             status: "completed",
             ...nativeCompletionBase({
@@ -306,6 +323,7 @@ function createNativeSurfaceHandler(
               ...(deps.telemetryBuffer ? { telemetryBuffer: deps.telemetryBuffer } : {}),
               ...(deps.snapshotService ? { snapshotService: deps.snapshotService } : {}),
             }),
+            ...(reportedModel === undefined ? {} : { reportedModel }),
             responseBody: payload,
           });
           metrics.proxy_requests_total.inc(1, { status: "completed" });
@@ -316,6 +334,10 @@ function createNativeSurfaceHandler(
         request.headers.forEach((value, name) => {
           inboundHeaders[name.toLowerCase()] = value;
         });
+        const baseNetwork = networkFetchContext(deps, leases.proxySlot?.poolId, authorization.tenantId);
+        const outboundFetch = baseNetwork.outbound_fetch
+          ? captureProviderExchange(baseNetwork.outbound_fetch, providerCapture)
+          : undefined;
         // Dispatch context shared by every media path below. The inbound
         // headers ride along so a buddy probe carries the same conversation
         // family a chat request does — without them the upstream answers
@@ -326,7 +348,7 @@ function createNativeSurfaceHandler(
           abort_signal: state.abortController.signal,
           request_headers: inboundHeaders,
           ...(candidate.user_agent === undefined ? {} : { user_agent: candidate.user_agent }),
-          ...networkFetchContext(deps, leases.proxySlot?.poolId, authorization.tenantId),
+          ...(outboundFetch === undefined ? {} : { outbound_fetch: outboundFetch }),
         };
         // Prefer the provider's own method for this kind; otherwise post the
         // body to the candidate's endpoint through the adapter, which owns the

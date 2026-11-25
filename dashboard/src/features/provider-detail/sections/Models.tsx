@@ -281,7 +281,17 @@ export interface AddModelProviderInfo {
    * serve a protocol the gateway carries no bundled knowledge of, so the
    * operator must be able to select any wire family. */
   readonly supportedWireFamilies?: readonly string[];
+  readonly serviceKinds?: readonly string[];
 }
+
+const MANUAL_SERVICE_KIND_OPTIONS: ReadonlyArray<{ readonly value: string; readonly label: string }> = [
+  { value: "llm", label: "LLM" },
+  { value: "embedding", label: "Embeddings" },
+  { value: "imageGeneration", label: "Image" },
+  { value: "videoGeneration", label: "Video" },
+  { value: "audioTranscription", label: "Audio Transcription" },
+  { value: "audioSpeech", label: "Audio Speech" },
+];
 
 /** Pure trim for the manual id, including the optional provider prefix. */
 export function normalizeManualModelId(providerId: string, raw: string): string {
@@ -296,17 +306,31 @@ export function normalizeManualModelId(providerId: string, raw: string): string 
 function ManualAddModelForm({
   providerId,
   provider,
+  defaultServiceKind = "llm",
   onClose,
   onSwitchToProvider,
 }: {
   readonly providerId: string;
   readonly provider?: AddModelProviderInfo;
+  readonly defaultServiceKind?: string;
   readonly onClose: () => void;
   readonly onSwitchToProvider?: () => void;
 }): ReactNode {
   const probe = useProbeModel();
   const register = useRegisterProviderModels();
   const [modelId, setModelId] = useState("");
+  const serviceKindOptions = useMemo(() => {
+    const allowed = provider?.serviceKinds;
+    if (!allowed || allowed.length === 0) return MANUAL_SERVICE_KIND_OPTIONS;
+    return MANUAL_SERVICE_KIND_OPTIONS.filter(
+      (option) => allowed.includes(option.value) || option.value === defaultServiceKind,
+    );
+  }, [provider?.serviceKinds, defaultServiceKind]);
+  const [serviceKind, setServiceKind] = useState(
+    MANUAL_SERVICE_KIND_OPTIONS.some((option) => option.value === defaultServiceKind)
+      ? defaultServiceKind
+      : "llm",
+  );
   // The full vocabulary is always selectable, with the provider's declared
   // families offered first so the sensible choice is the default one. Locking
   // the list to the derived set made a manually added provider unable to reach
@@ -374,6 +398,27 @@ function ManualAddModelForm({
 
   const handleAdd = () => {
     if (!normalized) return;
+    if (serviceKind !== "llm") {
+      register.mutate(
+        {
+          providerId,
+          modelIds: [normalized],
+          serviceKind,
+        },
+        {
+          onSuccess: () => {
+            toast.success("Custom model added", `Sent to ${providerId}/${normalized}`);
+            onClose();
+          },
+          onError: (err) =>
+            toast.error(
+              "Failed to add model",
+              (err as { message?: string }).message ?? "Unable to register model",
+            ),
+        },
+      );
+      return;
+    }
     const contextLimit = parseTokenInput(draft.contextLimit);
     const outputLimit = parseTokenInput(draft.outputLimit);
     // Refuse unreadable input rather than persisting a wrong ceiling: a context
@@ -430,7 +475,7 @@ function ManualAddModelForm({
           <Input
             label="Model ID"
             autoFocus
-            placeholder="e.g. gpt-4o, free-model-id"
+            placeholder={serviceKind === "embedding" ? "e.g. text-embedding-3-small" : "e.g. gpt-4o, free-model-id"}
             value={modelId}
             onChange={(event) => {
               setModelId(event.target.value);
@@ -438,26 +483,28 @@ function ManualAddModelForm({
               setTestError("");
             }}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && normalized.length > 0) runTest();
+              if (event.key === "Enter" && normalized.length > 0 && serviceKind === "llm") runTest();
             }}
             className="flex-1"
           />
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={
-              testState === "testing" ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <FlaskConical size={13} />
-              )
-            }
-            disabled={probe.isPending || normalized.length === 0}
-            onClick={runTest}
-            className="shrink-0"
-          >
-            {testState === "testing" ? "Testing..." : "Test"}
-          </Button>
+          {serviceKind === "llm" ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={
+                testState === "testing" ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <FlaskConical size={13} />
+                )
+              }
+              disabled={probe.isPending || normalized.length === 0}
+              onClick={runTest}
+              className="shrink-0"
+            >
+              {testState === "testing" ? "Testing..." : "Test"}
+            </Button>
+          ) : null}
         </Inline>
         {wasPrefixed && (
           <div className="mt-1 text-badge text-text-tertiary">
@@ -465,50 +512,67 @@ function ManualAddModelForm({
             prefix removed).
           </div>
         )}
-        <Select
-          label="Wire family"
-          id="add-model-wire-family"
-          value={wireFamily}
-          onValueChange={(value) => {
-            setWireFamily(value);
-            setTestState("idle");
-            setTestError("");
-          }}
-          options={wireOptions.map((value) => ({ value, label: wireLabel(value) }))}
-        />
-        <div>
-          <div
-            className="text-badge font-semibold text-text-secondary mb-2"
-          >
-            Thinking
-          </div>
-          <ThinkingSelect
-            id="add-model-thinking-effort"
-            value={thinking}
-            onChange={(next) => {
-              setThinking(next);
+        {serviceKindOptions.length > 1 ? (
+          <Select
+            label="Service kind"
+            id="add-model-service-kind"
+            value={serviceKind}
+            onValueChange={(value) => {
+              setServiceKind(value);
               setTestState("idle");
               setTestError("");
             }}
-            disabled={probe.isPending}
+            options={serviceKindOptions}
           />
-          <div className="text-badge text-text-tertiary mt-2">
-            Sent with the test. Auto leaves the model's own reasoning default in place.
-          </div>
-        </div>
-        <ModelMetadataFields
-          draft={draft}
-          onChange={setDraft}
-          idPrefix="add-model"
-          disabled={register.isPending}
-        />
-        {declaredWires !== undefined && !declaredWires.includes(wireFamily) && (
-          <div className="mt-1 text-badge text-text-tertiary">
-            This provider does not declare the{" "}
-            <span className="font-mono tabular-nums">{wireLabel(wireFamily)}</span> wire.
-            The request is sent as chosen; the upstream decides whether it answers.
-          </div>
-        )}
+        ) : null}
+        {serviceKind === "llm" ? (
+          <>
+            <Select
+              label="Wire family"
+              id="add-model-wire-family"
+              value={wireFamily}
+              onValueChange={(value) => {
+                setWireFamily(value);
+                setTestState("idle");
+                setTestError("");
+              }}
+              options={wireOptions.map((value) => ({ value, label: wireLabel(value) }))}
+            />
+            <div>
+              <div
+                className="text-badge font-semibold text-text-secondary mb-2"
+              >
+                Thinking
+              </div>
+              <ThinkingSelect
+                id="add-model-thinking-effort"
+                value={thinking}
+                onChange={(next) => {
+                  setThinking(next);
+                  setTestState("idle");
+                  setTestError("");
+                }}
+                disabled={probe.isPending}
+              />
+              <div className="text-badge text-text-tertiary mt-2">
+                Sent with the test. Auto leaves the model's own reasoning default in place.
+              </div>
+            </div>
+            <ModelMetadataFields
+              draft={draft}
+              onChange={setDraft}
+              idPrefix="add-model"
+              disabled={register.isPending}
+            />
+            {declaredWires !== undefined && !declaredWires.includes(wireFamily) && (
+              <div className="mt-1 text-badge text-text-tertiary">
+                This provider does not declare the{" "}
+                <span className="font-mono tabular-nums">{wireLabel(wireFamily)}</span> wire.
+                The request is sent as chosen; the upstream decides whether it answers.
+              </div>
+            )}
+          </>
+        ) : null}
         {testState === "passed" && (
           <Banner tone="success" live="status">
             Model test passed — ready to add.
@@ -742,20 +806,28 @@ function ProviderAddModelPanel({
 export function AddModelModal({
   providerId,
   provider,
+  defaultServiceKind = "llm",
   onClose,
 }: {
   readonly providerId: string;
   readonly provider?: AddModelProviderInfo;
+  readonly defaultServiceKind?: string;
   readonly onClose: () => void;
 }): ReactNode {
-  const [manual, setManual] = useState(provider?.supportsModelDiscovery === false);
+  const [manual, setManual] = useState(
+    provider?.supportsModelDiscovery === false ||
+      (defaultServiceKind !== undefined && defaultServiceKind !== "llm"),
+  );
   if (manual) {
     return (
       <ManualAddModelForm
         providerId={providerId}
         provider={provider}
+        defaultServiceKind={defaultServiceKind}
         onClose={onClose}
-        onSwitchToProvider={() => setManual(false)}
+        onSwitchToProvider={
+          provider?.supportsModelDiscovery === false ? undefined : () => setManual(false)
+        }
       />
     );
   }

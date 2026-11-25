@@ -60,7 +60,7 @@ const statePath = (): string => join(configDir, "tray-state.json");
 
 /** A pid that is certainly gone: a child that has already exited. */
 async function deadPid(): Promise<number> {
-  const child = Bun.spawn(["true"], { stdout: "ignore", stderr: "ignore" });
+  const child = Bun.spawn([process.execPath, "-e", ""], { stdout: "ignore", stderr: "ignore" });
   await child.exited;
   return child.pid;
 }
@@ -73,7 +73,9 @@ test("a request is written with the documented shape and owner-only permissions"
   expect(typeof written.nonce).toBe("string");
   expect((written.nonce as string).length).toBeGreaterThan(0);
   expect(Number.isNaN(Date.parse(String(written.requestedAt)))).toBe(false);
-  expect(statSync(requestPath()).mode & 0o777).toBe(0o600);
+  if (process.platform !== "win32") {
+    expect(statSync(requestPath()).mode & 0o777).toBe(0o600);
+  }
 });
 
 test("a request is consumed exactly once and then gone", () => {
@@ -169,7 +171,9 @@ test("writing the icon state also records it as the preference, owner-only", () 
   const preference = readTrayPreference();
   expect(preference?.hidden).toBe(true);
   expect(Number.isNaN(Date.parse(String(preference?.updatedAt)))).toBe(false);
-  expect(statSync(preferencePath()).mode & 0o777).toBe(0o600);
+  if (process.platform !== "win32") {
+    expect(statSync(preferencePath()).mode & 0o777).toBe(0o600);
+  }
 });
 
 test("the preference outlives the state record it was written with", () => {
@@ -310,7 +314,7 @@ function unixTray(
         exitCount += 1;
       },
     },
-    { createUnixHelper: harness.factory },
+    { createUnixHelper: harness.factory, platform: "linux" },
   );
   return { tray, selected, exits: () => exitCount };
 }

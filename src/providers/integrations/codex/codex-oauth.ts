@@ -1,5 +1,6 @@
 import {
   decodeJwtPayload,
+  parseImportedOAuthMaterial,
   postFormTokenRequest,
   InMemoryOAuthFlowStore,
   OAuthFlowStore,
@@ -9,6 +10,7 @@ import {
   type OAuthDeviceStartResult,
   type OAuthExchangeResult,
   type OAuthFlowStorage,
+  type OAuthImportInput,
 } from "../../authentication/oauth-flow-store";
 import type { OAuthTokenRefreshResult } from "../../authentication/oauth-refresh-service";
 import { OAuthDeviceFlow } from "../../authentication/oauth-device-flow";
@@ -252,6 +254,50 @@ export class CodexOAuthClient extends OAuthDeviceFlow {
     // again.
     await store.deleteDeviceState(deviceAuthId);
     return { status: "complete", result };
+  }
+
+  /**
+   * Imports an existing Codex OAuth export (flat JSON, `{ tokens: ... }` CLI
+   * auth file, or a bare refresh token). A still-valid access token with a
+   * ChatGPT account claim is persisted without spending a refresh rotation;
+   * expired or refresh-only imports exchange against OpenAI first.
+   */
+  async importCredential(input: OAuthImportInput): Promise<OAuthExchangeResult> {
+    const parsed = parseImportedOAuthMaterial(input.credential, "Codex");
+    const authStateFields =
+      Object.keys(parsed.authState).length > 0 ? { auth_state: parsed.authState } : {};
+    if (
+      parsed.accessToken !== undefined &&
+      parsed.expiresAt !== undefined &&
+      parsed.expiresAt.getTime() > Date.now() + 60_000
+    ) {
+      const profile = tokenProfile(parsed.accessToken, parsed.idToken);
+      if (profile.accountId) {
+        const resolvedEmail = profile.email ?? parsed.email;
+        return {
+          access: parsed.accessToken,
+          refresh: parsed.refreshToken,
+          expiresAt: parsed.expiresAt,
+          ...(resolvedEmail
+            ? { accountLabel: resolvedEmail, accountEmail: resolvedEmail }
+            : {}),
+          ...authStateFields,
+        };
+      }
+    }
+    const refreshed = await this.refresh(parsed.refreshToken);
+    const profile = tokenProfile(refreshed.access, parsed.idToken);
+    if (!profile.accountId) {
+      throw new Error("Codex token response omitted a valid account identity");
+    }
+    const resolvedEmail = profile.email ?? parsed.email;
+    return {
+      access: refreshed.access,
+      refresh: refreshed.refresh ?? parsed.refreshToken,
+      expiresAt: refreshed.expiresAt,
+      ...(resolvedEmail ? { accountLabel: resolvedEmail, accountEmail: resolvedEmail } : {}),
+      ...authStateFields,
+    };
   }
 
   override async refresh(refreshToken: string, signal?: AbortSignal): Promise<OAuthTokenRefreshResult> {

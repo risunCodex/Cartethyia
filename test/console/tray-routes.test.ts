@@ -129,7 +129,7 @@ test("status reports the running tray and its visibility", async () => {
 });
 
 test("status treats a dead pid as no tray rather than an icon that is not there", async () => {
-  const child = Bun.spawn(["true"], { stdout: "ignore", stderr: "ignore" });
+  const child = Bun.spawn([process.execPath, "-e", ""], { stdout: "ignore", stderr: "ignore" });
   await child.exited;
   writeTrayState({ pid: child.pid, hidden: true });
 

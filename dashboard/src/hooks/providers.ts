@@ -94,9 +94,10 @@ export function useRegisterProviderModels() {
       modelIds: readonly string[];
       wireFamily?: string;
       metadata?: ModelMetadataPayload;
+      serviceKind?: string;
     }
   >({
-    mutationFn: ({ providerId, modelIds, wireFamily, metadata }) =>
+    mutationFn: ({ providerId, modelIds, wireFamily, metadata, serviceKind }) =>
       consoleRequest<{ registered: number }>(
         `/providers/${encodeURIComponent(providerId)}/models`,
         {
@@ -105,6 +106,7 @@ export function useRegisterProviderModels() {
             modelIds,
             ...(wireFamily ? { wireFamily } : {}),
             ...(metadata ? { metadata } : {}),
+            ...(serviceKind ? { serviceKind } : {}),
           }),
         },
       ),

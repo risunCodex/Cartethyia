@@ -7,6 +7,7 @@
 // - account writes: `store-account-mutations.ts`
 // - pool-as-account reads: `store-pool-accounts.ts`
 // - account health / bulk actions: `store-operations.ts`
+import type { ServiceKind } from "../../../protocol/canonical-model";
 import type { TelemetryBatchBuffer } from "../../../observability/telemetry-buffer";
 import type { RedisClient } from "../../../persistence/redis";
 import type { CartethyiaDatabase } from "../../../persistence/db-handle";
@@ -41,6 +42,7 @@ import { ProviderProbingService, type ProbeOutboundResolver } from "../../../pro
 import { DEFAULT_ENDPOINT_BY_WIRE_FAMILY } from "./catalog-projections";
 import type { StoreAccountContext, StoreModelContext, StoreOperationsContext, StoreProviderContext } from "./store-contexts";
 import {
+  getGlobalAccount,
   getOwnedAccount,
   listAccountAuthStates,
   listAccountIds,
@@ -216,8 +218,17 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
     modelIds: readonly string[],
     wireFamily?: string,
     metadata?: ModelMetadataOverride,
+    serviceKind?: ServiceKind,
   ): Promise<void> {
-    return registerModels(this.modelCtx, tenantId, providerId, modelIds, wireFamily, metadata);
+    return registerModels(
+      this.modelCtx,
+      tenantId,
+      providerId,
+      modelIds,
+      wireFamily,
+      metadata,
+      serviceKind,
+    );
   }
 
   /** One-shot connectivity probe and model discovery; see `store-model-operations.ts`. */
@@ -329,6 +340,13 @@ export class DrizzleProviderCatalogStore implements ProviderCatalogStore {
     accountId: string,
   ): Promise<OwnedProviderAccountRef | undefined> {
     return getOwnedAccount(this.accountCtx, tenantId, providerId, accountId);
+  }
+
+  async getGlobalAccount(
+    providerId: string,
+    accountId: string,
+  ): Promise<OwnedProviderAccountRef | undefined> {
+    return getGlobalAccount(this.accountCtx, providerId, accountId);
   }
 
   async listAllAccounts(tenantId: string): Promise<readonly ProviderAccountResponse[]> {

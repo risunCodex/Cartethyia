@@ -133,6 +133,7 @@ const registerModelsBody = t.Object({
   modelIds: t.Array(t.String()),
   wireFamily: t.Optional(t.String()),
   metadata: t.Optional(modelMetadataOverrideBody),
+  serviceKind: t.Optional(literalUnion(SERVICE_KINDS)),
 });
 const discoverCommitBody = t.Object({
   modelIds: t.Array(t.String(), { minItems: 1 }),
@@ -223,6 +224,16 @@ export function createProviderCatalogRoutes(config: ProviderCatalogConfig): AnyE
         params.providerId,
       );
 })
+    .post(
+      "/platform/global/:providerId/accounts/:accountId/refresh-token",
+      async ({ request, params }) => {
+        return await factory.refreshGlobalAccountToken(
+          config.accessResolver(request),
+          params.providerId,
+          params.accountId,
+        );
+      },
+    )
     .get("/models/flat", async ({ request }) => {
       return await modelFactory.listFlatModels(config.accessResolver(request));
 })
@@ -284,6 +295,7 @@ export function createProviderCatalogRoutes(config: ProviderCatalogConfig): AnyE
           b.modelIds,
           b.wireFamily,
           b.metadata,
+          b.serviceKind,
         );
 },
     )

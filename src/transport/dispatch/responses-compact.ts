@@ -45,6 +45,7 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
     // Stripping keeps a client that appends the suffix to every request working
     // here instead of failing with a misleading model-not-found.
     const { bareModel: compactModel, body: compactBody } = stripThinkingSuffix(compact.model, compact);
+    state.requestedModel = compactModel;
     if (!(typeof compact.input === "string" || Array.isArray(compact.input)))
       throw new GatewayError("invalid_request", 400, "input must be a string or array (request {requestId}). Check the shape of what you sent — then resend 🪞");
     if ("instructions" in compact && typeof compact.instructions !== "string")
@@ -64,6 +65,8 @@ export function createResponsesCompactHandler(deps: ResponsesCompactHandlerDeps)
       signal: state.abortController.signal,
       ...(state.clientUserAgent === undefined ? {} : { clientUserAgent: state.clientUserAgent }),
     });
+    state.requestedModel = prepared.plan.requested_model;
+    state.routedModel = prepared.plan.resolved_model;
     return runAttemptLoop<Response, CodexCompactAdapter>({
       state,
       deps,

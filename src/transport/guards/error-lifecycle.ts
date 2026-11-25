@@ -227,6 +227,8 @@ export function finalizeRequestTelemetry(
   const status = state.outcome?.status ?? "failed";
   const requestStatus =
     state.outcome?.httpStatus ?? (status === "completed" ? 200 : status === "cancelled" ? 499 : 500);
+  const resolvedRequestedModel = requestedModelFor(state);
+  const resolvedRoutedModel = state.preparedRequest?.plan.resolved_model ?? state.routedModel;
   pushStructuredConsoleLog(
     terminalLogLevel(status),
     terminalLogMessage(status),
@@ -234,8 +236,8 @@ export function finalizeRequestTelemetry(
       status,
       requestStatus,
       latencyMs,
-      requestedModel: requestData?.model,
-      routedModel: state.preparedRequest?.plan.resolved_model,
+      requestedModel: resolvedRequestedModel,
+      routedModel: resolvedRoutedModel,
     }),
   );
 
@@ -253,7 +255,13 @@ export function finalizeRequestTelemetry(
   // case an operator most wants to read (what did the client actually send?)
   // would have nothing to read. Capture the ingress body and the error the
   // client saw, keyed to the same request id as the row.
-  if (requestData === undefined && state.ingressBody !== undefined) {
+  // Native/passthrough dispatches have no `canonicalRequest`, so guard on an
+  // absent `outcome.providerId` to avoid overwriting a terminal attempt capture.
+  if (
+    requestData === undefined &&
+    state.outcome?.providerId === undefined &&
+    state.ingressBody !== undefined
+  ) {
     // `deps.db` so the helper resolves the tenant's capture mode through the
     // same preference path every dispatched request uses — without it, an
     // early rejection captured bodies with the deployment default regardless
@@ -331,6 +339,20 @@ function requestLogMetadata(
   };
 }
 
+/** Resolves the requested model from canonical state, native route state, or ingress JSON body. */
+function requestedModelFor(state: ProxyRequestState): string | undefined {
+  if (state.canonicalRequest?.model) return state.canonicalRequest.model;
+  if (state.requestedModel && state.requestedModel.trim().length > 0) {
+    return state.requestedModel.trim();
+  }
+  const body = state.ingressBody;
+  if (body !== null && typeof body === "object" && !Array.isArray(body)) {
+    const raw = (body as Record<string, unknown>)["model"];
+    if (typeof raw === "string" && raw.trim().length > 0) return raw.trim();
+  }
+  return undefined;
+}
+
 /**
  * The durable telemetry row for one request. Read off the same state the
  * console log uses, so a streamed request and a buffered one report an
@@ -358,7 +380,7 @@ function requestTelemetryEvent(
     tenantId: authorization.tenantId,
     requestId: state.requestId,
     sourceSurface: requestData?.source_surface ?? "chat",
-    requestedModel: requestData?.model ?? "unknown",
+    requestedModel: requestedModelFor(state) ?? "unknown",
     ...(requestedEffort === undefined ? {} : { requestedEffort }),
     ...(state.ingressPath ? { endpoint: state.ingressPath } : {}),
     ...(authorization.id ? { apiKeyId: authorization.id } : {}),

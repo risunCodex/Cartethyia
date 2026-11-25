@@ -9,6 +9,7 @@
  */
 import {
   ConsoleDomainError,
+  requireGlobalAdmin,
   requireTenantAnyScope,
   requireTenantScope,
 } from "../../shared/errors";
@@ -51,6 +52,44 @@ function queueNewAccountCheckin(
 }
 
 export function createProviderAccountOperations(config: ProviderCatalogConfig) {
+  async function executeAccountTokenRefresh(
+    access: AccessDecision,
+    providerId: string,
+    accountId: string,
+    target: { readonly staticToken: boolean; readonly credentialKind: string },
+  ): Promise<RefreshAccountTokenResponse> {
+    // 409 for a static token (nothing to re-mint), 400 for non-OAuth —
+    // before calling the refresher, so the row is never touched on a
+    // rejectable request.
+    if (target.staticToken)
+      throw new ConsoleDomainError("static_token", 409, "Account carries a static token that cannot be refreshed");
+    if (target.credentialKind !== "oauth")
+      throw new ConsoleDomainError("not_oauth", 400, "Account is not OAuth; token refresh is not applicable");
+    if (!config.refreshAccountStatus)
+      throw new ConsoleDomainError("refresh_unavailable", 501, "Token refresh is not configured on this host");
+    const outcome = await config.refreshAccountStatus(accountId, { origin: "ui" });
+    await config.auditSink?.record({
+      access,
+      action: "provider_account.token_refreshed",
+      target: accountId,
+      detail: {
+        providerId,
+        ok: outcome.ok,
+        statusAfter: outcome.statusAfter,
+        ...pickDefined({ error: outcome.error }),
+      },
+    });
+    await config.snapshotInvalidator?.invalidate();
+    return {
+      ok: outcome.ok,
+      statusAfter: outcome.statusAfter,
+      ...(outcome.tokenRefreshed ? { tokenRefreshed: true } : {}),
+      ...pickDefined({ expiresAt: outcome.expiresAt }),
+      ...pickDefined({ refreshedAt: outcome.refreshedAt }),
+      ...pickDefined({ error: outcome.error }),
+      ...pickDefined({ category: outcome.category }),
+    };
+  }
   const operations = {
     async listAccounts(
         access: AccessDecision | undefined,
@@ -312,43 +351,27 @@ export function createProviderAccountOperations(config: ProviderCatalogConfig) {
         // The refresh changes no routing state and is a per-account operator
         // action, so the browser session's own write scope is sufficient.
         const a = requireTenantScope(access, "dashboard:write");
-        // 404 unless the account exists and belongs to this provider/tenant.
-        // Owned-only: a shared/global row must never satisfy a tenant's
-        // refresh, matching the `tenantId === a.tenantId` check this replaced.
-        const owned = await config.store.getOwnedAccount(a.tenantId, providerId, accountId);
-        if (!owned)
+        // Owned accounts belong to the caller's tenant; platform admins may
+        // also refresh shared/global (`tenant_id IS NULL`) accounts.
+        const target =
+          (await config.store.getOwnedAccount(a.tenantId, providerId, accountId)) ??
+          (a.scopes.includes("platform:admin")
+            ? await config.store.getGlobalAccount(providerId, accountId)
+            : undefined);
+        if (!target)
           throw new ConsoleDomainError("account_not_found", 404, `Account ${accountId} not found`);
-        // 409 for a static token (nothing to re-mint), 400 for non-OAuth —
-        // before calling the refresher, so the row is never touched on a
-        // rejectable request.
-        if (owned.staticToken)
-          throw new ConsoleDomainError("static_token", 409, "Account carries a static token that cannot be refreshed");
-        if (owned.credentialKind !== "oauth")
-          throw new ConsoleDomainError("not_oauth", 400, "Account is not OAuth; token refresh is not applicable");
-        if (!config.refreshAccountStatus)
-          throw new ConsoleDomainError("refresh_unavailable", 501, "Token refresh is not configured on this host");
-        const outcome = await config.refreshAccountStatus(accountId, { origin: "ui" });
-        await config.auditSink?.record({
-          access: a,
-          action: "provider_account.token_refreshed",
-          target: accountId,
-          detail: {
-            providerId,
-            ok: outcome.ok,
-            statusAfter: outcome.statusAfter,
-            ...pickDefined({ error: outcome.error }),
-          },
-        });
-        await config.snapshotInvalidator?.invalidate();
-        return {
-          ok: outcome.ok,
-          statusAfter: outcome.statusAfter,
-          ...(outcome.tokenRefreshed ? { tokenRefreshed: true } : {}),
-          ...pickDefined({ expiresAt: outcome.expiresAt }),
-          ...pickDefined({ refreshedAt: outcome.refreshedAt }),
-          ...pickDefined({ error: outcome.error }),
-          ...pickDefined({ category: outcome.category }),
-        };
+        return executeAccountTokenRefresh(a, providerId, accountId, target);
+      },
+    async refreshGlobalAccountToken(
+        access: AccessDecision | undefined,
+        providerId: string,
+        accountId: string,
+      ): Promise<RefreshAccountTokenResponse> {
+        const a = requireGlobalAdmin(access);
+        const target = await config.store.getGlobalAccount(providerId, accountId);
+        if (!target)
+          throw new ConsoleDomainError("account_not_found", 404, `Account ${accountId} not found`);
+        return executeAccountTokenRefresh(a, providerId, accountId, target);
       },
     /**
      * Exports the requested accounts with their decrypted credentials.

@@ -67,13 +67,23 @@ import {
 import { PROBE_REASONING_EFFORTS, type ModelProbeMode, type ProbeReasoningEffort } from "../../data/contracts";
 import { useRuntimeSettings } from "../../hooks/settings";
 
-type DashboardServiceKind = "llm" | "websearch" | "imageGeneration" | "videoGeneration";
+type DashboardServiceKind =
+  | "llm"
+  | "websearch"
+  | "imageGeneration"
+  | "videoGeneration"
+  | "embedding"
+  | "audioTranscription"
+  | "audioSpeech";
 
 function serviceLabel(serviceKind: string): string {
   if (serviceKind === "llm") return "LLM";
   if (serviceKind === "websearch") return "Search";
   if (serviceKind === "imageGeneration") return "Image";
   if (serviceKind === "videoGeneration") return "Video";
+  if (serviceKind === "embedding") return "Embeddings";
+  if (serviceKind === "audioTranscription") return "Audio Transcription";
+  if (serviceKind === "audioSpeech") return "Audio Speech";
   return serviceKind;
 }
 
@@ -90,7 +100,10 @@ export default function ProviderDetail(): ReactNode {
   const initialService: DashboardServiceKind =
     requestedService === "websearch" ||
     requestedService === "imageGeneration" ||
-    requestedService === "videoGeneration"
+    requestedService === "videoGeneration" ||
+    requestedService === "embedding" ||
+    requestedService === "audioTranscription" ||
+    requestedService === "audioSpeech"
       ? requestedService
       : "llm";
   const [selectedService, setSelectedService] = useState<DashboardServiceKind>(initialService);
@@ -205,7 +218,10 @@ export default function ProviderDetail(): ReactNode {
       kind === "llm" ||
       kind === "websearch" ||
       kind === "imageGeneration" ||
-      kind === "videoGeneration"
+      kind === "videoGeneration" ||
+      kind === "embedding" ||
+      kind === "audioTranscription" ||
+      kind === "audioSpeech"
     ) {
       supportedServiceKinds.push(kind);
     }
@@ -216,6 +232,9 @@ export default function ProviderDetail(): ReactNode {
       requestedService === "websearch" ||
       requestedService === "imageGeneration" ||
       requestedService === "videoGeneration" ||
+      requestedService === "embedding" ||
+      requestedService === "audioTranscription" ||
+      requestedService === "audioSpeech" ||
       requestedService === "llm"
         ? requestedService
         : undefined;
@@ -269,6 +288,9 @@ export default function ProviderDetail(): ReactNode {
   const searchModels = stableModels.filter((model) => model.serviceKind === "websearch");
   const imageModels = stableModels.filter((model) => model.serviceKind === "imageGeneration");
   const videoModels = stableModels.filter((model) => model.serviceKind === "videoGeneration");
+  const embeddingModels = stableModels.filter((model) => model.serviceKind === "embedding");
+  const audioTranscriptionModels = stableModels.filter((model) => model.serviceKind === "audioTranscription");
+  const audioSpeechModels = stableModels.filter((model) => model.serviceKind === "audioSpeech");
   const activeService = supportedServiceKinds.includes(selectedService)
     ? selectedService
     : supportedServiceKinds[0];
@@ -899,41 +921,83 @@ export default function ProviderDetail(): ReactNode {
             )}
           </CardBody>
         </Card>
-      ) : activeService === "imageGeneration" || activeService === "videoGeneration" ? (
-        <Card>
-          <CardHeader
-            title={serviceLabel(activeService)}
-            subtitle={
-              activeService === "imageGeneration"
-                ? "Models that return an image rather than text."
-                : "Models that return a video. Wired and routable; not yet verified against a live account."
-            }
-            icon={activeService === "imageGeneration" ? <ImageIcon size={16} /> : <Video size={16} />}
-          />
-          <CardBody className="flex flex-col gap-6">
-            {modelsQuery.isPending ? (
-              <LoadingState label={`Loading ${serviceLabel(activeService).toLowerCase()} models...`} />
-            ) : modelsQuery.isError ? (
-              <ErrorState
-                message={`Failed to load ${serviceLabel(activeService).toLowerCase()} models`}
-                onRetry={() => modelsQuery.refetch()}
-              />
-            ) : (activeService === "imageGeneration" ? imageModels : videoModels).length === 0 ? (
-              <EmptyState
-                title={`No ${serviceLabel(activeService)} models found`}
-                message={`This provider advertises ${serviceLabel(activeService)}, but no ${activeService} model is registered yet.`}
-              />
+      ) : activeService === "imageGeneration" ||
+        activeService === "videoGeneration" ||
+        activeService === "embedding" ||
+        activeService === "audioTranscription" ||
+        activeService === "audioSpeech" ? (
+        (() => {
+          const serviceModels =
+            activeService === "imageGeneration"
+              ? imageModels
+              : activeService === "videoGeneration"
+                ? videoModels
+                : activeService === "embedding"
+                  ? embeddingModels
+                  : activeService === "audioTranscription"
+                    ? audioTranscriptionModels
+                    : audioSpeechModels;
+          const subtitle =
+            activeService === "imageGeneration"
+              ? "Models that return an image rather than text."
+              : activeService === "videoGeneration"
+                ? "Models that return a video. Wired and routable; not yet verified against a live account."
+                : activeService === "embedding"
+                  ? "Models served by /v1/embeddings passthrough."
+                  : activeService === "audioTranscription"
+                    ? "Models served by /v1/audio/transcriptions."
+                    : "Models served by /v1/audio/speech.";
+          const icon =
+            activeService === "imageGeneration" ? (
+              <ImageIcon size={16} />
+            ) : activeService === "videoGeneration" ? (
+              <Video size={16} />
             ) : (
-              <ModelGrid
-                providerId={id}
-                models={activeService === "imageGeneration" ? imageModels : videoModels}
-                serviceKind="llm"
-                searchCapable={false}
-                thinkingEffort="auto"
+              <Boxes size={16} />
+            );
+          return (
+            <Card>
+              <CardHeader
+                title={serviceLabel(activeService)}
+                subtitle={subtitle}
+                icon={icon}
+                action={
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={<Plus size={13} />}
+                    onClick={() => setAddModelOpen(true)}
+                  >
+                    Add Model
+                  </Button>
+                }
               />
-            )}
-          </CardBody>
-        </Card>
+              <CardBody className="flex flex-col gap-6">
+                {modelsQuery.isPending ? (
+                  <LoadingState label={`Loading ${serviceLabel(activeService).toLowerCase()} models...`} />
+                ) : modelsQuery.isError ? (
+                  <ErrorState
+                    message={`Failed to load ${serviceLabel(activeService).toLowerCase()} models`}
+                    onRetry={() => modelsQuery.refetch()}
+                  />
+                ) : serviceModels.length === 0 ? (
+                  <EmptyState
+                    title={`No ${serviceLabel(activeService)} models found`}
+                    message={`This provider advertises ${serviceLabel(activeService)}, but no ${activeService} model is registered yet.`}
+                  />
+                ) : (
+                  <ModelGrid
+                    providerId={id}
+                    models={serviceModels}
+                    serviceKind="llm"
+                    searchCapable={false}
+                    thinkingEffort="auto"
+                  />
+                )}
+              </CardBody>
+            </Card>
+          );
+        })()
       ) : (
         <Card>
           <CardBody>
@@ -952,8 +1016,13 @@ export default function ProviderDetail(): ReactNode {
           onClose={() => setAddAccountOpen(false)}
         />
       )}
-      {activeService === "llm" && addModelOpen ? (
-        <AddModelModal providerId={id} provider={provider} onClose={() => setAddModelOpen(false)} />
+      {addModelOpen ? (
+        <AddModelModal
+          providerId={id}
+          provider={provider}
+          defaultServiceKind={activeService ?? "llm"}
+          onClose={() => setAddModelOpen(false)}
+        />
       ) : null}
       <ConfirmDialog
         open={deleteTarget !== null}

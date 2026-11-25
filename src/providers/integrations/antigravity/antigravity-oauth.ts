@@ -3,9 +3,13 @@
  * The client uses a dedicated Google OAuth application with Cloud Platform,
  * userinfo, cclog, and experiments/configuration scopes.
  */
-import { postFormTokenRequest } from "../../authentication/oauth-flow-store";
-import { readJsonResponse } from "../../authentication/oauth-flow-store";
-import type { OAuthExchangeResult } from "../../authentication/oauth-flow-store";
+import {
+  parseImportedOAuthMaterial,
+  postFormTokenRequest,
+  readJsonResponse,
+  type OAuthExchangeResult,
+  type OAuthImportInput,
+} from "../../authentication/oauth-flow-store";
 import type { OAuthTokenRefreshResult } from "../../authentication/oauth-refresh-service";
 import { OAuthClient, type FetchLike } from "../../authentication/oauth-client";
 import { discoverAntigravityProject } from "./antigravity-protocol";
@@ -180,6 +184,50 @@ export class AntigravityOAuthClient extends OAuthClient {
     _state?: string,
   ): Promise<OAuthExchangeResult> {
     return exchangeCodeForToken(code, codeVerifier, redirectUri, this.fetchFn);
+  }
+
+  /**
+   * Imports an existing Antigravity Google OAuth export or bare refresh token.
+   * When a still-valid access token is supplied, preserves it directly without
+   * spending a refresh round trip; otherwise refreshes against Google OAuth and
+   * warms the Cloud Code project cache best-effort.
+   */
+  async importCredential(input: OAuthImportInput): Promise<OAuthExchangeResult> {
+    const parsed = parseImportedOAuthMaterial(input.credential, "Antigravity");
+    const authStateFields =
+      Object.keys(parsed.authState).length > 0 ? { auth_state: parsed.authState } : {};
+    if (
+      parsed.accessToken !== undefined &&
+      parsed.expiresAt !== undefined &&
+      parsed.expiresAt.getTime() > Date.now() + 60_000
+    ) {
+      const resolvedEmail =
+        parsed.email ?? (await fetchUserinfoEmail(parsed.accessToken, this.fetchFn));
+      return {
+        access: parsed.accessToken,
+        refresh: parsed.refreshToken,
+        expiresAt: parsed.expiresAt,
+        ...(resolvedEmail ? { accountLabel: resolvedEmail, accountEmail: resolvedEmail } : {}),
+        ...authStateFields,
+      };
+    }
+    const refreshed = await this.refresh(parsed.refreshToken);
+    const resolvedEmail =
+      parsed.email ?? (await fetchUserinfoEmail(refreshed.access, this.fetchFn));
+    try {
+      await discoverAntigravityProject(refreshed.access, { fetcher: this.fetchFn });
+    } catch (error) {
+      log.warn(
+        `[oauth] antigravity project warmup skipped: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return {
+      access: refreshed.access,
+      refresh: refreshed.refresh ?? parsed.refreshToken,
+      expiresAt: refreshed.expiresAt,
+      ...(resolvedEmail ? { accountLabel: resolvedEmail, accountEmail: resolvedEmail } : {}),
+      ...authStateFields,
+    };
   }
 
   override async refresh(refreshToken: string, signal?: AbortSignal): Promise<OAuthTokenRefreshResult> {

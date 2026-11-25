@@ -48,6 +48,7 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
     // id. The level itself is dropped — a decision request carries no reasoning
     // effort to shape, and the body is passed upstream verbatim.
     const { bareModel, body: decisionBody } = stripThinkingSuffix(decision.model, decision);
+    state.requestedModel = bareModel;
     // Trust boundary only: the decision model's own question shapes are
     // upstream's to validate. `state` and a `questions` object are what make a
     // System One request a System One request at all.
@@ -67,6 +68,8 @@ export function createSystemoneHandler(deps: SystemoneHandlerDeps) {
       ...(state.abortController.signal ? { signal: state.abortController.signal } : {}),
       ...(state.clientUserAgent === undefined ? {} : { clientUserAgent: state.clientUserAgent }),
     });
+    state.requestedModel = prepared.plan.requested_model;
+    state.routedModel = prepared.plan.resolved_model;
     return runAttemptLoop<Response, SystemoneAdapter>({
       state,
       deps,

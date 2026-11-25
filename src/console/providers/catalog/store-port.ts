@@ -96,6 +96,7 @@ export interface ProviderCatalogStore {
     modelIds: readonly string[],
     wireFamily?: string,
     metadata?: ModelMetadataOverride,
+    serviceKind?: string,
   ): Promise<void>;
   /** Edits one owned model's limits and capability flags. False for a shared row. */
   updateModelMetadata(
@@ -133,6 +134,11 @@ export interface ProviderCatalogStore {
    */
   getOwnedAccount(
     tenantId: string,
+    providerId: string,
+    accountId: string,
+  ): Promise<OwnedProviderAccountRef | undefined>;
+  /** Loads a shared/global account (`tenant_id IS NULL`) for platform-admin ops. */
+  getGlobalAccount(
     providerId: string,
     accountId: string,
   ): Promise<OwnedProviderAccountRef | undefined>;

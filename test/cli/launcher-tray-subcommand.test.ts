@@ -7,40 +7,88 @@
  * The launcher runs under Node and spawns `bun` from `CARTETHYIA_BUN`, so a
  * shell script stands in for Bun and records the argv it was handed.
  */
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const CARTE = join(import.meta.dir, "../../scripts/cli/bin/carte.cjs");
 
-let dir: string;
+let binDir: string;
 let fakeBun: string;
+let dir: string;
 let argvFile: string;
+
+beforeAll(async () => {
+  binDir = mkdtempSync(join(tmpdir(), "carte-launcher-bin-"));
+  if (process.platform === "win32") {
+    // Windows cannot spawn a #!/bin/sh script directly (nor through wscript.exe),
+    // so compile a tiny Bun executable once per file that records argv and writes
+    // the startup signal.
+    const source = join(binDir, "fake-bun.ts");
+    fakeBun = join(binDir, "bun.exe");
+    writeFileSync(
+      source,
+      [
+        'import { writeFileSync } from "node:fs";',
+        'const argvPath = process.env.CARTETHYIA_FAKE_ARGV;',
+        'if (argvPath) writeFileSync(argvPath, process.argv.slice(2).join("\\n") + "\\n", "utf8");',
+        'const signal = process.env.CARTETHYIA_FAKE_SIGNAL;',
+        'const signalPath = process.env.CARTETHYIA_TRAY_STARTUP_SIGNAL;',
+        'if (signal && signalPath) writeFileSync(signalPath, signal, "utf8");',
+      ].join("\n"),
+      "utf8",
+    );
+    const compiled = Bun.spawn([process.execPath, "build", "--compile", source, `--outfile=${fakeBun}`], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const code = await compiled.exited;
+    if (code !== 0) {
+      throw new Error(`Failed to compile fake-bun.exe: ${await new Response(compiled.stderr).text()}`);
+    }
+    // First execution of a freshly compiled .exe triggers Windows Defender scan;
+    // warm it up here so individual 5 s tests stay fast.
+    await Bun.spawn([fakeBun], { env: {}, stdout: "ignore", stderr: "ignore" }).exited;
+  } else {
+    fakeBun = join(binDir, "bun");
+    // Stands in for the CLI: records its argv, and writes a startup signal when
+    // the test wants the launcher to see one.
+    writeFileSync(
+      fakeBun,
+      [
+        "#!/bin/sh",
+        'printf \'%s\\n\' "$@" > "$CARTETHYIA_FAKE_ARGV"',
+        'if [ -n "$CARTETHYIA_FAKE_SIGNAL" ]; then',
+        '  printf \'%s\' "$CARTETHYIA_FAKE_SIGNAL" > "$CARTETHYIA_TRAY_STARTUP_SIGNAL"',
+        "fi",
+        "exit 0",
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+  }
+}, 60_000);
+
+afterAll(() => {
+  try {
+    rmSync(binDir, { recursive: true, force: true });
+  } catch {
+    // Windows may hold the directory briefly after a detached child exits.
+  }
+});
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "carte-launcher-test-"));
   argvFile = join(dir, "argv.txt");
-  fakeBun = join(dir, "bun");
-  // Stands in for the CLI: records its argv, and writes a startup signal when
-  // the test wants the launcher to see one.
-  writeFileSync(
-    fakeBun,
-    [
-      "#!/bin/sh",
-      `printf '%s\\n' "$@" > "${argvFile}"`,
-      'if [ -n "$CARTETHYIA_FAKE_SIGNAL" ]; then',
-      '  printf \'%s\' "$CARTETHYIA_FAKE_SIGNAL" > "$CARTETHYIA_TRAY_STARTUP_SIGNAL"',
-      "fi",
-      "exit 0",
-      "",
-    ].join("\n"),
-    { mode: 0o755 },
-  );
 });
 
 afterEach(() => {
-  rmSync(dir, { recursive: true, force: true });
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // Windows may hold the directory briefly after a detached child exits.
+  }
 });
 
 async function runCarte(
@@ -67,7 +115,7 @@ async function runCarte(
 }
 
 function recordedArgv(): string[] {
-  return readFileSync(argvFile, "utf8").trim().split("\n");
+  return readFileSync(argvFile, "utf8").trim().split(/\r?\n/);
 }
 
 test("carte tray status runs the CLI in the foreground instead of waiting for a tray", async () => {

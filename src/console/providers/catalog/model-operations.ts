@@ -12,10 +12,12 @@ import type { AccessDecision } from "../../../security/access-control";
 import { ConsoleDomainError, requireScope, requireTenantAnyScope } from "../../shared/errors";
 import { GatewayError } from "../../../protocol/gateway-error";
 import {
+  isServiceKind,
   MODEL_READ_SCOPES,
   MODEL_WRITE_SCOPES,
 } from "./contracts";
 import type { DiscoverModelCandidatesResponse, DiscoverModelCommitResult } from "./contracts";
+import type { ServiceKind } from "../../../protocol/canonical-model";
 import {
   MODEL_WARNING_KIND_MAX_LENGTH,
   MODEL_WARNING_MESSAGE_MAX_LENGTH,
@@ -237,17 +239,36 @@ export function createModelCatalogOperations(config: ProviderCatalogConfig) {
         modelIds: readonly string[],
         wireFamily?: string,
         metadata?: ModelMetadataOverride,
+        serviceKind?: ServiceKind,
       ): Promise<{ registered: number }> {
         const a = requireTenantAnyScope(access, MODEL_WRITE_SCOPES);
         if (modelIds.length === 0)
           throw new ConsoleDomainError("invalid_request", 400, "modelIds must be non-empty");
+        if (serviceKind !== undefined && !isServiceKind(serviceKind)) {
+          throw new ConsoleDomainError(
+            "invalid_request",
+            400,
+            "serviceKind must be a valid service kind",
+          );
+        }
         validateModelMetadata(metadata);
-        await config.store.registerModels(a.tenantId, providerId, modelIds, wireFamily, metadata);
+        await config.store.registerModels(
+          a.tenantId,
+          providerId,
+          modelIds,
+          wireFamily,
+          metadata,
+          serviceKind,
+        );
         await config.auditSink?.record({
           access: a,
           action: "provider.models.registered",
           target: providerId,
-          detail: { modelIds, ...(metadata ? { metadata } : {}) },
+          detail: {
+            modelIds,
+            ...(metadata ? { metadata } : {}),
+            ...(serviceKind ? { serviceKind } : {}),
+          },
         });
         await config.snapshotInvalidator?.invalidate();
         return { registered: modelIds.length };

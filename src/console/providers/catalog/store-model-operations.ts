@@ -11,7 +11,8 @@ import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 import { ConsoleDomainError } from "../../shared/errors";
 import { globalOrOwnedBy, ownedByOnly } from "../../../persistence/tenant-scope";
 import { models, providers, tenantDisabledModels } from "../../../persistence/schema";
-import type { WireFamily } from "../../../protocol/canonical-model";
+import type { ServiceKind, WireFamily } from "../../../protocol/canonical-model";
+import { nativeServicePathFor } from "../../../transport/contracts";
 import { applyModelMetadataOverride, resolveManualModelMetadata } from "../../../providers/provider-model-definition";
 import { endpointPathForProviderModel } from "./catalog-projections";
 import { asStoredText, mapModelRow, withImageModality } from "./store-helpers";
@@ -92,6 +93,7 @@ export async function registerModels(
   modelIds: readonly string[],
   wireFamily?: string,
   metadata?: ModelMetadataOverride,
+  serviceKind?: ServiceKind,
 ): Promise<void> {
   const owner = await ctx.db
     .select({
@@ -105,18 +107,27 @@ export async function registerModels(
   if (!owner[0]) {
     throw new ConsoleDomainError("provider_not_found", 404, `Provider ${providerId} not found`);
   }
+  const effectiveServiceKind: ServiceKind = serviceKind ?? "llm";
   const family = (wireFamily ?? "chat") as WireFamily;
   // Static endpoint from the provider's own bundled catalog via the probing
   // service (the same startup-built map this store is constructed with).
   // Without this, bundled providers on versioned bases (cline) get the
   // generic `/v1/…` default, which joins into an unreachable path and every
-  // probe/dispatch 404s.
-  const staticEndpoint = await ctx.probing.resolveStaticEndpoint(providerId, family);
-  const endpointPath = endpointPathForProviderModel(
-    family,
-    owner[0].compatibilityProfile,
-    staticEndpoint === undefined ? undefined : { [family]: staticEndpoint },
-  );
+  // probe/dispatch 404s. Non-LLM services route to their native endpoint path
+  // (e.g. `/v1/embeddings` for `"embedding"`).
+  const nativeEndpoint =
+    effectiveServiceKind === "llm" ? undefined : nativeServicePathFor(effectiveServiceKind);
+  const staticEndpoint =
+    nativeEndpoint === undefined
+      ? await ctx.probing.resolveStaticEndpoint(providerId, family)
+      : undefined;
+  const endpointPath =
+    nativeEndpoint ??
+    endpointPathForProviderModel(
+      family,
+      owner[0].compatibilityProfile,
+      staticEndpoint === undefined ? undefined : { [family]: staticEndpoint },
+    );
   if (modelIds.length === 0) return;
   // Single multi-row insert and upsert of the capability flags so a
   // re-registration repairs a row whose `tool_call` (and `reasoning`) was
@@ -131,6 +142,7 @@ export async function registerModels(
         providerId,
         modelId,
         wireFamily: family,
+        serviceKind: effectiveServiceKind,
         endpointPath,
         ...applyModelMetadataOverride(
           resolveManualModelMetadata(providerId, modelId),
@@ -145,6 +157,7 @@ export async function registerModels(
       target: [models.providerId, models.modelId, models.endpointPath],
       set: {
         wireFamily: sql`excluded.wire_family`,
+        serviceKind: sql`excluded.service_kind`,
         contextLimit: sql`excluded.context_limit`,
         outputLimit: sql`excluded.output_limit`,
         modalities: sql`excluded.modalities`,

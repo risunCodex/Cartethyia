@@ -284,6 +284,44 @@ export async function getOwnedAccount(
       };
 }
 
+/**
+ * Loads a shared/global `provider_accounts` row (`tenant_id IS NULL`) for
+ * platform-admin token refresh operations.
+ */
+export async function getGlobalAccount(
+  ctx: StoreAccountContext,
+  providerId: string,
+  accountId: string,
+): Promise<OwnedProviderAccountRef | undefined> {
+  const rows = await ctx.db
+    .select({
+      id: providerAccounts.id,
+      providerId: providerAccounts.providerId,
+      tenantId: providerAccounts.tenantId,
+      credentialKind: providerAccounts.credentialKind,
+      staticToken: providerAccounts.staticToken,
+    })
+    .from(providerAccounts)
+    .where(
+      and(
+        eq(providerAccounts.id, accountId),
+        eq(providerAccounts.providerId, providerId),
+        isNull(providerAccounts.tenantId),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  return row === undefined
+    ? undefined
+    : {
+        id: row.id,
+        providerId: row.providerId,
+        tenantId: row.tenantId,
+        credentialKind: row.credentialKind,
+        staticToken: row.staticToken,
+      };
+}
+
 export async function listAllAccounts(
   ctx: StoreAccountContext,
   tenantId: string,

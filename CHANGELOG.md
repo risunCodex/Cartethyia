@@ -8,7 +8,7 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [3.9.1] - 2026-11-25
 
 ### Changed
 
@@ -34,6 +34,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   cleared, and the trailing moment where the lease outlives the state record is
   reported as "the tray is still shutting down; try again in a moment". Retyping
   `carte --tray` straight after stopping a tray now starts a new one.
+- **Embeddings and native routes now record `requested_model`, upstream
+  `reported_model`, and usage in telemetry.** `/v1/embeddings` and sibling
+  native routes no longer fall back to `requested_model = 'unknown'` in
+  `telemetry_events` or Console Log, and JSON native responses now attribute
+  the upstream's reported `model` (without backfilling when omitted) and token
+  usage.
+- **Global (`tenant_id = NULL`) OAuth accounts can now be refreshed on demand.**
+  Platform admins (`platform:admin`) can now refresh shared/global OAuth
+  accounts via both `POST /console/api/providers/:providerId/accounts/:accountId/refresh-token`
+  and `POST /console/api/providers/platform/global/:providerId/accounts/:accountId/refresh-token`,
+  while non-admin tenant sessions still receive `404 account_not_found`.
+- **Windows portability for tray CLI and route tests.** Updated PR #20 test
+  fixtures (`deadPid`, POSIX permission checks, Unix tray harness platform
+  selection, and the launcher `CARTETHYIA_BUN` stub) so the tray suites run
+  cleanly on Windows as well as macOS/Linux.
 
 ### Added
 
@@ -46,6 +61,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/).
   machine, so a request from elsewhere cannot hide an icon the operator there
   cannot restore. A refused request is reported inside the card rather than
   bouncing the console to the lockout page.
+- **`serviceKind` support when registering provider models.** `POST
+  /console/api/providers/:providerId/models` and the dashboard Add Model modal
+  now accept `serviceKind` (such as `embedding`, mapping directly to
+  `/v1/embeddings`), updating the model row and invalidating the route snapshot
+  immediately without a gateway restart.
+- **OAuth credential import for Codex and Antigravity.** Both providers now
+  implement credential import (`oauthFlows.import` and `oauthFlows.refreshable`
+  enabled, `POST /console/api/providers/{codex,antigravity}/oauth/import`, and
+  the dashboard Import credential dialog), accepting full JSON exports (including
+  Codex CLI `{ tokens: ... }` files and `providerSpecificData`) as well as bare
+  refresh tokens.
+
+### Tests
+
+- Added regressions for `serviceKind` model registration, `/v1/embeddings`
+  telemetry attribution (`requested_model`, `reported_model`, `input_tokens`),
+  Codex & Antigravity OAuth credential import, and `tenant_id = NULL` global
+  account token refresh.
 
 ## [3.9.0] - 2026-11-21
 
