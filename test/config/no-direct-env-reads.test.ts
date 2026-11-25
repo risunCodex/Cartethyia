@@ -98,6 +98,14 @@ const ALLOW_LIST: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     CARTETHYIA_SEARCH_API_KEY: "opencode websearch plugin API key override",
     CARTETHYIA_SEARCH_BACKEND: "opencode websearch plugin backend override (exa/parallel)",
   },
+  "src/console/tray/control.ts": {
+    // The tray channel is a pair of files in the install's config directory,
+    // shared with the CLI (which sets the variable before any subcommand and
+    // passes it to the gateway it starts). It belongs to the config dir's
+    // owner rather than to CONFIG_SPEC: the spec describes operator-tunable
+    // gateway knobs, and this is the location of a file protocol.
+    CARTETHYIA_CONFIG_DIR: "tray control-file directory, owned by the install config layer",
+  },
 };
 
 /** Walk a directory, yielding every .ts/.tsx file path relative to repo root. */

@@ -283,10 +283,11 @@ export function cidrContainsAddress(
  * a prefix test would miss the mapped form — the exact shape that hid this
  * class of bug before.
  *
- * `transport/drain-endpoint.ts` keeps its own weaker `isLoopbackPeer` (a
- * `::ffff:` prefix strip that misses the `0:0:0:0:0:ffff:7f00:1` spelling);
- * unifying it widens the admin gate's acceptance set and is deferred — switch
- * it to this predicate as a deliberate, separately-landed behavior widening.
+ * `src/shared/peer.ts` keeps a weaker `isLoopbackPeer` (a `::ffff:` prefix
+ * strip that misses the `0:0:0:0:0:ffff:7f00:1` spelling) for the loopback
+ * admin gates; unifying it widens their acceptance set and is deferred —
+ * switch it to this predicate as a deliberate, separately-landed behavior
+ * widening.
  */
 export function isLoopbackAddress(address: string): boolean {
   const normalized = unwrapMappedIpv4(address.trim().split("%", 1)[0] ?? "");

@@ -11,10 +11,20 @@
 #   {"action":"add-item","index":0,"title":"...","enabled":true}
 #   {"action":"update-item","index":0,"title":"...","enabled":true}
 #   {"action":"set-tooltip","text":"..."}
+#   {"action":"hide"} {"action":"show"}
 #   {"action":"kill"}
 # This script writes one JSON object per line:
 #   {"type":"started"} {"type":"ready"} {"type":"click","index":0}
-param([string]$IconPath, [string]$Tooltip)
+#   {"type":"hidden"} {"type":"shown"}
+#
+# hide/show only toggle NotifyIcon.Visible. The helper, its menu and its
+# message loop keep running, because the tray process owns the gateway's only
+# interactive surface: ending the helper to hide the icon would end the tray.
+#
+# -StartHidden creates the icon already hidden. It exists so a tray that was
+# hidden last time comes back hidden without drawing the icon even once: showing
+# it first and hiding it after would flash on every start.
+param([string]$IconPath, [string]$Tooltip, [switch]$StartHidden)
 
 $ErrorActionPreference = "Stop"
 
@@ -31,7 +41,9 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $script:notifyIcon = New-Object System.Windows.Forms.NotifyIcon
 $script:notifyIcon.Icon = New-Object System.Drawing.Icon($IconPath)
 $script:notifyIcon.Text = $Tooltip
-$script:notifyIcon.Visible = $true
+# Unset means visible: the switch is only ever passed to reproduce a hidden
+# start, and a missing argument must not hide every icon.
+$script:notifyIcon.Visible = -not $StartHidden
 
 $script:menu = New-Object System.Windows.Forms.ContextMenuStrip
 $script:notifyIcon.ContextMenuStrip = $script:menu
@@ -89,6 +101,14 @@ $script:timer.Add_Tick({
         "add-separator" { Add-MenuSeparator $cmd.index }
         "update-item" { Update-MenuItem $cmd.index $cmd.title $cmd.enabled }
         "set-tooltip" { Set-Tooltip $cmd.text }
+        "hide"        {
+          $script:notifyIcon.Visible = $false
+          Write-Event @{ type = "hidden" }
+        }
+        "show"        {
+          $script:notifyIcon.Visible = $true
+          Write-Event @{ type = "shown" }
+        }
         "ready"       { Write-Event @{ type = "ready" } }
         "kill"        {
           $script:notifyIcon.Visible = $false

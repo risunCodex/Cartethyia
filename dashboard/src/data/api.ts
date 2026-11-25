@@ -166,6 +166,10 @@ const NON_BAN_FORBIDDEN_CODES = new Set([
   "invalid_scope",
   "invalid_request",
   "not_authorized",
+  // The tray routes refuse a browser that is not on the gateway's machine.
+  // That is a policy denial about where the request came from, not a lockout:
+  // the operator is signed in, and the page has to stay up to explain it.
+  "tray_control_local_only",
 ]);
 
 type SessionTransitionListener = (kind: SessionTransitionKind) => void;

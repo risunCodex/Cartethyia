@@ -8,6 +8,45 @@ current baseline; an existing one applies the numbered files that followed it.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Changed
+
+- **A hidden tray icon now stays hidden across restarts.** The last icon state
+  is recorded in `tray-preference.json` next to the other tray files, so a tray
+  started after a gateway restart, a `carte stop`, or a reboot with autostart
+  comes back the way it was left — including with no icon. The tray starts in
+  that state rather than hiding itself afterwards, so no icon flashes on the way.
+  `carte tray status` and `Settings → Tray` report the last state when no tray is
+  running, and a hidden start prints the command that restores the icon
+  (`carte tray show`). Deleting `tray-preference.json` forgets the choice and
+  the next start is visible. Nothing else about hiding changed: the gateway and
+  the tray process keep running either way.
+
+### Fixed
+
+- **A stopped tray no longer keeps looking alive while it shuts down.** The tray
+  cleared its state record and then waited out its poll interval — up to 10 s —
+  before exiting, so for that whole window a `carte --tray` found a live tray
+  lease with no icon state and failed with "No Cartethyia tray is running; start
+  one with carte --tray", which is the command that had just been run. Shutdown
+  now wakes both poll loops, so the process exits as soon as its files are
+  cleared, and the trailing moment where the lease outlives the state record is
+  reported as "the tray is still shutting down; try again in a moment". Retyping
+  `carte --tray` straight after stopping a tray now starts a new one.
+
+### Added
+
+- **The tray icon can be hidden without stopping the gateway.** `carte tray
+  hide|show|toggle|status`, a `Hide icon` row in the tray menu, and a
+  `Settings → Tray` card in the console all reach the same control channel.
+  Hiding keeps the gateway and the tray process running; `carte tray show`, a
+  second `carte --tray`, or the console card puts the icon back. The console
+  endpoints are admin-only and refuse a browser that is not on the gateway's
+  machine, so a request from elsewhere cannot hide an icon the operator there
+  cannot restore. A refused request is reported inside the card rather than
+  bouncing the console to the lockout page.
+
 ## [3.9.0] - 2026-11-21
 
 ### Fixed

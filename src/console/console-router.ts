@@ -236,6 +236,7 @@ export function createConsoleRouter(deps: ConsoleApiCompositionDeps): AnyElysia 
     readRoutingAccountInflight: deps.readRoutingAccountInflight,
     ...(deps.flushBuffers ? { flushBuffers: deps.flushBuffers } : {}),
     ...(deps.shutdownCoordinator ? { shutdownCoordinator: deps.shutdownCoordinator } : {}),
+    ...(deps.resolvePeerAddress ? { resolvePeerAddress: deps.resolvePeerAddress } : {}),
     credentialService,
     // The backup surface re-authenticates the operator, so it needs the current
     // user's hash. Read from the session on the request that asks for it, never

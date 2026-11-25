@@ -3,6 +3,7 @@ import {
   Database,
   Eye,
   FlaskConical,
+  PanelTop,
   Shield,
   Zap,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import { ErrorState, LoadingState } from "../../components/ui/state";
 import { Banner } from "../../components/patterns/banner";
 import { BackupPanel } from "../../components/BackupPanel";
 import { DataManagementPanel } from "./DataManagementPanel";
+import { TrayPanel } from "./TrayPanel";
 import { toast } from "../../lib/toast";
 import { useChangePassword } from "../../hooks/auth";
 import {
@@ -55,6 +57,7 @@ function SectionIcon({ name }: { readonly name: string }): ReactNode {
   if (name === "model-testing") return <FlaskConical {...props} />;
   if (name === "data") return <Archive {...props} />;
   if (name === "data-management") return <Database {...props} />;
+  if (name === "tray") return <PanelTop {...props} />;
   return <Shield {...props} />;
 }
 
@@ -139,6 +142,11 @@ const SECTIONS = [
     title: "Data Management",
     description:
       "See what the gateway keeps on disk, reclaim space, and flush queued writes.",
+  },
+  {
+    id: "tray",
+    title: "Tray",
+    description: "Hide or restore the menu bar icon of the tray on this machine.",
   },
 ] as const;
 
@@ -1019,6 +1027,7 @@ const PANEL_BODY: Record<SectionId, ReactNode> = {
   "model-testing": <ModelTestingPanel />,
   backup: <BackupPanel />,
   "data-management": <DataManagementPanel />,
+  tray: <TrayPanel />,
 };
 
 /**

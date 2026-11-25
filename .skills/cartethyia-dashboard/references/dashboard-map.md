@@ -98,6 +98,15 @@ with it. The dashboard does not keep a second, drifted type.
 `consoleRequest` attaches the CSRF header on mutations. A 401 or 403 notifies
 `SessionTransitionBridge` through `setSessionTransitionListener`.
 
+A console 403 means one of two things, and the difference is load-bearing. A
+session failure or a lockout bounces the shell to `/banned`. A policy denial
+about where or who the caller is stays inline, because the page that asked has
+to stay up to explain it. `NON_BAN_FORBIDDEN_CODES` in `data/api.ts` is the
+list that decides. **A route that returns a new 403 code adds it there in the
+same change.** Without that entry the whole console is replaced by the lockout
+page the moment the operator triggers the refusal, so the explanation the route
+carefully wrote is never read.
+
 Two surfaces are **streams, not polls** — do not wire a second polling loop
 for them:
 

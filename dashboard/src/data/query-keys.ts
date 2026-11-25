@@ -105,4 +105,11 @@ export const queryKeys = {
   systemPrompt: {
     config: ["console", "system-prompt"] as const,
   },
+  tray: {
+    /**
+     * Whether the tray is running and whether its icon is on screen. Polled,
+     * not pushed: the tray writes its state file, and only a read sees it.
+     */
+    status: ["console", "tray", "status"] as const,
+  },
 } as const;

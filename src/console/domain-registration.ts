@@ -37,6 +37,7 @@ import { createLogRoutes } from "./observability/logs";
 import { createAuditRoutes } from "./audit/routes";
 import { DrizzleAuditReadStore } from "./audit/store";
 import { createIpBanRoutes } from "./ip-bans/routes";
+import { createTrayRoutes } from "./tray/routes";
 import type { IpAbuseStore } from "../security/abuse";
 import { createUpdateRoutes, type UpdateShutdownCoordinator } from "./updates/routes";
 import { createRemoteSupportRoutes } from "./remote-support/routes";
@@ -139,6 +140,12 @@ export interface ConsoleDomainContext {
    * rather than exiting undrained when it is absent.
    */
   readonly shutdownCoordinator?: UpdateShutdownCoordinator;
+  /**
+   * Peer address of the request, resolved by the composition root. The tray
+   * domain needs it to keep icon control on the machine that owns the icon;
+   * absent means the tray visibility route refuses (unknown peer).
+   */
+  readonly resolvePeerAddress?: (request: Request) => string | null;
 }
 import { and, eq, isNull, or } from "drizzle-orm";
 import { networkPools, providerRoutingSettings } from "../persistence/schema";
@@ -288,6 +295,12 @@ export function registerConsoleDomains(
     service: createRemoteSupportService({ port: resolvePort() }),
   }));
   console.use(createAuditRoutes({ store: auditReadStore, accessResolver: ctx.accessResolver }));
+  console.use(
+    createTrayRoutes({
+      accessResolver: ctx.accessResolver,
+      ...(ctx.resolvePeerAddress ? { resolvePeerAddress: ctx.resolvePeerAddress } : {}),
+    }),
+  );
   if (ctx.ipAbuseStore) {
     console.use(createIpBanRoutes({
       accessResolver: ctx.accessResolver,

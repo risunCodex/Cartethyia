@@ -9,7 +9,22 @@ import { writeFileSync } from "node:fs";
  * report from replacing the failure the launcher already acted on.
  */
 export type TrayStartupSignal =
-  | { readonly status: "ready"; readonly url: string }
+  | {
+      readonly status: "ready";
+      readonly url: string;
+      /**
+       * One line the launcher prints after the URL, when the start needs an
+       * explanation — a tray that started with its icon hidden, for instance.
+       * The tray's own stdout is discarded, so this is the only way to say it.
+       */
+      readonly note?: string | undefined;
+    }
+  /**
+   * A tray was already running and its icon was shown. There is no URL to
+   * report: the gateway was started by the tray that is already up, and this
+   * process only asked it for its icon.
+   */
+  | { readonly status: "already-running" }
   | { readonly status: "failed"; readonly message: string };
 
 export function reportTrayStartup(signal: TrayStartupSignal): void {

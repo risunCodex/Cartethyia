@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { pidAlive } from "./instance";
+import { pidAlive } from "../../src/shared/process";
 
 /** A menu or tray that exclusively owns this installation's interactive UI. */
 export type ControllerKind = "menu" | "tray";
@@ -121,6 +121,19 @@ export function acquireController(kind: ControllerKind, handoff?: ControllerHand
       }
     },
   };
+}
+
+/**
+ * The interactive UI that currently owns this installation, if any.
+ *
+ * Read-only and liveness-checked: `carte --tray` uses it to tell "a tray is
+ * already running, so show its icon" from "a menu owns this install", which is
+ * an error the operator has to resolve by hand.
+ */
+export function readControllerOwner(): { readonly kind: ControllerKind; readonly pid: number } | null {
+  const current = readController(controllerPath());
+  if (current === null || !pidAlive(current.pid)) return null;
+  return { kind: current.kind, pid: current.pid };
 }
 
 /** Hand a failed tray startup back to the still-running menu. */

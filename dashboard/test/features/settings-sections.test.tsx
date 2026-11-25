@@ -97,6 +97,10 @@ async function mountSettings(): Promise<MountedSettings> {
   // method, so a bare path never answers a GET.
   const stub = stubFetch([
     { match: "GET /console/api/settings/runtime", json: SETTINGS },
+    // The tray section reads its own status; without a route it renders the
+    // error state, which is still a populated section but not the one under
+    // test here.
+    { match: "GET /console/api/tray/status", json: { running: false, hidden: false, pid: null } },
   ]);
   const mounted = await mount(createElement(Settings));
   // The privacy and operations panels show a loading state until their query
@@ -107,7 +111,7 @@ async function mountSettings(): Promise<MountedSettings> {
 }
 
 describe("Settings sections", () => {
-  test("all five sections render at once", async () => {
+  test("all seven sections render at once", async () => {
     // Every section is on the page, so an operator finds a setting by looking
     // rather than by guessing which heading hides it. Each section is a card
     // whose header carries the h2, nested several levels down — matched on the
@@ -124,6 +128,7 @@ describe("Settings sections", () => {
         "operations",
         "model-testing",
         "data-management",
+        "tray",
       ].map((id) =>
         container.querySelector(`#${id} h2.card-header-title`)?.textContent,
       );
@@ -134,6 +139,7 @@ describe("Settings sections", () => {
         "Operations",
         "Model testing",
         "Data Management",
+        "Tray",
       ]);
     } finally {
       unmount();
@@ -154,10 +160,10 @@ describe("Settings sections", () => {
       ]) {
         expect(container.querySelector(`#${id}`)).not.toBeNull();
       }
-      // Backup's and Data Management's controls have no stable id of their
-      // own; assert the sections are populated rather than reaching for a
+      // Backup's, Data Management's, and Tray's controls have no stable id of
+      // their own; assert the sections are populated rather than reaching for a
       // button label that may change.
-      for (const id of ["backup", "data-management"]) {
+      for (const id of ["backup", "data-management", "tray"]) {
         const section = container.querySelector(`#${id}`);
         expect(section).not.toBeNull();
         expect(section?.textContent?.trim().length ?? 0).toBeGreaterThan(0);
@@ -275,10 +281,10 @@ describe("Settings sections", () => {
     // selector matches nothing and would pass no matter the markup.
     const { container, unmount, restore } = await mountSettings();
     try {
-      // Six sections: Security, Privacy, Operations, Model testing, Backup,
-      // Data Management.
+      // Seven sections: Security, Privacy, Operations, Model testing, Backup,
+      // Data Management, Tray.
       const cards = container.querySelectorAll(".card-solid");
-      expect(cards).toHaveLength(6);
+      expect(cards).toHaveLength(7);
       expect(container.querySelectorAll(".card-solid .card-solid")).toHaveLength(0);
     } finally {
       unmount();

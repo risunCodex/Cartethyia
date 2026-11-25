@@ -19,6 +19,7 @@ import { closeSync, openSync } from "node:fs";
 import { access, mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveUserConfigDir } from "../../config/package-paths";
+import { pidAlive } from "../../shared/process";
 import {
   remoteSupportInstallHint,
   REMOTE_SUPPORT_TOOLS,
@@ -94,16 +95,6 @@ function toolAvailable(tool: RemoteSupportTool): Promise<boolean> {
     resolve(ok);
   });
   return promise;
-}
-
-/** Non-blocking check: is `pid` still alive on this host? Cross-OS. */
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**

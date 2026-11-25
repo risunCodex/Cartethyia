@@ -6,10 +6,19 @@ import { stopGateway } from "./gateway";
 import { readInstalledVersion } from "./version";
 import { reportTrayStartup } from "./startup-signal";
 import { createTray } from "./tray/index";
+import { createShutdownPause } from "./tray/lifecycle";
 import { openUrl } from "./background";
 import { exportBackup, resetConsoleAccount } from "./admin";
 import { acquireController, inheritedControllerHandoff } from "./controller";
 import { restoreControllerAfterFailedHandoff } from "./controller";
+import { applyTrayVisibility, respondToTrayRequest } from "./tray/commands";
+import {
+  clearTrayRequest,
+  clearTrayState,
+  consumeTrayRequest,
+  readTrayPreference,
+  writeTrayState,
+} from "../../src/console/tray/control";
 
 /**
  * Runs the gateway with a tray icon. The tray is platform-specific (`tray/`):
@@ -60,6 +69,15 @@ const TRAY_HEALTH_UNREACHABLE_BEFORE_CLOSE_MS = 120_000;
  */
 const TRAY_HEALTH_PROBE_TIMEOUT_MS = 15_000;
 
+/**
+ * How often the tray looks for a visibility request from another process.
+ *
+ * 1 s: `carte tray hide` is a command the operator is waiting on, so the round
+ * trip has to feel immediate. The read is one small file and costs nothing next
+ * to the health probe that already runs every 10 s.
+ */
+const TRAY_VISIBILITY_POLL_MS = 1_000;
+
 export async function startTray(): Promise<void> {
   const handoff = inheritedControllerHandoff();
   const controller = acquireController("tray", handoff);
@@ -92,6 +110,20 @@ async function runTray(): Promise<void> {
   let resetArmed = false;
   let closePromise: Promise<void> | undefined;
 
+  /**
+   * Wakes the poll loops when the tray closes.
+   *
+   * Both loops sleep in one long interval; letting a shutdown wait that out
+   * would keep the controller lease — and the tray — alive after its files are
+   * already gone, so the next `carte --tray` would find a live tray with no
+   * icon to show.
+   */
+  const shutdown = createShutdownPause();
+
+  // What the icon showed when this installation last ran. `false` when nothing
+  // was ever recorded, which is the right default: a first start shows it.
+  const startHidden = readTrayPreference()?.hidden ?? false;
+
   const tray = createTray({
     iconPath: resolvePackagePath(
       "scripts",
@@ -101,6 +133,9 @@ async function runTray(): Promise<void> {
       process.platform === "win32" ? "cartethyia.ico" : "cartethyia.png",
     ),
     tooltip: `Cartethyia ${currentVersion}`,
+    // The operator's last choice, so a restart does not undo it. Read before the
+    // icon is built: a tray that starts hidden must never draw one first.
+    startHidden,
     items: [
       // Version row is informational; clicking it opens the releases page so
       // the operator can decide for themselves. No background check: the tray
@@ -111,6 +146,9 @@ async function runTray(): Promise<void> {
       { kind: "action", id: "console", title: `Open Console \u00b7 ${dashboardUrl}` },
       { kind: "action", id: "reset", title: "Reset console password" },
       { kind: "action", id: "backup", title: "Backup" },
+      // Not `Exit`: the icon goes away, the gateway keeps running. This is the
+      // whole point of the row — every other way out of the menu stops it.
+      { kind: "action", id: "hide", title: "Hide icon" },
       { kind: "separator" },
       { kind: "action", id: "exit", title: "Exit" },
     ],
@@ -121,20 +159,52 @@ async function runTray(): Promise<void> {
   const close = (exitCode = 0): Promise<void> => {
     if (closePromise) return closePromise;
     closing = true;
+    // Before anything is awaited: a loop sleeping in its interval would
+    // otherwise hold the process open past the point where its records are gone.
+    shutdown.interrupt();
     closePromise = (async () => {
       const current: Bun.Subprocess | null = gateway;
       gateway = null;
       if (current) await stopGateway(current, port, drainToken);
       else if (adoptedGateway !== null) await stopAttachedGateway(adoptedGateway, drainToken);
       await tray.close();
+      // A tray that exited must not leave a record another process reads as a
+      // live icon, nor a request nobody will ever consume.
+      //
+      // The controller lease is released after this, on the way out, and that
+      // order is deliberate: it is what stops a new tray starting while these
+      // files are still being cleared. The cost is that a lease can briefly
+      // outlive its state record, which `showIconOnExistingTray` reports as
+      // "still shutting down" rather than "no tray is running".
+      clearTrayState();
+      clearTrayRequest();
       process.exitCode = exitCode;
     })();
     return closePromise;
   };
 
+  /**
+   * Applies one visibility change and records the result.
+   *
+   * Nothing here touches the gateway: it is a detached process, and the icon is
+   * the tray's own surface. Stopping it is what `Exit` is for.
+   */
+  async function setVisibility(request: "hide" | "show" | "toggle"): Promise<void> {
+    try {
+      const hidden = await applyTrayVisibility(tray, request);
+      writeTrayState({ pid: process.pid, hidden });
+    } catch (error) {
+      // A failed change leaves the previous icon in place; say so and stay up.
+      console.error(
+        `Could not ${request === "toggle" ? "change" : request} the tray icon: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    }
+  }
+
   async function handleSelect(id: string): Promise<void> {
     if (closing) return;
     if (id === "exit") return void (await close());
+    if (id === "hide") return void (await setVisibility("hide"));
     if (id === "console") return void (await openUrl(dashboardUrl));
     if (id === "version") return void (await openUrl(releasesUrl));
     if (id === "backup") {
@@ -194,8 +264,48 @@ async function runTray(): Promise<void> {
     // cannot read our stdio, because the tray is detached. Without this write
     // it waits out its 60 s deadline and reports a failure for a tray that is
     // running fine.
-    reportTrayStartup({ status: "ready", url: dashboardUrl });
+    //
+    // A hidden start travels the same way: an icon that is deliberately absent
+    // looks exactly like a broken install, so the line the operator reads has to
+    // say which one it is and how to undo it.
+    reportTrayStartup({
+      status: "ready",
+      url: dashboardUrl,
+      note: startHidden ? "The tray icon is hidden; restore it with carte tray show." : undefined,
+    });
     console.log(`Cartethyia is running at ${dashboardUrl}`);
+    // Before the first poll: `carte tray status` must see a live tray as soon as
+    // the icon exists, and a command run right after startup must not be told
+    // that no tray is running.
+    //
+    // `hidden` is the state this tray actually started in, not `false`: the
+    // write also records the preference, so a hardcoded `false` here would
+    // resurrect the icon on every restart and undo the operator's choice.
+    writeTrayState({ pid: process.pid, hidden: startHidden });
+
+    // A second loop, on its own cadence: the health poll asks the gateway
+    // whether it is alive every 10 s, while a visibility request has to be
+    // answered within the second the operator is waiting on.
+    const visibilityLoop = (async (): Promise<void> => {
+      while (!closing) {
+        await shutdown.pause(TRAY_VISIBILITY_POLL_MS);
+        if (closing) return;
+        const request = consumeTrayRequest();
+        if (request === null) continue;
+        try {
+          await respondToTrayRequest(tray, request);
+        } catch (error) {
+          // A failed change leaves the previous icon in place; say so and stay
+          // up, because the gateway is not this code's business.
+          console.error(
+            `Could not change the tray icon: ${error instanceof Error ? error.message : "unknown error"}`,
+          );
+        }
+      }
+    })();
+    // Nothing awaits this loop: it ends with `closing`. An error escaping it
+    // would be an unhandled rejection that takes the tray down.
+    void visibilityLoop.catch(() => undefined);
 
     // The timestamp of the last probe the gateway actually answered, not a
     // miss counter: a busy gateway answers sometimes, and that must reset the
@@ -208,7 +318,7 @@ async function runTray(): Promise<void> {
     // detaching it. The probe is the same one startup used, so a gateway that
     // is up reads as up regardless of who spawned it.
     while (!closing) {
-      await Bun.sleep(TRAY_HEALTH_POLL_MS);
+      await shutdown.pause(TRAY_HEALTH_POLL_MS);
       if (closing || gateway === null && adoptedGateway === null) continue;
       const alive = await fetch(`http://127.0.0.1:${port}/health`, {
         signal: AbortSignal.timeout(TRAY_HEALTH_PROBE_TIMEOUT_MS),
